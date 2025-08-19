@@ -120,6 +120,11 @@ class BrasilFlixBot {
     }
 }
 
-// Iniciar o bot
-const bot = new BrasilFlixBot();
-bot.start();
+// Iniciar o bot (apenas se executado diretamente)
+if (require.main === module) {
+    const bot = new BrasilFlixBot();
+    bot.start();
+}
+
+// Exportar a classe para uso externo
+module.exports = { BrasilFlixBot };
