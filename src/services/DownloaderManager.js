@@ -114,15 +114,8 @@ class DownloaderManager extends EventEmitter {
                 try {
                     if (watchdogInterval) clearInterval(watchdogInterval);
                     this.activeTorrents.delete(torrentId);
-                    if (torrent) {
-                        try {
-                            if (torrent.infoHash && client.get && client.get(torrent.infoHash)) {
-                                client.remove(torrent.infoHash, { destroyStore: true }, () => {});
-                            }
-                        } catch (e) {}
-                        if (!torrent.destroyed) {
-                            torrent.destroy({ destroyStore: true }, () => {});
-                        }
+                    if (torrent && !torrent.destroyed) {
+                        torrent.destroy({ destroyStore: true }, () => {});
                     }
                 } catch (e) {}
             };
@@ -138,6 +131,7 @@ class DownloaderManager extends EventEmitter {
             }
 
             let lastProgressTime = Date.now();
+            let lastLogTime = Date.now();
 
             torrent.on('download', () => {
                 const now = Date.now();
@@ -153,7 +147,12 @@ class DownloaderManager extends EventEmitter {
                     const empty = Math.max(0, barLength - filled);
                     const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
 
-                    process.stdout.write(`\r📥 Baixando: [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | Peers: ${torrent.numPeers} `);
+                    if (process.stdout.isTTY) {
+                        process.stdout.write(`\r📥 Baixando: [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | Peers: ${torrent.numPeers} `);
+                    } else if (now - lastLogTime >= 5000) {
+                        lastLogTime = now;
+                        console.log(`📥 [Download] [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB | ${speedMB} MB/s | Peers: ${torrent.numPeers}`);
+                    }
 
                     if (onProgress) {
                         onProgress({

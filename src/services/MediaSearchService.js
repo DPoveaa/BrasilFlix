@@ -181,16 +181,18 @@ class MediaSearchService {
 
                 if (!isDublado && !isLegendado) continue;
 
-                const seedersMatch = infoLine.match(/👤\s*(\d+)/);
+                // Extrai seeders e tamanho do texto completo retornado pelo Torrentio/Stremio
+                const seedersMatch = rawTitle.match(/👤\s*(\d+)/);
                 const seeders = seedersMatch ? parseInt(seedersMatch[1], 10) : 0;
 
-                const sizeMatch = infoLine.match(/💾\s*([\d\.]+)\s*(GB|MB)/i);
+                const sizeMatch = rawTitle.match(/💾\s*([\d\.]+)\s*(GB|MB)/i);
                 let sizeMB = 0;
                 if (sizeMatch) {
                     const val = parseFloat(sizeMatch[1]);
                     sizeMB = sizeMatch[2].toUpperCase() === 'GB' ? (val * 1024).toFixed(1) : val.toFixed(1);
                 }
 
+                const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(title);
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
@@ -198,7 +200,7 @@ class MediaSearchService {
                 results.push({
                     title: title,
                     infoHash: st.infoHash,
-                    source: `Torrentio (${infoLine.split('⚙️')[1]?.trim() || 'Stremio'})`,
+                    source: `Torrentio (${sourceGroup})`,
                     magnet: magnet,
                     sizeBytes: parseFloat(sizeMB) * 1024 * 1024,
                     sizeMB: sizeMB,
