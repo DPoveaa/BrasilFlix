@@ -48,28 +48,12 @@ class DownloaderManager extends EventEmitter {
         return WebTorrentClass;
     }
 
-    formatMagnetLink(magnetOrTorrent) {
-        const trackers = [
-            'udp://tracker.opentrackr.org:1337/announce',
-            'udp://open.stealth.si:80/announce',
-            'udp://tracker.torrent.eu.org:451/announce',
-            'udp://explodie.org:6969/announce',
-            'udp://tracker.moeking.me:6969/announce',
-            'http://tracker.opentrackr.org:1337/announce'
-        ];
-
-        const str = String(magnetOrTorrent);
-        const hashMatch = str.match(/([a-fA-F0-9]{40})/);
-        if (hashMatch) {
-            const cleanHash = hashMatch[1].toLowerCase();
-            const nameMatch = str.match(/dn=([^&]+)/);
-            const name = nameMatch ? nameMatch[1] : encodeURIComponent(cleanHash);
-
-            let cleanMagnet = `magnet:?xt=urn:btih:${cleanHash}&dn=${name}`;
-            for (const tr of trackers) {
-                cleanMagnet += `&tr=${encodeURIComponent(tr)}`;
+    extractCleanHash(magnetOrTorrent) {
+        if (typeof magnetOrTorrent === 'string') {
+            const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
+            if (hashMatch) {
+                return hashMatch[1].toLowerCase();
             }
-            return cleanMagnet;
         }
         return magnetOrTorrent;
     }
@@ -81,10 +65,21 @@ class DownloaderManager extends EventEmitter {
             throw new Error('Módulo WebTorrent não disponível.');
         }
 
-        const formattedMagnet = this.formatMagnetLink(magnetOrTorrent);
+        const torrentTarget = this.extractCleanHash(magnetOrTorrent);
+
+        const trackers = [
+            'udp://tracker.opentrackr.org:1337/announce',
+            'udp://open.stealth.si:80/announce',
+            'udp://tracker.torrent.eu.org:451/announce',
+            'udp://explodie.org:6969/announce',
+            'udp://tracker.moeking.me:6969/announce',
+            'http://tracker.opentrackr.org:1337/announce',
+            'udp://p4p.arenabg.com:1337/announce',
+            'udp://tracker.birkenwald.de:6969/announce'
+        ];
 
         return new Promise((resolve, reject) => {
-            console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
+            console.log('📥 Iniciando download via Torrent:', String(torrentTarget).substring(0, 40) + '...');
 
             // Instância isolada por download para evitar poluição de sockets/DHT no Linux
             const client = new WT({
@@ -113,8 +108,9 @@ class DownloaderManager extends EventEmitter {
             });
 
             try {
-                torrent = client.add(formattedMagnet, { 
-                    path: this.downloadDir
+                torrent = client.add(torrentTarget, { 
+                    path: this.downloadDir,
+                    announce: trackers
                 });
             } catch (err) {
                 safeCleanup();
@@ -206,7 +202,7 @@ class DownloaderManager extends EventEmitter {
                     lastBytes = currentBytes;
                 }
 
-                if (stalledSeconds >= 35 && torrent.progress < 0.01) {
+                if (stalledSeconds >= 60 && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para não travar a fila...`);
                     safeCleanup();
