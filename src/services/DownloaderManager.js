@@ -98,15 +98,18 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.moeking.me:6969/announce',
             'http://tracker.opentrackr.org:1337/announce',
             'udp://p4p.arenabg.com:1337/announce',
-            'udp://tracker.birkenwald.de:6969/announce'
+            'udp://tracker.birkenwald.de:6969/announce',
+            'udp://tracker.coppersurfer.tk:6969/announce',
+            'udp://tracker.dler.org:6969/announce',
+            'udp://opentor.net:6969/announce'
         ];
 
         return new Promise((resolve, reject) => {
             console.log(`📥 Iniciando download via Torrent: "${mediaTitle}" [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
-            // Instância isolada por download para evitar poluição de sockets/DHT no Linux
+            // Instância isolada por download com alto limite de conexões simultâneas
             const client = new WT({
-                maxConns: 85,
+                maxConns: 120,
                 dht: true,
                 tracker: true,
                 downloadLimit: -1,
