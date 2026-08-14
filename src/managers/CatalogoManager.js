@@ -86,6 +86,8 @@ class CatalogoManager {
             generos: metadadosExtras.generos || [],
             qualidade: metadadosExtras.qualidade || '1080p',
             isCam: metadadosExtras.isCam || false,
+            isDublado: metadadosExtras.isDublado ?? (metadadosExtras.audio ? !metadadosExtras.audio.toLowerCase().includes('legendado') : true),
+            isLegendado: metadadosExtras.isLegendado ?? (metadadosExtras.audio ? metadadosExtras.audio.toLowerCase().includes('legendado') : false),
             audio: metadadosExtras.audio || 'Dublado',
             messageId,
             fileId: metadadosExtras.fileId || null,
@@ -96,12 +98,16 @@ class CatalogoManager {
 
         this.catalogo.filmes.push(item);
         this.saveCatalogo();
-        console.log(`✅ Filme adicionado ao catálogo: ${nome} [Qualidade: ${item.qualidade}] (MessageId: ${messageId})`);
+        console.log(`✅ Filme adicionado ao catálogo: ${nome} [Qualidade: ${item.qualidade}, Áudio: ${item.audio}] (MessageId: ${messageId})`);
         return { success: true, item: item };
     }
 
     buscarFilmesCam() {
         return (this.catalogo.filmes || []).filter(f => f.isCam === true);
+    }
+
+    buscarFilmesLegendados() {
+        return (this.catalogo.filmes || []).filter(f => f.isLegendado === true || (f.audio && f.audio.toLowerCase().includes('legendado')));
     }
 
     atualizarMidiaFilme(idOuNome, novaMidia = {}) {
@@ -117,11 +123,13 @@ class CatalogoManager {
         if (novaMidia.fileId) filme.fileId = novaMidia.fileId;
         if (novaMidia.qualidade) filme.qualidade = novaMidia.qualidade;
         if (typeof novaMidia.isCam === 'boolean') filme.isCam = novaMidia.isCam;
+        if (typeof novaMidia.isDublado === 'boolean') filme.isDublado = novaMidia.isDublado;
+        if (typeof novaMidia.isLegendado === 'boolean') filme.isLegendado = novaMidia.isLegendado;
         if (novaMidia.audio) filme.audio = novaMidia.audio;
         filme.dataAtualizado = new Date().toISOString();
 
         this.saveCatalogo();
-        console.log(`🔄 Filme atualizado com sucesso no catálogo: "${filme.nome}" [Nova Qualidade: ${filme.qualidade}]`);
+        console.log(`🔄 Filme atualizado com sucesso no catálogo: "${filme.nome}" [Nova Qualidade: ${filme.qualidade}, Áudio: ${filme.audio}]`);
         return true;
     }
 

@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const config = require('../../config');
 const TMDBService = require('./TMDBService');
+const MediaSearchService = require('./MediaSearchService');
 const { PRIORITIES } = require('../managers/QueueManager');
 
 class AutoFeeder {
@@ -52,10 +53,14 @@ class AutoFeeder {
 
             // 3. Doramas populares (K-Dramas)
             const popularDoramas = await TMDBService.getPopularKDramas();
+
             // 4. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
             if (config.AUTO_UPGRADE_CAM) {
                 await this.checkCamUpgrades();
             }
+
+            // 5. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
+            await this.checkLegendadoUpgrades();
 
         } catch (error) {
             console.error('❌ Erro no ciclo do AutoFeeder:', error.message);
@@ -92,6 +97,33 @@ class AutoFeeder {
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de cinema:', e.message);
+        }
+    }
+
+    async checkLegendadoUpgrades() {
+        try {
+            const legendadoMovies = this.catalogoManager.buscarFilmesLegendados();
+            if (legendadoMovies.length === 0) return;
+
+            console.log(`🎙️ AutoFeeder: Verificando se ${legendadoMovies.length} filme(s) legendado(s) já possuem versão DUBLADA...`);
+
+            for (const filme of legendadoMovies) {
+                const sources = await MediaSearchService.search(filme.nome, 'filme', {
+                    nomeOriginal: filme.nomeOriginal,
+                    ano: filme.ano
+                });
+
+                const dubladaSource = sources.find(s => s.isDublado && s.seeders > 0);
+                if (dubladaSource) {
+                    console.log(`🌟 VERSÃO DUBLADA ENCONTRADA para "${filme.nome}"! Fonte: ${dubladaSource.title}`);
+                    this.queueManager.addJob(filme.nome, 'filme', 2, {
+                        tmdbId: filme.tmdbId,
+                        isUpgrade: true
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao verificar upgrades de dublagem:', e.message);
         }
     }
 

@@ -79,7 +79,7 @@ class VideoProcessor {
         });
 
         if (hasForeignTags) {
-            return false; // Rejeita releases com áudio em inglês/estrangeiro mesmo que tenham legenda PT
+            return false; // Áudio é estrangeiro
         }
 
         // 3. Se as faixas de áudio não possuem metadados de idioma (streams anônimos), verifica o selo brasileiro no nome do arquivo
@@ -91,6 +91,61 @@ class VideoProcessor {
         }
 
         return false;
+    }
+
+    hasPortugueseSubtitles(info, rawFileName = '') {
+        const lowerName = (rawFileName || '').toLowerCase();
+
+        // 1. Verifica se há trilhas de legenda em Português embutidas no arquivo
+        if (info.subtitleStreams && info.subtitleStreams.length > 0) {
+            const ptLanguages = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'];
+            const hasPtSubStream = info.subtitleStreams.some(s => {
+                const lang = (s.language || '').toLowerCase();
+                const title = (s.title || '').toLowerCase();
+                return ptLanguages.includes(lang) || title.includes('portug') || title.includes('legenda') || title.includes('pt-br');
+            });
+            if (hasPtSubStream) return true;
+        }
+
+        // 2. Verifica se o nome do arquivo traz tags explícitas de legenda em Português (hardcoded ou softsub)
+        const isExplicitLegendado = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br|pt[-_ ]?subs?|subs?\.por|hc[-_ ]?sub)\b/i.test(lowerName);
+        if (isExplicitLegendado) {
+            return true;
+        }
+
+        return false;
+    }
+
+    validatePortugueseContent(info, rawFileName = '', source = {}) {
+        const lowerName = (rawFileName || '').toLowerCase();
+
+        const isDublado = this.hasPortugueseAudio(info, rawFileName) || source.isDublado === true;
+        const isLegendado = this.hasPortugueseSubtitles(info, rawFileName) || source.isLegendado === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
+
+        if (isDublado) {
+            return {
+                isValid: true,
+                isDublado: true,
+                isLegendado: false,
+                audioText: 'Dublado (Áudio PT-BR)'
+            };
+        }
+
+        if (isLegendado) {
+            return {
+                isValid: true,
+                isDublado: false,
+                isLegendado: true,
+                audioText: 'Legendado (PT-BR)'
+            };
+        }
+
+        return {
+            isValid: false,
+            isDublado: false,
+            isLegendado: false,
+            audioText: 'Desconhecido'
+        };
     }
 
     async generateThumbnail(videoPath, outputThumbPath, timestamp = '00:01:30') {
@@ -131,24 +186,11 @@ class VideoProcessor {
         await fs.ensureDir(path.dirname(outputPath));
         const info = await this.getVideoInfo(inputPath);
 
-        // Se já for MP4 H.264/H.265 com áudio compatível e menor que 2GB, pode copiar rápido
-        const ext = path.extname(inputPath).toLowerCase();
-        const isCompatibleFormat = ext === '.mp4';
+        // Se o arquivo for menor que 3.95 GB e o codec já for H.264 (seja MP4 ou MKV):
+        // Faz Remux Ultrarrápido em ~5 segundos sem perder qualidade nem gastar CPU!
         const isUnderSizeLimit = info.sizeBytes <= this.maxSizeBytes;
         const isFastCodec = info.videoCodec === 'h264';
-
-        if (isCompatibleFormat && isUnderSizeLimit && isFastCodec) {
-            console.log(`⚡ Vídeo já está no formato ideal para Telegram (${info.sizeMB} MB). Remux rápido...`);
-            return new Promise((resolve, reject) => {
-                const args = ['-i', inputPath, '-c', 'copy', '-movflags', '+faststart', '-y', outputPath];
-                const ffmpeg = spawn('ffmpeg', args);
-                ffmpeg.on('close', (code) => {
-                    if (code === 0) resolve(outputPath);
-                    else reject(new Error(`Erro no remux: código ${code}`));
-                });
-                ffmpeg.on('error', reject);
-            });
-        }
+        const isResolutionFine = (info.width || 1920) <= 1920; // 1080p ou menor
 
         // Detectar qual faixa de áudio é em Português
         let portugueseAudioIndex = null;
@@ -165,11 +207,58 @@ class VideoProcessor {
             }
         }
 
-        console.log(`🎬 Otimizando vídeo em QUALIDADE MÁXIMA 1080p (Codec: H.264, Preset: medium, CRF: 18, Áudio: 320k, Limite Seguro: 3.95GB)...`);
-        if (portugueseAudioIndex !== null) {
-            console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
+        if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
+            console.log(`⚡ Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido para Streaming (5s)...`);
+            if (portugueseAudioIndex !== null) {
+                console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
+            }
+
+            return new Promise((resolve, reject) => {
+                const remuxArgs = [
+                    '-i', inputPath,
+                    '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento (100% de qualidade original)
+                ];
+
+                if (portugueseAudioIndex !== null) {
+                    remuxArgs.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
+                } else {
+                    remuxArgs.push('-map', '0:v:0', '-map', '0:a?');
+                }
+
+                // Garante que o áudio seja compatível (copia se for aac/ac3/mp3, ou converte áudio rapidamente para aac)
+                const firstAudioCodec = (info.audioStreams && info.audioStreams[0]?.codec) || '';
+                if (['aac', 'mp3', 'ac3'].includes(firstAudioCodec.toLowerCase())) {
+                    remuxArgs.push('-c:a', 'copy');
+                } else {
+                    remuxArgs.push('-c:a', 'aac', '-b:a', '320k');
+                }
+
+                remuxArgs.push('-movflags', '+faststart', '-y', outputPath);
+
+                const ffmpeg = spawn('ffmpeg', remuxArgs);
+                ffmpeg.on('close', (code) => {
+                    if (code === 0 && fs.existsSync(outputPath)) {
+                        console.log(`✅ Remux concluído instantaneamente com 100% da qualidade original preservada!`);
+                        if (onProgress) onProgress(100);
+                        resolve(outputPath);
+                    } else {
+                        console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
+                        // Se falhar o remux por alguma inconsistência do container, cai para a codificação normal
+                        this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress).then(resolve).catch(reject);
+                    }
+                });
+                ffmpeg.on('error', () => {
+                    this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress).then(resolve).catch(reject);
+                });
+            });
         }
 
+        return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress);
+    }
+
+    async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null) {
+        console.log(`🎬 Processando codificação 1080p (Codec: H.264, Preset: medium, CRF: 18, Áudio: 320k, Limite Seguro: 3.95GB)...`);
+        
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
 

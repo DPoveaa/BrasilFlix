@@ -236,17 +236,21 @@ class QueueManager extends EventEmitter {
 
         const rawFilePath = downloadedMedia.filePath;
 
-        // 3.5 Verificação de Áudio (Garantia de Idioma PT-BR)
+        // 3.5 Verificação de Idioma (Garantia de Áudio Dublado ou Legendas PT-BR)
+        let langInfo = { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
         try {
             const videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
-            const hasPortuguese = VideoProcessor.hasPortugueseAudio(videoInfo, downloadedMedia.fileName);
-            if (!hasPortuguese && !bestSource.isLegendado) {
-                console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio em Português detectada no download de "${job.title}".`);
+            langInfo = VideoProcessor.validatePortugueseContent(videoInfo, downloadedMedia.fileName, bestSource);
+
+            if (!langInfo.isValid) {
+                console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado nem legenda em Português detectada no download de "${job.title}".`);
                 await DownloaderManager.cleanupFile(rawFilePath);
-                throw new Error(`O arquivo baixado não contém áudio em Português.`);
+                throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
             }
+
+            console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText}`);
         } catch (err) {
-            if (err.message.includes('não contém áudio em Português')) {
+            if (err.message.includes('não contém áudio nem legendas')) {
                 throw err;
             }
         }
@@ -270,9 +274,9 @@ class QueueManager extends EventEmitter {
 
         metadata.qualidade = bestSource.quality || '1080p';
         metadata.isCam = bestSource.isCam || false;
-        metadata.audio = bestSource.audio || (bestSource.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)');
-        metadata.isDublado = bestSource.isDublado || false;
-        metadata.isLegendado = bestSource.isLegendado || false;
+        metadata.audio = langInfo.audioText || bestSource.audio || (bestSource.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)');
+        metadata.isDublado = langInfo.isDublado;
+        metadata.isLegendado = langInfo.isLegendado;
 
         const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata);
 
@@ -286,6 +290,8 @@ class QueueManager extends EventEmitter {
                     qualidade: metadata.qualidade,
                     isCam: metadata.isCam,
                     audio: metadata.audio,
+                    isDublado: metadata.isDublado,
+                    isLegendado: metadata.isLegendado,
                     tmdbId: metadata.tmdbId
                 });
             } else {
