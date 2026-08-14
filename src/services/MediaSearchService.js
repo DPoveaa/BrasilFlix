@@ -156,29 +156,20 @@ class MediaSearchService {
                 const rawTitle = st.title || '';
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
-                const infoLine = lines[1] || '';
-                const langLine = lines[2] || '';
 
-                const hasPtFlag = /🇵🇹|🇧🇷|\b(PT|BR|POR|PORTUGUESE)\b/i.test(rawTitle);
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐/i.test(rawTitle);
-                const hasDubladoTag = /\b(dublado|nacional|audio[-_ ]?pt|dual)\b/i.test(rawTitle);
-                const hasLegendadoTag = /\b(legendado|sub[-_ ]?pt|subs?\.por|pt[-_ ]?subs?)\b/i.test(rawTitle);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle);
+                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(title));
 
-                const hasForeignDubOnly = /\b(pldub|ukr dub|rus dub|hindi|ger dub|ita dub|fre dub)\b/i.test(title) && !hasPtFlag && !isBrazilianGroup && !hasDubladoTag;
+                const isDublado = isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle;
 
-                if (hasForeignDubOnly) {
-                    continue;
-                }
+                const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt|subs?\.por|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
+                const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
 
-                let isDublado = false;
-                let isLegendado = false;
+                const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag);
 
-                if (hasDubladoTag || (hasPtFlag && !hasLegendadoTag) || isBrazilianGroup) {
-                    isDublado = true;
-                } else if (hasLegendadoTag || hasPtFlag) {
-                    isLegendado = true;
-                }
-
+                // Se não tiver nem áudio dublado nem legenda em português comprovada, descarta imediatamente
                 if (!isDublado && !isLegendado) continue;
 
                 // Extrai seeders e tamanho do texto completo retornado pelo Torrentio/Stremio
@@ -349,26 +340,16 @@ class MediaSearchService {
                         continue;
                     }
 
-                    const isExplicitDublado = /\b(dublado|dub\b|nacional|audio[-_ ]?pt)\b/i.test(name);
-                    const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|mostbet|1xbet|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
-                    
+                    const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
+                    const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
+                    const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
+
+                    const isDublado = isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle;
+
                     const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
                     const isExplicitPtBr = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
 
-                    const hasForeignLang = /\b(hin|hindi|tam|tamil|tel|telugu|kan|kannada|mal|malayalam|pun|punjabi|ben|bengali|mar|marathi|rus|russian|spa|spanish|esp|español|castellano|fre|french|ger|german|ita|italian|remuxdoc|lmntry|maze|ddr|tmb|psa|galaxyrg|rarbg|tgx|megusta|ntb|yify|yts)\b/i.test(name);
-
-                    if (hasForeignLang && !isBrazilianGroup && !isExplicitDublado && !isLegendadoPt) {
-                        continue;
-                    }
-
-                    let isDublado = false;
-                    let isLegendado = false;
-
-                    if (isExplicitDublado || isBrazilianGroup) {
-                        isDublado = true;
-                    } else if (isLegendadoPt || (isExplicitPtBr && !hasForeignLang)) {
-                        isLegendado = true;
-                    }
+                    const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr);
 
                     if (!isDublado && !isLegendado) {
                         continue;
