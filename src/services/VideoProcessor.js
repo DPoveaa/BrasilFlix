@@ -236,9 +236,14 @@ class VideoProcessor {
                 remuxArgs.push('-movflags', '+faststart', '-y', outputPath);
 
                 const ffmpeg = spawn('ffmpeg', remuxArgs);
+
+                // Drena o buffer de stderr para evitar deadlock/travamento do processo no Node.js
+                ffmpeg.stderr.on('data', () => {});
+                ffmpeg.stdout.on('data', () => {});
+
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
-                        console.log(`✅ Remux concluído instantaneamente com 100% da qualidade original preservada!`);
+                        console.log(`✅ Remux concluído com sucesso com 100% da qualidade original preservada!`);
                         if (onProgress) onProgress(100);
                         resolve(outputPath);
                     } else {
