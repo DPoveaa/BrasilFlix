@@ -96,6 +96,7 @@ class TelegramUploader {
         console.log(`📤 Enviando vídeo de ${sizeMB} MB via MTProto para o grupo de armazenamento (${this.storageGroupId})...`);
 
         let lastLogTime = Date.now();
+        let uploadStartTime = Date.now();
 
         try {
             const client = await this.getClient();
@@ -104,6 +105,7 @@ class TelegramUploader {
                 caption: caption,
                 parseMode: 'md',
                 supportsStreaming: true,
+                workers: 8, // 8 conexões simultâneas em paralelo (velocidade máxima MTProto)
                 thumb: hasThumb ? thumbPath : undefined,
                 attributes: [
                     new Api.DocumentAttributeVideo({
@@ -116,14 +118,20 @@ class TelegramUploader {
                 progressCallback: (fraction) => {
                     const now = Date.now();
                     const percent = (fraction * 100).toFixed(1);
+                    const elapsedSec = Math.max(1, (now - uploadStartTime) / 1000);
+                    const uploadedMB = (parseFloat(sizeMB) * fraction).toFixed(1);
+                    const speedMbs = (uploadedMB / elapsedSec).toFixed(2);
+                    const remainingSec = speedMbs > 0 ? Math.max(0, Math.round((parseFloat(sizeMB) - uploadedMB) / speedMbs)) : 0;
+                    const remainingFormatted = VideoProcessor.formatDuration(remainingSec);
+
                     if (process.stdout.isTTY) {
-                        process.stdout.write(`\r📤 Enviando para o Telegram: ${percent}%... `);
-                    } else if (now - lastLogTime >= 5000) {
+                        process.stdout.write(`\r📤 [Upload Telegram] ${percent}% (${uploadedMB}/${sizeMB} MB) | ${speedMbs} MB/s | ⏳ Restante: ~${remainingFormatted} `);
+                    } else if (now - lastLogTime >= 4000) {
                         lastLogTime = now;
-                        console.log(`📤 [Upload Telegram] ${percent}% de ${sizeMB} MB enviado...`);
+                        console.log(`📤 [Upload Telegram] ${percent}% de ${sizeMB} MB enviado | ${speedMbs} MB/s | ⏳ Restante: ~${remainingFormatted}`);
                     }
                     if (onProgress) {
-                        onProgress({ percent: parseFloat(percent) });
+                        onProgress({ percent: parseFloat(percent), speed: `${speedMbs} MB/s` });
                     }
                 }
             });
