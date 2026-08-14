@@ -213,25 +213,45 @@ class QueueManager extends EventEmitter {
             throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
         }
 
-        const bestSource = sources[0];
-        console.log(`🎯 Melhor fonte selecionada: ${bestSource.title} (${bestSource.sizeMB} MB, ${bestSource.audio})`);
-
-        // 3. Download
+        // 3. Download com Fallback Automático entre as melhores opções
         job.status = 'downloading';
         this.saveQueue();
 
-        let downloadedMedia;
-        if (bestSource.magnet) {
-            downloadedMedia = await DownloaderManager.downloadTorrent(bestSource.magnet, (progress) => {
-                job.progress = progress.percent;
-                job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-            }, { title: job.title, season: job.season, episode: job.episode });
-        } else if (bestSource.url) {
-            const fileName = `${Date.now()}_${path.basename(bestSource.url) || 'video.mp4'}`;
-            downloadedMedia = await DownloaderManager.downloadHttp(bestSource.url, fileName, (progress) => {
-                job.progress = progress.percent;
-                job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-            }, { title: job.title, season: job.season, episode: job.episode });
+        let downloadedMedia = null;
+        let bestSource = null;
+        let lastError = null;
+
+        const maxAttempts = Math.min(3, sources.length);
+        for (let i = 0; i < maxAttempts; i++) {
+            const currentSource = sources[i];
+            console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio})`);
+            
+            try {
+                if (currentSource.magnet) {
+                    downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
+                        job.progress = progress.percent;
+                        job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
+                    }, { title: job.title, season: job.season, episode: job.episode });
+                } else if (currentSource.url) {
+                    const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
+                    downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
+                        job.progress = progress.percent;
+                        job.progressDetails = `${progress.downloaded} / ${progress.total}`;
+                    }, { title: job.title, season: job.season, episode: job.episode });
+                }
+
+                if (downloadedMedia && downloadedMedia.filePath) {
+                    bestSource = currentSource;
+                    break;
+                }
+            } catch (err) {
+                console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
+                lastError = err;
+            }
+        }
+
+        if (!downloadedMedia || !bestSource) {
+            throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
         }
 
         const rawFilePath = downloadedMedia.filePath;

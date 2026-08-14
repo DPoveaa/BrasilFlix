@@ -296,8 +296,11 @@ class DownloaderManager extends EventEmitter {
 
             let lastBytes = 0;
             let stalledSeconds = 0;
+            let elapsedSeconds = 0;
+
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
+                elapsedSeconds += 5;
                 const currentBytes = torrent.downloaded || 0;
                 if (currentBytes === lastBytes) {
                     stalledSeconds += 5;
@@ -306,11 +309,23 @@ class DownloaderManager extends EventEmitter {
                     lastBytes = currentBytes;
                 }
 
-                if (stalledSeconds >= 60 && torrent.progress < 0.01) {
+                // 1. Aborta se estiver completamente parado por 60s no início
+                if (stalledSeconds >= 60 && torrent.progress < 0.02) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para não travar a fila...`);
+                    console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para tentar outra fonte...`);
                     safeCleanup();
-                    reject(new Error('Download estagnado sem dados/seeders ativos.'));
+                    return reject(new Error('Download estagnado sem dados/seeders ativos.'));
+                }
+
+                // 2. Aborta se for um torrent muito pesado com velocidade crítica (< 0.4 MB/s após 90 segundos com previsão > 45 min)
+                const speedMB = torrent.downloadSpeed / (1024 * 1024);
+                const remainingSec = speedMB > 0 ? (torrent.length - currentBytes) / (speedMB * 1024 * 1024) : 99999;
+                
+                if (elapsedSeconds >= 90 && speedMB < 0.45 && remainingSec > 2700 && torrent.progress < 0.08) {
+                    process.stdout.write('\n');
+                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 45 min). Abortando para buscar fonte mais rápida...`);
+                    safeCleanup();
+                    return reject(new Error('Torrent com poucos seeders/velocidade insuficiente.'));
                 }
             }, 5000);
         });
