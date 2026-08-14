@@ -165,7 +165,7 @@ class VideoProcessor {
             }
         }
 
-        console.log(`🎬 Otimizando vídeo para 1080p Telegram (Codec: H.264, Preset: fast, CRF: 22)...`);
+        console.log(`🎬 Otimizando vídeo em QUALIDADE MÁXIMA 1080p (Codec: H.264, Preset: medium, CRF: 18, Áudio: 320k, Limite Seguro: 3.95GB)...`);
         if (portugueseAudioIndex !== null) {
             console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
         }
@@ -173,21 +173,22 @@ class VideoProcessor {
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
 
-            // Limite de segurança de 1950 MB para garantir upload no Telegram MTProto (limite de 2GB)
-            const safeMaxMB = 1950;
+            // Limite de segurança de 3950 MB para garantir upload no Telegram Premium MTProto (teto de 4GB)
+            const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
             const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
-            const maxVideoKbps = Math.max(800, maxTotalKbps - 192);
+            const audioBitrateKbps = 320;
+            const maxVideoKbps = Math.max(1200, maxTotalKbps - audioBitrateKbps);
 
             const args = [
                 '-i', inputPath,
-                '-vf', "scale='min(1920,iw)':-2", // Mantém 1080p nítido sem esticar
+                '-vf', "scale='min(1920,iw)':-2", // Mantém 1080p nativo ultra nítido
                 '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '22', // Excelente equilíbrio entre nitidez 1080p e tamanho reduzido
+                '-preset', 'medium', // Equilíbrio perfeito entre fidelidade máxima de detalhes e compressão
+                '-crf', '18', // Qualidade de estúdio visualmente indistinguível da fonte original
                 '-maxrate', `${maxVideoKbps}k`,
                 '-bufsize', `${maxVideoKbps * 2}k`,
                 '-c:a', 'aac',
-                '-b:a', '192k'
+                '-b:a', `${audioBitrateKbps}k`
             ];
 
             // Se encontrou a faixa específica em português no Multi-Áudio, mapeia ela como áudio padrão

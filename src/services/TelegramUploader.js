@@ -32,14 +32,19 @@ class TelegramUploader {
                 useIPv6: false
             });
 
-            console.log('🔌 Conectando ao Telegram MTProto (suporte a uploads de até 2GB)...');
-            await client.start({
-                botAuthToken: config.BOT_TOKEN
-            });
+            console.log('🔌 Conectando ao Telegram MTProto (suporte a uploads de até 4GB Premium)...');
+            if (config.TELEGRAM_SESSION && config.TELEGRAM_SESSION.trim() !== '') {
+                await client.connect();
+                console.log('✅ Cliente MTProto autenticado via Sessão Premium (Uploads de até 4GB desbloqueados)!');
+            } else {
+                await client.start({
+                    botAuthToken: config.BOT_TOKEN
+                });
+                console.log('✅ Cliente MTProto autenticado via Bot Token!');
+            }
 
             this.client = client;
             this.isClientReady = true;
-            console.log('✅ Cliente MTProto do Telegram conectado com sucesso para uploads de 2GB!');
             return client;
         })();
 
