@@ -48,6 +48,12 @@ class MessageHandler {
             return;
         }
 
+        // Se o arquivo já foi catalogado pelo próprio QueueManager, ignora
+        const jaExiste = this.catalogoManager.getItemPorMessageId(messageId);
+        if (jaExiste) {
+            return;
+        }
+
         const fileName = (video && video.file_name) || (document && document.file_name) || '';
         const textToProcess = caption.trim() || fileName.trim();
 
@@ -56,6 +62,25 @@ class MessageHandler {
         } else {
             await this.sugerirFormato(msg);
         }
+    }
+
+    determinarTipo(texto = '', descricao = '') {
+        const textoCompleto = `${texto} ${descricao}`.toLowerCase();
+        
+        const padroesSerie = [
+            /\b(?:s\d{1,2}|t\d{1,2})\b/i,
+            /\b(?:e\d{1,3}|ep\d{1,3}|episodio|episódio)\b/i,
+            /\b(?:temporada|season)\b/i,
+            /\b(?:dorama|kdrama|k-drama|anime)\b/i
+        ];
+
+        for (const padrao of padroesSerie) {
+            if (padrao.test(textoCompleto)) {
+                return 'serie';
+            }
+        }
+
+        return 'filme';
     }
 
     async sugerirFormato(msg) {
