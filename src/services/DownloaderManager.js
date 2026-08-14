@@ -146,10 +146,34 @@ class DownloaderManager extends EventEmitter {
 
             torrent.on('metadata', () => {
                 if (options.episode && torrent.files && torrent.files.length > 1) {
-                    const seasonNum = options.season || 1;
-                    const epNum = options.episode;
-                    const epRegex = new RegExp(`(s0?${seasonNum}[._ -]?e0?${epNum}|e0?${epNum}|ep0?${epNum}|episodio[._ -]?0?${epNum})\\b`, 'i');
-                    const found = torrent.files.find(f => epRegex.test(f.name));
+                    const seasonNum = parseInt(options.season || 1, 10);
+                    const epNum = parseInt(options.episode, 10);
+                    const epPadded2 = String(epNum).padStart(2, '0');
+                    const epPadded3 = String(epNum).padStart(3, '0');
+                    const sPadded = String(seasonNum).padStart(2, '0');
+
+                    // Padrões ordenados por especificidade
+                    const patterns = [
+                        new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}\\b`, 'i'),
+                        new RegExp(`s${sPadded}[._ -]*e${epPadded2}\\b`, 'i'),
+                        new RegExp(`\\b${seasonNum}x0*${epNum}\\b`, 'i'),
+                        new RegExp(`\\be0*${epNum}\\b`, 'i'),
+                        new RegExp(`\\bep0*${epNum}\\b`, 'i'),
+                        new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
+                        new RegExp(`[._ -]${epPadded2}[._ -]`, 'i'),
+                        new RegExp(`[._ -]${epPadded3}[._ -]`, 'i'),
+                        new RegExp(`episodio[._ -]*0*${epNum}\\b`, 'i')
+                    ];
+
+                    let found = null;
+                    for (const regex of patterns) {
+                        found = torrent.files.find(f => {
+                            const ext = path.extname(f.name).toLowerCase();
+                            return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext) && regex.test(f.name);
+                        });
+                        if (found) break;
+                    }
+
                     if (found) {
                         targetEpisodeFile = found;
                         try {
@@ -206,7 +230,7 @@ class DownloaderManager extends EventEmitter {
                 if (finished) return;
 
                 // Se o arquivo do episódio tiver 100% de progresso verificado
-                if (targetEpisodeFile && (targetEpisodeFile.progress >= 1 || targetEpisodeFile.done)) {
+                if (targetEpisodeFile && (targetEpisodeFile.progress >= 0.999 || targetEpisodeFile.done || (targetEpisodeFile.downloaded >= targetEpisodeFile.length && targetEpisodeFile.length > 0))) {
                     return onComplete();
                 }
 
