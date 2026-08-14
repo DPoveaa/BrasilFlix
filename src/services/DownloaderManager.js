@@ -49,7 +49,9 @@ class DownloaderManager extends EventEmitter {
                 }
             }
             this.client = new WebTorrentClass({
-                maxConns: 55,
+                maxConns: 85,
+                dht: true,
+                tracker: true,
                 downloadLimit: -1,
                 uploadLimit: 1024 * 50
             });
@@ -69,24 +71,25 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.moeking.me:6969/announce'
         ];
 
-        if (typeof magnetOrTorrent === 'string') {
-            const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
-            if (hashMatch) {
-                const cleanHash = hashMatch[1].toLowerCase();
-                const hashBuffer = Buffer.from(cleanHash, 'hex');
-                
-                // Extrai nome do torrent se houver
-                const nameMatch = magnetOrTorrent.match(/dn=([^&]+)/);
-                const name = nameMatch ? decodeURIComponent(nameMatch[1]) : cleanHash;
-
-                return {
-                    infoHash: cleanHash,
-                    infoHashBuffer: hashBuffer,
-                    name: name,
-                    announce: trackers,
-                    urlList: []
-                };
+        const str = String(magnetOrTorrent);
+        const hashMatch = str.match(/([a-fA-F0-9]{40})/);
+        if (hashMatch) {
+            const cleanHash = hashMatch[1].toLowerCase();
+            const hashBuffer = new Uint8Array(Buffer.from(cleanHash, 'hex'));
+            
+            const nameMatch = str.match(/dn=([^&]+)/);
+            let name = cleanHash;
+            if (nameMatch) {
+                try { name = decodeURIComponent(nameMatch[1]); } catch(e) {}
             }
+
+            return {
+                infoHash: cleanHash,
+                infoHashBuffer: hashBuffer,
+                name: name,
+                announce: trackers,
+                urlList: []
+            };
         }
         return magnetOrTorrent;
     }
@@ -104,7 +107,25 @@ class DownloaderManager extends EventEmitter {
             console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
 
             let torrent;
+            let watchdogInterval = null;
             const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+            const destroyTorrentSafely = () => {
+                try {
+                    if (watchdogInterval) clearInterval(watchdogInterval);
+                    this.activeTorrents.delete(torrentId);
+                    if (torrent) {
+                        try {
+                            if (torrent.infoHash && client.get && client.get(torrent.infoHash)) {
+                                client.remove(torrent.infoHash, { destroyStore: true }, () => {});
+                            }
+                        } catch (e) {}
+                        if (!torrent.destroyed) {
+                            torrent.destroy({ destroyStore: true }, () => {});
+                        }
+                    }
+                } catch (e) {}
+            };
 
             try {
                 torrent = client.add(torrentPayload, { 
@@ -112,6 +133,7 @@ class DownloaderManager extends EventEmitter {
                 });
                 this.activeTorrents.set(torrentId, torrent);
             } catch (err) {
+                destroyTorrentSafely();
                 return reject(new Error(`Falha ao adicionar torrent: ${err.message}`));
             }
 
@@ -146,10 +168,8 @@ class DownloaderManager extends EventEmitter {
             });
 
             torrent.on('done', async () => {
-                clearInterval(watchdogInterval);
                 process.stdout.write('\n');
                 console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
-                this.activeTorrents.delete(torrentId);
 
                 let largestFile = null;
                 for (const file of torrent.files) {
@@ -166,7 +186,7 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 const fullPath = path.join(this.downloadDir, largestFile.path);
-                torrent.destroy();
+                destroyTorrentSafely();
 
                 resolve({
                     filePath: fullPath,
@@ -177,14 +197,13 @@ class DownloaderManager extends EventEmitter {
             });
 
             torrent.on('error', (err) => {
-                clearInterval(watchdogInterval);
-                this.activeTorrents.delete(torrentId);
+                destroyTorrentSafely();
                 reject(new Error(`Falha no download do torrent: ${err.message}`));
             });
 
             let lastBytes = 0;
             let stalledSeconds = 0;
-            const watchdogInterval = setInterval(() => {
+            watchdogInterval = setInterval(() => {
                 const currentBytes = torrent.downloaded || 0;
                 if (currentBytes === lastBytes) {
                     stalledSeconds += 5;
@@ -194,11 +213,9 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 if (stalledSeconds >= 35 && torrent.progress < 0.01) {
-                    clearInterval(watchdogInterval);
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para não travar a fila...`);
-                    torrent.destroy();
-                    this.activeTorrents.delete(torrentId);
+                    destroyTorrentSafely();
                     reject(new Error('Download estagnado sem dados/seeders ativos.'));
                 }
             }, 5000);

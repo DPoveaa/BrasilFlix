@@ -405,7 +405,10 @@ class MediaSearchService {
     rankResults(results, query, options = {}) {
         if (!results || results.length === 0) return [];
 
-        return results.sort((a, b) => {
+        const withSeeds = results.filter(r => (r.seeders || 0) > 0);
+        const candidates = withSeeds.length > 0 ? withSeeds : results;
+
+        return candidates.sort((a, b) => {
             let scoreA = 0;
             let scoreB = 0;
 
@@ -418,13 +421,20 @@ class MediaSearchService {
             if (a.quality.includes('1080p')) scoreA += 100;
             if (b.quality.includes('1080p')) scoreB += 100;
 
-            scoreA += Math.min(300, (a.seeders || 0) * 15);
-            scoreB += Math.min(300, (b.seeders || 0) * 15);
+            // Prioriza muito releases com seeders comprovados
+            scoreA += Math.min(1000, (a.seeders || 0) * 20);
+            scoreB += Math.min(1000, (b.seeders || 0) * 20);
 
-            const sizeA = a.sizeBytes / (1024 * 1024);
-            const sizeB = b.sizeBytes / (1024 * 1024);
-            if (sizeA >= 700 && sizeA <= 5000) scoreA += 50;
-            if (sizeB >= 700 && sizeB <= 5000) scoreB += 50;
+            const sizeA = (a.sizeBytes || 0) / (1024 * 1024);
+            const sizeB = (b.sizeBytes || 0) / (1024 * 1024);
+
+            // Tamanho ideal entre 700MB e 5GB
+            if (sizeA >= 700 && sizeA <= 5000) scoreA += 150;
+            if (sizeB >= 700 && sizeB <= 5000) scoreB += 150;
+
+            // Penaliza arquivos monstruosos > 10GB que demoram horas ou estão sem seeds
+            if (sizeA > 10000) scoreA -= 500;
+            if (sizeB > 10000) scoreB -= 500;
 
             return scoreB - scoreA;
         });
