@@ -67,29 +67,29 @@ class DownloaderManager extends EventEmitter {
             throw new Error('Módulo WebTorrent não disponível.');
         }
 
-        // Anexar rastreadores públicos rápidos se for magnet link
-        let formattedMagnet = magnetOrTorrent;
-        if (typeof magnetOrTorrent === 'string' && magnetOrTorrent.startsWith('magnet:?')) {
-            const trackers = [
-                'udp://tracker.opentrackr.org:1337/announce',
-                'udp://open.stealth.si:80/announce',
-                'udp://tracker.torrent.eu.org:451/announce',
-                'udp://explodie.org:6969/announce',
-                'udp://tracker.moeking.me:6969/announce'
-            ];
-            trackers.forEach(tr => {
-                if (!formattedMagnet.includes(encodeURIComponent(tr))) {
-                    formattedMagnet += `&tr=${encodeURIComponent(tr)}`;
-                }
-            });
-        }
+        const trackers = [
+            'udp://tracker.opentrackr.org:1337/announce',
+            'udp://open.stealth.si:80/announce',
+            'udp://tracker.torrent.eu.org:451/announce',
+            'udp://explodie.org:6969/announce',
+            'udp://tracker.moeking.me:6969/announce'
+        ];
 
         return new Promise((resolve, reject) => {
-            console.log('📥 Iniciando download via Torrent:', formattedMagnet.substring(0, 60) + '...');
+            console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
 
-            const torrent = client.add(formattedMagnet, { path: this.downloadDir });
+            let torrent;
             const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-            this.activeTorrents.set(torrentId, torrent);
+
+            try {
+                torrent = client.add(magnetOrTorrent, { 
+                    path: this.downloadDir,
+                    announce: trackers
+                });
+                this.activeTorrents.set(torrentId, torrent);
+            } catch (err) {
+                return reject(new Error(`Falha ao adicionar torrent: ${err.message}`));
+            }
 
             let lastProgressTime = Date.now();
 
