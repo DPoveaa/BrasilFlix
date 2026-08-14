@@ -75,6 +75,15 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.moeking.me:6969/announce'
         ];
 
+        // Normaliza para o infoHash hexadecimal limpo de 40 caracteres (100% imune a erros de parse)
+        let torrentTarget = magnetOrTorrent;
+        if (typeof magnetOrTorrent === 'string') {
+            const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
+            if (hashMatch) {
+                torrentTarget = hashMatch[1].toLowerCase();
+            }
+        }
+
         return new Promise((resolve, reject) => {
             console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
 
@@ -82,7 +91,7 @@ class DownloaderManager extends EventEmitter {
             const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
             try {
-                torrent = client.add(magnetOrTorrent, { 
+                torrent = client.add(torrentTarget, { 
                     path: this.downloadDir,
                     announce: trackers
                 });
