@@ -142,6 +142,25 @@ class DownloaderManager extends EventEmitter {
 
             let lastProgressTime = Date.now();
             let lastLogTime = Date.now();
+            let targetEpisodeFile = null;
+
+            torrent.on('metadata', () => {
+                if (options.episode && torrent.files && torrent.files.length > 1) {
+                    const seasonNum = options.season || 1;
+                    const epNum = options.episode;
+                    const epRegex = new RegExp(`(s0?${seasonNum}[._ -]?e0?${epNum}|e0?${epNum}|ep0?${epNum}|episodio[._ -]?0?${epNum})\\b`, 'i');
+                    const found = torrent.files.find(f => epRegex.test(f.name));
+                    if (found) {
+                        targetEpisodeFile = found;
+                        // Desseleciona todos os outros arquivos do pack e foca o download exclusivamente no episódio
+                        try {
+                            torrent.deselect(0, torrent.pieces.length - 1, false);
+                            found.select();
+                            console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
+                        } catch (e) {}
+                    }
+                }
+            });
 
             torrent.on('download', () => {
                 if (finished) return;
@@ -151,7 +170,7 @@ class DownloaderManager extends EventEmitter {
                     const percent = (torrent.progress * 100).toFixed(1);
                     const speedMB = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
                     const downloadedStr = this.formatBytes(torrent.downloaded);
-                    const totalStr = this.formatBytes(torrent.length);
+                    const totalStr = this.formatBytes(targetEpisodeFile ? targetEpisodeFile.length : torrent.length);
 
                     const barLength = 25;
                     const filled = Math.min(barLength, Math.round((torrent.progress) * barLength));
@@ -187,12 +206,14 @@ class DownloaderManager extends EventEmitter {
                 process.stdout.write('\n');
                 console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
 
-                let largestFile = null;
-                for (const file of torrent.files) {
-                    const ext = path.extname(file.name).toLowerCase();
-                    if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
-                        if (!largestFile || file.length > largestFile.length) {
-                            largestFile = file;
+                let largestFile = targetEpisodeFile;
+                if (!largestFile) {
+                    for (const file of torrent.files) {
+                        const ext = path.extname(file.name).toLowerCase();
+                        if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
+                            if (!largestFile || file.length > largestFile.length) {
+                                largestFile = file;
+                            }
                         }
                     }
                 }
