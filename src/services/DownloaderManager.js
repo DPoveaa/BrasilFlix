@@ -48,6 +48,16 @@ class DownloaderManager extends EventEmitter {
         return WebTorrentClass;
     }
 
+    formatBytes(bytes) {
+        if (!bytes || isNaN(bytes) || bytes <= 0) return '0 MB';
+        const gb = bytes / (1024 * 1024 * 1024);
+        if (gb >= 1.0) {
+            return `${gb.toFixed(2)} GB`;
+        }
+        const mb = bytes / (1024 * 1024);
+        return `${mb.toFixed(1)} MB`;
+    }
+
     formatDuration(sec) {
         if (!sec || isNaN(sec) || sec < 0) return '00:00';
         const h = Math.floor(sec / 3600);
@@ -140,8 +150,8 @@ class DownloaderManager extends EventEmitter {
                     lastProgressTime = now;
                     const percent = (torrent.progress * 100).toFixed(1);
                     const speedMB = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
-                    const downloadedMB = (torrent.downloaded / (1024 * 1024)).toFixed(1);
-                    const totalMB = (torrent.length / (1024 * 1024)).toFixed(1);
+                    const downloadedStr = this.formatBytes(torrent.downloaded);
+                    const totalStr = this.formatBytes(torrent.length);
 
                     const barLength = 25;
                     const filled = Math.min(barLength, Math.round((torrent.progress) * barLength));
@@ -154,18 +164,18 @@ class DownloaderManager extends EventEmitter {
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
 
                     if (process.stdout.isTTY) {
-                        process.stdout.write(`\r📥 Baixando "${mediaTitle}": [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | ⏱️ ${elapsedFormatted} (⏳ ${remainingFormatted}) | Peers: ${torrent.numPeers} `);
+                        process.stdout.write(`\r📥 Baixando "${mediaTitle}": [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} (${speedMB} MB/s) | ⏱️ ${elapsedFormatted} (⏳ ${remainingFormatted}) | Peers: ${torrent.numPeers} `);
                     } else if (now - lastLogTime >= 5000) {
                         lastLogTime = now;
-                        console.log(`📥 [Download: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}`);
+                        console.log(`📥 [Download: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}`);
                     }
 
                     if (onProgress) {
                         onProgress({
                             percent: parseFloat(percent),
                             speed: `${speedMB} MB/s`,
-                            downloaded: `${downloadedMB} MB`,
-                            total: `${totalMB} MB`,
+                            downloaded: downloadedStr,
+                            total: totalStr,
                             timeRemaining: torrent.timeRemaining
                         });
                     }

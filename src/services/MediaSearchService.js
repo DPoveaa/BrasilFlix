@@ -420,8 +420,22 @@ class MediaSearchService {
             if (a.isWebDl) scoreA += 500;
             if (b.isWebDl) scoreB += 500;
 
-            if (a.quality.includes('1080p')) scoreA += 100;
-            if (b.quality.includes('1080p')) scoreB += 100;
+            // Prioridade máxima para 1080p Full HD e boa prioridade para 720p HD
+            const is1080pA = /\b(1080p|1080|fhd|fullhd)\b/i.test(a.title);
+            const is1080pB = /\b(1080p|1080|fhd|fullhd)\b/i.test(b.title);
+            if (is1080pA) scoreA += 400;
+            if (is1080pB) scoreB += 400;
+
+            const is720pA = /\b(720p|720|hd)\b/i.test(a.title) && !is1080pA;
+            const is720pB = /\b(720p|720|hd)\b/i.test(b.title) && !is1080pB;
+            if (is720pA) scoreA += 200;
+            if (is720pB) scoreB += 200;
+
+            // Desprioriza 4K/2160p (pesado demais para download/conversão sem ganho visual no Telegram)
+            const is4kA = /\b(2160p|4k|uhd)\b/i.test(a.title);
+            const is4kB = /\b(2160p|4k|uhd)\b/i.test(b.title);
+            if (is4kA) scoreA -= 500;
+            if (is4kB) scoreB -= 500;
 
             // Prioriza muito releases com seeders comprovados
             scoreA += Math.min(1000, (a.seeders || 0) * 20);
@@ -433,10 +447,6 @@ class MediaSearchService {
             // Tamanho ideal entre 700MB e 5GB
             if (sizeA >= 700 && sizeA <= 5000) scoreA += 150;
             if (sizeB >= 700 && sizeB <= 5000) scoreB += 150;
-
-            // Penaliza arquivos monstruosos > 10GB que demoram horas ou estão sem seeds
-            if (sizeA > 10000) scoreA -= 500;
-            if (sizeB > 10000) scoreB -= 500;
 
             return scoreB - scoreA;
         });
