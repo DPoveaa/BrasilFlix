@@ -48,6 +48,17 @@ class DownloaderManager extends EventEmitter {
         return WebTorrentClass;
     }
 
+    formatDuration(sec) {
+        if (!sec || isNaN(sec) || sec < 0) return '00:00';
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = Math.floor(sec % 60);
+        if (h > 0) {
+            return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+        }
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
     extractCleanHash(magnetOrTorrent) {
         if (typeof magnetOrTorrent === 'string') {
             const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
@@ -58,7 +69,7 @@ class DownloaderManager extends EventEmitter {
         return magnetOrTorrent;
     }
 
-    async downloadTorrent(magnetOrTorrent, onProgress = null) {
+    async downloadTorrent(magnetOrTorrent, onProgress = null, options = {}) {
         this.ensureDirectories();
         const WT = await this.getWebTorrentClass();
         if (!WT) {
@@ -66,6 +77,8 @@ class DownloaderManager extends EventEmitter {
         }
 
         const torrentTarget = this.extractCleanHash(magnetOrTorrent);
+        const mediaTitle = options.title || 'Mídia';
+        const startTime = Date.now();
 
         const trackers = [
             'udp://tracker.opentrackr.org:1337/announce',
@@ -79,7 +92,7 @@ class DownloaderManager extends EventEmitter {
         ];
 
         return new Promise((resolve, reject) => {
-            console.log('📥 Iniciando download via Torrent:', String(torrentTarget).substring(0, 40) + '...');
+            console.log(`📥 Iniciando download via Torrent: "${mediaTitle}" [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
             // Instância isolada por download para evitar poluição de sockets/DHT no Linux
             const client = new WT({
@@ -135,11 +148,16 @@ class DownloaderManager extends EventEmitter {
                     const empty = Math.max(0, barLength - filled);
                     const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
 
+                    const elapsedSec = Math.floor((now - startTime) / 1000);
+                    const elapsedFormatted = this.formatDuration(elapsedSec);
+                    const remainingSec = torrent.timeRemaining ? Math.floor(torrent.timeRemaining / 1000) : null;
+                    const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
+
                     if (process.stdout.isTTY) {
-                        process.stdout.write(`\r📥 Baixando: [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | Peers: ${torrent.numPeers} `);
+                        process.stdout.write(`\r📥 Baixando "${mediaTitle}": [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | ⏱️ ${elapsedFormatted} (⏳ ${remainingFormatted}) | Peers: ${torrent.numPeers} `);
                     } else if (now - lastLogTime >= 5000) {
                         lastLogTime = now;
-                        console.log(`📥 [Download] [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB | ${speedMB} MB/s | Peers: ${torrent.numPeers}`);
+                        console.log(`📥 [Download: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}`);
                     }
 
                     if (onProgress) {

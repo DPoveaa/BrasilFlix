@@ -225,13 +225,13 @@ class QueueManager extends EventEmitter {
             downloadedMedia = await DownloaderManager.downloadTorrent(bestSource.magnet, (progress) => {
                 job.progress = progress.percent;
                 job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-            });
+            }, { title: job.title });
         } else if (bestSource.url) {
             const fileName = `${Date.now()}_${path.basename(bestSource.url) || 'video.mp4'}`;
             downloadedMedia = await DownloaderManager.downloadHttp(bestSource.url, fileName, (progress) => {
                 job.progress = progress.percent;
                 job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-            });
+            }, { title: job.title });
         }
 
         const rawFilePath = downloadedMedia.filePath;
