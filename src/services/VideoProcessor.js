@@ -172,12 +172,20 @@ class VideoProcessor {
 
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
+
+            // Limite de segurança de 1950 MB para garantir upload no Telegram MTProto (limite de 2GB)
+            const safeMaxMB = 1950;
+            const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
+            const maxVideoKbps = Math.max(800, maxTotalKbps - 192);
+
             const args = [
                 '-i', inputPath,
                 '-vf', "scale='min(1920,iw)':-2", // Mantém 1080p nítido sem esticar
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '22', // Excelente equilíbrio entre nitidez 1080p e tamanho reduzido
+                '-maxrate', `${maxVideoKbps}k`,
+                '-bufsize', `${maxVideoKbps * 2}k`,
                 '-c:a', 'aac',
                 '-b:a', '192k'
             ];
