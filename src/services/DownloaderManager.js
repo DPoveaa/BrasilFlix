@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const config = require('../../config');
 
 let WebTorrentClass = null;
+let ParseTorrentClass = null;
 
 class DownloaderManager extends EventEmitter {
     constructor() {
@@ -51,7 +52,7 @@ class DownloaderManager extends EventEmitter {
             this.client = new WebTorrentClass({
                 maxConns: 55,
                 downloadLimit: -1,
-                uploadLimit: 1024 * 50 // Limita upload para não sobrecarregar banda local
+                uploadLimit: 1024 * 50
             });
             this.client.on('error', (err) => {
                 console.error('❌ Erro no cliente WebTorrent:', err.message);
@@ -67,6 +68,13 @@ class DownloaderManager extends EventEmitter {
             throw new Error('Módulo WebTorrent não disponível.');
         }
 
+        if (!ParseTorrentClass) {
+            try {
+                const ptModule = await import('parse-torrent');
+                ParseTorrentClass = ptModule.default || ptModule;
+            } catch (e) {}
+        }
+
         const trackers = [
             'udp://tracker.opentrackr.org:1337/announce',
             'udp://open.stealth.si:80/announce',
@@ -75,13 +83,25 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.moeking.me:6969/announce'
         ];
 
-        // Normaliza para o infoHash hexadecimal limpo de 40 caracteres (100% imune a erros de parse)
-        let torrentTarget = magnetOrTorrent;
+        // Extrai o hash de 40 caracteres se fornecido como magnet
+        let rawIdentifier = magnetOrTorrent;
         if (typeof magnetOrTorrent === 'string') {
             const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
             if (hashMatch) {
-                torrentTarget = hashMatch[1].toLowerCase();
+                rawIdentifier = hashMatch[1].toLowerCase();
             }
+        }
+
+        // Pré-parse com parse-torrent para garantir que o objeto seja 100% estruturado
+        let torrentPayload = rawIdentifier;
+        if (ParseTorrentClass) {
+            try {
+                const parsed = await ParseTorrentClass(rawIdentifier);
+                if (parsed && parsed.infoHash) {
+                    parsed.announce = trackers;
+                    torrentPayload = parsed;
+                }
+            } catch (e) {}
         }
 
         return new Promise((resolve, reject) => {
@@ -91,7 +111,7 @@ class DownloaderManager extends EventEmitter {
             const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
             try {
-                torrent = client.add(torrentTarget, { 
+                torrent = client.add(torrentPayload, { 
                     path: this.downloadDir,
                     announce: trackers
                 });
@@ -104,14 +124,13 @@ class DownloaderManager extends EventEmitter {
 
             torrent.on('download', () => {
                 const now = Date.now();
-                if (now - lastProgressTime > 800) { // Atualiza a cada 800ms
+                if (now - lastProgressTime > 800) {
                     lastProgressTime = now;
                     const percent = (torrent.progress * 100).toFixed(1);
                     const speedMB = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
                     const downloadedMB = (torrent.downloaded / (1024 * 1024)).toFixed(1);
                     const totalMB = (torrent.length / (1024 * 1024)).toFixed(1);
 
-                    // Barra visual de progresso
                     const barLength = 25;
                     const filled = Math.min(barLength, Math.round((torrent.progress) * barLength));
                     const empty = Math.max(0, barLength - filled);
@@ -137,7 +156,6 @@ class DownloaderManager extends EventEmitter {
                 console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
                 this.activeTorrents.delete(torrentId);
 
-                // Encontrar o maior arquivo de vídeo no torrent
                 let largestFile = null;
                 for (const file of torrent.files) {
                     const ext = path.extname(file.name).toLowerCase();
@@ -149,13 +167,10 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 if (!largestFile) {
-                    // Fallback para qualquer arquivo maior
                     largestFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
                 }
 
                 const fullPath = path.join(this.downloadDir, largestFile.path);
-
-                // Remover o torrent da memória sem apagar os dados baixados
                 torrent.destroy();
 
                 resolve({
@@ -172,7 +187,6 @@ class DownloaderManager extends EventEmitter {
                 reject(new Error(`Falha no download do torrent: ${err.message}`));
             });
 
-            // Watchdog ativo: detecta torrents estagnados em 0% ou com peers fantasmas sem dados
             let lastBytes = 0;
             let stalledSeconds = 0;
             const watchdogInterval = setInterval(() => {
@@ -210,7 +224,7 @@ class DownloaderManager extends EventEmitter {
 
         const totalBytes = parseInt(response.headers['content-length'] || 0, 10);
         let downloadedBytes = 0;
-        let lastReport = Date.now();
+        let lastProgressTime = Date.now();
 
         const writer = fs.createWriteStream(targetPath);
 
@@ -218,14 +232,19 @@ class DownloaderManager extends EventEmitter {
             response.data.on('data', (chunk) => {
                 downloadedBytes += chunk.length;
                 const now = Date.now();
-                if (now - lastReport > 1500) {
-                    lastReport = now;
-                    const percent = totalBytes > 0 ? ((downloadedBytes / totalBytes) * 100).toFixed(1) : 0;
+                if (now - lastProgressTime > 1000) {
+                    lastProgressTime = now;
+                    const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0;
+                    const downloadedMB = (downloadedBytes / (1024 * 1024)).toFixed(1);
+                    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+
+                    process.stdout.write(`\r📥 Baixando: ${percent.toFixed(1)}% | ${downloadedMB}/${totalMB} MB `);
+
                     if (onProgress) {
                         onProgress({
-                            percent: parseFloat(percent),
-                            downloaded: `${(downloadedBytes / (1024 * 1024)).toFixed(1)} MB`,
-                            total: `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
+                            percent: parseFloat(percent.toFixed(1)),
+                            downloaded: `${downloadedMB} MB`,
+                            total: `${totalMB} MB`
                         });
                     }
                 }
@@ -234,6 +253,7 @@ class DownloaderManager extends EventEmitter {
             response.data.pipe(writer);
 
             writer.on('finish', () => {
+                process.stdout.write('\n');
                 console.log(`✅ Download HTTP concluído: ${fileName}`);
                 resolve({
                     filePath: targetPath,
@@ -243,8 +263,9 @@ class DownloaderManager extends EventEmitter {
             });
 
             writer.on('error', (err) => {
+                writer.close();
                 fs.removeSync(targetPath);
-                reject(err);
+                reject(new Error(`Falha no download HTTP: ${err.message}`));
             });
         });
     }
@@ -253,10 +274,10 @@ class DownloaderManager extends EventEmitter {
         try {
             if (filePath && fs.existsSync(filePath)) {
                 await fs.remove(filePath);
-                console.log(`🧹 Arquivo temporário limpo: ${filePath}`);
+                console.log(`🗑️ Arquivo temporário removido: ${path.basename(filePath)}`);
             }
         } catch (e) {
-            console.error(`⚠️ Erro ao limpar arquivo temporário ${filePath}:`, e.message);
+            console.warn(`⚠️ Não foi possível remover arquivo ${filePath}:`, e.message);
         }
     }
 }
