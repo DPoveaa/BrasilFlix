@@ -210,7 +210,7 @@ class QueueManager extends EventEmitter {
                               `🔄 *Fique tranquilo!* Nosso sistema cadastrou seu pedido no radar e monitorará diariamente. Assim que a versão em Português for lançada, ela será baixada e você será notificado! 🍿`;
                 this.bot.sendMessage(job.userId, aviso, { parse_mode: 'Markdown' }).catch(() => {});
             }
-            throw new Error(`Nenhuma fonte em Português encontrada para "${searchQuery}".`);
+            throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
         }
 
         const bestSource = sources[0];

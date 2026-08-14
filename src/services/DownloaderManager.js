@@ -34,8 +34,19 @@ class DownloaderManager extends EventEmitter {
     async getClient() {
         if (!this.client) {
             if (!WebTorrentClass) {
-                const wtModule = await import('webtorrent');
-                WebTorrentClass = wtModule.default || wtModule;
+                try {
+                    const wtModule = await import('webtorrent');
+                    WebTorrentClass = wtModule.default || wtModule;
+                } catch (e1) {
+                    try {
+                        const modulePath = require.resolve('webtorrent');
+                        const wtModule = await import(`file://${modulePath}`);
+                        WebTorrentClass = wtModule.default || wtModule;
+                    } catch (e2) {
+                        console.error('❌ Falha ao carregar webtorrent:', e2.message);
+                        throw e2;
+                    }
+                }
             }
             this.client = new WebTorrentClass({
                 maxConns: 55,
