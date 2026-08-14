@@ -13,9 +13,23 @@ module.exports = {
     NOTIFICATION_GROUP_ID,
     MercadoPago_TOKEN,
     DATA_DIR: './data',
+    BACKUP_DIR: './data/backups',
+    DOWNLOAD_DIR: './downloads/temp',
     PEDIDOS_FILE: './data/pedidos.json',
     CATALOGO_FILE: './data/catalogo.json',
     ASSINATURAS_FILE: './data/assinaturas.json',
+    QUEUE_FILE: './data/queue.json',
+    // TMDB (The Movie Database)
+    TMDB_API_KEY: process.env.TMDB_API_KEY || 'a0482b47152e4749ca18f230f04224dd',
+    TMDB_LANGUAGE: 'pt-BR',
+    // Configurações de Download e Vídeo
+    VIDEO_MAX_SIZE_BYTES: 2 * 1024 * 1024 * 1024, // 2GB (Telegram limit)
+    TARGET_RESOLUTION: '1080p',
+    ALLOW_CINEMA_CAM: true, // Aceita versões gravadas de cinema quando forem dubladas em português
+    AUTO_UPGRADE_CAM: true,  // Atualiza automaticamente para 1080p WEB-DL assim que sair versão oficial
+    // AutoFeeder settings
+    AUTO_FEEDER_ENABLED: true,
+    AUTO_FEEDER_INTERVAL_HOURS: 4,
     // Configurações do Mercado Pago
     mercadopago: {
         access_token: MercadoPago_TOKEN,

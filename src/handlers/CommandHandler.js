@@ -1,11 +1,12 @@
 const config = require('../../config');
 
 class CommandHandler {
-    constructor(bot, pedidosManager, catalogoManager, assinaturaManager) {
+    constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null) {
         this.bot = bot;
         this.pedidosManager = pedidosManager;
         this.catalogoManager = catalogoManager;
         this.assinaturaManager = assinaturaManager;
+        this.queueManager = queueManager;
         this.pagamentosTemp = {}; // Inicializar o objeto de pagamentos temporários
         this.estadosTemporarios = {}; // Estados temporários para captura de mensagens
         this.testesGratuitos = {}; // Usuários que já usaram o teste gratuito
@@ -19,20 +20,19 @@ class CommandHandler {
         setInterval(() => {
             this.limparEstadosExpirados();
         }, 5 * 60 * 1000);
-
-
     }
 
     async setupBotCommands() {
         try {
             await this.bot.setMyCommands([
-                { command: 'start', description: '🎬 Iniciar o bot' },
-                { command: 'pedido', description: '📝 Fazer pedido de filme/série' },
-                { command: 'buscar', description: '🔍 Buscar no catálogo' },
-                { command: 'catalogo', description: '📚 Ver catálogo' },
-                { command: 'assinar', description: '💳 Assinar BrasilFlix' },
-                { command: 'minhaassinatura', description: '📋 Minha assinatura' },
-                { command: 'ajuda', description: '❓ Ajuda e comandos' }
+                { command: 'start', description: '🍿 Início / Menu Principal' },
+                { command: 'pedido', description: '🎬 Pedir Filme ou Série' },
+                { command: 'buscar', description: '🔍 Buscar no Catálogo' },
+                { command: 'catalogo', description: '📚 Ver Catálogo' },
+                { command: 'fila', description: '⚡ Status de Downloads' },
+                { command: 'assinar', description: '💎 Assinar VIP' },
+                { command: 'rebaixar', description: '🔄 Re-baixar / Atualizar Mídia' },
+                { command: 'ajuda', description: '❓ Dúvidas e Ajuda' }
             ]);
             console.log('✅ Comandos do bot configurados com sucesso!');
         } catch (error) {
@@ -40,176 +40,169 @@ class CommandHandler {
         }
     }
 
-    async handleStart(msg) {
+    async handleAssinanteStart(msg, callbackQuery = null) {
         const chatId = msg.chat.id;
         const username = msg.from.username || msg.from.first_name;
-        const userId = msg.from.id;
+        const stats = this.catalogoManager.getEstatisticas();
         
-        console.log(`🚀 /start chamado por usuário ${userId} (${username})`);
-        
-        // Verificar se é admin
-        if (userId === config.ADMIN_ID) {
-            console.log(`👑 Usuário ${userId} é admin, mostrando menu admin`);
-            await this.handleAdminStart(msg);
-            return;
-        }
-        
-        // Verificar se é assinante
-        const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
-        console.log(`🔍 Usuário ${userId} é assinante? ${isAssinante}`);
-        
-        if (isAssinante) {
-            console.log(`✅ Mostrando menu de assinante para ${userId}`);
-            await this.handleAssinanteStart(msg);
-        } else {
-            console.log(`❌ Mostrando menu de não assinante para ${userId}`);
-            await this.handleNaoAssinanteStart(msg);
-        }
-    }
-
-    async handleAssinanteStart(msg) {
-        const chatId = msg.chat.id;
-        const username = msg.from.username || msg.from.first_name;
-        
-        const mensagem = `🎬 *BrasilFlix - Sua Central de Entretenimento*\n\n` +
-                        `Olá ${username}! 🎉\n\n` +
-                        `🎭 *Milhares de filmes e séries*\n` +
-                        `🚀 *Entrega rápida e segura*\n` +
-                        `⭐ *Prioridade para assinantes*\n\n` +
-                        `Status: 🟢 Assinante Ativo`;
+        const mensagem = `🍿 *BrasilFlix VIP*\n\n` +
+                        `Olá, *${username}*! Seu acesso está 100% ativo.\n\n` +
+                        `✨ *Qualidade:* 1080p Full HD & Áudio PT-BR\n` +
+                        `📚 *Catálogo:* ${stats.totalFilmes} Filmes | ${stats.totalSeries} Séries\n` +
+                        `⭐ *Status:* 🟢 Assinante VIP`;
 
         const keyboard = {
             inline_keyboard: [
                 [
                     { text: '🎬 Fazer Pedido', callback_data: 'pedido' },
-                    { text: '🔍 Buscar', callback_data: 'buscar' }
+                    { text: '🔍 Buscar Título', callback_data: 'buscar' }
                 ],
                 [
-                    { text: '📚 Catálogo', callback_data: 'catalogo' },
-                    { text: '📝 Ver Pedidos', callback_data: 'ver_pedidos' }
+                    { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
+                    { text: '📝 Meus Pedidos', callback_data: 'ver_pedidos' }
                 ],
                 [
-                    { text: '💳 Minha Assinatura', callback_data: 'minha_assinatura' },
-                    { text: '❓ Como Funciona', callback_data: 'como_funciona' }
+                    { text: '⚡ Status da Fila', callback_data: 'menu_fila' },
+                    { text: '💳 Minha Assinatura', callback_data: 'minha_assinatura' }
+                ],
+                [
+                    { text: '❓ Como Funciona', callback_data: 'como_funciona' },
+                    { text: '💬 Suporte', callback_data: 'suporte' }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
-    async handleNaoAssinanteStart(msg) {
+    async handleNaoAssinanteStart(msg, callbackQuery = null) {
         const chatId = msg.chat.id;
         const username = msg.from.username || msg.from.first_name;
         const userId = msg.from.id;
+        const stats = this.catalogoManager.getEstatisticas();
         
-        console.log(`🎬 Gerando menu não assinante para ${userId} (${username})`);
-        
-        // Verificar se já usou o teste gratuito
         const jaUsouTeste = this.verificarTesteGratuitoUsado(userId);
-        console.log(`🎁 Usuário ${userId} já usou teste gratuito? ${jaUsouTeste}`);
         
-        let mensagem = `🎬 *BrasilFlix - Sua Central de Entretenimento*\n\n` +
-                       `Olá ${username}! 🎉\n\n`;
+        let mensagem = `🍿 *BrasilFlix Oficial*\n\n` +
+                       `Olá, *${username}*! Assista aos melhores filmes, séries e doramas dublados em 1080p direto no Telegram.\n\n` +
+                       `📚 *Catálogo:* ${stats.totalFilmes} Filmes | ${stats.totalSeries} Séries\n`;
         
         if (jaUsouTeste) {
-            console.log(`❌ Usuário ${userId} já usou teste, mostrando menu sem teste`);
-            mensagem += `🎭 *Milhares de filmes e séries disponíveis*\n` +
-                       `🚀 *Entrega rápida e segura*\n` +
-                       `⭐ *Prioridade para assinantes*\n\n` +
-                       `Status: 🔴 Sem Assinatura\n` +
-                       `🎁 *Teste Gratuito:* ❌ Já utilizado\n\n` +
-                       `💡 *Assine agora para acessar todo o conteúdo!*`;
+            mensagem += `⭐ *Status:* 🔴 Não Assinante\n\n` +
+                        `💡 *Assine agora para ter acesso ilimitado e pedir lançamentos!*`;
         } else {
-            console.log(`✅ Usuário ${userId} tem teste disponível, mostrando menu com teste`);
-            mensagem += `🎭 *Milhares de filmes e séries disponíveis*\n` +
-                       `🚀 *Entrega rápida e segura*\n` +
-                       `⭐ *Prioridade para assinantes*\n\n` +
-                       `Status: 🔴 Sem Assinatura\n` +
-                       `🎁 *Teste Gratuito:* ✅ Disponível (1 filme)\n\n` +
-                       `💡 *Teste gratuitamente antes de assinar!*`;
+            mensagem += `⭐ *Status:* 🎁 Teste Gratuito Disponível (1 filme)\n\n` +
+                        `💡 *Aproveite seu teste antes de assinar!*`;
         }
 
         const keyboard = {
-            inline_keyboard: [
-                [
-                    { text: '🎬 Fazer Pedido', callback_data: 'pedido' },
-                    { text: '🔍 Buscar', callback_data: 'buscar' }
-                ],
-                [
-                    { text: '📚 Catálogo', callback_data: 'catalogo' },
-                    { text: '📝 Ver Pedidos', callback_data: 'ver_pedidos' }
-                ]
-            ]
+            inline_keyboard: []
         };
 
-        // Adicionar botão de teste gratuito se disponível
         if (!jaUsouTeste) {
             keyboard.inline_keyboard.push([
-                { text: '🎁 Teste Gratuito (1 filme)', callback_data: 'teste_gratuito' }
+                { text: '🎁 Resgatar Teste Gratuito', callback_data: 'teste_gratuito' }
             ]);
         }
 
         keyboard.inline_keyboard.push([
-            { text: '💎 Assinar', callback_data: 'assinatura' },
+            { text: '💎 Planos & Assinar', callback_data: 'assinatura' },
+            { text: '🔍 Buscar Título', callback_data: 'buscar' }
+        ]);
+
+        keyboard.inline_keyboard.push([
+            { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
             { text: '❓ Como Funciona', callback_data: 'como_funciona' }
         ]);
 
         keyboard.inline_keyboard.push([
-            { text: '📞 Suporte', callback_data: 'suporte' }
+            { text: '💬 Falar com Suporte', callback_data: 'suporte' }
         ]);
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
-    async handleAdminStart(msg) {
+    async handleAdminStart(msg, callbackQuery = null) {
         const chatId = msg.chat.id;
         const username = msg.from.username || msg.from.first_name;
         
-        // Verificar se há pedidos pendentes
         const pedidos = this.pedidosManager.getPedidos();
         const pedidosPendentes = pedidos.filter(p => !p.processado);
-        const notificacaoPedidos = pedidosPendentes.length > 0 ? 
-            `\n\n🔔 *${pedidosPendentes.length} pedido(s) pendente(s)!*` : '';
+        const stats = this.catalogoManager.getEstatisticas();
+        const camCount = (this.catalogoManager.buscarFilmesCam() || []).length;
+        const filaRestante = this.queueManager ? this.queueManager.queue.filter(j => j.status === 'queued').length : 0;
         
-        const mensagem = `👑 *Painel Administrativo - BrasilFlix*\n\n` +
-                        `Bem-vindo, ${username}! 🎉\n\n` +
-                        `🔧 *Gerencie seu bot com facilidade*${notificacaoPedidos}`;
+        const mensagem = `👑 *Painel Administrativo — BrasilFlix*\n\n` +
+                        `Olá, *${username}*!\n\n` +
+                        `📊 *Catálogo:* ${stats.totalFilmes} Filmes | ${stats.totalSeries} Séries\n` +
+                        `📹 *Qualidade Cinema (CAM):* ${camCount} filme(s)\n` +
+                        `⚡ *Fila Ativa:* ${filaRestante} downloads aguardando\n` +
+                        `🔔 *Pedidos Pendentes:* ${pedidosPendentes.length}`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: `📝 Ver Pedidos${pedidosPendentes.length > 0 ? ` (${pedidosPendentes.length})` : ''}`, callback_data: 'admin_pedidos' },
-                    { text: '💳 Ver Assinaturas', callback_data: 'admin_assinaturas' }
+                    { text: `📝 Pedidos (${pedidosPendentes.length})`, callback_data: 'admin_pedidos' },
+                    { text: '💳 Assinaturas', callback_data: 'admin_assinaturas' }
+                ],
+                [
+                    { text: '⚡ Fila de Download', callback_data: 'menu_fila' },
+                    { text: '🔄 Re-baixar Mídia', callback_data: 'admin_rebaixar_prompt' }
+                ],
+                [
+                    { text: '➕ Adicionar Mídia', callback_data: 'admin_adicionar' },
+                    { text: '🗑️ Catálogo', callback_data: 'admin_gerenciar_catalogo' }
                 ],
                 [
                     { text: '📊 Estatísticas', callback_data: 'admin_stats' },
-                    { text: '➕ Adicionar Filme', callback_data: 'admin_adicionar' }
-                ],
-
-                [
-                    { text: '🗑️ Gerenciar Catálogo', callback_data: 'admin_gerenciar_catalogo' }
-                ],
-                [
                     { text: '🧪 Testar Menu Cliente', callback_data: 'admin_testar_cliente' }
-                ],
-                [
-                    { text: '✅ Criar Assinatura Teste', callback_data: 'admin_criar_assinatura_teste' },
-                    { text: '❌ Remover Assinatura Teste', callback_data: 'admin_remover_assinatura_teste' }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
+    }
+
+    async handleRebaixar(msg, match) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        
+        if (userId !== config.ADMIN_ID) {
+            await this.bot.sendMessage(chatId, '❌ Comando exclusivo para administradores.');
+            return;
+        }
+
+        if (!match || !match[1]) {
+            await this.bot.sendMessage(chatId, 
+                'ℹ️ *Como usar:* `/rebaixar <nome do filme ou série>`\n' +
+                'Exemplo: `/rebaixar Homem-Aranha`\n\n' +
+                '💡 *Função:* Força a busca por uma nova versão em alta definição (1080p WEB-DL / BluRay), baixa com prioridade máxima e substitui o arquivo no catálogo.',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        const nome = match[1].trim();
+        await this.bot.sendMessage(chatId, `🔄 Buscando nova versão em alta qualidade para: *${nome}*...`, { parse_mode: 'Markdown' });
+
+        if (this.queueManager) {
+            this.queueManager.addJob(nome, 'filme', 1, {
+                userId: userId,
+                username: 'Admin',
+                isUpgrade: true,
+                allowCam: false
+            });
+            await this.bot.sendMessage(chatId, `✅ *"${nome}"* foi adicionado ao topo da fila de downloads com [Prioridade Máxima]!\n\nUse /fila para acompanhar.`, { parse_mode: 'Markdown' });
+        }
     }
 
     async handleHelp(msg) {
@@ -280,6 +273,15 @@ class CommandHandler {
         // Adicionar pedido
         const pedido = this.pedidosManager.adicionarPedido(userId, username, nome, '', isAssinante);
         
+        // Se temos QueueManager, enfileira o download inteligente com prioridade alta para assinantes
+        if (this.queueManager) {
+            const { PRIORITIES } = require('../managers/QueueManager');
+            this.queueManager.addJob(nome, 'filme', isAssinante ? PRIORITIES.USER : PRIORITIES.FEEDER, {
+                userId,
+                username
+            });
+        }
+        
         const prioridade = isAssinante ? '🔥 *PRIORIDADE ALTA (Assinante)*' : '📝 *Pedido Normal*';
         
         const mensagemConfirmacao = `📝 *Pedido registrado com sucesso!*\n\n` +
@@ -288,12 +290,37 @@ class CommandHandler {
                                    `📅 *Data:* ${new Date(pedido.data).toLocaleDateString('pt-BR')}\n` +
                                    `🆔 *ID:* ${pedido.id}\n` +
                                    `⭐ *Status:* ${prioridade}\n\n` +
-                                   `Seu pedido foi adicionado à lista e será processado em breve!`;
+                                   `🚀 *O motor automatizado BrasilFlix já iniciou a busca e o download em 1080p Full HD!* Assim que for concluído, você receberá a notificação aqui. Use /fila para acompanhar.`;
 
         await this.bot.sendMessage(chatId, mensagemConfirmacao, { parse_mode: 'Markdown' });
 
         // Notificar administradores
         console.log(`📝 Novo pedido: ${nome} por ${username} ${isAssinante ? '(Assinante)' : ''} (ID: ${pedido.id})`);
+    }
+
+    async handleFila(msg) {
+        const chatId = msg.chat.id;
+        if (!this.queueManager) {
+            await this.bot.sendMessage(chatId, 'ℹ️ Sistema de fila em inicialização.');
+            return;
+        }
+
+        const status = this.queueManager.getStatus();
+        let mensagem = `⚡ *Status da Fila de Downloads BrasilFlix*\n\n`;
+        
+        if (status.activeTask) {
+            mensagem += `🚀 *Processando Agora (1080p):*\n` +
+                        `🎬 *Título:* ${status.activeTask.title}\n` +
+                        `📊 *Progresso:* ${status.activeTask.progress}%\n` +
+                        `ℹ️ *Detalhes:* ${status.activeTask.progressDetails || 'Processando...'}\n\n`;
+        } else {
+            mensagem += `💤 *Fila Ociosa:* Nenhum download ativo no momento.\n\n`;
+        }
+
+        mensagem += `📋 *Estatísticas:* Total: ${status.total} | Na Fila: ${status.queued} | Concluídos: ${status.completed}\n\n` +
+                    `💡 *Dica:* Seus pedidos entram automaticamente com Prioridade Alta!`;
+
+        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
     }
 
     buscarSimilares(nome) {
@@ -828,7 +855,35 @@ class CommandHandler {
                 return;
             }
 
+            // Callbacks de Temporadas e Episódios de Séries / Doramas
+            if (data.startsWith('temp_')) {
+                const parts = data.split('_');
+                const serieId = parts[1];
+                const seasonNum = parseInt(parts[2], 10);
+                await this.handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery);
+                return;
+            }
+
+            if (data.startsWith('ep_')) {
+                const parts = data.split('_');
+                const serieId = parts[1];
+                const seasonNum = parseInt(parts[2], 10);
+                const epNum = parseInt(parts[3], 10);
+                await this.handleEpisodioSelect(chatId, userId, serieId, seasonNum, epNum, callbackQuery);
+                return;
+            }
+
+            if (data.startsWith('ver_')) {
+                const messageId = parseInt(data.replace('ver_', ''), 10);
+                await this.handleVerDireto(chatId, userId, messageId, callbackQuery);
+                return;
+            }
+
             switch (data) {
+                case 'fila':
+                case 'fila_status':
+                    await this.handleFila({ chat: { id: chatId } });
+                    break;
                 case 'pedido':
                     await this.handlePedidoButton(chatId, userId, callbackQuery);
                     break;
@@ -867,10 +922,18 @@ class CommandHandler {
                     break;
                 // Callbacks de navegação do catálogo
                 case 'catalogo_filmes':
-                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery);
+                case 'catalogo_filmes_dublados':
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'dublado');
+                    break;
+                case 'catalogo_filmes_legendados':
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'legendado');
                     break;
                 case 'catalogo_series':
-                    await this.handleCatalogoSeries(chatId, userId, callbackQuery);
+                case 'catalogo_series_dubladas':
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'dublado');
+                    break;
+                case 'catalogo_series_legendadas':
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'legendado');
                     break;
                 case 'voltar_menu':
                     await this.handleVoltarMenu(chatId, userId, callbackQuery);
@@ -930,7 +993,19 @@ class CommandHandler {
                 case 'mudar_plano':
                     await this.handleMudarPlano(chatId, userId, callbackQuery);
                     break;
-                // Admin callbacks
+                case 'menu_fila':
+                    await this.handleFila({ chat: { id: chatId }, from: { id: userId } });
+                    break;
+                case 'admin_rebaixar_prompt':
+                    await this.bot.sendMessage(chatId, 
+                        '🔄 *Re-baixar / Atualizar Mídia*\n\n' +
+                        'Envie o comando no seguinte formato:\n' +
+                        '`/rebaixar <nome do filme ou série>`\n\n' +
+                        '*Exemplo:* `/rebaixar Homem-Aranha`\n\n' +
+                        '✨ O bot buscará a melhor versão oficial 1080p WEB-DL / BluRay e substituirá automaticamente no catálogo!',
+                        { parse_mode: 'Markdown' }
+                    );
+                    break;
                 case 'admin_pedidos':
                     await this.handleAdminPedidosButton(chatId, userId, callbackQuery);
                     break;
@@ -1147,16 +1222,20 @@ class CommandHandler {
         const stats = this.catalogoManager.getEstatisticas();
         
         const mensagem = `📚 *Catálogo BrasilFlix*\n\n` +
-                        `🎬 *Filmes:* ${stats.totalFilmes}\n` +
-                        `📺 *Séries:* ${stats.totalSeries}\n` +
-                        `📊 *Total:* ${stats.total}\n\n` +
+                        `🎬 *Filmes:* ${stats.totalFilmes} (${stats.totalFilmesDublados} Dublados | ${stats.totalFilmesLegendados} Legendados)\n` +
+                        `📺 *Séries:* ${stats.totalSeries} (${stats.totalSeriesDubladas} Dubladas | ${stats.totalSeriesLegendadas} Legendadas)\n` +
+                        `📊 *Total de Títulos:* ${stats.total}\n\n` +
                         `Escolha uma categoria para navegar:`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: `🎬 Filmes (${stats.totalFilmes})`, callback_data: 'catalogo_filmes' },
-                    { text: `📺 Séries (${stats.totalSeries})`, callback_data: 'catalogo_series' }
+                    { text: `🎬 Filmes Dublados (${stats.totalFilmesDublados})`, callback_data: 'catalogo_filmes_dublados' },
+                    { text: `💬 Filmes Legendados (${stats.totalFilmesLegendados})`, callback_data: 'catalogo_filmes_legendados' }
+                ],
+                [
+                    { text: `📺 Séries Dubladas (${stats.totalSeriesDubladas})`, callback_data: 'catalogo_series_dubladas' },
+                    { text: `💬 Séries Legendadas (${stats.totalSeriesLegendadas})`, callback_data: 'catalogo_series_legendadas' }
                 ],
                 [
                     { text: '🔍 Buscar no Catálogo', callback_data: 'buscar' }
@@ -1167,10 +1246,10 @@ class CommandHandler {
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async handleAssinaturaButton(chatId, userId, callbackQuery) {
@@ -1630,27 +1709,44 @@ class CommandHandler {
         });
     }
 
-    async handleCatalogoFilmes(chatId, userId, callbackQuery) {
-        const filmes = this.catalogoManager.catalogo.filmes;
+    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+        let filmes = this.catalogoManager.catalogo.filmes;
+        let tituloCategoria = '🎬 *Filmes Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            filmes = this.catalogoManager.getFilmesDublados();
+            tituloCategoria = '🎬 *Filmes Dublados*';
+        } else if (audioFiltro === 'legendado') {
+            filmes = this.catalogoManager.getFilmesLegendados();
+            tituloCategoria = '💬 *Filmes Legendados*';
+        }
         
         if (filmes.length === 0) {
-            await this.bot.sendMessage(chatId, 
-                '📭 Nenhum filme encontrado no catálogo no momento.',
-                { parse_mode: 'Markdown' }
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum título encontrado em ${tituloCategoria} no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
             );
             return;
         }
 
-        // Criar botões para os filmes (máximo 8 por página)
         const filmesPorPagina = 8;
         const paginas = Math.ceil(filmes.length / filmesPorPagina);
-        const paginaAtual = 0; // Por enquanto sempre mostra a primeira página
+        const paginaAtual = 0;
         
         const inicio = paginaAtual * filmesPorPagina;
         const fim = Math.min(inicio + filmesPorPagina, filmes.length);
         const filmesPagina = filmes.slice(inicio, fim);
 
-        const mensagem = `🎬 *Filmes Disponíveis*\n\n` +
+        const mensagem = `${tituloCategoria}\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
                         `Clique em um filme para recebê-lo:`;
 
@@ -1658,17 +1754,16 @@ class CommandHandler {
             inline_keyboard: []
         };
 
-        // Adicionar botões dos filmes
         filmesPagina.forEach(filme => {
-            const nomeExibicao = filme.nome.length > 30 ? 
-                filme.nome.substring(0, 27) + '...' : filme.nome;
+            const audioBadge = filme.audio && filme.audio.toLowerCase().includes('legendado') ? '💬 [LEG]' : '🔊 [DUB]';
+            const nomeExibicao = filme.nome.length > 25 ? 
+                filme.nome.substring(0, 22) + '...' : filme.nome;
             
             keyboard.inline_keyboard.push([
-                { text: `🎬 ${nomeExibicao}`, callback_data: `enviar_filme_${filme.id}` }
+                { text: `${audioBadge} ${nomeExibicao}`, callback_data: `enviar_filme_${filme.id}` }
             ]);
         });
 
-        // Adicionar botões de navegação
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
@@ -1688,33 +1783,50 @@ class CommandHandler {
             { text: '🔙 Voltar', callback_data: 'catalogo' }
         ]);
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
-    async handleCatalogoSeries(chatId, userId, callbackQuery) {
-        const series = this.catalogoManager.catalogo.series;
+    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+        let series = this.catalogoManager.catalogo.series;
+        let tituloCategoria = '📺 *Séries Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            series = this.catalogoManager.getSeriesDubladas();
+            tituloCategoria = '📺 *Séries Dubladas*';
+        } else if (audioFiltro === 'legendado') {
+            series = this.catalogoManager.getSeriesLegendadas();
+            tituloCategoria = '💬 *Séries Legendadas*';
+        }
         
         if (series.length === 0) {
-            await this.bot.sendMessage(chatId, 
-                '📭 Nenhuma série encontrada no catálogo no momento.',
-                { parse_mode: 'Markdown' }
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhuma série encontrada em ${tituloCategoria} no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
             );
             return;
         }
 
-        // Criar botões para as séries (máximo 8 por página)
         const seriesPorPagina = 8;
         const paginas = Math.ceil(series.length / seriesPorPagina);
-        const paginaAtual = 0; // Por enquanto sempre mostra a primeira página
+        const paginaAtual = 0;
         
         const inicio = paginaAtual * seriesPorPagina;
         const fim = Math.min(inicio + seriesPorPagina, series.length);
         const seriesPagina = series.slice(inicio, fim);
 
-        const mensagem = `📺 *Séries Disponíveis*\n\n` +
+        const mensagem = `${tituloCategoria}\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${series.length} séries\n\n` +
                         `Clique em uma série para recebê-la:`;
 
@@ -1722,17 +1834,16 @@ class CommandHandler {
             inline_keyboard: []
         };
 
-        // Adicionar botões das séries
         seriesPagina.forEach(serie => {
-            const nomeExibicao = serie.nome.length > 30 ? 
-                serie.nome.substring(0, 27) + '...' : serie.nome;
+            const audioBadge = serie.audio && serie.audio.toLowerCase().includes('legendado') ? '💬 [LEG]' : '🔊 [DUB]';
+            const nomeExibicao = serie.nome.length > 25 ? 
+                serie.nome.substring(0, 22) + '...' : serie.nome;
             
             keyboard.inline_keyboard.push([
-                { text: `📺 ${nomeExibicao}`, callback_data: `enviar_serie_${serie.id}` }
+                { text: `${audioBadge} ${nomeExibicao}`, callback_data: `enviar_serie_${serie.id}` }
             ]);
         });
 
-        // Adicionar botões de navegação
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
@@ -1752,50 +1863,68 @@ class CommandHandler {
             { text: '🔙 Voltar', callback_data: 'catalogo' }
         ]);
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async handleVoltarMenu(chatId, userId, callbackQuery) {
-        console.log(`🔄 handleVoltarMenu chamado para usuário ${userId}`);
-        
-        // Verificar se há operações em andamento
         if (this.estadosTemporarios[userId]) {
             delete this.estadosTemporarios[userId];
-            console.log(`🔄 Operação cancelada para usuário ${userId} - voltando ao menu`);
         }
         
-        // Verificar se é assinante para mostrar o menu correto
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
-        console.log(`🔍 handleVoltarMenu - Usuário ${userId} é assinante? ${isAssinante}`);
-        
         if (isAssinante) {
-            console.log(`✅ handleVoltarMenu - Mostrando menu de assinante para ${userId}`);
-            await this.handleAssinanteStart({ chat: { id: chatId }, from: { id: userId, username: 'Usuário' } });
+            await this.handleAssinanteStart({ chat: { id: chatId }, from: { id: userId, username: 'Usuário' } }, callbackQuery);
         } else {
-            console.log(`❌ handleVoltarMenu - Mostrando menu de não assinante para ${userId}`);
-            await this.handleNaoAssinanteStart({ chat: { id: chatId }, from: { id: userId, username: 'Usuário' } });
+            await this.handleNaoAssinanteStart({ chat: { id: chatId }, from: { id: userId, username: 'Usuário' } }, callbackQuery);
         }
     }
 
     async handleVoltarMenuAdmin(chatId, userId, callbackQuery) {
-        // Verificar se há operações em andamento
         if (this.estadosTemporarios[userId]) {
             delete this.estadosTemporarios[userId];
-            console.log(`🔄 Operação cancelada para usuário ${userId} - voltando ao menu admin`);
         }
         
-        await this.handleAdminStart({ chat: { id: chatId }, from: { id: userId, username: 'Admin' } });
+        await this.handleAdminStart({ chat: { id: chatId }, from: { id: userId, username: 'Admin' } }, callbackQuery);
+    }
+
+    async sendOrEdit(chatId, text, options = {}, callbackQuery = null) {
+        if (callbackQuery && callbackQuery.message) {
+            try {
+                return await this.bot.editMessageText(text, {
+                    chat_id: chatId,
+                    message_id: callbackQuery.message.message_id,
+                    parse_mode: options.parse_mode || 'Markdown',
+                    reply_markup: options.reply_markup,
+                    disable_web_page_preview: options.disable_web_page_preview
+                });
+            } catch (err) {
+                // Se a mensagem for idêntica ou não puder ser editada, continua
+                if (err.message && err.message.includes('message is not modified')) {
+                    return callbackQuery.message;
+                }
+            }
+        }
+        return await this.bot.sendMessage(chatId, text, options);
     }
 
     async handleEnviarFilme(chatId, userId, filmeId, callbackQuery) {
-        // Verificar se é assinante
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
+        const jaUsouTeste = this.verificarTesteGratuitoUsado(userId);
+
+        // Se não for assinante
         if (!isAssinante) {
-            await this.mostrarMensagemConversao(chatId, userId, callbackQuery);
-            return;
+            if (!jaUsouTeste) {
+                // Consome o teste gratuito
+                this.marcarTesteGratuitoUsado(userId);
+                console.log(`🎁 Usuário ${userId} utilizou seu teste gratuito no filme ID ${filmeId}`);
+            } else {
+                // Já usou o teste, pede para assinar
+                await this.mostrarMensagemConversao(chatId, userId, callbackQuery);
+                return;
+            }
         }
 
         const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
@@ -1809,26 +1938,45 @@ class CommandHandler {
             // Reenviar arquivo do grupo de armazenamento
             await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, filme.messageId);
             
-            const mensagem = `✅ *${filme.nome}*\n\n` +
-                           `📝 ${filme.descricao || 'Sem descrição'}\n` +
-                           `🎬 Tipo: Filme\n` +
-                           `📅 Adicionado em: ${new Date(filme.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                           `🎉 *Aproveite o filme!*`;
-            
-            await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+            let mensagem = `✅ *${filme.nome}*\n\n` +
+                           `📝 ${filme.descricao || filme.sinopse || 'Disponível em alta qualidade'}\n` +
+                           `✨ Qualidade: ${filme.qualidade || '1080p Full HD'} | 🔊 Áudio: ${filme.audio || 'Dublado'}\n\n`;
+
+            if (!isAssinante) {
+                mensagem += `🎁 *Você utilizou seu Teste Gratuito de 1 filme!*\n` +
+                            `Esperamos que aproveite a experiência BrasilFlix.\n\n` +
+                            `💡 *Assine agora para ter acesso ilimitado a todos os filmes e séries!*`;
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💎 Assinar BrasilFlix', callback_data: 'assinatura' }],
+                        [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
+                    ]
+                };
+                await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard });
+            } else {
+                mensagem += `🎉 *Bom filme, assinante VIP!*`;
+                await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+            }
             
         } catch (error) {
             console.error('❌ Erro ao enviar filme:', error);
-            await this.bot.sendMessage(chatId, '❌ Erro ao enviar filme. Tente novamente.');
+            await this.bot.sendMessage(chatId, '❌ Erro ao enviar filme. Tente novamente ou contate o suporte.');
         }
     }
 
     async handleEnviarSerie(chatId, userId, serieId, callbackQuery) {
-        // Verificar se é assinante
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
+        const jaUsouTeste = this.verificarTesteGratuitoUsado(userId);
+
         if (!isAssinante) {
-            await this.mostrarMensagemConversao(chatId, userId, callbackQuery);
-            return;
+            if (!jaUsouTeste) {
+                this.marcarTesteGratuitoUsado(userId);
+                console.log(`🎁 Usuário ${userId} utilizou seu teste gratuito na série ID ${serieId}`);
+            } else {
+                await this.mostrarMensagemConversao(chatId, userId, callbackQuery);
+                return;
+            }
         }
 
         const serie = this.catalogoManager.getItemPorId(parseInt(serieId));
@@ -1839,14 +1987,14 @@ class CommandHandler {
         }
 
         try {
-            // Reenviar arquivo do grupo de armazenamento
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, serie.messageId);
+            if (serie.messageId) {
+                await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, serie.messageId);
+            }
             
             const mensagem = `✅ *${serie.nome}*\n\n` +
-                           `📝 ${serie.descricao || 'Sem descrição'}\n` +
-                           `📺 Tipo: Série\n` +
-                           `📅 Adicionado em: ${new Date(serie.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                           `🎉 *Aproveite a série!*`;
+                           `📝 ${serie.descricao || serie.sinopse || 'Disponível em alta qualidade'}\n` +
+                           `📺 Tipo: Série / Dorama\n\n` +
+                           `🎉 *Aproveite os episódios!*`;
             
             await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
             
@@ -3906,6 +4054,93 @@ class CommandHandler {
             parse_mode: 'Markdown',
             reply_markup: keyboard
         });
+    }
+
+    async handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery) {
+        const serie = this.catalogoManager.getItemPorId(serieId);
+        if (!serie || !serie.temporadas) {
+            await this.bot.sendMessage(chatId, '❌ Série/Dorama não encontrado no catálogo.');
+            return;
+        }
+
+        const temporada = serie.temporadas.find(t => t.numero === seasonNum);
+        if (!temporada || !temporada.episodios || temporada.episodios.length === 0) {
+            await this.bot.sendMessage(chatId, `❌ Nenhum episódio disponível ainda para a Temporada ${seasonNum}.`);
+            return;
+        }
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        let row = [];
+        temporada.episodios.forEach((ep) => {
+            row.push({
+                text: `Ep ${ep.numero}`,
+                callback_data: `ep_${serieId}_${seasonNum}_${ep.numero}`
+            });
+            if (row.length === 4) {
+                keyboard.inline_keyboard.push(row);
+                row = [];
+            }
+        });
+        if (row.length > 0) keyboard.inline_keyboard.push(row);
+
+        keyboard.inline_keyboard.push([
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        const mensagem = `📺 *${serie.nome}* - *Temporada ${seasonNum}*\n\n` +
+                        `🍿 *Selecione o episódio que deseja assistir:*`;
+
+        await this.bot.sendMessage(chatId, mensagem, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+    }
+
+    async handleEpisodioSelect(chatId, userId, serieId, seasonNum, epNum, callbackQuery) {
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
+        if (!isAssinante) {
+            await this.mostrarMensagemConversao(chatId, userId, null);
+            return;
+        }
+
+        const serie = this.catalogoManager.getItemPorId(serieId);
+        const temporada = serie?.temporadas?.find(t => t.numero === seasonNum);
+        const ep = temporada?.episodios?.find(e => e.numero === epNum);
+
+        if (!ep || !ep.messageId) {
+            await this.bot.sendMessage(chatId, '❌ Episódio não disponível no momento.');
+            return;
+        }
+
+        try {
+            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, ep.messageId);
+            const msg = `✅ *${serie.nome}* (T${seasonNum}E${epNum})\n` +
+                        `🎬 *${ep.nome || `Episódio ${epNum}`}*\n` +
+                        `✨ *Qualidade:* 1080p | 🔊 *Áudio:* ${ep.audio || 'Dublado'}\n\n` +
+                        `🍿 *Bom episódio!*`;
+            await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+        } catch (e) {
+            console.error('Erro ao enviar episódio:', e.message);
+            await this.bot.sendMessage(chatId, '❌ Erro ao enviar arquivo do episódio.');
+        }
+    }
+
+    async handleVerDireto(chatId, userId, messageId, callbackQuery) {
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
+        if (!isAssinante) {
+            await this.mostrarMensagemConversao(chatId, userId, null);
+            return;
+        }
+
+        try {
+            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
+        } catch (e) {
+            console.error('Erro ao enviar vídeo direto:', e.message);
+            await this.bot.sendMessage(chatId, '❌ Erro ao enviar vídeo.');
+        }
     }
 }
 

@@ -48,118 +48,129 @@ class MessageHandler {
             return;
         }
 
-        // Se tem caption, pode ser uma adição ao catálogo
-        if (caption && caption.trim()) {
-            await this.processarAdicaoCatalogo(msg, caption);
+        const fileName = (video && video.file_name) || (document && document.file_name) || '';
+        const textToProcess = caption.trim() || fileName.trim();
+
+        if (textToProcess) {
+            await this.processarAdicaoCatalogo(msg, textToProcess);
         } else {
-            // Se não tem caption, sugerir o formato
             await this.sugerirFormato(msg);
         }
     }
 
     async sugerirFormato(msg) {
         const mensagem = `📝 *Arquivo detectado sem descrição!*\n\n` +
-                        `Para adicionar automaticamente ao catálogo, edite a mensagem e adicione uma legenda no formato:\n\n` +
-                        `*Nome do filme/série - Ano - Gênero*\n\n` +
+                        `O sistema tenta reconhecer automaticamente. Você também pode adicionar uma legenda:\n\n` +
+                        `*Nome do filme/série/dorama - Ano*\n\n` +
                         `*Exemplos:*\n` +
-                        `• Harry Potter e a Pedra Filosofal - 2001 - Ação/Fantasia\n` +
-                        `• Vingadores Ultimato - 2019 - Ação/Aventura\n` +
-                        `• Breaking Bad Temporada 1 - 2008 - Drama/Suspense\n\n` +
-                        `💡 *Dica:* Após adicionar a legenda, o sistema detectará automaticamente e adicionará ao catálogo!`;
+                        `• Pousando no Amor S01E01 - 2019\n` +
+                        `• Harry Potter e a Pedra Filosofal - 2001\n` +
+                        `• Breaking Bad S01E01 - 2008`;
 
         await this.bot.sendMessage(config.STORAGE_GROUP_ID, mensagem, { parse_mode: 'Markdown' });
     }
 
-    async processarAdicaoCatalogo(msg, caption) {
+    async processarAdicaoCatalogo(msg, rawText) {
         const messageId = msg.message_id;
-        const lines = caption.split('\n');
-        const primeiraLinha = lines[0].trim();
-
-        // Tentar extrair informações da primeira linha com regex mais flexível
-        const match = primeiraLinha.match(/^(.+?)(?:\s*[-–—]\s*(\d{4}))?(?:\s*[-–—]\s*(.+))?$/);
+        const TMDBService = require('../services/TMDBService');
         
-        if (!match) {
-            await this.bot.sendMessage(config.STORAGE_GROUP_ID, 
-                '❌ Formato inválido. Use: Nome - Ano - Gênero\n' +
-                'Exemplo: Vingadores Ultimato - 2019 - Ação/Aventura\n\n' +
-                '💡 *Dica:* O sistema detecta automaticamente quando você envia um arquivo com legenda no formato correto.',
-                { parse_mode: 'Markdown' }
-            );
-            return;
+        // 1. Limpar e extrair nome base
+        let cleanText = rawText
+            .replace(/\.[a-zA-Z0-9]{2,4}$/, '') // remove extensão
+            .replace(/[\._]/g, ' ') // substitui pontos e underlines por espaço
+            .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // Detectar temporada e episódio (ex: S01E05, T1 Ep 5, Temp 1)
+        const matchEp = cleanText.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
+        const matchTempOnly = cleanText.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\b/i);
+
+        let isSerie = !!matchEp || !!matchTempOnly || this.determinarTipo(cleanText, '') === 'serie';
+        let seasonNum = matchEp ? parseInt(matchEp[1], 10) : (matchTempOnly ? parseInt(matchTempOnly[1], 10) : 1);
+        let epNum = matchEp ? parseInt(matchEp[2], 10) : 1;
+
+        // Remove marcações de temporada/episódio do nome de busca
+        let searchTitle = cleanText
+            .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\s*(?:e|ep|episodio|episódio|x)\s*\d{1,3}\b/gi, '')
+            .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\b/gi, '')
+            .replace(/[-–—]\s*\d{4}/, '')
+            .trim();
+
+        if (!searchTitle || searchTitle.length < 2) {
+            searchTitle = cleanText;
         }
 
-        const nome = match[1].trim();
-        const ano = match[2] || '';
-        const genero = match[3] || '';
-        
-        // Verificar se o nome não está vazio
-        if (!nome || nome.length < 2) {
-            await this.bot.sendMessage(config.STORAGE_GROUP_ID, 
-                '❌ Nome do filme/série muito curto ou inválido.',
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-        
-        // Determinar se é filme ou série baseado no nome ou gênero
-        const tipo = this.determinarTipo(nome, genero);
-        
-        // Criar descrição completa
-        let descricao = nome;
-        if (ano) descricao += ` (${ano})`;
-        if (genero) descricao += ` - ${genero}`;
-        
-        // Adicionar ao catálogo (permitirá re-adição se mensagem anterior não existir)
-        const resultado = await this.catalogoManager.adicionarFilme(nome, descricao, messageId, tipo);
-        
-        if (!resultado.success) {
-            await this.bot.sendMessage(config.STORAGE_GROUP_ID, 
-                `⚠️ *Atenção:* "${nome}" já existe no catálogo!\n\n` +
-                `💡 *Para forçar a adição, use:* /adicionar_forcar "${nome}"`,
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-        
-        const item = resultado.item;
-        
-        const mensagemConfirmacao = `✅ *${tipo === 'filme' ? 'Filme' : 'Série'} adicionado automaticamente!*\n\n` +
-                                   `🎬 *Nome:* ${item.nome}\n` +
-                                   `📝 *Descrição:* ${item.descricao}\n` +
-                                   `🆔 *ID:* ${item.id}\n` +
-                                   `📅 *Data:* ${new Date(item.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                                   `🎉 *Pronto!* Agora os usuários podem buscar por "${nome}" no bot.`;
+        console.log(`🔍 Auto-indexador TMDB procurando por: "${searchTitle}" (Série: ${isSerie})`);
 
-        await this.bot.sendMessage(config.STORAGE_GROUP_ID, mensagemConfirmacao, { parse_mode: 'Markdown' });
-    }
-
-    determinarTipo(nome, genero) {
-        const nomeLower = nome.toLowerCase();
-        const generoLower = genero.toLowerCase();
-        
-        // Palavras que indicam série
-        const indicadoresSerie = [
-            'temporada', 'season', 'episódio', 'episode', 'série', 'series', 'tv',
-            't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10',
-            's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10',
-            'temp', 'ep', 'eps'
-        ];
-        
-        // Verificar se contém indicadores de série
-        for (const indicador of indicadoresSerie) {
-            if (nomeLower.includes(indicador) || generoLower.includes(indicador)) {
-                return 'serie';
+        let tmdbData = null;
+        try {
+            if (isSerie) {
+                const results = await TMDBService.searchTV(searchTitle);
+                if (results.length > 0) {
+                    tmdbData = await TMDBService.getTVDetails(results[0].tmdbId);
+                }
+            } else {
+                const results = await TMDBService.searchMovie(searchTitle);
+                if (results.length > 0) {
+                    tmdbData = await TMDBService.getMovieDetails(results[0].tmdbId);
+                }
             }
+        } catch (e) {
+            console.warn('⚠️ Falha ao buscar no TMDB:', e.message);
         }
-        
-        // Verificar padrões comuns de séries (ex: "Nome S01E01")
-        const padraoSerie = /s\d{1,2}e\d{1,2}|temporada\s*\d+|season\s*\d+/i;
-        if (padraoSerie.test(nomeLower)) {
-            return 'serie';
+
+        const nomeFinal = tmdbData?.nome || searchTitle;
+        const anoFinal = tmdbData?.ano || this.catalogoManager.extrairAno(rawText) || '';
+        const sinopseFinal = tmdbData?.sinopse || rawText;
+
+        if (isSerie) {
+            const res = await this.catalogoManager.adicionarEpisodioSerie(
+                nomeFinal,
+                seasonNum,
+                epNum,
+                messageId,
+                msg.video?.file_id || msg.document?.file_id || null,
+                {
+                    ...tmdbData,
+                    ano: anoFinal,
+                    sinopse: sinopseFinal,
+                    episodioNome: `Episódio ${epNum}`
+                }
+            );
+
+            const msgConfirm = `✅ *Episódio de Série/Dorama Catalogado!*\n\n` +
+                               `📺 *Série:* ${nomeFinal}\n` +
+                               `🔢 *Temporada:* ${seasonNum} | *Episódio:* ${epNum}\n` +
+                               `⭐ *Nota TMDB:* ${tmdbData?.nota || 'N/A'}/10\n` +
+                               `🆔 *Message ID:* ${messageId}\n\n` +
+                               `🍿 *Disponível para assinantes!*`;
+
+            await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' });
+        } else {
+            const res = await this.catalogoManager.adicionarFilme(
+                nomeFinal,
+                sinopseFinal,
+                messageId,
+                'filme',
+                true,
+                {
+                    ...tmdbData,
+                    ano: anoFinal,
+                    sinopse: sinopseFinal,
+                    fileId: msg.video?.file_id || msg.document?.file_id || null
+                }
+            );
+
+            const msgConfirm = `✅ *Filme Catalogado com Sucesso!*\n\n` +
+                               `🎬 *Título:* ${nomeFinal}${anoFinal ? ` (${anoFinal})` : ''}\n` +
+                               `⭐ *Nota TMDB:* ${tmdbData?.nota || 'N/A'}/10\n` +
+                               `🎭 *Gêneros:* ${(tmdbData?.generos || []).join(', ') || 'Geral'}\n` +
+                               `🆔 *Message ID:* ${messageId}\n\n` +
+                               `🍿 *Disponível para assinantes!*`;
+
+            await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' });
         }
-        
-        // Por padrão, assume que é filme
-        return 'filme';
     }
 
     async handlePrivateMessage(msg) {

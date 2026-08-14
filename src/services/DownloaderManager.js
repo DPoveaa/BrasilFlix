@@ -1,0 +1,244 @@
+const path = require('path');
+const fs = require('fs-extra');
+const axios = require('axios');
+const EventEmitter = require('events');
+const config = require('../../config');
+
+let WebTorrentClass = null;
+
+class DownloaderManager extends EventEmitter {
+    constructor() {
+        super();
+        this.downloadDir = path.resolve(config.DOWNLOAD_DIR || './downloads/temp');
+        this.ensureDirectories();
+        this.cleanupTempDirectory();
+        this.activeTorrents = new Map();
+        this.client = null;
+    }
+
+    ensureDirectories() {
+        fs.ensureDirSync(this.downloadDir);
+    }
+
+    cleanupTempDirectory() {
+        try {
+            if (fs.existsSync(this.downloadDir)) {
+                fs.emptyDirSync(this.downloadDir);
+                console.log('🧹 Pasta de downloads temporários limpa no início (SSD protegido contra acúmulo de arquivos incompletos).');
+            }
+        } catch (e) {
+            console.warn('⚠️ Aviso ao limpar pasta temp:', e.message);
+        }
+    }
+
+    async getClient() {
+        if (!this.client) {
+            if (!WebTorrentClass) {
+                const wtModule = await import('webtorrent');
+                WebTorrentClass = wtModule.default || wtModule;
+            }
+            this.client = new WebTorrentClass({
+                maxConns: 55,
+                downloadLimit: -1,
+                uploadLimit: 1024 * 50 // Limita upload para não sobrecarregar banda local
+            });
+            this.client.on('error', (err) => {
+                console.error('❌ Erro no cliente WebTorrent:', err.message);
+            });
+        }
+        return this.client;
+    }
+
+    async downloadTorrent(magnetOrTorrent, onProgress = null) {
+        this.ensureDirectories();
+        const client = await this.getClient();
+        if (!client) {
+            throw new Error('Módulo WebTorrent não disponível.');
+        }
+
+        // Anexar rastreadores públicos rápidos se for magnet link
+        let formattedMagnet = magnetOrTorrent;
+        if (typeof magnetOrTorrent === 'string' && magnetOrTorrent.startsWith('magnet:?')) {
+            const trackers = [
+                'udp://tracker.opentrackr.org:1337/announce',
+                'udp://open.stealth.si:80/announce',
+                'udp://tracker.torrent.eu.org:451/announce',
+                'udp://explodie.org:6969/announce',
+                'udp://tracker.moeking.me:6969/announce'
+            ];
+            trackers.forEach(tr => {
+                if (!formattedMagnet.includes(encodeURIComponent(tr))) {
+                    formattedMagnet += `&tr=${encodeURIComponent(tr)}`;
+                }
+            });
+        }
+
+        return new Promise((resolve, reject) => {
+            console.log('📥 Iniciando download via Torrent:', formattedMagnet.substring(0, 60) + '...');
+
+            const torrent = client.add(formattedMagnet, { path: this.downloadDir });
+            const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+            this.activeTorrents.set(torrentId, torrent);
+
+            let lastProgressTime = Date.now();
+
+            torrent.on('download', () => {
+                const now = Date.now();
+                if (now - lastProgressTime > 800) { // Atualiza a cada 800ms
+                    lastProgressTime = now;
+                    const percent = (torrent.progress * 100).toFixed(1);
+                    const speedMB = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
+                    const downloadedMB = (torrent.downloaded / (1024 * 1024)).toFixed(1);
+                    const totalMB = (torrent.length / (1024 * 1024)).toFixed(1);
+
+                    // Barra visual de progresso
+                    const barLength = 25;
+                    const filled = Math.min(barLength, Math.round((torrent.progress) * barLength));
+                    const empty = Math.max(0, barLength - filled);
+                    const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
+
+                    process.stdout.write(`\r📥 Baixando: [${progressBar}] ${percent}% | ${downloadedMB}/${totalMB} MB (${speedMB} MB/s) | Peers: ${torrent.numPeers} `);
+
+                    if (onProgress) {
+                        onProgress({
+                            percent: parseFloat(percent),
+                            speed: `${speedMB} MB/s`,
+                            downloaded: `${downloadedMB} MB`,
+                            total: `${totalMB} MB`,
+                            timeRemaining: torrent.timeRemaining
+                        });
+                    }
+                }
+            });
+
+            torrent.on('done', async () => {
+                clearInterval(watchdogInterval);
+                process.stdout.write('\n');
+                console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
+                this.activeTorrents.delete(torrentId);
+
+                // Encontrar o maior arquivo de vídeo no torrent
+                let largestFile = null;
+                for (const file of torrent.files) {
+                    const ext = path.extname(file.name).toLowerCase();
+                    if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
+                        if (!largestFile || file.length > largestFile.length) {
+                            largestFile = file;
+                        }
+                    }
+                }
+
+                if (!largestFile) {
+                    // Fallback para qualquer arquivo maior
+                    largestFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
+                }
+
+                const fullPath = path.join(this.downloadDir, largestFile.path);
+
+                // Remover o torrent da memória sem apagar os dados baixados
+                torrent.destroy();
+
+                resolve({
+                    filePath: fullPath,
+                    fileName: largestFile.name,
+                    sizeBytes: largestFile.length,
+                    totalTorrentFiles: torrent.files.length
+                });
+            });
+
+            torrent.on('error', (err) => {
+                clearInterval(watchdogInterval);
+                this.activeTorrents.delete(torrentId);
+                reject(new Error(`Falha no download do torrent: ${err.message}`));
+            });
+
+            // Watchdog ativo: detecta torrents estagnados em 0% ou com peers fantasmas sem dados
+            let lastBytes = 0;
+            let stalledSeconds = 0;
+            const watchdogInterval = setInterval(() => {
+                const currentBytes = torrent.downloaded || 0;
+                if (currentBytes === lastBytes) {
+                    stalledSeconds += 5;
+                } else {
+                    stalledSeconds = 0;
+                    lastBytes = currentBytes;
+                }
+
+                if (stalledSeconds >= 35 && torrent.progress < 0.01) {
+                    clearInterval(watchdogInterval);
+                    process.stdout.write('\n');
+                    console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para não travar a fila...`);
+                    torrent.destroy();
+                    this.activeTorrents.delete(torrentId);
+                    reject(new Error('Download estagnado sem dados/seeders ativos.'));
+                }
+            }, 5000);
+        });
+    }
+
+    async downloadHttp(url, fileName, onProgress = null) {
+        this.ensureDirectories();
+        const targetPath = path.join(this.downloadDir, fileName);
+        console.log(`📥 Baixando arquivo direto via HTTP: ${fileName}...`);
+
+        const response = await axios({
+            method: 'GET',
+            url: url,
+            responseType: 'stream',
+            timeout: 30000
+        });
+
+        const totalBytes = parseInt(response.headers['content-length'] || 0, 10);
+        let downloadedBytes = 0;
+        let lastReport = Date.now();
+
+        const writer = fs.createWriteStream(targetPath);
+
+        return new Promise((resolve, reject) => {
+            response.data.on('data', (chunk) => {
+                downloadedBytes += chunk.length;
+                const now = Date.now();
+                if (now - lastReport > 1500) {
+                    lastReport = now;
+                    const percent = totalBytes > 0 ? ((downloadedBytes / totalBytes) * 100).toFixed(1) : 0;
+                    if (onProgress) {
+                        onProgress({
+                            percent: parseFloat(percent),
+                            downloaded: `${(downloadedBytes / (1024 * 1024)).toFixed(1)} MB`,
+                            total: `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`
+                        });
+                    }
+                }
+            });
+
+            response.data.pipe(writer);
+
+            writer.on('finish', () => {
+                console.log(`✅ Download HTTP concluído: ${fileName}`);
+                resolve({
+                    filePath: targetPath,
+                    fileName: fileName,
+                    sizeBytes: downloadedBytes
+                });
+            });
+
+            writer.on('error', (err) => {
+                fs.removeSync(targetPath);
+                reject(err);
+            });
+        });
+    }
+
+    async cleanupFile(filePath) {
+        try {
+            if (filePath && fs.existsSync(filePath)) {
+                await fs.remove(filePath);
+                console.log(`🧹 Arquivo temporário limpo: ${filePath}`);
+            }
+        } catch (e) {
+            console.error(`⚠️ Erro ao limpar arquivo temporário ${filePath}:`, e.message);
+        }
+    }
+}
+
+module.exports = new DownloaderManager();

@@ -51,7 +51,6 @@ class PedidosManager {
     savePedidos() {
         try {
             fs.writeJsonSync(this.pedidosFile, this.pedidos, { spaces: 2 });
-            console.log(`💾 ${this.pedidos.length} pedidos salvos`);
         } catch (error) {
             console.error('❌ Erro ao salvar pedidos:', error);
         }

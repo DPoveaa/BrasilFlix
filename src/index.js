@@ -3,6 +3,8 @@ const config = require('../config');
 const PedidosManager = require('./managers/PedidosManager');
 const CatalogoManager = require('./managers/CatalogoManager');
 const AssinaturaManager = require('./managers/AssinaturaManager');
+const { QueueManager } = require('./managers/QueueManager');
+const AutoFeeder = require('./services/AutoFeeder');
 const MessageHandler = require('./handlers/MessageHandler');
 const CommandHandler = require('./handlers/CommandHandler');
 const cron = require('node-cron');
@@ -13,12 +15,15 @@ class BrasilFlixBot {
         this.pedidosManager = new PedidosManager();
         this.catalogoManager = new CatalogoManager();
         this.assinaturaManager = new AssinaturaManager();
-        this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager);
-        this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler);
+        this.queueManager = new QueueManager(this.bot, this.catalogoManager);
+        this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager);
+        this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager);
+        this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
         this.setupEventHandlers();
         this.setupCronJobs();
-        console.log('🤖 BrasilFlix Bot iniciado com sucesso!');
+        this.autoFeeder.start();
+        console.log('🤖 BrasilFlix Bot + Auto-Feeder iniciado com sucesso!');
     }
 
     setupEventHandlers() {
@@ -28,6 +33,7 @@ class BrasilFlixBot {
         this.bot.onText(/\/pedido (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
         this.bot.onText(/\/buscar (.+)/, (msg, match) => this.commandHandler.handleBuscar(msg, match));
         this.bot.onText(/\/catalogo/, (msg) => this.commandHandler.handleCatalogo(msg));
+        this.bot.onText(/\/fila/, (msg) => this.commandHandler.handleFila(msg));
         this.bot.onText(/\/adicionar/, (msg) => this.commandHandler.handleAdicionar(msg));
         this.bot.onText(/\/adicionar_manual (.+)/, (msg, match) => this.commandHandler.handleAdicionarManual(msg, match));
         this.bot.onText(/\/adicionar_forcar (.+)/, (msg, match) => this.commandHandler.handleAdicionarForcar(msg, match));
@@ -43,6 +49,8 @@ class BrasilFlixBot {
         this.bot.onText(/\/pedidos/, (msg) => this.commandHandler.handleAdminPedidos(msg));
         this.bot.onText(/\/assinaturas/, (msg) => this.commandHandler.handleAdminAssinaturas(msg));
         this.bot.onText(/\/stats/, (msg) => this.commandHandler.handleAdminStats(msg));
+        this.bot.onText(/\/rebaixar(?: (.+))?/, (msg, match) => this.commandHandler.handleRebaixar(msg, match));
+        this.bot.onText(/\/atualizar(?: (.+))?/, (msg, match) => this.commandHandler.handleRebaixar(msg, match));
 
         // Handler para callbacks dos botões
         this.bot.on('callback_query', (callbackQuery) => this.commandHandler.handleCallbackQuery(callbackQuery));
@@ -56,7 +64,14 @@ class BrasilFlixBot {
         });
 
         this.bot.on('polling_error', (error) => {
-            console.error('❌ Erro de polling:', error);
+            if (error.code === 'ETELEGRAM' && error.response && error.response.statusCode === 502) {
+                // Instabilidade temporária da API do Telegram (502 Bad Gateway) - o bot reconecta sozinho
+                return;
+            }
+            if (error.code === 'EFATAL' || error.code === 'ETIMEDOUT') {
+                return;
+            }
+            console.warn(`⚠️ Aviso de rede Telegram (${error.code || 'Desconhecido'}): ${error.message}`);
         });
     }
 
