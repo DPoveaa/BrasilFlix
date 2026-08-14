@@ -12,8 +12,6 @@ class DownloaderManager extends EventEmitter {
         this.downloadDir = path.resolve(config.DOWNLOAD_DIR || './downloads/temp');
         this.ensureDirectories();
         this.cleanupTempDirectory();
-        this.activeTorrents = new Map();
-        this.client = null;
     }
 
     ensureDirectories() {
@@ -31,109 +29,103 @@ class DownloaderManager extends EventEmitter {
         }
     }
 
-    async getClient() {
-        if (!this.client) {
-            if (!WebTorrentClass) {
+    async getWebTorrentClass() {
+        if (!WebTorrentClass) {
+            try {
+                const wtModule = await import('webtorrent');
+                WebTorrentClass = wtModule.default || wtModule;
+            } catch (e1) {
                 try {
-                    const wtModule = await import('webtorrent');
+                    const modulePath = require.resolve('webtorrent');
+                    const wtModule = await import(`file://${modulePath}`);
                     WebTorrentClass = wtModule.default || wtModule;
-                } catch (e1) {
-                    try {
-                        const modulePath = require.resolve('webtorrent');
-                        const wtModule = await import(`file://${modulePath}`);
-                        WebTorrentClass = wtModule.default || wtModule;
-                    } catch (e2) {
-                        console.error('❌ Falha ao carregar webtorrent:', e2.message);
-                        throw e2;
-                    }
+                } catch (e2) {
+                    console.error('❌ Falha ao carregar webtorrent:', e2.message);
+                    throw e2;
                 }
             }
-            this.client = new WebTorrentClass({
-                maxConns: 85,
-                dht: true,
-                tracker: true,
-                downloadLimit: -1,
-                uploadLimit: 1024 * 50
-            });
-            this.client.on('error', (err) => {
-                console.error('❌ Erro no cliente WebTorrent:', err.message);
-            });
         }
-        return this.client;
+        return WebTorrentClass;
     }
 
-    createTorrentPayload(magnetOrTorrent) {
+    formatMagnetLink(magnetOrTorrent) {
         const trackers = [
             'udp://tracker.opentrackr.org:1337/announce',
             'udp://open.stealth.si:80/announce',
             'udp://tracker.torrent.eu.org:451/announce',
             'udp://explodie.org:6969/announce',
-            'udp://tracker.moeking.me:6969/announce'
+            'udp://tracker.moeking.me:6969/announce',
+            'http://tracker.opentrackr.org:1337/announce'
         ];
 
         const str = String(magnetOrTorrent);
         const hashMatch = str.match(/([a-fA-F0-9]{40})/);
         if (hashMatch) {
             const cleanHash = hashMatch[1].toLowerCase();
-            const hashBuffer = new Uint8Array(Buffer.from(cleanHash, 'hex'));
-            
             const nameMatch = str.match(/dn=([^&]+)/);
-            let name = cleanHash;
-            if (nameMatch) {
-                try { name = decodeURIComponent(nameMatch[1]); } catch(e) {}
-            }
+            const name = nameMatch ? nameMatch[1] : encodeURIComponent(cleanHash);
 
-            return {
-                infoHash: cleanHash,
-                infoHashBuffer: hashBuffer,
-                name: name,
-                announce: trackers,
-                urlList: []
-            };
+            let cleanMagnet = `magnet:?xt=urn:btih:${cleanHash}&dn=${name}`;
+            for (const tr of trackers) {
+                cleanMagnet += `&tr=${encodeURIComponent(tr)}`;
+            }
+            return cleanMagnet;
         }
         return magnetOrTorrent;
     }
 
     async downloadTorrent(magnetOrTorrent, onProgress = null) {
         this.ensureDirectories();
-        const client = await this.getClient();
-        if (!client) {
+        const WT = await this.getWebTorrentClass();
+        if (!WT) {
             throw new Error('Módulo WebTorrent não disponível.');
         }
 
-        const torrentPayload = this.createTorrentPayload(magnetOrTorrent);
+        const formattedMagnet = this.formatMagnetLink(magnetOrTorrent);
 
         return new Promise((resolve, reject) => {
             console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
 
-            let torrent;
-            let watchdogInterval = null;
-            const torrentId = `torrent_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+            // Instância isolada por download para evitar poluição de sockets/DHT no Linux
+            const client = new WT({
+                maxConns: 85,
+                dht: true,
+                tracker: true,
+                downloadLimit: -1,
+                uploadLimit: 1024 * 50
+            });
 
-            const destroyTorrentSafely = () => {
+            let torrent = null;
+            let watchdogInterval = null;
+            let finished = false;
+
+            const safeCleanup = () => {
+                if (finished) return;
+                finished = true;
+                if (watchdogInterval) clearInterval(watchdogInterval);
                 try {
-                    if (watchdogInterval) clearInterval(watchdogInterval);
-                    this.activeTorrents.delete(torrentId);
-                    if (torrent && !torrent.destroyed) {
-                        torrent.destroy({ destroyStore: true }, () => {});
-                    }
+                    client.destroy(() => {});
                 } catch (e) {}
             };
 
+            client.on('error', (err) => {
+                console.error('⚠️ Aviso do cliente WebTorrent:', err?.message || err);
+            });
+
             try {
-                torrent = client.add(torrentPayload, { 
+                torrent = client.add(formattedMagnet, { 
                     path: this.downloadDir
                 });
-                this.activeTorrents.set(torrentId, torrent);
             } catch (err) {
-                destroyTorrentSafely();
-                return reject(new Error(`Falha ao adicionar torrent: ${err.message}`));
+                safeCleanup();
+                return reject(new Error(`Falha ao iniciar torrent: ${err.message}`));
             }
 
             let lastProgressTime = Date.now();
             let lastLogTime = Date.now();
 
             torrent.on('download', () => {
+                if (finished) return;
                 const now = Date.now();
                 if (now - lastProgressTime > 800) {
                     lastProgressTime = now;
@@ -167,6 +159,7 @@ class DownloaderManager extends EventEmitter {
             });
 
             torrent.on('done', async () => {
+                if (finished) return;
                 process.stdout.write('\n');
                 console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
 
@@ -185,24 +178,26 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 const fullPath = path.join(this.downloadDir, largestFile.path);
-                destroyTorrentSafely();
-
-                resolve({
+                const fileInfo = {
                     filePath: fullPath,
                     fileName: largestFile.name,
                     sizeBytes: largestFile.length,
                     totalTorrentFiles: torrent.files.length
-                });
+                };
+
+                safeCleanup();
+                resolve(fileInfo);
             });
 
             torrent.on('error', (err) => {
-                destroyTorrentSafely();
+                safeCleanup();
                 reject(new Error(`Falha no download do torrent: ${err.message}`));
             });
 
             let lastBytes = 0;
             let stalledSeconds = 0;
             watchdogInterval = setInterval(() => {
+                if (finished || !torrent) return;
                 const currentBytes = torrent.downloaded || 0;
                 if (currentBytes === lastBytes) {
                     stalledSeconds += 5;
@@ -214,7 +209,7 @@ class DownloaderManager extends EventEmitter {
                 if (stalledSeconds >= 35 && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para não travar a fila...`);
-                    destroyTorrentSafely();
+                    safeCleanup();
                     reject(new Error('Download estagnado sem dados/seeders ativos.'));
                 }
             }, 5000);
