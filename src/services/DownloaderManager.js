@@ -5,7 +5,6 @@ const EventEmitter = require('events');
 const config = require('../../config');
 
 let WebTorrentClass = null;
-let ParseTorrentClass = null;
 
 class DownloaderManager extends EventEmitter {
     constructor() {
@@ -61,20 +60,7 @@ class DownloaderManager extends EventEmitter {
         return this.client;
     }
 
-    async downloadTorrent(magnetOrTorrent, onProgress = null) {
-        this.ensureDirectories();
-        const client = await this.getClient();
-        if (!client) {
-            throw new Error('Módulo WebTorrent não disponível.');
-        }
-
-        if (!ParseTorrentClass) {
-            try {
-                const ptModule = await import('parse-torrent');
-                ParseTorrentClass = ptModule.default || ptModule;
-            } catch (e) {}
-        }
-
+    createTorrentPayload(magnetOrTorrent) {
         const trackers = [
             'udp://tracker.opentrackr.org:1337/announce',
             'udp://open.stealth.si:80/announce',
@@ -83,26 +69,36 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.moeking.me:6969/announce'
         ];
 
-        // Extrai o hash de 40 caracteres se fornecido como magnet
-        let rawIdentifier = magnetOrTorrent;
         if (typeof magnetOrTorrent === 'string') {
             const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
             if (hashMatch) {
-                rawIdentifier = hashMatch[1].toLowerCase();
+                const cleanHash = hashMatch[1].toLowerCase();
+                const hashBuffer = Buffer.from(cleanHash, 'hex');
+                
+                // Extrai nome do torrent se houver
+                const nameMatch = magnetOrTorrent.match(/dn=([^&]+)/);
+                const name = nameMatch ? decodeURIComponent(nameMatch[1]) : cleanHash;
+
+                return {
+                    infoHash: cleanHash,
+                    infoHashBuffer: hashBuffer,
+                    name: name,
+                    announce: trackers,
+                    urlList: []
+                };
             }
         }
+        return magnetOrTorrent;
+    }
 
-        // Pré-parse com parse-torrent para garantir que o objeto seja 100% estruturado
-        let torrentPayload = rawIdentifier;
-        if (ParseTorrentClass) {
-            try {
-                const parsed = await ParseTorrentClass(rawIdentifier);
-                if (parsed && parsed.infoHash) {
-                    parsed.announce = trackers;
-                    torrentPayload = parsed;
-                }
-            } catch (e) {}
+    async downloadTorrent(magnetOrTorrent, onProgress = null) {
+        this.ensureDirectories();
+        const client = await this.getClient();
+        if (!client) {
+            throw new Error('Módulo WebTorrent não disponível.');
         }
+
+        const torrentPayload = this.createTorrentPayload(magnetOrTorrent);
 
         return new Promise((resolve, reject) => {
             console.log('📥 Iniciando download via Torrent:', String(magnetOrTorrent).substring(0, 60) + '...');
@@ -112,8 +108,7 @@ class DownloaderManager extends EventEmitter {
 
             try {
                 torrent = client.add(torrentPayload, { 
-                    path: this.downloadDir,
-                    announce: trackers
+                    path: this.downloadDir
                 });
                 this.activeTorrents.set(torrentId, torrent);
             } catch (err) {

@@ -43,13 +43,11 @@ try {
     });
     
     process.on('uncaughtException', (error) => {
-        console.error('❌ Erro não tratado:', error);
-        process.exit(1);
+        console.error('⚠️ Aviso - Exceção assíncrona capturada:', error?.message || error);
     });
     
     process.on('unhandledRejection', (reason, promise) => {
-        console.error('❌ Promise rejeitada não tratada:', reason);
-        process.exit(1);
+        console.error('⚠️ Aviso - Rejeição assíncrona capturada:', reason?.message || reason);
     });
     
 } catch (error) {
