@@ -157,6 +157,7 @@ class DownloaderManager extends EventEmitter {
                                 if (f !== found) f.deselect();
                             });
                             found.select();
+                            found.on('done', onComplete);
                             console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
                         } catch (e) {}
                     }
@@ -165,8 +166,13 @@ class DownloaderManager extends EventEmitter {
 
             const onComplete = async () => {
                 if (finished) return;
+                finished = true;
+                if (watchdogInterval) clearInterval(watchdogInterval);
                 process.stdout.write('\n');
-                console.log(`✅ Download concluído: ${targetEpisodeFile ? targetEpisodeFile.name : torrent.name}`);
+                console.log(`✅ Download concluído e verificado com sucesso: ${targetEpisodeFile ? targetEpisodeFile.name : torrent.name}`);
+
+                // Aguarda 1.5s para garantir que todas as peças foram gravadas e liberadas pelo sistema de arquivos
+                await new Promise(r => setTimeout(r, 1500));
 
                 let selectedFile = targetEpisodeFile;
                 if (!selectedFile) {
@@ -199,17 +205,17 @@ class DownloaderManager extends EventEmitter {
             torrent.on('download', () => {
                 if (finished) return;
 
+                // Se o arquivo do episódio tiver 100% de progresso verificado
+                if (targetEpisodeFile && (targetEpisodeFile.progress >= 1 || targetEpisodeFile.done)) {
+                    return onComplete();
+                }
+
                 const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
                 const verifiedBytes = targetEpisodeFile ? (targetEpisodeFile.downloaded || 0) : 0;
                 const streamBytes = torrent.downloaded || 0;
                 const curDownloaded = targetEpisodeFile 
                     ? Math.min(curTotal, Math.max(verifiedBytes, streamBytes))
                     : streamBytes;
-
-                // Se estiver baixando arquivo de episódio específico e ele completou:
-                if (targetEpisodeFile && (targetEpisodeFile.progress >= 0.999 || (curDownloaded >= curTotal && curTotal > 0))) {
-                    return onComplete();
-                }
 
                 const now = Date.now();
                 if (now - lastProgressTime > 800) {
