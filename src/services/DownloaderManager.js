@@ -199,8 +199,15 @@ class DownloaderManager extends EventEmitter {
             torrent.on('download', () => {
                 if (finished) return;
 
+                const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
+                const verifiedBytes = targetEpisodeFile ? (targetEpisodeFile.downloaded || 0) : 0;
+                const streamBytes = torrent.downloaded || 0;
+                const curDownloaded = targetEpisodeFile 
+                    ? Math.min(curTotal, Math.max(verifiedBytes, streamBytes))
+                    : streamBytes;
+
                 // Se estiver baixando arquivo de episódio específico e ele completou:
-                if (targetEpisodeFile && targetEpisodeFile.progress >= 0.999) {
+                if (targetEpisodeFile && (targetEpisodeFile.progress >= 0.999 || (curDownloaded >= curTotal && curTotal > 0))) {
                     return onComplete();
                 }
 
@@ -208,8 +215,6 @@ class DownloaderManager extends EventEmitter {
                 if (now - lastProgressTime > 800) {
                     lastProgressTime = now;
 
-                    const curDownloaded = targetEpisodeFile ? targetEpisodeFile.downloaded : torrent.downloaded;
-                    const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
                     const curRatio = curTotal > 0 ? (curDownloaded / curTotal) : 0;
                     const percent = Math.min(100, Math.max(0, curRatio * 100)).toFixed(1);
 
