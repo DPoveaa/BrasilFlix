@@ -152,9 +152,10 @@ class DownloaderManager extends EventEmitter {
                     const found = torrent.files.find(f => epRegex.test(f.name));
                     if (found) {
                         targetEpisodeFile = found;
-                        // Desseleciona todos os outros arquivos do pack e foca o download exclusivamente no episódio
                         try {
-                            torrent.deselect(0, torrent.pieces.length - 1, false);
+                            torrent.files.forEach(f => {
+                                if (f !== found) f.deselect();
+                            });
                             found.select();
                             console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
                         } catch (e) {}
@@ -162,24 +163,71 @@ class DownloaderManager extends EventEmitter {
                 }
             });
 
+            const onComplete = async () => {
+                if (finished) return;
+                process.stdout.write('\n');
+                console.log(`✅ Download concluído: ${targetEpisodeFile ? targetEpisodeFile.name : torrent.name}`);
+
+                let selectedFile = targetEpisodeFile;
+                if (!selectedFile) {
+                    for (const file of torrent.files) {
+                        const ext = path.extname(file.name).toLowerCase();
+                        if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
+                            if (!selectedFile || file.length > selectedFile.length) {
+                                selectedFile = file;
+                            }
+                        }
+                    }
+                }
+
+                if (!selectedFile) {
+                    selectedFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
+                }
+
+                const fullPath = path.join(this.downloadDir, selectedFile.path);
+                const fileInfo = {
+                    filePath: fullPath,
+                    fileName: selectedFile.name,
+                    sizeBytes: selectedFile.length,
+                    totalTorrentFiles: torrent.files.length
+                };
+
+                safeCleanup();
+                resolve(fileInfo);
+            };
+
             torrent.on('download', () => {
                 if (finished) return;
+
+                // Se estiver baixando arquivo de episódio específico e ele completou:
+                if (targetEpisodeFile && targetEpisodeFile.progress >= 0.999) {
+                    return onComplete();
+                }
+
                 const now = Date.now();
                 if (now - lastProgressTime > 800) {
                     lastProgressTime = now;
-                    const percent = (torrent.progress * 100).toFixed(1);
+
+                    const curDownloaded = targetEpisodeFile ? targetEpisodeFile.downloaded : torrent.downloaded;
+                    const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
+                    const curRatio = curTotal > 0 ? (curDownloaded / curTotal) : 0;
+                    const percent = Math.min(100, Math.max(0, curRatio * 100)).toFixed(1);
+
                     const speedMB = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
-                    const downloadedStr = this.formatBytes(torrent.downloaded);
-                    const totalStr = this.formatBytes(targetEpisodeFile ? targetEpisodeFile.length : torrent.length);
+                    const downloadedStr = this.formatBytes(curDownloaded);
+                    const totalStr = this.formatBytes(curTotal);
 
                     const barLength = 25;
-                    const filled = Math.min(barLength, Math.round((torrent.progress) * barLength));
+                    const filled = Math.min(barLength, Math.round(curRatio * barLength));
                     const empty = Math.max(0, barLength - filled);
                     const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
 
                     const elapsedSec = Math.floor((now - startTime) / 1000);
                     const elapsedFormatted = this.formatDuration(elapsedSec);
-                    const remainingSec = torrent.timeRemaining ? Math.floor(torrent.timeRemaining / 1000) : null;
+
+                    // Tempo restante preciso calculado sobre o tamanho restante do episódio
+                    const remainingBytes = Math.max(0, curTotal - curDownloaded);
+                    const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
 
                     if (process.stdout.isTTY) {
@@ -195,44 +243,13 @@ class DownloaderManager extends EventEmitter {
                             speed: `${speedMB} MB/s`,
                             downloaded: downloadedStr,
                             total: totalStr,
-                            timeRemaining: torrent.timeRemaining
+                            timeRemaining: remainingSec ? remainingSec * 1000 : null
                         });
                     }
                 }
             });
 
-            torrent.on('done', async () => {
-                if (finished) return;
-                process.stdout.write('\n');
-                console.log(`✅ Download do Torrent concluído: ${torrent.name}`);
-
-                let largestFile = targetEpisodeFile;
-                if (!largestFile) {
-                    for (const file of torrent.files) {
-                        const ext = path.extname(file.name).toLowerCase();
-                        if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
-                            if (!largestFile || file.length > largestFile.length) {
-                                largestFile = file;
-                            }
-                        }
-                    }
-                }
-
-                if (!largestFile) {
-                    largestFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
-                }
-
-                const fullPath = path.join(this.downloadDir, largestFile.path);
-                const fileInfo = {
-                    filePath: fullPath,
-                    fileName: largestFile.name,
-                    sizeBytes: largestFile.length,
-                    totalTorrentFiles: torrent.files.length
-                };
-
-                safeCleanup();
-                resolve(fileInfo);
-            });
+            torrent.on('done', onComplete);
 
             torrent.on('error', (err) => {
                 safeCleanup();
