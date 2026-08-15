@@ -232,8 +232,11 @@ class VideoProcessor {
                 }
 
                 // Garante que o áudio seja compatível (copia se for aac/ac3/mp3, ou converte áudio rapidamente para aac)
-                const firstAudioCodec = (info.audioStreams && info.audioStreams[0]?.codec) || '';
-                if (['aac', 'mp3', 'ac3'].includes(firstAudioCodec.toLowerCase())) {
+                const audioToCheck = portugueseAudioIndex !== null
+                    ? info.audioStreams[portugueseAudioIndex]
+                    : info.audioStreams[0];
+                const firstAudioCodec = (audioToCheck?.codec) || '';
+                if (['aac', 'mp3', 'ac3', 'eac3', 'dts'].includes(firstAudioCodec.toLowerCase())) {
                     remuxArgs.push('-c:a', 'copy');
                 } else {
                     remuxArgs.push('-c:a', 'aac', '-b:a', '320k');

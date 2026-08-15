@@ -163,8 +163,8 @@ class QueueManager extends EventEmitter {
             audioPreference: extraData.audioPreference || 'dublado',
             userId: extraData.userId || null,
             username: extraData.username || null,
-            season: extraData.season || 1,
-            episode: extraData.episode || (type === 'serie' ? 1 : null),
+            season: type === 'serie' ? (extraData.season || 1) : null,
+            episode: type === 'serie' ? (extraData.episode || 1) : null,
             tmdbId: extraData.tmdbId || null,
             status: 'queued', // 'queued', 'downloading', 'processing', 'uploading', 'completed', 'failed'
             progress: 0,
