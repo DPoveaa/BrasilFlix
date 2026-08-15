@@ -1017,34 +1017,41 @@
         let fullCatalog = { filmes: [], series: [] };
         let activeCategory = 'todos';
 
-        document.addEventListener('DOMContentLoaded', () => {
+        function initApp() {
             fetchStatus();
             loadCatalog();
             setInterval(fetchStatus, 2500);
-        });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
 
         function switchTab(tabId) {
             document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
-            const btn = document.getElementById('tab-btn-' + tabId.replace('tab-', ''));
+            const baseId = tabId.replace('tab-', '');
+            const btn = document.getElementById('tab-btn-' + baseId);
             if (btn) btn.classList.add('active');
 
             const targetContent = document.getElementById(tabId);
             if (targetContent) targetContent.classList.add('active');
 
             if (tabId === 'tab-catalogo') {
-                loadCatalog();
+                renderCatalog();
             }
         }
 
         async function fetchStatus() {
             try {
                 const res = await fetch('/api/status');
-                if (!res.ok) return;
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
-                if (data.stats) {
+                if (data && data.stats) {
                     const fEl = document.getElementById('stat-filmes');
                     const sEl = document.getElementById('stat-series');
                     const tEl = document.getElementById('count-total');
@@ -1057,13 +1064,13 @@
                     if (tEl) tEl.innerText = fCount + sCount;
                 }
 
-                if (data.queue) {
+                if (data && data.queue) {
                     const qCount = Number(data.queue.totalQueued) || 0;
                     const qEl = document.getElementById('stat-fila');
                     const qCounter = document.getElementById('queue-counter');
 
                     if (qEl) qEl.innerText = qCount;
-                    if (qCounter) qCounter.innerText = qCount + ' aguardando';
+                    if (qCounter) qCounter.innerText = `${qCount} aguardando`;
 
                     const activeContainer = document.getElementById('active-task-container');
                     const idleMessage = document.getElementById('idle-message');
@@ -1073,7 +1080,7 @@
                         if (idleMessage) idleMessage.style.display = 'none';
                         if (activeContainer) activeContainer.style.display = 'block';
 
-                        const epStr = (task.season || task.episode) ? ' (T' + (task.season || 1) + 'E' + (task.episode || 1) + ')' : '';
+                        const epStr = (task.season || task.episode) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
                         const titleEl = document.getElementById('live-task-title');
                         const typeEl = document.getElementById('live-task-type');
                         const prioEl = document.getElementById('live-task-priority');
@@ -1082,19 +1089,19 @@
                         const stageEl = document.getElementById('live-stage');
                         const speedEl = document.getElementById('live-speed');
 
-                        if (titleEl) titleEl.innerText = task.title + epStr;
+                        if (titleEl) titleEl.innerText = `${task.title}${epStr}`;
                         if (typeEl) typeEl.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        if (prioEl) prioEl.innerText = task.priority || 'Normal';
+                        if (prioEl) prioEl.innerText = task.priority || 'VIP';
                         
                         const progVal = typeof task.progress === 'number' ? Math.round(task.progress) : 0;
-                        if (barEl) barEl.style.width = progVal + '%';
-                        if (pctEl) pctEl.innerText = progVal + '%';
+                        if (barEl) barEl.style.width = `${progVal}%`;
+                        if (pctEl) pctEl.innerText = `${progVal}%`;
                         
-                        if (stageEl) stageEl.innerText = task.progressDetails || 'Processando em 1080p...';
+                        if (stageEl) stageEl.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
                         if (speedEl) {
                             speedEl.innerText = task.progressDetails && task.progressDetails.includes('MB/s') 
                                 ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' 
-                                : 'Em andamento';
+                                : 'Ativo';
                         }
                     } else {
                         if (idleMessage) idleMessage.style.display = 'block';
@@ -1105,20 +1112,22 @@
                     if (queueList) {
                         if (data.queue.queue && data.queue.queue.length > 0) {
                             queueList.innerHTML = data.queue.queue.map(item => {
-                                const epStr = (item.season || item.episode) ? ' (T' + (item.season || 1) + 'E' + (item.episode || 1) + ')' : '';
+                                const epStr = (item.season || item.episode) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
                                 const audioStr = item.audioPreference === 'dublado' ? '🇧🇷 Dublado' : '💬 Legendado';
                                 const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
-                                return '<div class="queue-item">' +
-                                    '<div class="queue-item-info">' +
-                                        '<h4>' + item.title + epStr + '</h4>' +
-                                        '<div class="queue-item-meta">' +
-                                            '<span class="badge-priority">' + item.priority + '</span>' +
-                                            '<span>' + typeStr + '</span>' +
-                                            '<span>• ' + audioStr + '</span>' +
-                                        '</div>' +
-                                    '</div>' +
-                                    '<span style="font-size: 11px; color: var(--text-muted);">Aguardando</span>' +
-                                '</div>';
+                                return `
+                                    <div class="queue-item">
+                                        <div class="queue-item-info">
+                                            <h4>${item.title}${epStr}</h4>
+                                            <div class="queue-item-meta">
+                                                <span class="badge-priority">${item.priority || 'Normal'}</span>
+                                                <span>${typeStr}</span>
+                                                <span>• ${audioStr}</span>
+                                            </div>
+                                        </div>
+                                        <span style="font-size: 11px; color: var(--text-muted);">Aguardando</span>
+                                    </div>
+                                `;
                             }).join('');
                         } else {
                             queueList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 24px;">Nenhum pedido pendente na fila no momento.</div>';
@@ -1129,18 +1138,20 @@
                     if (recentList) {
                         if (data.queue.recentCompleted && data.queue.recentCompleted.length > 0) {
                             recentList.innerHTML = data.queue.recentCompleted.map(item => {
-                                const epStr = (item.season || item.episode) ? ' (T' + (item.season || 1) + 'E' + (item.episode || 1) + ')' : '';
+                                const epStr = (item.season || item.episode) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
                                 const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
-                                return '<div class="queue-item">' +
-                                    '<div class="queue-item-info">' +
-                                        '<h4>' + item.title + epStr + '</h4>' +
-                                        '<div class="queue-item-meta">' +
-                                            '<span class="badge-completed">1080p Full HD</span>' +
-                                            '<span>' + typeStr + '</span>' +
-                                        '</div>' +
-                                    '</div>' +
-                                    '<span style="color: #34d399; font-weight: 700; font-size: 12px;">✓ Pronto</span>' +
-                                '</div>';
+                                return `
+                                    <div class="queue-item">
+                                        <div class="queue-item-info">
+                                            <h4>${item.title}${epStr}</h4>
+                                            <div class="queue-item-meta">
+                                                <span class="badge-completed">1080p Full HD</span>
+                                                <span>${typeStr}</span>
+                                            </div>
+                                        </div>
+                                        <span style="color: #34d399; font-weight: 700; font-size: 12px;">✓ Pronto</span>
+                                    </div>
+                                `;
                             }).join('');
                         } else {
                             recentList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 24px;">Nenhum título concluído recentemente.</div>';
@@ -1148,18 +1159,18 @@
                     }
                 }
             } catch (e) {
-                console.warn('Status poll:', e.message);
+                console.warn('Erro ao consultar status:', e);
             }
         }
 
         async function loadCatalog() {
             try {
                 const res = await fetch('/api/catalogo');
-                if (!res.ok) return;
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 fullCatalog = await res.json();
                 renderCatalog();
             } catch (e) {
-                console.warn('Catalog load:', e.message);
+                console.warn('Erro ao carregar catálogo:', e);
             }
         }
 
@@ -1175,7 +1186,8 @@
         }
 
         function renderCatalog() {
-            const query = (document.getElementById('catalog-search')?.value || '').toLowerCase().trim();
+            const searchInput = document.getElementById('catalog-search');
+            const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
             const grid = document.getElementById('catalog-grid-container');
             if (!grid) return;
 
@@ -1209,22 +1221,24 @@
                 const badgeClass = item.isCam ? 'badge-cam-tag' : (item.isDublado ? 'badge-dub-tag' : 'badge-leg-tag');
                 const badgeText = item.audioBadge || (item.isCam ? '[CAM]' : '[1080p]');
                 const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-                const subText = item.itemType === 'filme' ? 'Filme' : (item.totalEpisodios ? item.totalEpisodios + ' eps' : 'Série');
+                const subText = item.itemType === 'filme' ? 'Filme' : (item.totalEpisodios ? `${item.totalEpisodios} eps` : 'Série');
 
-                return '<div class="media-card" onclick="openModalById(\'' + item.id + '\', \'' + item.itemType + '\')">' +
-                    '<div class="poster-wrapper">' +
-                        '<img src="' + poster + '" class="poster-img" loading="lazy" alt="' + item.nome + '">' +
-                        '<div class="badge-overlay ' + badgeClass + '">' + badgeText + '</div>' +
-                        '<div class="rating-overlay">⭐ ' + rating + '</div>' +
-                    </div>' +
-                    '<div class="media-content">' +
-                        '<h4 class="media-title">' + item.nome + '</h4>' +
-                        '<div class="media-sub">' +
-                            '<span>' + (item.ano || '2026') + '</span>' +
-                            '<span>' + subText + '</span>' +
-                        '</div>' +
-                    </div>' +
-                '</div>';
+                return `
+                    <div class="media-card" onclick="openModalById('${item.id}', '${item.itemType}')">
+                        <div class="poster-wrapper">
+                            <img src="${poster}" class="poster-img" loading="lazy" alt="${item.nome}">
+                            <div class="badge-overlay ${badgeClass}">${badgeText}</div>
+                            <div class="rating-overlay">⭐ ${rating}</div>
+                        </div>
+                        <div class="media-content">
+                            <h4 class="media-title">${item.nome}</h4>
+                            <div class="media-sub">
+                                <span>${item.ano || '2026'}</span>
+                                <span>${subText}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }).join('');
         }
 
