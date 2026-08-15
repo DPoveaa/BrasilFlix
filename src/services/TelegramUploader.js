@@ -175,6 +175,7 @@ class TelegramUploader {
                 const barLength = 25;
                 const filled = Math.min(barLength, Math.round((fraction) * barLength));
                 const empty = Math.max(0, barLength - filled);
+                const bar = '█'.repeat(filled) + '░'.repeat(empty);
                 const uploadTitle = (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode)
                     ? `${nome} (T${metadata.season || 1}E${metadata.episode || 1})`
                     : nome;
