@@ -286,15 +286,15 @@ class DownloaderManager extends EventEmitter {
                 const expectedSize = selectedFile.length;
 
                 const isTargetDone = targetEpisodeFile 
-                    ? (targetEpisodeFile.progress >= 0.999 && targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.999) 
-                    : (torrent.progress >= 0.999 && torrent.downloaded >= torrent.length * 0.999);
+                    ? (targetEpisodeFile.progress >= 0.99 || (targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.985) || targetEpisodeFile.done) 
+                    : (torrent.progress >= 0.99 || (torrent.downloaded >= torrent.length * 0.985) || torrent.done);
 
                 if (!isTargetDone) {
                     // Ainda restam peças sendo baixadas pelo WebTorrent
                     return;
                 }
 
-                if (expectedSize > 0 && stat.size < expectedSize * 0.99) {
+                if (expectedSize > 0 && stat.size < expectedSize * 0.98) {
                     return;
                 }
 

@@ -861,7 +861,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
-            margin-top: 6px;
+            margin: 4px 0 6px 0;
         }
 
         .genre-pill {
@@ -2780,11 +2780,11 @@
                         </div>
                         <div class="media-content">
                             <h4 class="media-title">${item.nome}</h4>
+                            ${genresPills ? `<div class="media-genres">${genresPills}</div>` : ''}
                             <div class="media-sub">
                                 <span>${item.ano || '2026'}</span>
                                 <span>${subText}</span>
                             </div>
-                            ${genresPills ? `<div class="media-genres">${genresPills}</div>` : ''}
                         </div>
                     </div>
                 `;
