@@ -153,6 +153,19 @@ class CatalogoManager {
         return audioCode ? `[${audioCode}]` : '';
     }
 
+    buscarFilmesCam() {
+        return (this.catalogo.filmes || []).filter(f => f.isCam === true);
+    }
+
+    buscarFilmesApenasLegendados() {
+        return (this.catalogo.filmes || []).filter(f => {
+            const temDub = f.isDublado === true || !!f.versoes?.dublado;
+            const temLeg = f.isLegendado === true || !!f.versoes?.legendado || (f.audio && f.audio.toLowerCase().includes('legendado'));
+            return temLeg && !temDub;
+        });
+    }
+
+
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
         const existente = this.buscarItemExato(nome, tipo);
 
