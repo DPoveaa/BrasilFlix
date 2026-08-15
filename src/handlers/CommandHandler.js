@@ -3348,7 +3348,7 @@ class CommandHandler {
         const acesso = this.assinaturaManager.gerarTokenVitalicio('Parente / Amigo VIP');
         const token = acesso.token;
 
-        const hostIp = '192.168.15.50:3000';
+        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
         const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
         const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
         const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
@@ -3405,7 +3405,7 @@ class CommandHandler {
         }
 
         const assinatura = this.assinaturaManager.autorizarUsernameVitalicio(cleanUser);
-        const hostIp = '192.168.15.50:3000';
+        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
         const manifestUrl = `http://${hostIp}/${cleanUser}/manifest.json`;
         const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
         const stremioApp = `stremio://${hostIp}/${cleanUser}/manifest.json`;
@@ -3512,7 +3512,7 @@ class CommandHandler {
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
 
         const token = msg.from.username || userId.toString();
-        const hostIp = '192.168.15.50:3000';
+        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
         const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
         const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
         const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;

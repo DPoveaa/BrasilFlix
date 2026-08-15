@@ -14,6 +14,8 @@ class MediaSearchService {
         const forcarNaoCam = options.onlyWebDl || false;
         let imdbId = options.imdbId || null;
         const pref = options.audioPreference || 'geral';
+        const season = options.season || 1;
+        const episode = options.episode || 1;
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
         console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''}...`);
 

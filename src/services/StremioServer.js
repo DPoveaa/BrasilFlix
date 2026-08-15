@@ -5,7 +5,7 @@ const StremioService = require('./StremioService');
 const telegramUploader = require('./TelegramUploader');
 
 class StremioServer {
-    constructor(catalogoManager, assinaturaManager, port = process.env.PORT || 3000) {
+    constructor(catalogoManager, assinaturaManager, port = config.STREMIO_PORT || 7000) {
         this.catalogoManager = catalogoManager;
         this.assinaturaManager = assinaturaManager;
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);

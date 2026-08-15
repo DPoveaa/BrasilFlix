@@ -19,6 +19,8 @@ module.exports = {
     CATALOGO_FILE: './data/catalogo.json',
     ASSINATURAS_FILE: './data/assinaturas.json',
     QUEUE_FILE: './data/queue.json',
+    STREMIO_PORT: process.env.STREMIO_PORT || 7000,
+    SERVER_HOST: process.env.SERVER_HOST || '192.168.15.50:7000',
     // TMDB (The Movie Database)
     TMDB_API_KEY: process.env.TMDB_API_KEY || 'a0482b47152e4749ca18f230f04224dd',
     TMDB_LANGUAGE: 'pt-BR',
