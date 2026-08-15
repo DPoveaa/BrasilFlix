@@ -194,7 +194,7 @@ class TelegramUploader {
         const bigInt = require('big-integer');
         const stat = await fs.promises.stat(filePath);
         const size = stat.size;
-        const partSize = 512 * 1024; // 512 KB (padrão ótimo MTProto)
+        const partSize = 512 * 1024; // 512 KB (tamanho ótimo MTProto)
         const partCount = Math.floor((size + partSize - 1) / partSize);
         const fileId = bigInt.randBetween(bigInt(1), bigInt('9223372036854775807'));
         const fileName = path.basename(filePath);
@@ -202,10 +202,37 @@ class TelegramUploader {
         const fileHandle = await fs.promises.open(filePath, 'r');
         let nextPart = 0;
         let uploadedCount = 0;
-        const totalWorkers = Math.min(16, partCount);
+        
+        // Criar pool de 8 conexões de socket TCP independentes para superar o limite de 1.6 MB/s por socket
+        const poolSize = Math.min(8, Math.max(2, Math.ceil(partCount / 10)));
+        const senders = [];
+        const dcId = client.session.dcId;
+
+        console.log(`\x1b[35m🔌 Abrindo ${poolSize} conexões de rede TCP paralelas com os servidores do Telegram (DC${dcId})...\x1b[0m`);
+        for (let i = 0; i < poolSize; i++) {
+            try {
+                const sender = client._createExportedSender(dcId);
+                await client._connectSender(sender, dcId);
+                senders.push(sender);
+            } catch (err) {
+                console.warn(`⚠️ Não foi possível abrir canal TCP extra ${i + 1}: ${err.message}`);
+                break;
+            }
+        }
+
+        if (senders.length === 0) {
+            const fallback = await client.getSender(dcId);
+            senders.push(fallback);
+        }
+
+        console.log(`\x1b[35m🚀 ${senders.length} canais TCP paralelos ativados para velocidade máxima de upload!\x1b[0m`);
+
+        const totalWorkers = Math.min(senders.length * 2, partCount);
 
         try {
-            const worker = async () => {
+            const worker = async (workerIndex) => {
+                const sender = senders[workerIndex % senders.length];
+
                 while (true) {
                     const currentPart = nextPart++;
                     if (currentPart >= partCount) break;
@@ -218,7 +245,6 @@ class TelegramUploader {
                     let attempts = 0;
                     while (true) {
                         try {
-                            const sender = await client.getSender(client.session.dcId);
                             await sender.send(new Api.upload.SaveBigFilePart({
                                 fileId: fileId,
                                 filePart: currentPart,
@@ -229,7 +255,7 @@ class TelegramUploader {
                         } catch (err) {
                             attempts++;
                             if (attempts > 5) throw err;
-                            await new Promise(r => setTimeout(r, 800 * attempts));
+                            await new Promise(r => setTimeout(r, 600 * attempts));
                         }
                     }
 
@@ -240,9 +266,15 @@ class TelegramUploader {
                 }
             };
 
-            await Promise.all(Array.from({ length: totalWorkers }, () => worker()));
+            await Promise.all(Array.from({ length: totalWorkers }, (_, idx) => worker(idx)));
         } finally {
             await fileHandle.close().catch(() => {});
+            // Desconectar os senders auxiliares para liberar sockets
+            for (const sender of senders) {
+                try {
+                    await sender.disconnect();
+                } catch (e) {}
+            }
         }
 
         return new Api.InputFileBig({
