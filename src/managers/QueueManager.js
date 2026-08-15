@@ -312,6 +312,22 @@ class QueueManager extends EventEmitter {
             console.warn('⚠️ Erro ao consultar TMDB, usando metadados básicos:', e.message);
         }
 
+        // Validação de Existência Prévia para Filmes (evita rebaixar filmes que já estão 100% no catálogo)
+        if (job.type === 'filme' && !job.isUpgrade && !job.extraData?.isUpgrade) {
+            const filmeExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') ||
+                                  this.catalogoManager.buscarItemExato(job.title, 'filme');
+            if (filmeExistente && !filmeExistente.isCam) {
+                const pref = job.audioPreference || 'dublado';
+                const temDublado = filmeExistente.isDublado || !!filmeExistente.versoes?.dublado;
+                const temLegendado = filmeExistente.isLegendado || !!filmeExistente.versoes?.legendado;
+
+                if ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (temDublado && !job.userId)) {
+                    console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : 'Legendado'}). Ignorando download duplicado.`);
+                    return;
+                }
+            }
+        }
+
         // Validação de Ordem Cronológica e Verificação de Existência de Episódios para Séries/Doramas
         if (job.type === 'serie') {
             const seasonNum = job.season || 1;
