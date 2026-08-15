@@ -236,7 +236,7 @@ class QueueManager extends EventEmitter {
         let optimizedPath = job.optimizedPath || null;
         let langInfo = job.langInfo || { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
 
-        // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD para retomada imediata
+        // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD com validação de integridade FFprobe
         let resumeFromOptimized = false;
         let resumeFromRaw = false;
 
@@ -244,20 +244,36 @@ class QueueManager extends EventEmitter {
             try {
                 const optStat = fs.statSync(optimizedPath);
                 if (optStat.size > 20 * 1024 * 1024) {
-                    console.log(`⚡ [Retomada Inteligente] Arquivo já codificado encontrado no SSD (${(optStat.size / (1024*1024)).toFixed(1)} MB)! Pulando download e FFmpeg, avançando direto para Upload...`);
-                    resumeFromOptimized = true;
+                    const info = await VideoProcessor.getVideoInfo(optimizedPath);
+                    if (info && info.duration >= 300) {
+                        console.log(`⚡ [Retomada Inteligente] Arquivo codificado 1080p verificado com sucesso (${(optStat.size / (1024*1024)).toFixed(1)} MB, ${info.durationFormatted})! Pulando download e FFmpeg, avançando direto para Upload...`);
+                        resumeFromOptimized = true;
+                    } else {
+                        console.log(`🧹 Arquivo temporário codificado incompleto descartado.`);
+                        await DownloaderManager.cleanupFile(optimizedPath);
+                    }
                 }
-            } catch (e) {}
+            } catch (e) {
+                await DownloaderManager.cleanupFile(optimizedPath);
+            }
         }
 
         if (!resumeFromOptimized && rawFilePath && fs.existsSync(rawFilePath)) {
             try {
                 const rawStat = fs.statSync(rawFilePath);
                 if (rawStat.size > 50 * 1024 * 1024) {
-                    console.log(`⚡ [Retomada Inteligente] Arquivo baixado encontrado no SSD (${(rawStat.size / (1024*1024)).toFixed(1)} MB)! Pulando download via torrent, avançando direto para conversão...`);
-                    resumeFromRaw = true;
+                    const info = await VideoProcessor.getVideoInfo(rawFilePath);
+                    if (info && info.duration >= 300) {
+                        console.log(`⚡ [Retomada Inteligente] Arquivo baixado verificado com sucesso (${(rawStat.size / (1024*1024)).toFixed(1)} MB, ${info.durationFormatted})! Pulando download via torrent, avançando direto para conversão...`);
+                        resumeFromRaw = true;
+                    } else {
+                        console.log(`🧹 Arquivo temporário baixado incompleto descartado.`);
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                    }
                 }
-            } catch (e) {}
+            } catch (e) {
+                await DownloaderManager.cleanupFile(rawFilePath);
+            }
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
