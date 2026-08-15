@@ -140,11 +140,36 @@ class TMDBService {
                     sinopse: ep.overview || '',
                     nota: ep.vote_average || 0,
                     dataLancamento: ep.air_date || '',
-                    stillUrl: this.getPosterUrl(ep.still_path, 'w300')
+                    stillUrl: this.getPosterUrl(ep.still_path, 'w300'),
+                    runtime: ep.runtime || 0,
+                    duracaoMinutos: ep.runtime || 0
                 }))
             };
         } catch (error) {
             console.error(`❌ Erro ao obter temporada ${seasonNumber} de ${tmdbId}:`, error.message);
+            return null;
+        }
+    }
+
+    async getEpisodeDetails(tmdbId, seasonNumber, episodeNumber) {
+        try {
+            const response = await axios.get(`${this.baseUrl}/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`, {
+                params: {
+                    api_key: this.apiKey,
+                    language: this.language
+                },
+                timeout: 10000
+            });
+            const ep = response.data;
+            return {
+                numero: ep.episode_number,
+                nome: ep.name || `Episódio ${ep.episode_number}`,
+                sinopse: ep.overview || '',
+                nota: ep.vote_average || 0,
+                runtime: ep.runtime || 0,
+                duracaoMinutos: ep.runtime || 0
+            };
+        } catch (error) {
             return null;
         }
     }
@@ -240,6 +265,7 @@ class TMDBService {
             posterUrl: this.getPosterUrl(raw.poster_path),
             backdropUrl: this.getPosterUrl(raw.backdrop_path, 'original'),
             idiomaOriginal: raw.original_language || '',
+            duracaoMinutos: raw.runtime || (Array.isArray(raw.episode_run_time) && raw.episode_run_time[0]) || 0,
             generos: generos
         };
     }

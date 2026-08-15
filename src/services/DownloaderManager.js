@@ -285,10 +285,16 @@ class DownloaderManager extends EventEmitter {
                 const stat = fs.statSync(fullPath);
                 const expectedSize = selectedFile.length;
 
-                const isTargetDone = targetEpisodeFile ? (targetEpisodeFile.progress >= 0.999 || (targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.995)) : (torrent.progress >= 0.999);
+                const isTargetDone = targetEpisodeFile 
+                    ? (targetEpisodeFile.progress >= 0.999 && targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.999) 
+                    : (torrent.progress >= 0.999 && torrent.downloaded >= torrent.length * 0.999);
 
-                if (expectedSize > 0 && stat.size < expectedSize * 0.98 && !isTargetDone) {
-                    // Arquivo físico no disco ainda não recebeu todas as peças necessárias
+                if (!isTargetDone) {
+                    // Ainda restam peças sendo baixadas pelo WebTorrent
+                    return;
+                }
+
+                if (expectedSize > 0 && stat.size < expectedSize * 0.99) {
                     return;
                 }
 
@@ -296,12 +302,10 @@ class DownloaderManager extends EventEmitter {
                 try {
                     const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
                     if (!videoInfo.duration || videoInfo.duration <= 0) {
-                        if (!isTargetDone) return;
-                    }
-                } catch (e) {
-                    if (!isTargetDone && stat.size < expectedSize * 0.995) {
                         return;
                     }
+                } catch (e) {
+                    return;
                 }
 
                 finished = true;

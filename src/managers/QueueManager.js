@@ -472,17 +472,46 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        let tmdbExpectedDurationMin = 0;
+        try {
+            if (metadata.tmdbId) {
+                if (job.type === 'filme') {
+                    tmdbExpectedDurationMin = metadata.duracaoMinutos || 0;
+                } else {
+                    const epDet = await TMDBService.getEpisodeDetails(metadata.tmdbId, job.season || 1, job.episode || 1);
+                    if (epDet && epDet.duracaoMinutos) {
+                        tmdbExpectedDurationMin = epDet.duracaoMinutos;
+                    } else if (metadata.duracaoMinutos) {
+                        tmdbExpectedDurationMin = metadata.duracaoMinutos;
+                    }
+                }
+            }
+        } catch (e) {}
+
         if (!resumeFromOptimized) {
             // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
             try {
                 const videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
 
-                // Verificação de Duração Mínima (Anti-Sample / Anti-Propaganda de 30s)
+                // Verificação de Duração Mínima Absoluta (Anti-Sample / Anti-Propaganda de 30s)
                 const minDurationSec = 300;
                 if (videoInfo.duration && videoInfo.duration < minDurationSec) {
                     console.log(`⚠️ Arquivo descartado: Duração inválida de apenas ${videoInfo.durationFormatted} (${Math.round(videoInfo.duration)}s). Mínimo exigido: 5 minutos. Possível amostra/vídeo promocional falso para "${job.title}".`);
                     await DownloaderManager.cleanupFile(rawFilePath);
                     throw new Error(`Vídeo com duração inferior a 5 minutos (${Math.round(videoInfo.duration)}s). Amostra descartada.`);
+                }
+
+                // Verificação de Duração Oficial via TMDB API:
+                // Se o TMDB indicar que o episódio/filme tem X minutos, e o vídeo baixado tiver menos de 75% dessa duração (ex: episódio de 48min terminando em 25min sem créditos ou cortado), descarta na hora!
+                if (tmdbExpectedDurationMin > 0) {
+                    const expectedSec = tmdbExpectedDurationMin * 60;
+                    const minAcceptableSec = Math.floor(expectedSec * 0.75); // Permite até 25% de margem, mas impede vídeos cortados/incompletos
+                    if (videoInfo.duration && videoInfo.duration < minAcceptableSec) {
+                        const durAtualMin = (videoInfo.duration / 60).toFixed(1);
+                        console.log(`⚠️ Arquivo descartado: Duração insuficiente detectada (${videoInfo.durationFormatted} / ~${durAtualMin} min). A duração oficial no TMDB é de ${tmdbExpectedDurationMin} min. Possível corte/arquivo incompleto em "${job.title}".`);
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                        throw new Error(`Vídeo com duração inferior à oficial do TMDB (${videoInfo.durationFormatted} vs ${tmdbExpectedDurationMin} min esperados). Arquivo cortado/incompleto.`);
+                    }
                 }
 
                 langInfo = VideoProcessor.validatePortugueseContent(videoInfo, path.basename(rawFilePath), bestSource || {});
@@ -493,7 +522,7 @@ class QueueManager extends EventEmitter {
                     throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
                 }
 
-                console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted})`);
+                console.log(`🎙️ Conteúdo em Português e Duração validados com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''})`);
             } catch (err) {
                 if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
                     throw err;
