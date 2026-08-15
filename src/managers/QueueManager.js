@@ -673,7 +673,7 @@ class QueueManager extends EventEmitter {
         };
     }
 
-    getPublicStatus() {
+    getPublicStatus(catalogoManager = null) {
         const priorityLabels = {
             1: 'VIP 🔥',
             2: 'Pedido 🍿',
@@ -687,8 +687,8 @@ class QueueManager extends EventEmitter {
             type: j.type,
             priority: priorityLabels[j.priority] || 'Normal',
             audioPreference: j.audioPreference || 'dublado',
-            season: j.season || null,
-            episode: j.episode || null,
+            season: j.type === 'serie' ? (j.season || 1) : null,
+            episode: j.type === 'serie' ? (j.episode || 1) : null,
             status: j.status,
             progress: typeof j.progress === 'number' ? Math.round(j.progress) : 0,
             progressDetails: j.progressDetails || '',
@@ -700,11 +700,48 @@ class QueueManager extends EventEmitter {
             .filter(j => j.status === 'queued')
             .map(formatJob);
         
-        const recentCompleted = this.queue
-            .filter(j => j.status === 'completed')
-            .slice(-6)
-            .reverse()
-            .map(formatJob);
+        // Itens recentes baseados estritamente no catálogo ativo real
+        const cat = catalogoManager || this.catalogoManager;
+        let recentCompleted = [];
+
+        if (cat && cat.catalogo) {
+            const filmesRecentes = (cat.catalogo.filmes || []).map(f => ({
+                id: f.id,
+                title: f.nome,
+                type: 'filme',
+                season: null,
+                episode: null,
+                qualidade: f.qualidade || '1080p Full HD',
+                data: new Date(f.dataAdicionado || 0).getTime()
+            }));
+
+            const epsRecentes = [];
+            for (const s of (cat.catalogo.series || [])) {
+                for (const t of (s.temporadas || [])) {
+                    for (const ep of (t.episodios || [])) {
+                        epsRecentes.push({
+                            id: ep.id || s.id,
+                            title: s.nome,
+                            type: 'serie',
+                            season: t.numero,
+                            episode: ep.numero,
+                            qualidade: ep.qualidade || '1080p Full HD',
+                            data: new Date(ep.dataAdicionado || s.dataAdicionado || 0).getTime()
+                        });
+                    }
+                }
+            }
+
+            recentCompleted = [...filmesRecentes, ...epsRecentes]
+                .sort((a, b) => b.data - a.data)
+                .slice(0, 6);
+        } else {
+            recentCompleted = this.queue
+                .filter(j => j.status === 'completed')
+                .slice(-6)
+                .reverse()
+                .map(formatJob);
+        }
 
         return {
             isProcessing: this.isProcessing,

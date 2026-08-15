@@ -1080,7 +1080,7 @@
                         if (idleMessage) idleMessage.style.display = 'none';
                         if (activeContainer) activeContainer.style.display = 'block';
 
-                        const epStr = (task.season || task.episode) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
+                        const epStr = (task.type === 'serie' && (task.season || task.episode)) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
                         const titleEl = document.getElementById('live-task-title');
                         const typeEl = document.getElementById('live-task-type');
                         const prioEl = document.getElementById('live-task-priority');
@@ -1112,7 +1112,7 @@
                     if (queueList) {
                         if (data.queue.queue && data.queue.queue.length > 0) {
                             queueList.innerHTML = data.queue.queue.map(item => {
-                                const epStr = (item.season || item.episode) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
+                                const epStr = (item.type === 'serie' && (item.season || item.episode)) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
                                 const audioStr = item.audioPreference === 'dublado' ? '🇧🇷 Dublado' : '💬 Legendado';
                                 const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
                                 return `
@@ -1138,7 +1138,7 @@
                     if (recentList) {
                         if (data.queue.recentCompleted && data.queue.recentCompleted.length > 0) {
                             recentList.innerHTML = data.queue.recentCompleted.map(item => {
-                                const epStr = (item.season || item.episode) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
+                                const epStr = (item.type === 'serie' && (item.season || item.episode)) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
                                 const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
                                 return `
                                     <div class="queue-item">
