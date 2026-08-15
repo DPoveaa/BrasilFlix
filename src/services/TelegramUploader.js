@@ -80,11 +80,14 @@ class TelegramUploader {
 
     async deleteStorageMessages(messageIds) {
         if (!messageIds) return false;
-        const ids = (Array.isArray(messageIds) ? messageIds : [messageIds])
+        const baseIds = (Array.isArray(messageIds) ? messageIds : [messageIds])
             .map(id => Number(id))
             .filter(id => !isNaN(id) && id > 0);
 
-        if (ids.length === 0) return false;
+        if (baseIds.length === 0) return false;
+
+        // Inclui baseIds e baseIds + 1 para limpar eventuais mensagens de confirmação adjacentes
+        const ids = [...new Set([...baseIds, ...baseIds.map(id => id + 1)])];
 
         try {
             const client = await this.getClient();

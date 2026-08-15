@@ -569,19 +569,20 @@ class QueueManager extends EventEmitter {
             );
         }
 
-        // 7. Notificação formal no Grupo de Armazenamento / Storage
+        // 7. Notificação formal no Grupo de Notificações
         try {
-            if (this.bot && config.STORAGE_GROUP_ID) {
+            const targetGroupId = config.NOTIFICATION_GROUP_ID || config.ADMIN_ID;
+            if (this.bot && targetGroupId) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
-                const storageMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
-                                   `${tipoTexto}\n` +
-                                   `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
-                                   `🔊 *Áudio:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n` +
-                                   `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
-                                   `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
-                                   `🍿 *Disponível imediatamente para todos os usuários!*`;
-                await this.bot.sendMessage(config.STORAGE_GROUP_ID, storageMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                const notifMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
+                                 `${tipoTexto}\n` +
+                                 `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
+                                 `🔊 *Áudio:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n` +
+                                 `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
+                                 `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
+                                 `🍿 *Disponível imediatamente para todos os usuários!*`;
+                await this.bot.sendMessage(targetGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
             }
         } catch (e) {}
 
