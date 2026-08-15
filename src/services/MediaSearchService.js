@@ -401,46 +401,51 @@ class MediaSearchService {
             if (a.isWebDl) scoreA += 500;
             if (b.isWebDl) scoreB += 500;
 
-            // Prioridade para 1080p Full HD e 720p HD
+            // Prioridade máxima para 1080p Full HD e 720p HD
             const is1080pA = /\b(1080p|1080|fhd|fullhd)\b/i.test(a.title);
             const is1080pB = /\b(1080p|1080|fhd|fullhd)\b/i.test(b.title);
-            if (is1080pA) scoreA += 400;
-            if (is1080pB) scoreB += 400;
+            if (is1080pA) scoreA += 600;
+            if (is1080pB) scoreB += 600;
 
             const is720pA = /\b(720p|720|hd)\b/i.test(a.title) && !is1080pA;
             const is720pB = /\b(720p|720|hd)\b/i.test(b.title) && !is1080pB;
-            if (is720pA) scoreA += 200;
-            if (is720pB) scoreB += 200;
+            if (is720pA) scoreA += 300;
+            if (is720pB) scoreB += 300;
 
-            // Desprioriza 4K/2160p (pesado demais sem ganho visual no Telegram)
-            const is4kA = /\b(2160p|4k|uhd)\b/i.test(a.title);
-            const is4kB = /\b(2160p|4k|uhd)\b/i.test(b.title);
-            if (is4kA) scoreA -= 600;
-            if (is4kB) scoreB -= 600;
+            // Penalidade pesada para 4K/2160p (desperdício de banda e tempo no Telegram)
+            const is4kA = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(a.title);
+            const is4kB = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(b.title);
+            if (is4kA) scoreA -= 3500;
+            if (is4kB) scoreB -= 3500;
 
-            // PRIORIDADE CRÍTICA DE SEEDERS (Evita fontes lentas/travadas)
+            // PRIORIDADE DE SEEDERS (Evita fontes lentas/travadas)
             const seedsA = a.seeders || 0;
             const seedsB = b.seeders || 0;
 
-            if (seedsA >= 15) scoreA += 1200;
-            else if (seedsA >= 8) scoreA += 700;
-            else if (seedsA >= 4) scoreA += 300;
-            else if (seedsA <= 2) scoreA -= 800; // Penalidade forte para torrents com quase nenhum seeder
+            if (seedsA >= 15) scoreA += 1000;
+            else if (seedsA >= 8) scoreA += 600;
+            else if (seedsA >= 4) scoreA += 250;
+            else if (seedsA <= 2) scoreA -= 1000; // Penalidade para torrents quase sem seeder
 
-            if (seedsB >= 15) scoreB += 1200;
-            else if (seedsB >= 8) scoreB += 700;
-            else if (seedsB >= 4) scoreB += 300;
-            else if (seedsB <= 2) scoreB -= 800;
+            if (seedsB >= 15) scoreB += 1000;
+            else if (seedsB >= 8) scoreB += 600;
+            else if (seedsB >= 4) scoreB += 250;
+            else if (seedsB <= 2) scoreB -= 1000;
 
-            scoreA += Math.min(600, seedsA * 25);
-            scoreB += Math.min(600, seedsB * 25);
+            scoreA += Math.min(400, seedsA * 15);
+            scoreB += Math.min(400, seedsB * 15);
 
-            // Tamanho doce (Sweet Spot) entre 1.2 GB e 3.8 GB para downloads rápidos em 1080p
+            // Tamanho ideal (Sweet Spot) entre 1.4 GB e 4.2 GB para 1080p nítido e leve
             const sizeA = (a.sizeBytes || 0) / (1024 * 1024);
             const sizeB = (b.sizeBytes || 0) / (1024 * 1024);
 
-            if (sizeA >= 1200 && sizeA <= 3800) scoreA += 350;
-            if (sizeB >= 1200 && sizeB <= 3800) scoreB += 350;
+            if (sizeA > 10000) scoreA -= 4000; // > 10GB (arquivo gigante desnecessário)
+            else if (sizeA > 5500) scoreA -= 2000; // > 5.5GB
+            else if (sizeA >= 1300 && sizeA <= 4500) scoreA += 1000; // Ponto ideal 1080p
+
+            if (sizeB > 10000) scoreB -= 4000;
+            else if (sizeB > 5500) scoreB -= 2000;
+            else if (sizeB >= 1300 && sizeB <= 4500) scoreB += 1000;
 
             return scoreB - scoreA;
         });
