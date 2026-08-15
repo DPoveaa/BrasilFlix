@@ -355,9 +355,8 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/episodio/:id', auth, async (req, res) => {
             try {
-                await db.query(`DELETE FROM episodios WHERE id = $1`, [req.params.id]);
-                await this.catalogoManager?.loadCatalogo();
-                res.json({ success: true, message: 'Episódio removido do catálogo.' });
+                await this.catalogoManager?.removerEpisodio(req.params.id);
+                res.json({ success: true, message: 'Episódio removido do catálogo e apagado do Armazém.' });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }

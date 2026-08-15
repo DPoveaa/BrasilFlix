@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../config');
 const db = require('../database/db');
+const telegramUploader = require('../services/TelegramUploader');
 
 class CatalogoManager {
     constructor() {
@@ -436,31 +437,110 @@ class CatalogoManager {
         return { success: true, serie, temporada, episodio: epData };
     }
 
+    async deleteStorageMessages(messageIds) {
+        if (!messageIds || messageIds.length === 0) return;
+        const validIds = messageIds.map(Number).filter(id => id && !isNaN(id) && id > 0);
+        if (validIds.length === 0) return;
+
+        const storageGroupId = config.STORAGE_GROUP_ID;
+
+        try {
+            const client = await telegramUploader.getClient();
+            if (client) {
+                await client.deleteMessages(storageGroupId, validIds, { revoke: true });
+                console.log(`🗑️ [Armazém Telegram] ${validIds.length} mensagem(ns) apagada(s) com sucesso do grupo ${storageGroupId}:`, validIds);
+            }
+        } catch (e) {
+            console.warn('⚠️ Aviso ao deletar mensagens do Armazém via MTProto:', e.message);
+        }
+    }
+
     async removerItem(id) {
         const numId = Number(id);
-        
+        const messagesToDelete = [];
+
+        // 1. Localiza no catálogo em memória para coletar message_ids
+        const filme = (this.catalogo.filmes || []).find(f => f.id === numId || String(f.id) === String(id));
+        if (filme) {
+            if (filme.messageId) messagesToDelete.push(filme.messageId);
+            if (filme.versoes?.dublado?.messageId) messagesToDelete.push(filme.versoes.dublado.messageId);
+            if (filme.versoes?.legendado?.messageId) messagesToDelete.push(filme.versoes.legendado.messageId);
+        }
+
+        const serie = (this.catalogo.series || []).find(s => s.id === numId || String(s.id) === String(id));
+        if (serie) {
+            if (serie.messageId) messagesToDelete.push(serie.messageId);
+            for (const temp of (serie.temporadas || [])) {
+                for (const ep of (temp.episodios || [])) {
+                    if (ep.messageId) messagesToDelete.push(ep.messageId);
+                    if (ep.versoes?.dublado?.messageId) messagesToDelete.push(ep.versoes.dublado.messageId);
+                    if (ep.versoes?.legendado?.messageId) messagesToDelete.push(ep.versoes.legendado.messageId);
+                }
+            }
+        }
+
+        // 2. Busca também no PostgreSQL para garantir que nenhum message_id fique para trás
         try {
+            const fRes = await db.query(`SELECT message_id FROM filmes WHERE id = $1`, [numId]);
+            for (const r of fRes.rows) {
+                if (r.message_id) messagesToDelete.push(r.message_id);
+            }
+            const epRes = await db.query(`SELECT message_id FROM episodios WHERE serie_id = $1`, [numId]);
+            for (const r of epRes.rows) {
+                if (r.message_id) messagesToDelete.push(r.message_id);
+            }
+
+            await db.query(`DELETE FROM episodios WHERE serie_id = $1`, [numId]);
             await db.query(`DELETE FROM filmes WHERE id = $1`, [numId]);
             await db.query(`DELETE FROM series WHERE id = $1`, [numId]);
         } catch (e) {
             console.warn('⚠️ Erro ao remover do PostgreSQL:', e.message);
         }
 
-        let index = this.catalogo.filmes.findIndex(f => f.id === numId);
+        // 3. Remove do array em memória
+        let index = this.catalogo.filmes.findIndex(f => f.id === numId || String(f.id) === String(id));
         if (index !== -1) {
             this.catalogo.filmes.splice(index, 1);
-            this.saveCatalogo();
-            return true;
         }
 
-        index = this.catalogo.series.findIndex(s => s.id === numId);
+        index = this.catalogo.series.findIndex(s => s.id === numId || String(s.id) === String(id));
         if (index !== -1) {
             this.catalogo.series.splice(index, 1);
-            this.saveCatalogo();
-            return true;
         }
 
-        return false;
+        this.saveCatalogo();
+
+        // 4. Apaga fisicamente do grupo de Armazenamento do Telegram
+        if (messagesToDelete.length > 0) {
+            const uniqueMsgIds = [...new Set(messagesToDelete)];
+            await this.deleteStorageMessages(uniqueMsgIds);
+        }
+
+        return true;
+    }
+
+    async removerEpisodio(idOrMessageId) {
+        const messagesToDelete = [];
+        const target = Number(idOrMessageId) || 0;
+
+        try {
+            const epRes = await db.query(`SELECT id, message_id FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+            for (const r of epRes.rows) {
+                if (r.message_id) messagesToDelete.push(r.message_id);
+            }
+            await db.query(`DELETE FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao remover episódio do PostgreSQL:', e.message);
+        }
+
+        await this.loadCatalogo();
+
+        if (messagesToDelete.length > 0) {
+            const uniqueMsgIds = [...new Set(messagesToDelete)];
+            await this.deleteStorageMessages(uniqueMsgIds);
+        }
+
+        return true;
     }
 
     buscarItemExato(nome, tipo) {
