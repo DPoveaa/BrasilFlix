@@ -36,16 +36,20 @@ class VideoProcessor {
                         durationFormatted: this.formatDuration(duration),
                         sizeBytes,
                         sizeMB: (sizeBytes / (1024 * 1024)).toFixed(2),
-                        videoCodec: videoStream.codec_name,
-                        audioStreams: audioStreams.map(a => ({
-                            codec: a.codec_name,
-                            language: a.tags?.language || 'und',
-                            title: a.tags?.title || ''
+                        videoCodec: (videoStream.codec_name || '').toLowerCase(),
+                        audioStreams: audioStreams.map((a, idx) => ({
+                            index: idx,
+                            codec: (a.codec_name || '').toLowerCase(),
+                            channels: parseInt(a.channels || 2, 10),
+                            channelLayout: a.channel_layout || '',
+                            language: (a.tags?.language || a.tags?.LANGUAGE || a.tags?.lang || 'und').toLowerCase(),
+                            title: (a.tags?.title || a.tags?.TITLE || a.tags?.handler_name || '').toLowerCase()
                         })),
-                        subtitleStreams: subtitleStreams.map(s => ({
-                            codec: s.codec_name,
-                            language: s.tags?.language || 'und',
-                            title: s.tags?.title || ''
+                        subtitleStreams: subtitleStreams.map((s, idx) => ({
+                            index: idx,
+                            codec: (s.codec_name || '').toLowerCase(),
+                            language: (s.tags?.language || s.tags?.LANGUAGE || s.tags?.lang || 'und').toLowerCase(),
+                            title: (s.tags?.title || s.tags?.TITLE || s.tags?.handler_name || '').toLowerCase()
                         }))
                     });
                 } catch (e) {
@@ -53,6 +57,45 @@ class VideoProcessor {
                 }
             });
         });
+    }
+
+    detectPortugueseAudioIndex(audioStreams, rawFileName = '') {
+        if (!audioStreams || audioStreams.length === 0) return null;
+        if (audioStreams.length === 1) return 0;
+
+        const ptKeywords = ['por', 'pob', 'pt', 'pt-br', 'pt_br', 'brazilian', 'portuguese', 'português'];
+
+        // 1. Tag explícita de idioma no stream
+        for (let i = 0; i < audioStreams.length; i++) {
+            const lang = (audioStreams[i].language || '').toLowerCase();
+            if (ptKeywords.includes(lang)) {
+                return i;
+            }
+        }
+
+        // 2. Título ou nome do stream (ex: "Dublado", "Português", "PT-BR", "Áudio Nacional")
+        for (let i = 0; i < audioStreams.length; i++) {
+            const title = (audioStreams[i].title || '').toLowerCase();
+            if (title.includes('portug') || title.includes('dublado') || title.includes('pt-br') || 
+                title.includes('pt_br') || title.includes('nacional') || title.includes('audio 1') || 
+                title.includes('áudio 1') || title.includes('pob')) {
+                return i;
+            }
+        }
+
+        // 3. Regra de eliminação para arquivos DUAL AUDIO:
+        // Se um dos áudios estiver marcado explicitamente como estrangeiro (eng/spa/etc.) e o outro for 'und' (anônimo)
+        const foreignCodes = ['eng', 'spa', 'fra', 'fre', 'deu', 'ger', 'ita', 'rus', 'jpn', 'kor', 'zho', 'chi', 'hin'];
+        const foreignIdx = audioStreams.findIndex(s => foreignCodes.includes((s.language || '').toLowerCase()));
+        if (foreignIdx !== -1) {
+            const ptCandidateIdx = audioStreams.findIndex((s, idx) => idx !== foreignIdx && !foreignCodes.includes((s.language || '').toLowerCase()));
+            if (ptCandidateIdx !== -1) {
+                return ptCandidateIdx;
+            }
+        }
+
+        // 4. Se nenhum tiver metadados, em releases brasileiros Dual Audio o Track 0 é o principal
+        return 0;
     }
 
     hasPortugueseAudio(info, rawFileName = '') {
@@ -78,13 +121,13 @@ class VideoProcessor {
             return ['eng', 'hin', 'tam', 'tel', 'fra', 'fre', 'spa', 'deu', 'ger', 'ita', 'rus', 'jpn', 'kor', 'zho', 'chi'].includes(lang);
         });
 
-        if (hasForeignTags) {
-            return false; // Áudio é estrangeiro
+        if (hasForeignTags && info.audioStreams.length === 1) {
+            return false; // Áudio único estrangeiro
         }
 
         // 3. Se as faixas de áudio não possuem metadados de idioma (streams anônimos), verifica o selo brasileiro no nome do arquivo
         const isBrGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|mostbet|1xbet|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(lowerName);
-        const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues)\b/i.test(lowerName);
+        const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues|dual)\b/i.test(lowerName);
 
         if (isExplicitDublado || isBrGroup) {
             return true;
@@ -190,56 +233,46 @@ class VideoProcessor {
             ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
             : (metadata.nome || metadata.title || path.basename(inputPath));
 
-        // Se o arquivo for menor que 3.95 GB e o codec já for H.264 (seja MP4 ou MKV):
-        // Faz Remux Ultrarrápido em ~5 segundos sem perder qualidade nem gastar CPU!
         const isUnderSizeLimit = info.sizeBytes <= this.maxSizeBytes;
         const isFastCodec = info.videoCodec === 'h264';
         const isResolutionFine = (info.width || 1920) <= 1920; // 1080p ou menor
 
-        // Detectar qual faixa de áudio é em Português
-        let portugueseAudioIndex = null;
-        if (info.audioStreams && info.audioStreams.length > 0) {
-            for (let i = 0; i < info.audioStreams.length; i++) {
-                const a = info.audioStreams[i];
-                const lang = (a.language || '').toLowerCase();
-                const title = (a.title || '').toLowerCase();
-                if (['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'].includes(lang) ||
-                    title.includes('portug') || title.includes('dublado') || title.includes('pt-br')) {
-                    portugueseAudioIndex = i;
-                    break;
-                }
-            }
-        }
+        // Detectar com precisão a faixa de áudio em Português
+        const portugueseAudioIndex = this.detectPortugueseAudioIndex(info.audioStreams, path.basename(inputPath));
+        const selectedAudioStream = portugueseAudioIndex !== null ? info.audioStreams[portugueseAudioIndex] : (info.audioStreams[0] || null);
 
         let finalPath;
 
         if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
-            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido com áudio padrão...`);
+            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Rápido com normalização universal de áudio AAC...`);
             if (portugueseAudioIndex !== null) {
-                console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
+                console.log(`🔊 Faixa de áudio em Português selecionada: Stream 0:a:${portugueseAudioIndex} [${selectedAudioStream?.codec?.toUpperCase()} | ${selectedAudioStream?.channels} canais | lang: ${selectedAudioStream?.language}]`);
             }
 
             finalPath = await new Promise((resolve, reject) => {
                 const remuxArgs = [
                     '-i', inputPath,
-                    '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento (100% de qualidade original)
+                    '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento (100% de qualidade original preservada)
                 ];
 
                 if (portugueseAudioIndex !== null) {
                     remuxArgs.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
                 } else {
-                    remuxArgs.push('-map', '0:v:0', '-map', '0:a?');
+                    remuxArgs.push('-map', '0:v:0', '-map', '0:a:0?', '-disposition:a:0', 'default');
                 }
 
-                // Garante que o áudio seja compatível (copia se for aac/ac3/mp3, ou converte áudio rapidamente para aac)
-                const audioToCheck = portugueseAudioIndex !== null
-                    ? info.audioStreams[portugueseAudioIndex]
-                    : info.audioStreams[0];
-                const firstAudioCodec = (audioToCheck?.codec) || '';
-                if (['aac', 'mp3', 'ac3', 'eac3', 'dts'].includes(firstAudioCodec.toLowerCase())) {
+                // REGRA UNIVERSAL DE ÁUDIO PARA TELEGRAM E WEB:
+                // Se o áudio JÁ FOR AAC e estéreo (<= 2 canais), faz copy ultrarrápido.
+                // Se for EAC3, AC3, DTS, 5.1 canais, 7.1 canais ou outro codec:
+                // Converte OBRIGATORIAMENTE para AAC Stereo (2.0) a 256kbps 48kHz para garantir que NUNCA fique mudo!
+                const isSimpleAacStereo = selectedAudioStream && 
+                    selectedAudioStream.codec === 'aac' && 
+                    selectedAudioStream.channels <= 2;
+
+                if (isSimpleAacStereo) {
                     remuxArgs.push('-c:a', 'copy');
                 } else {
-                    remuxArgs.push('-c:a', 'aac', '-b:a', '320k');
+                    remuxArgs.push('-c:a', 'aac', '-b:a', '256k', '-ac', '2', '-ar', '48000');
                 }
 
                 remuxArgs.push('-movflags', '+faststart', '-y', outputPath);
@@ -262,7 +295,7 @@ class VideoProcessor {
                         const speedStr = speedMatch ? `${speedMatch[1]}x` : 'Rápido';
 
                         const now = Date.now();
-                        if (now - lastLogTime > 400) { // Atualiza a cada 400ms
+                        if (now - lastLogTime > 400) {
                             lastLogTime = now;
                             const barLength = 25;
                             const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
@@ -281,7 +314,7 @@ class VideoProcessor {
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
                         process.stdout.write('\n');
-                        console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso com 100% da qualidade original preservada!\x1b[0m`);
+                        console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso e áudio AAC estéreo 100% garantido!\x1b[0m`);
                         if (onProgress) onProgress(100, 'Remux Concluído');
                         resolve(outputPath);
                     } else {
@@ -342,12 +375,16 @@ class VideoProcessor {
                 '-bufsize', `${maxVideoKbps * 2}k`,
                 '-threads', `${safeThreads}`,
                 '-c:a', 'aac',
-                '-b:a', `${audioBitrateKbps}k`
+                '-b:a', `${audioBitrateKbps}k`,
+                '-ac', '2',
+                '-ar', '48000'
             ];
 
-            // Se encontrou a faixa específica em português no Multi-Áudio, mapeia ela como áudio padrão
+            // Mapeamento preciso de áudio
             if (portugueseAudioIndex !== null) {
                 args.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
+            } else {
+                args.push('-map', '0:v:0', '-map', '0:a:0?', '-disposition:a:0', 'default');
             }
 
             args.push('-movflags', '+faststart', '-y', outputPath);
