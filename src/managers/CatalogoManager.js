@@ -22,6 +22,12 @@ class CatalogoManager {
 
     async loadCatalogo() {
         try {
+            // Limpa séries sem episódios e filmes sem arquivo no PostgreSQL para manter integridade
+            try {
+                await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL)`);
+                await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '')`);
+            } catch (e) {}
+
             // Carrega Filmes do PostgreSQL
             const filmesRes = await db.query(`SELECT * FROM filmes ORDER BY id ASC`);
             const seriesRes = await db.query(`SELECT * FROM series ORDER BY id ASC`);
@@ -60,6 +66,8 @@ class CatalogoManager {
                     episodios: temporadasObj[tNum]
                 })).sort((a, b) => a.numero - b.numero);
 
+                const totalEps = temporadas.reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+
                 return {
                     id: s.id,
                     tmdbId: s.tmdb_id,
@@ -77,14 +85,14 @@ class CatalogoManager {
                     isDublado: s.is_dublado,
                     isLegendado: s.is_legendado,
                     isCam: s.is_cam,
-                    totalTemporadas: s.total_temporadas || temporadas.length || 1,
-                    totalEpisodios: s.total_episodios || temporadas.reduce((acc, t) => acc + t.episodios.length, 0),
+                    totalTemporadas: temporadas.length,
+                    totalEpisodios: totalEps,
                     tipo: 'serie',
                     temporadas: temporadas,
                     dataAdicionado: s.created_at,
                     tags: this.extrairTags(s.nome + ' ' + (s.sinopse || '') + ' ' + (s.generos || []).toString())
                 };
-            });
+            }).filter(s => s.totalEpisodios > 0);
 
             // Mapeia Filmes
             const filmes = filmesRes.rows.map(f => ({
@@ -114,7 +122,7 @@ class CatalogoManager {
                 tipo: 'filme',
                 dataAdicionado: f.created_at,
                 tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
-            }));
+            })).filter(f => !!f.messageId || !!f.fileId);
 
             this.catalogo = { filmes, series };
             console.log(`📚 Catálogo carregado do PostgreSQL: ${filmes.length} filmes, ${series.length} séries.`);
@@ -513,13 +521,24 @@ class CatalogoManager {
     async removerEpisodio(idOrMessageId) {
         const messagesToDelete = [];
         const target = Number(idOrMessageId) || 0;
+        let serieId = null;
 
         try {
-            const epRes = await db.query(`SELECT id, message_id FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+            const epRes = await db.query(`SELECT id, serie_id, message_id FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
             for (const r of epRes.rows) {
+                if (r.serie_id) serieId = r.serie_id;
                 if (r.message_id) messagesToDelete.push(r.message_id);
             }
             await db.query(`DELETE FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+
+            if (serieId) {
+                const countRes = await db.query(`SELECT COUNT(*) as total FROM episodios WHERE serie_id = $1`, [serieId]);
+                const totalRestante = parseInt(countRes.rows[0]?.total || '0', 10);
+                if (totalRestante === 0) {
+                    console.log(`🧹 Série ID ${serieId} ficou sem episódios. Removendo série do catálogo PostgreSQL automaticamente.`);
+                    await db.query(`DELETE FROM series WHERE id = $1`, [serieId]);
+                }
+            }
         } catch (e) {
             console.warn('⚠️ Erro ao remover episódio do PostgreSQL:', e.message);
         }
