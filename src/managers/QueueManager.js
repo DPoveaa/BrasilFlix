@@ -99,14 +99,23 @@ class QueueManager extends EventEmitter {
 
         if (existing) {
             // Se for pedido de usuário, eleva a prioridade do existente
-            if (priority === PRIORITIES.USER && existing.priority > PRIORITIES.USER) {
-                existing.priority = PRIORITIES.USER;
+            if ((priority === PRIORITIES.VIP_USER || priority === PRIORITIES.USER) && existing.priority > priority) {
+                existing.priority = priority;
                 existing.userId = job.userId;
                 existing.username = job.username;
                 this.sortQueue();
                 this.saveQueue();
             }
             return existing;
+        }
+
+        // Se for filme e já existir no catálogo em qualidade oficial (não-CAM), ignora download duplicado
+        if (type === 'filme' && !extraData.isUpgrade) {
+            const existente = this.catalogoManager.buscarItemExato(title, 'filme');
+            if (existente && !existente.isCam) {
+                console.log(`ℹ️ [Fila] "${title}" já existe no catálogo em qualidade oficial. Ignorando adição duplicada.`);
+                return null;
+            }
         }
 
         this.queue.push(job);
@@ -343,11 +352,25 @@ class QueueManager extends EventEmitter {
             );
         }
 
-        // 7. Limpeza dos arquivos temporários
+        // 7. Notificação formal no Grupo de Armazenamento / Storage
+        try {
+            if (this.bot && config.STORAGE_GROUP_ID) {
+                const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
+                const storageMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
+                                   `${tipoTexto}\n` +
+                                   `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
+                                   `🔊 *Áudio:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n` +
+                                   `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
+                                   `🍿 *Disponível imediatamente para todos os usuários!*`;
+                await this.bot.sendMessage(config.STORAGE_GROUP_ID, storageMsg, { parse_mode: 'Markdown' }).catch(() => {});
+            }
+        } catch (e) {}
+
+        // 8. Limpeza dos arquivos temporários
         await DownloaderManager.cleanupFile(rawFilePath);
         await DownloaderManager.cleanupFile(optimizedPath);
 
-        // 8. Se for pedido de usuário, notifica com o botão de assistir
+        // 9. Se for pedido de usuário, notifica com o botão de assistir
         if (job.userId && this.bot) {
             const mensagem = `🎉 *Seu pedido está pronto para assistir!*\n\n` +
                             `🎬 *${metadata.nome}*\n` +
