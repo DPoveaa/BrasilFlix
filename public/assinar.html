@@ -419,12 +419,23 @@
                 </div>
             </div>
 
-            <button class="btn-pay" onclick="handleGeneratePix()">
-                ⚡ Pagar com PIX & Ativar Imediatamente
-            </button>
+            <!-- OPÇÕES DE PAGAMENTO -->
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                <button id="btn-recorrente" class="btn-pay" style="background: linear-gradient(135deg, #7b2cbf, #9d4edd);" onclick="handleRecurringSubscription()">
+                    💳 Assinar com Cobrança Mensal Automática (Cartão de Crédito)
+                </button>
+                
+                <button class="btn-pay" onclick="handleGeneratePix()">
+                    ⚡ Pagar com PIX Instantâneo (QR Code / Copia e Cola)
+                </button>
 
-            <div style="text-align: center; font-size: 12px; color: var(--text-muted);">
-                🔒 Pagamento 100% seguro processado pelo Mercado Pago. Seu token VIP será liberado automaticamente após a aprovação.
+                <button id="btn-checkout-pro" class="btn-pay" style="background: rgba(255,255,255,0.08); border: 1px solid var(--border-color); font-size: 15px;" onclick="handleCheckoutPro()">
+                    🛒 Pagar com Cartão em até 12x / Outras Formas (Mercado Pago)
+                </button>
+            </div>
+
+            <div style="text-align: center; font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                🔒 <strong>Ativação Imediata:</strong> Seu <strong>Token VIP</strong> e o botão de <strong>Instalar no Stremio com 1-Clique</strong> serão liberados diretamente nesta tela assim que o pagamento for confirmado. O recibo oficial do pagamento será emitido e enviado automaticamente pelo Mercado Pago para o seu e-mail.
             </div>
         </div>
     </div>
@@ -506,6 +517,79 @@
             const planNames = { 'mensal': 'Plano Mensal (30 dias)', 'trimestral': 'Plano Trimestral (90 dias)', 'vitalicio': 'Acesso Vitalício Eterno' };
             document.getElementById('summary-plan-text').innerText = planNames[plan] || plan;
             document.getElementById('summary-price-text').innerText = `R$ ${price.toFixed(2).replace('.', ',')}`;
+        }
+
+        async function handleRecurringSubscription() {
+            const name = document.getElementById('cust-name').value.trim();
+            const email = document.getElementById('cust-email').value.trim();
+            const tg = document.getElementById('cust-tg').value.trim();
+
+            if (!name || !email) {
+                alert('Por favor, preencha seu Nome e E-mail para ativar a assinatura.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-recorrente');
+            btn.innerText = '⏳ Redirecionando para o Mercado Pago...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/pagamentos/assinatura-recorrente', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome, email, plano: selectedPlan, telegramUser: tg })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success || !data.init_point) {
+                    alert(data.error || 'Não foi possível iniciar a assinatura recorrente.');
+                    btn.innerText = '💳 Assinar com Cobrança Mensal Automática (Cartão de Crédito)';
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Redireciona para o portal seguro de assinatura do Mercado Pago
+                window.location.href = data.init_point;
+            } catch (err) {
+                alert('Erro de conexão ao iniciar assinatura.');
+                btn.innerText = '💳 Assinar com Cobrança Mensal Automática (Cartão de Crédito)';
+                btn.disabled = false;
+            }
+        }
+
+        async function handleCheckoutPro() {
+            const name = document.getElementById('cust-name').value.trim();
+            const email = document.getElementById('cust-email').value.trim();
+            const tg = document.getElementById('cust-tg').value.trim();
+
+            if (!name || !email) {
+                alert('Por favor, preencha seu Nome e E-mail.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-checkout-pro');
+            btn.innerText = '⏳ Abrindo Checkout Seguro...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/pagamentos/checkout-pro', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome, email, plano: selectedPlan, telegramUser: tg })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success || !data.init_point) {
+                    alert(data.error || 'Erro ao gerar checkout Mercado Pago.');
+                    btn.innerText = '🛒 Pagar com Cartão em até 12x / Outras Formas (Mercado Pago)';
+                    btn.disabled = false;
+                    return;
+                }
+
+                window.location.href = data.init_point;
+            } catch (err) {
+                alert('Erro de conexão com o Checkout.');
+                btn.innerText = '🛒 Pagar com Cartão em até 12x / Outras Formas (Mercado Pago)';
+                btn.disabled = false;
+            }
         }
 
         async function handleGeneratePix() {

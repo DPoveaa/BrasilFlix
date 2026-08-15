@@ -367,6 +367,92 @@ class AssinaturaManager {
         }
     }
 
+    async criarAssinaturaRecorrenteWeb({ nome, email, plano = 'mensal', telegramUser = '' }) {
+        try {
+            const preco = this.getPrecoPlano(plano);
+            const cleanUser = (nome || telegramUser || 'Cliente').replace(/^@/, '').trim();
+            const cleanEmail = email || `cliente_${Date.now()}@brasilflix.com.br`;
+            const randomRef = Math.random().toString(36).substring(2, 7);
+            const externalRef = `sub_${encodeURIComponent(cleanUser)}_${plano}_${randomRef}`;
+
+            const preapprovalData = {
+                payer_email: cleanEmail,
+                back_url: 'https://brasilflix.kapsu.com.br/assinar?status=aprovado',
+                reason: `BrasilFlix VIP - Assinatura Mensal Automática (${cleanUser})`,
+                external_reference: externalRef,
+                auto_recurring: {
+                    frequency: 1,
+                    frequency_type: 'months',
+                    transaction_amount: preco,
+                    currency_id: 'BRL'
+                }
+            };
+
+            const response = await mercadopago.preapproval.create(preapprovalData);
+            console.log('✅ Assinatura Recorrente Automática Mercado Pago criada:', response.body.id);
+
+            return {
+                success: true,
+                subscriptionId: response.body.id,
+                init_point: response.body.init_point,
+                preco,
+                plano,
+                status: response.body.status
+            };
+        } catch (error) {
+            console.error('❌ Erro ao criar assinatura recorrente Mercado Pago:', error);
+            return this.criarCheckoutProWeb({ nome, email, plano, telegramUser });
+        }
+    }
+
+    async criarCheckoutProWeb({ nome, email, plano = 'mensal', telegramUser = '' }) {
+        try {
+            const preco = this.getPrecoPlano(plano);
+            const cleanUser = (nome || telegramUser || 'Cliente').replace(/^@/, '').trim();
+            const cleanEmail = email || `cliente_${Date.now()}@brasilflix.com.br`;
+            const randomRef = Math.random().toString(36).substring(2, 7);
+            const externalRef = `web_${encodeURIComponent(cleanUser)}_${plano}_${randomRef}`;
+
+            const preferenceData = {
+                items: [
+                    {
+                        title: `BrasilFlix VIP - Plano ${plano.toUpperCase()} (${cleanUser})`,
+                        unit_price: preco,
+                        quantity: 1,
+                        currency_id: 'BRL',
+                        description: 'Acesso VIP Ilimitado ao Catálogo Oficial BrasilFlix em 1080p'
+                    }
+                ],
+                payer: {
+                    name: cleanUser,
+                    email: cleanEmail
+                },
+                back_urls: {
+                    success: 'https://brasilflix.kapsu.com.br/assinar?status=aprovado',
+                    failure: 'https://brasilflix.kapsu.com.br/assinar?status=falha',
+                    pending: 'https://brasilflix.kapsu.com.br/assinar?status=pendente'
+                },
+                auto_return: 'approved',
+                notification_url: 'https://brasilflix.kapsu.com.br/webhook',
+                external_reference: externalRef
+            };
+
+            const response = await mercadopago.preferences.create(preferenceData);
+            console.log('✅ Checkout Pro Mercado Pago criado com sucesso:', response.body.id);
+
+            return {
+                success: true,
+                preferenceId: response.body.id,
+                init_point: response.body.init_point,
+                preco,
+                plano
+            };
+        } catch (error) {
+            console.error('❌ Erro ao criar Checkout Pro:', error);
+            throw error;
+        }
+    }
+
     async processarPagamento(paymentId) {
         try {
             const payment = await mercadopago.payment.get(paymentId);

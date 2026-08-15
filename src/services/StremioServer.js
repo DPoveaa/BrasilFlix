@@ -516,6 +516,26 @@ class StremioServer {
             }
         });
 
+        this.app.post('/api/pagamentos/assinatura-recorrente', async (req, res) => {
+            try {
+                const { nome, email, plano, telegramUser } = req.body;
+                const sub = await this.assinaturaManager.criarAssinaturaRecorrenteWeb({ nome, email, plano, telegramUser });
+                res.json(sub);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.post('/api/pagamentos/checkout-pro', async (req, res) => {
+            try {
+                const { nome, email, plano, telegramUser } = req.body;
+                const pref = await this.assinaturaManager.criarCheckoutProWeb({ nome, email, plano, telegramUser });
+                res.json(pref);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
         this.app.get('/api/pagamentos/status/:id', async (req, res) => {
             try {
                 const resultado = await this.assinaturaManager.processarPagamento(req.params.id);
