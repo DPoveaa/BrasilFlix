@@ -50,7 +50,6 @@ function getPool() {
 }
 
 async function query(text, params) {
-    const start = Date.now();
     const p = getPool();
     const res = await p.query(text, params);
     return res;
@@ -61,7 +60,7 @@ async function createTables() {
 
     await query(`
         CREATE TABLE IF NOT EXISTS filmes (
-            id SERIAL PRIMARY KEY,
+            id BIGSERIAL PRIMARY KEY,
             nome VARCHAR(255) NOT NULL,
             nome_original VARCHAR(255),
             ano VARCHAR(10),
@@ -83,8 +82,11 @@ async function createTables() {
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        -- Garantir tipo BIGINT caso tabela tenha sido criada anteriormente com INTEGER
+        ALTER TABLE filmes ALTER COLUMN id TYPE BIGINT;
+
         CREATE TABLE IF NOT EXISTS series (
-            id SERIAL PRIMARY KEY,
+            id BIGSERIAL PRIMARY KEY,
             nome VARCHAR(255) NOT NULL,
             nome_original VARCHAR(255),
             ano VARCHAR(10),
@@ -105,9 +107,11 @@ async function createTables() {
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        ALTER TABLE series ALTER COLUMN id TYPE BIGINT;
+
         CREATE TABLE IF NOT EXISTS episodios (
-            id SERIAL PRIMARY KEY,
-            serie_id INTEGER REFERENCES series(id) ON DELETE CASCADE,
+            id BIGSERIAL PRIMARY KEY,
+            serie_id BIGINT REFERENCES series(id) ON DELETE CASCADE,
             temporada_numero INTEGER NOT NULL,
             numero INTEGER NOT NULL,
             nome VARCHAR(255),
@@ -121,6 +125,9 @@ async function createTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             UNIQUE(serie_id, temporada_numero, numero)
         );
+
+        ALTER TABLE episodios ALTER COLUMN id TYPE BIGINT;
+        ALTER TABLE episodios ALTER COLUMN serie_id TYPE BIGINT;
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,
@@ -153,13 +160,16 @@ async function createTables() {
         );
 
         CREATE TABLE IF NOT EXISTS favoritos (
-            id SERIAL PRIMARY KEY,
+            id BIGSERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL,
-            item_id INTEGER NOT NULL,
+            item_id BIGINT NOT NULL,
             tipo VARCHAR(50) NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             UNIQUE(user_id, item_id, tipo)
         );
+
+        ALTER TABLE favoritos ALTER COLUMN id TYPE BIGINT;
+        ALTER TABLE favoritos ALTER COLUMN item_id TYPE BIGINT;
 
         CREATE TABLE IF NOT EXISTS queue_jobs (
             id VARCHAR(100) PRIMARY KEY,
@@ -197,7 +207,7 @@ async function createTables() {
         CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_jobs(status, priority);
     `);
 
-    console.log('✅ Esquemas e tabelas PostgreSQL prontos!');
+    console.log('✅ Esquemas e tabelas PostgreSQL prontos com chaves BIGINT!');
 }
 
 async function migrateJsonData() {
@@ -212,7 +222,7 @@ async function migrateJsonData() {
             
             // Filmes
             for (const f of catalogo.filmes || []) {
-                const midia = f.midias?.[0] || {};
+                const midia = f.midias?.[0] || f.versoes?.dublado || f.versoes?.legendado || {};
                 await query(`
                     INSERT INTO filmes (
                         id, nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
@@ -225,9 +235,11 @@ async function migrateJsonData() {
                     f.id, f.nome, f.nomeOriginal || f.nome, f.ano || '2026', JSON.stringify(f.generos || []),
                     f.sinopse || f.descricao || '', f.posterUrl || '', f.backdropUrl || '',
                     f.nota || 8.0, f.tmdbId || null, f.imdbId || null,
-                    midia.messageId || null, midia.fileId || null, midia.qualidade || f.qualidade || '1080p',
-                    midia.audio || f.audio || 'Dublado (PT-BR)', f.isDublado ?? true, f.isLegendado ?? false,
-                    f.isCam ?? false, f.dataAdicao ? new Date(f.dataAdicao) : new Date()
+                    midia.messageId || f.messageId || null, midia.fileId || f.fileId || null,
+                    midia.qualidade || f.qualidade || '1080p',
+                    midia.audio || f.audio || 'Dublado (PT-BR)',
+                    f.isDublado ?? true, f.isLegendado ?? false,
+                    f.isCam ?? false, f.dataAdicionado ? new Date(f.dataAdicionado) : (f.dataAdicao ? new Date(f.dataAdicao) : new Date())
                 ]);
             }
 
@@ -247,7 +259,7 @@ async function migrateJsonData() {
                     s.nota || 8.0, s.tmdbId || null, s.imdbId || null,
                     (s.temporadas || []).length || 1, s.totalEpisodios || 0, s.isDorama ?? false,
                     s.isDublado ?? true, s.isLegendado ?? false, s.isCam ?? false,
-                    s.dataAdicao ? new Date(s.dataAdicao) : new Date()
+                    s.dataAdicionado ? new Date(s.dataAdicionado) : (s.dataAdicao ? new Date(s.dataAdicao) : new Date())
                 ]);
 
                 const serieId = s.id || sInsert.rows[0]?.id;
@@ -271,9 +283,6 @@ async function migrateJsonData() {
                 }
             }
 
-            // Atualiza sequência de IDs
-            await query(`SELECT setval('filmes_id_seq', COALESCE((SELECT MAX(id) FROM filmes), 1))`);
-            await query(`SELECT setval('series_id_seq', COALESCE((SELECT MAX(id) FROM series), 1))`);
             console.log('✅ Catálogo migrado com sucesso para PostgreSQL!');
         }
 
@@ -288,7 +297,7 @@ async function migrateJsonData() {
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (id) DO NOTHING
                 `, [
-                    p.id, p.userId || p.chatId || 0, p.username || '', p.nome || '',
+                    String(p.id), p.userId || p.chatId || 0, p.username || '', p.nome || '',
                     p.tipo || 'filme', p.isAssinante ?? false, p.processado ?? false,
                     p.data ? new Date(p.data) : new Date()
                 ]);
@@ -301,7 +310,8 @@ async function migrateJsonData() {
         if (parseInt(assRes.rows[0].count, 10) === 0 && fs.existsSync(config.ASSINATURAS_FILE)) {
             const raw = fs.readFileSync(config.ASSINATURAS_FILE, 'utf8');
             const assinaturas = JSON.parse(raw);
-            for (const a of assinaturas || []) {
+            for (const a of (Array.isArray(assinaturas) ? assinaturas : (assinaturas.assinaturas || []))) {
+                if (!a.userId) continue;
                 await query(`
                     INSERT INTO assinaturas (user_id, username, plano, data_inicio, data_fim, status, pagamento_id, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -309,12 +319,23 @@ async function migrateJsonData() {
                 `, [
                     a.userId, a.username || '', a.plano || 'mensal',
                     a.dataInicio ? new Date(a.dataInicio) : new Date(),
-                    a.dataFim ? new Date(a.dataFim) : null,
+                    a.dataVencimento ? new Date(a.dataVencimento) : (a.dataFim ? new Date(a.dataFim) : null),
                     a.status || 'ativa', a.pagamentoId || '',
                     a.createdAt ? new Date(a.createdAt) : new Date()
                 ]);
             }
-            console.log('✅ Assinaturas migradas para PostgreSQL!');
+
+            for (const tok of (assinaturas.acessosVitalicios || [])) {
+                await query(`
+                    INSERT INTO stremio_tokens (token, username, tipo, ativo, created_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (token) DO NOTHING
+                `, [
+                    tok.token, tok.nome || 'VIP', 'vitalicio', tok.status === 'ativo',
+                    tok.dataCriacao ? new Date(tok.dataCriacao) : new Date()
+                ]);
+            }
+            console.log('✅ Assinaturas e tokens migrados para PostgreSQL!');
         }
     } catch (e) {
         console.warn('⚠️ Aviso na migração JSON para PostgreSQL:', e.message);
