@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuração do Addon Stremio • BrasilFlix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #08090d;
+            --bg-card: #12141c;
+            --bg-card-hover: #181b26;
+            --primary: #e50914;
+            --primary-glow: rgba(229, 9, 20, 0.4);
+            --stremio-purple: #7b2cbf;
+            --stremio-glow: rgba(123, 44, 191, 0.4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --radius-md: 12px;
+            --radius-lg: 20px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 40px 20px;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(229, 9, 20, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(123, 44, 191, 0.1) 0%, transparent 40%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 720px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .brand-header {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-brasil {
+            background: linear-gradient(135deg, #e50914, #ff4b55);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stremio-tag {
+            background: linear-gradient(135deg, var(--stremio-purple), #9d4edd);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 4px 12px var(--stremio-glow);
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 15px;
+            max-width: 500px;
+            line-height: 1.5;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .input-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .input-box {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 500;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .input-box:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.2);
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #7b2cbf, #9d4edd);
+            color: white;
+            box-shadow: 0 8px 24px var(--stremio-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 28px rgba(123, 44, 191, 0.6);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px dashed var(--border-color);
+            font-size: 13px;
+            padding: 10px;
+        }
+
+        .btn-outline:hover {
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .url-preview-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .url-text {
+            font-family: monospace;
+            font-size: 13px;
+            color: #38bdf8;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .instructions-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .step-number {
+            background: rgba(229, 9, 20, 0.2);
+            color: #ff4b55;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 12px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #10b981;
+            color: white;
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="brand-header">
+            <div class="logo-badge">
+                <span class="logo-brasil">BrasilFlix</span>
+                <span class="stremio-tag">Stremio Addon</span>
+            </div>
+            <p class="subtitle">Assista a todo o catálogo oficial em 1080p Full HD direto no seu Stremio (Smart TV, PC, Celular ou Fire Stick).</p>
+        </div>
+
+        <div class="card">
+            <div class="section-title">🔑 Configure seu Acesso</div>
+
+            <div class="input-group">
+                <label class="input-label" for="token-input">Token de Acesso VIP ou Usuário</label>
+                <input type="text" id="token-input" class="input-box" placeholder="Digite ou cole seu token (ex: bf_a1b2c3... ou deixe em branco)">
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    Se você não possui um token VIP, o addon será instalado com acesso público padrão.
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">URL do Manifesto Oficial</label>
+                <div class="url-preview-box">
+                    <span id="manifest-url-text" class="url-text">https://brasilflix.kapsu.com.br/manifest.json</span>
+                    <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="copyManifestUrl()">Copiar</button>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <a id="btn-install-stremio" href="stremio://brasilflix.kapsu.com.br/manifest.json" class="btn btn-primary">
+                    🚀 Instalar no Stremio
+                </a>
+                <button class="btn btn-secondary" onclick="copyManifestUrl()">
+                    📋 Copiar Link do Addon
+                </button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                <a id="btn-web-stremio" href="https://web.stremio.com/#/addons" target="_blank" class="btn btn-outline" style="flex: 1; text-align: center;">
+                    ▶️ Abrir no Stremio Web
+                </a>
+                <div style="width: 12px;"></div>
+                <a href="/" class="btn btn-outline" style="flex: 1; text-align: center;">
+                    🍿 Ir para o Catálogo Web
+                </a>
+            </div>
+        </div>
+
+        <div class="instructions-card">
+            <div class="section-title" style="font-size: 16px;">📱 Como Instalar no seu Dispositivo:</div>
+            
+            <div class="step-item">
+                <div class="step-number">1</div>
+                <div><strong>No PC / Mac / Celular:</strong> Clique no botão roxo <em>"Instalar no Stremio"</em> acima. O aplicativo do Stremio abrirá automaticamente solicitando a confirmação da instalação.</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-number">2</div>
+                <div><strong>Na Smart TV / TV Box / Fire Stick:</strong> Copie o <em>Link do Addon</em> acima, abra o Stremio no celular ou computador com a mesma conta da TV, cole o link na barra de busca de Addons e instale. A sincronização com a sua TV será instantânea!</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-number">3</div>
+                <div><strong>Pronto!</strong> Navegue pelo catálogo do BrasilFlix no Stremio e aproveite transmissões em altíssima velocidade e qualidade 1080p.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">Link copiado para a área de transferência!</div>
+
+    <script>
+        const tokenInput = document.getElementById('token-input');
+        const urlText = document.getElementById('manifest-url-text');
+        const installBtn = document.getElementById('btn-install-stremio');
+        const webBtn = document.getElementById('btn-web-stremio');
+        const toast = document.getElementById('toast');
+
+        // Extrai token da URL se presente (ex: /configure?token=abc ou /bf_123/configure)
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const urlParams = new URLSearchParams(window.location.search);
+        let initialToken = urlParams.get('token') || '';
+        
+        if (!initialToken && pathParts.length > 0 && pathParts[0] !== 'configure') {
+            initialToken = pathParts[0];
+        }
+
+        if (initialToken) {
+            tokenInput.value = initialToken;
+        }
+
+        function updateUrls() {
+            const rawToken = tokenInput.value.trim();
+            const host = window.location.host;
+            const tokenPart = rawToken ? `${rawToken}/` : '';
+            
+            const httpUrl = `https://${host}/${tokenPart}manifest.json`;
+            const stremioUrl = `stremio://${host}/${tokenPart}manifest.json`;
+            const webUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(httpUrl)}`;
+
+            urlText.innerText = httpUrl;
+            installBtn.href = stremioUrl;
+            webBtn.href = webUrl;
+        }
+
+        tokenInput.addEventListener('input', updateUrls);
+        updateUrls();
+
+        function copyManifestUrl() {
+            const text = urlText.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Link do Addon copiado com sucesso!');
+            }).catch(() => {
+                prompt('Copie o link do Addon abaixo:', text);
+            });
+        }
+
+        function showToast(msg) {
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

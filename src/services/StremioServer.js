@@ -298,6 +298,15 @@ class StremioServer {
             }
         });
 
+        this.app.get('/api/admin/stremio-tokens', auth, async (req, res) => {
+            try {
+                const resTokens = await db.query(`SELECT * FROM stremio_tokens ORDER BY created_at DESC`);
+                res.json({ success: true, tokens: resTokens.rows });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         this.app.post('/api/admin/stremio-tokens/generate', auth, async (req, res) => {
             try {
                 const { username } = req.body;
@@ -311,6 +320,28 @@ class StremioServer {
 
                 await this.assinaturaManager.loadAssinaturas();
                 res.json({ success: true, token, username: name });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/stremio-tokens/:token', auth, async (req, res) => {
+            try {
+                const token = req.params.token;
+                await db.query(`DELETE FROM stremio_tokens WHERE token = $1`, [token]);
+                await this.assinaturaManager.loadAssinaturas();
+                res.json({ success: true, message: `Token ${token} revogado e excluído com sucesso!` });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.put('/api/admin/stremio-tokens/:token/toggle', auth, async (req, res) => {
+            try {
+                const token = req.params.token;
+                const resTok = await db.query(`UPDATE stremio_tokens SET ativo = NOT ativo WHERE token = $1 RETURNING *`, [token]);
+                await this.assinaturaManager.loadAssinaturas();
+                res.json({ success: true, token: resTok.rows[0] });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -465,9 +496,18 @@ class StremioServer {
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
         this.app.get(['/status', '/fila', '/catalogo', '/admin'], (req, res) => this.renderLandingPage(req, res, 'public'));
 
+        // Rota oficial de configuração do Stremio (compatível com botão "Configure" do aplicativo Stremio)
+        this.app.get(['/configure', '/:userToken/configure'], (req, res) => {
+            const configPath = path.resolve(__dirname, '../../public/configure.html');
+            if (fs.existsSync(configPath)) {
+                return res.sendFile(configPath);
+            }
+            this.renderLandingPage(req, res, req.params.userToken || 'public');
+        });
+
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin') {
+            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure') {
                 return next();
             }
             this.renderLandingPage(req, res, token);

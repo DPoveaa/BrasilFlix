@@ -1269,10 +1269,45 @@
         <div id="tab-stremio" class="tab-content">
             <div class="stremio-banner">
                 <div class="vip-badge-tag">👑 RECURSO EXCLUSIVO VIP</div>
-                <h2 style="font-size: 24px; font-weight: 900; color: #fff; margin-bottom: 10px;">BrasilFlix no App Stremio</h2>
-                <p style="font-size: 14px; color: var(--text-muted); max-width: 600px; margin: 0 auto 20px auto; line-height: 1.5;">
-                    Assista a todos os filmes, séries e doramas diretamente no aplicativo <strong>Stremio</strong> na sua Smart TV, TV Box, Firestick, Celular ou Computador com áudio em Português e alta definição.
+                <h2 style="font-size: 26px; font-weight: 900; color: #fff; margin-bottom: 8px;">BrasilFlix no App Stremio</h2>
+                <p style="font-size: 14px; color: var(--text-muted); max-width: 620px; margin: 0 auto 24px auto; line-height: 1.5;">
+                    Assista a todos os filmes, séries e doramas diretamente no aplicativo <strong>Stremio</strong> na sua Smart TV, TV Box, Firestick, Celular ou Computador em 1080p Full HD com áudio em Português.
                 </p>
+
+                <!-- CARD INTERATIVO DE INSTALAÇÃO & TOKEN -->
+                <div style="background: rgba(18, 20, 28, 0.8); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; max-width: 600px; margin: 0 auto 28px auto; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">
+                        🔑 Possui um Token VIP ou Chave de Acesso?
+                    </label>
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                        <input type="text" id="public-stremio-token" class="admin-input" style="margin-bottom: 0;" placeholder="Cole seu token aqui (ex: bf_a1b2c3...) ou deixe vazio" oninput="updatePublicStremioUrls()">
+                    </div>
+
+                    <div style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
+                        <span id="public-manifest-url-text" style="font-family: monospace; font-size: 12px; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            https://brasilflix.kapsu.com.br/manifest.json
+                        </span>
+                        <button class="btn-action" style="padding: 4px 10px; font-size: 12px;" onclick="copyPublicManifestUrl()">Copiar</button>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <a id="public-btn-install-stremio" href="stremio://brasilflix.kapsu.com.br/manifest.json" class="btn-modal btn-modal-primary" style="text-align: center; text-decoration: none; padding: 12px;">
+                            🚀 Instalar no Stremio
+                        </a>
+                        <button class="btn-modal btn-modal-secondary" style="padding: 12px;" onclick="copyPublicManifestUrl()">
+                            📋 Copiar Link do Addon
+                        </button>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+                        <a href="/configure" target="_blank" style="color: #a855f7; text-decoration: none; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+                            ⚙️ Abrir Central de Configuração do Stremio ↗
+                        </a>
+                        <a href="https://web.stremio.com/#/addons" target="_blank" style="color: var(--text-muted); text-decoration: none; font-size: 12px;">
+                            ▶️ Abrir Stremio Web ↗
+                        </a>
+                    </div>
+                </div>
 
                 <div class="steps-grid">
                     <div class="step-card">
@@ -1288,7 +1323,7 @@
                     <div class="step-card">
                         <div class="step-number">3</div>
                         <div class="step-title">Assista na Smart TV</div>
-                        <div class="step-desc">Clique no botão gerado no Telegram para instalar o Addon oficial com 1 toque no app Stremio!</div>
+                        <div class="step-desc">Clique no botão gerado para instalar o Addon oficial com 1 toque no app Stremio!</div>
                     </div>
                 </div>
 
@@ -1535,6 +1570,37 @@
                                 </thead>
                                 <tbody id="admin-subs-tbody">
                                     <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando assinaturas...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- TABELA DE TOKENS DO STREMIO -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 28px; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <div>
+                            <h4 style="font-size: 15px; font-weight: 800; color: #fff;">🔑 Links & Tokens do Stremio Gerados</h4>
+                            <p style="font-size: 12px; color: var(--text-muted);">Tokens exclusivos gerados para acesso direto ao Addon do Stremio.</p>
+                        </div>
+                        <button class="btn-action" onclick="loadAdminTokens()">
+                            🔄 Atualizar Tokens
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Link Addon / Token</th>
+                                        <th>Destinatário</th>
+                                        <th>Tipo</th>
+                                        <th>Criado em</th>
+                                        <th>Status</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-tokens-tbody">
+                                    <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando tokens...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -2155,6 +2221,7 @@
                 loadAdminStats();
                 loadAdminQueue();
                 loadAdminSubs();
+                loadAdminTokens();
                 loadAdminRequests();
                 loadAdminCatalog();
             } catch (e) {
@@ -2174,7 +2241,7 @@
 
             if (subTabId === 'overview') loadAdminStats();
             else if (subTabId === 'queue') loadAdminQueue();
-            else if (subTabId === 'subs') loadAdminSubs();
+            else if (subTabId === 'subs') { loadAdminSubs(); loadAdminTokens(); }
             else if (subTabId === 'requests') loadAdminRequests();
             else if (subTabId === 'catalog') loadAdminCatalog();
         }
@@ -2562,6 +2629,95 @@
             }
         }
 
+        async function loadAdminTokens() {
+            if (!adminToken) return;
+            const tbody = document.getElementById('admin-tokens-tbody');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch('/api/admin/stremio-tokens', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const list = data.tokens || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum token ou link do Stremio gerado ainda.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(t => {
+                    const isAtivo = t.ativo;
+                    const dataStr = t.created_at ? new Date(t.created_at).toLocaleDateString('pt-BR') : '-';
+                    const fullLink = `https://${window.location.host}/${t.token}/manifest.json`;
+
+                    return `
+                        <tr>
+                            <td>
+                                <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: #38bdf8;">${t.token}</div>
+                                <div style="font-size: 11px; color: var(--text-muted); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fullLink}</div>
+                            </td>
+                            <td><strong>${t.username || 'VIP / Convidado'}</strong></td>
+                            <td><span class="badge-priority" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">${(t.tipo || 'vitalicio').toUpperCase()}</span></td>
+                            <td>${dataStr}</td>
+                            <td>
+                                <span style="color: ${isAtivo ? '#34d399' : '#ef4444'}; font-weight: 800; font-size: 11px;">
+                                    ${isAtivo ? '✓ ATIVO' : '✕ INATIVO'}
+                                </span>
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <div style="display: inline-flex; gap: 4px;">
+                                    <button class="btn-action" onclick="copyTokenLink('${t.token}')" title="Copiar Link do Addon">📋 Copiar</button>
+                                    <button class="btn-action" onclick="handleToggleToken('${t.token}')" title="Alternar Ativo/Inativo">${isAtivo ? '⏸️ Pausar' : '▶️ Ativar'}</button>
+                                    <button class="btn-action btn-action-danger" onclick="handleRevokeToken('${t.token}')" title="Revogar e Excluir Link">🗑️ Revogar</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar tokens do Stremio.</td></tr>';
+            }
+        }
+
+        function copyTokenLink(token) {
+            const link = `https://${window.location.host}/${token}/manifest.json`;
+            navigator.clipboard.writeText(link).then(() => {
+                showToast('Link do Addon copiado com sucesso!', 'success');
+            }).catch(() => {
+                prompt('Copie o link do Addon abaixo:', link);
+            });
+        }
+
+        async function handleToggleToken(token) {
+            try {
+                const res = await fetch(`/api/admin/stremio-tokens/${token}/toggle`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Status do token atualizado!', 'success');
+                loadAdminTokens();
+            } catch (e) {
+                showToast('Erro ao alternar status do token.', 'error');
+            }
+        }
+
+        async function handleRevokeToken(token) {
+            if (!confirm(`Deseja realmente revogar e excluir o link do token "${token}"? O acesso será bloqueado imediatamente.`)) return;
+            try {
+                const res = await fetch(`/api/admin/stremio-tokens/${token}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Token e link revogados com sucesso!', 'info');
+                loadAdminTokens();
+                loadAdminSubs();
+            } catch (e) {
+                showToast('Erro ao revogar token.', 'error');
+            }
+        }
+
         async function handleAdminGenerateToken(e) {
             e.preventDefault();
             const username = document.getElementById('token-username').value;
@@ -2575,11 +2731,42 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
 
-                prompt('✅ Token Stremio VIP gerado com sucesso! Copie o link do Addon:', `https://brasilflix.kapsu.com.br/${data.token}/manifest.json`);
+                const fullUrl = `https://${window.location.host}/${data.token}/manifest.json`;
+                navigator.clipboard.writeText(fullUrl).catch(() => {});
+                prompt('✅ Token Stremio VIP gerado com sucesso! Copie o link do Addon:', fullUrl);
                 closeAdminModal('admin-modal-token');
+                loadAdminTokens();
             } catch (err) {
                 showToast('Erro ao gerar token.', 'error');
             }
+        }
+
+        function updatePublicStremioUrls() {
+            const tokenInput = document.getElementById('public-stremio-token');
+            const urlText = document.getElementById('public-manifest-url-text');
+            const installBtn = document.getElementById('public-btn-install-stremio');
+            if (!tokenInput || !urlText || !installBtn) return;
+
+            const rawToken = tokenInput.value.trim();
+            const host = window.location.host;
+            const tokenPart = rawToken ? `${rawToken}/` : '';
+
+            const httpUrl = `https://${host}/${tokenPart}manifest.json`;
+            const stremioUrl = `stremio://${host}/${tokenPart}manifest.json`;
+
+            urlText.innerText = httpUrl;
+            installBtn.href = stremioUrl;
+        }
+
+        function copyPublicManifestUrl() {
+            const urlText = document.getElementById('public-manifest-url-text');
+            if (!urlText) return;
+            const text = urlText.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Link do Addon copiado com sucesso!', 'success');
+            }).catch(() => {
+                prompt('Copie o link do Addon abaixo:', text);
+            });
         }
 
         async function loadAdminRequests() {
