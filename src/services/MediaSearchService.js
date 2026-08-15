@@ -472,7 +472,7 @@ class MediaSearchService {
                 }
             }
         } catch (e) {
-            console.warn('⚠️ Diagnóstico busca TPB/ApiBay:', e.message);
+            // Silencia timeout esperado do TPB/ApiBay para manter logs limpos
         }
         return results;
     }
