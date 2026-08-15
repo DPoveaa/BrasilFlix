@@ -207,13 +207,15 @@ class VideoProcessor {
             }
         }
 
+        let finalPath;
+
         if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
             console.log(`⚡ Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido para Streaming (5s)...`);
             if (portugueseAudioIndex !== null) {
                 console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
             }
 
-            return new Promise((resolve, reject) => {
+            finalPath = await new Promise((resolve, reject) => {
                 const remuxArgs = [
                     '-i', inputPath,
                     '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento (100% de qualidade original)
@@ -256,9 +258,21 @@ class VideoProcessor {
                     this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress).then(resolve).catch(reject);
                 });
             });
+        } else {
+            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress);
         }
 
-        return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress);
+        // Validação Estrita Pós-Conversão: Duração do arquivo de saída DEVE bater com a do arquivo original
+        const outInfo = await this.getVideoInfo(finalPath);
+        if (info.duration > 0 && outInfo.duration > 0) {
+            const diffSec = Math.abs(outInfo.duration - info.duration);
+            if (diffSec > 15 && outInfo.duration < info.duration * 0.95) {
+                await fs.remove(finalPath).catch(() => {});
+                throw new Error(`Inconsistência de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
+            }
+        }
+
+        return finalPath;
     }
 
     async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null) {

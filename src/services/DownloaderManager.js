@@ -180,22 +180,15 @@ class DownloaderManager extends EventEmitter {
                                 if (f !== found) f.deselect();
                             });
                             found.select();
-                            found.on('done', onComplete);
+                            found.on('done', () => checkAndComplete());
                             console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
                         } catch (e) {}
                     }
                 }
             });
 
-            const onComplete = async () => {
+            const checkAndComplete = async () => {
                 if (finished) return;
-                finished = true;
-                if (watchdogInterval) clearInterval(watchdogInterval);
-                process.stdout.write('\n');
-                console.log(`✅ Download concluído e verificado com sucesso: ${targetEpisodeFile ? targetEpisodeFile.name : torrent.name}`);
-
-                // Aguarda 1.5s para garantir que todas as peças foram gravadas e liberadas pelo sistema de arquivos
-                await new Promise(r => setTimeout(r, 1500));
 
                 let selectedFile = targetEpisodeFile;
                 if (!selectedFile) {
@@ -221,10 +214,41 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 const fullPath = path.join(this.downloadDir, selectedFile.path);
+
+                // 1. Verificação de existência do arquivo físico
+                if (!fs.existsSync(fullPath)) {
+                    return;
+                }
+
+                // 2. Verificação estrita de tamanho do arquivo em disco (deve corresponder ao declarado no torrent)
+                const stat = fs.statSync(fullPath);
+                const expectedSize = selectedFile.length;
+
+                if (expectedSize > 0 && stat.size < expectedSize * 0.995) {
+                    // Arquivo físico no disco ainda não recebeu todas as peças necessárias
+                    return;
+                }
+
+                // 3. Verificação de integridade estrutural via ffprobe
+                try {
+                    const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
+                    if (!videoInfo.duration || videoInfo.duration <= 0) {
+                        return;
+                    }
+                } catch (e) {
+                    // Contêiner ainda não legível
+                    return;
+                }
+
+                finished = true;
+                if (watchdogInterval) clearInterval(watchdogInterval);
+                process.stdout.write('\n');
+                console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
+
                 const fileInfo = {
                     filePath: fullPath,
                     fileName: selectedFile.name,
-                    sizeBytes: selectedFile.length,
+                    sizeBytes: stat.size,
                     totalTorrentFiles: torrent.files.length
                 };
 
@@ -235,20 +259,15 @@ class DownloaderManager extends EventEmitter {
             torrent.on('download', () => {
                 if (finished) return;
 
-                // Se o download atingiu 100% (seja o torrent completo ou o episódio selecionado)
-                if (torrent.progress >= 0.999 || (torrent.length > 0 && torrent.downloaded >= torrent.length)) {
-                    return onComplete();
-                }
-                if (targetEpisodeFile && (targetEpisodeFile.progress >= 0.999 || targetEpisodeFile.done || (targetEpisodeFile.downloaded >= targetEpisodeFile.length && targetEpisodeFile.length > 0))) {
-                    return onComplete();
-                }
-
                 const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
-                const verifiedBytes = targetEpisodeFile ? (targetEpisodeFile.downloaded || 0) : 0;
-                const streamBytes = torrent.downloaded || 0;
                 const curDownloaded = targetEpisodeFile 
-                    ? Math.min(curTotal, Math.max(verifiedBytes, streamBytes))
-                    : streamBytes;
+                    ? (targetEpisodeFile.downloaded || 0)
+                    : (torrent.downloaded || 0);
+
+                // Se o arquivo selecionado ou torrent atingiu 100%, verifica o disco e conclui
+                if (curTotal > 0 && curDownloaded >= curTotal * 0.999) {
+                    checkAndComplete();
+                }
 
                 const now = Date.now();
                 if (now - lastProgressTime > 800) {
@@ -269,7 +288,6 @@ class DownloaderManager extends EventEmitter {
                     const elapsedSec = Math.floor((now - startTime) / 1000);
                     const elapsedFormatted = this.formatDuration(elapsedSec);
 
-                    // Tempo restante preciso calculado sobre o tamanho restante do episódio
                     const remainingBytes = Math.max(0, curTotal - curDownloaded);
                     const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
@@ -295,7 +313,7 @@ class DownloaderManager extends EventEmitter {
                 }
             });
 
-            torrent.on('done', onComplete);
+            torrent.on('done', () => checkAndComplete());
 
             torrent.on('error', (err) => {
                 safeCleanup();

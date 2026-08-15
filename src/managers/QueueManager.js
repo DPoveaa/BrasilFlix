@@ -240,39 +240,22 @@ class QueueManager extends EventEmitter {
         let resumeFromOptimized = false;
         let resumeFromRaw = false;
 
-        if (optimizedPath && fs.existsSync(optimizedPath)) {
-            try {
-                const optStat = fs.statSync(optimizedPath);
-                if (optStat.size > 20 * 1024 * 1024) {
-                    const info = await VideoProcessor.getVideoInfo(optimizedPath);
-                    if (info && info.duration >= 300) {
-                        console.log(`⚡ [Retomada Inteligente] Arquivo codificado 1080p verificado com sucesso (${(optStat.size / (1024*1024)).toFixed(1)} MB, ${info.durationFormatted})! Pulando download e FFmpeg, avançando direto para Upload...`);
-                        resumeFromOptimized = true;
-                    } else {
-                        console.log(`🧹 Arquivo temporário codificado incompleto descartado.`);
-                        await DownloaderManager.cleanupFile(optimizedPath);
-                    }
-                }
-            } catch (e) {
+        // Limpeza de arquivos temporários ao reiniciar se o job não estava 100% pronto para upload
+        if (job.status !== 'uploading') {
+            if (optimizedPath && fs.existsSync(optimizedPath)) {
                 await DownloaderManager.cleanupFile(optimizedPath);
+                optimizedPath = null;
+                job.optimizedPath = null;
             }
-        }
-
-        if (!resumeFromOptimized && rawFilePath && fs.existsSync(rawFilePath)) {
-            try {
+            if (rawFilePath && fs.existsSync(rawFilePath)) {
+                // Se o tamanho no disco não corresponder ao tamanho esperado completo do torrent, descarta para evitar arquivos cortados
                 const rawStat = fs.statSync(rawFilePath);
-                if (rawStat.size > 50 * 1024 * 1024) {
-                    const info = await VideoProcessor.getVideoInfo(rawFilePath);
-                    if (info && info.duration >= 300) {
-                        console.log(`⚡ [Retomada Inteligente] Arquivo baixado verificado com sucesso (${(rawStat.size / (1024*1024)).toFixed(1)} MB, ${info.durationFormatted})! Pulando download via torrent, avançando direto para conversão...`);
-                        resumeFromRaw = true;
-                    } else {
-                        console.log(`🧹 Arquivo temporário baixado incompleto descartado.`);
-                        await DownloaderManager.cleanupFile(rawFilePath);
-                    }
+                if (job.expectedSize && rawStat.size < job.expectedSize * 0.99) {
+                    console.log(`🧹 Arquivo temporário incompleto no disco (${rawStat.size} de ${job.expectedSize} bytes esperados) descartado para reiniciar limpo.`);
+                    await DownloaderManager.cleanupFile(rawFilePath);
+                    rawFilePath = null;
+                    job.rawFilePath = null;
                 }
-            } catch (e) {
-                await DownloaderManager.cleanupFile(rawFilePath);
             }
         }
 
@@ -336,8 +319,19 @@ class QueueManager extends EventEmitter {
 
             rawFilePath = downloadedMedia.filePath;
             job.rawFilePath = rawFilePath;
+            job.expectedSize = downloadedMedia.sizeBytes;
             job.bestSource = bestSource;
             this.saveQueue();
+
+            // Validação estrita: tamanho físico do arquivo deve bater com o tamanho informado no torrent
+            if (fs.existsSync(rawFilePath)) {
+                const stat = fs.statSync(rawFilePath);
+                if (downloadedMedia.sizeBytes > 0 && stat.size < downloadedMedia.sizeBytes * 0.99) {
+                    console.log(`❌ Arquivo bruto descartado: tamanho físico (${stat.size} B) menor que o esperado (${downloadedMedia.sizeBytes} B).`);
+                    await DownloaderManager.cleanupFile(rawFilePath);
+                    throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
+                }
+            }
         }
 
         if (!resumeFromOptimized) {
