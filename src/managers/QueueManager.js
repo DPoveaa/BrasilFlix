@@ -406,12 +406,6 @@ class QueueManager extends EventEmitter {
                 audioPreference: job.audioPreference || 'dublado'
             });
             if (sources.length === 0) {
-                if (job.userId && this.bot) {
-                    const aviso = `🔔 *Aviso sobre o seu pedido: "${job.title}"*\n\n` +
-                                  `Informamos que este título ainda não possui versão Dublada ou Legendada em Português disponível no momento.\n\n` +
-                                  `🔄 *Fique tranquilo!* Nosso sistema cadastrou seu pedido no radar e monitorará diariamente. Assim que a versão em Português for lançada, ela será baixada e você será notificado! 🍿`;
-                    this.bot.sendMessage(job.userId, aviso, { parse_mode: 'Markdown' }).catch(() => {});
-                }
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
