@@ -199,6 +199,16 @@ class StremioServer {
             }
         });
 
+        this.app.post('/api/admin/queue/:id/move-step', auth, async (req, res) => {
+            try {
+                const direction = req.body?.direction || 'up';
+                const result = await this.queueManager.moveJobStep(req.params.id, direction);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         this.app.post('/api/admin/queue/reorder', auth, async (req, res) => {
             try {
                 const { jobIds } = req.body;

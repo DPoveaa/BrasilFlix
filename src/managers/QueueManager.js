@@ -64,7 +64,7 @@ class QueueManager extends EventEmitter {
             const res = await db.query(
                 `SELECT * FROM queue_jobs
                  WHERE status NOT IN ('completed', 'failed')
-                 ORDER BY priority ASC, created_at ASC`
+                 ORDER BY priority ASC, queue_order ASC, created_at ASC`
             );
             this.queue = res.rows.map(r => this._rowToJob(r));
             console.log(`📋 Fila PostgreSQL carregada: ${this.queue.length} jobs pendentes.`);
@@ -80,8 +80,8 @@ class QueueManager extends EventEmitter {
                 `INSERT INTO queue_jobs
                     (id, title, type, priority, audio_preference, season, episode,
                      status, progress, progress_details, user_id, username, tmdb_id,
-                     extra_data, error, created_at, updated_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+                     extra_data, error, queue_order, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
                  ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     progress = EXCLUDED.progress,
@@ -89,6 +89,7 @@ class QueueManager extends EventEmitter {
                     priority = EXCLUDED.priority,
                     extra_data = EXCLUDED.extra_data,
                     error = EXCLUDED.error,
+                    queue_order = EXCLUDED.queue_order,
                     updated_at = NOW()`,
                 [
                     job.id,
@@ -112,6 +113,7 @@ class QueueManager extends EventEmitter {
                         langInfo: job.langInfo
                     }),
                     job.error || null,
+                    job.queueOrder !== undefined ? job.queueOrder : 0,
                     job.createdAt || new Date().toISOString()
                 ]
             );
@@ -142,6 +144,7 @@ class QueueManager extends EventEmitter {
             progress: row.progress,
             progressDetails: row.progress_details,
             error: row.error,
+            queueOrder: row.queue_order !== null && row.queue_order !== undefined ? Number(row.queue_order) : (row.created_at ? new Date(row.created_at).getTime() : 0),
             rawFilePath: extra.rawFilePath || null,
             optimizedPath: extra.optimizedPath || null,
             expectedSize: extra.expectedSize || null,
@@ -243,8 +246,10 @@ class QueueManager extends EventEmitter {
 
     sortQueue() {
         this.queue.sort((a, b) => {
-            if (a.priority !== b.priority) {
-                return a.priority - b.priority; // 1 antes de 2, 2 antes de 3
+            const orderA = a.queueOrder !== undefined && a.queueOrder !== null ? Number(a.queueOrder) : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+            const orderB = b.queueOrder !== undefined && b.queueOrder !== null ? Number(b.queueOrder) : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+            if (orderA !== orderB) {
+                return orderA - orderB;
             }
             return new Date(a.createdAt) - new Date(b.createdAt);
         });
@@ -920,44 +925,71 @@ class QueueManager extends EventEmitter {
     }
 
     async moveJobToTop(jobId) {
+        let minOrder = 1000;
+        if (this.queue.length > 0) {
+            minOrder = this.queue.reduce((min, j) => Math.min(min, Number(j.queueOrder) || Date.now()), Number(this.queue[0].queueOrder) || Date.now());
+        }
+        const newOrder = minOrder - 1000;
+
         const job = this.queue.find(j => j.id === jobId);
         if (job) {
-            job.priority = 1;
-            const earliestTime = this.queue.reduce((min, j) => Math.min(min, new Date(j.createdAt || Date.now()).getTime()), Date.now());
-            job.createdAt = new Date(earliestTime - 1000).toISOString();
+            job.queueOrder = newOrder;
             this.sortQueue();
-            await this.saveJob(job);
-            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [job.createdAt, jobId]);
+            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [newOrder, jobId]);
             return job;
         }
 
         const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
         if (res.rows.length > 0) {
             const j = this._rowToJob(res.rows[0]);
-            j.priority = 1;
-            j.createdAt = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
+            j.queueOrder = newOrder;
             this.queue.unshift(j);
             this.sortQueue();
-            await this.saveJob(j);
-            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [j.createdAt, jobId]);
+            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [newOrder, jobId]);
             return j;
         }
         return null;
     }
 
+    async moveJobStep(jobId, direction = 'up') {
+        const currentIdx = this.queue.findIndex(j => j.id === jobId);
+        if (currentIdx === -1) {
+            await this.loadQueue();
+        }
+        const idx = this.queue.findIndex(j => j.id === jobId);
+        if (idx === -1) return { success: false, error: 'Trabalho não encontrado na fila.' };
+
+        const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (targetIdx < 0 || targetIdx >= this.queue.length) return { success: true };
+
+        const currentJob = this.queue[idx];
+        const targetJob = this.queue[targetIdx];
+
+        this.queue[idx] = targetJob;
+        this.queue[targetIdx] = currentJob;
+
+        const baseOrder = 1000;
+        for (let i = 0; i < this.queue.length; i++) {
+            this.queue[i].queueOrder = baseOrder + (i * 10);
+            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [this.queue[i].queueOrder, this.queue[i].id]);
+        }
+
+        this.sortQueue();
+        return { success: true, message: `Trabalho movido para ${direction === 'up' ? 'cima' : 'baixo'} com sucesso!` };
+    }
+
     async reorderQueue(orderedJobIds) {
         if (!Array.isArray(orderedJobIds) || orderedJobIds.length === 0) return { success: false };
 
-        const baseTime = Date.now() - (orderedJobIds.length * 2000);
+        const baseOrder = 1000;
         for (let i = 0; i < orderedJobIds.length; i++) {
             const id = orderedJobIds[i];
-            const newCreatedAt = new Date(baseTime + (i * 2000)).toISOString();
+            const orderVal = baseOrder + (i * 10);
             const job = this.queue.find(j => j.id === id);
             if (job) {
-                job.priority = 1;
-                job.createdAt = newCreatedAt;
+                job.queueOrder = orderVal;
             }
-            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [newCreatedAt, id]);
+            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [orderVal, id]);
         }
         this.sortQueue();
         return { success: true };
@@ -980,7 +1012,7 @@ class QueueManager extends EventEmitter {
                     WHEN status = 'failed' THEN 5 
                     ELSE 6 
                 END, 
-                priority ASC, 
+                queue_order ASC, 
                 created_at ASC 
             LIMIT $1`,
             [limit]

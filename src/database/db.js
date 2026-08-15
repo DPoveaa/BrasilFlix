@@ -187,9 +187,12 @@ async function createTables() {
             tmdb_id INTEGER,
             extra_data JSONB DEFAULT '{}',
             error TEXT,
+            queue_order BIGINT DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
+
+        ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS queue_order BIGINT DEFAULT 0;
 
         CREATE TABLE IF NOT EXISTS stremio_tokens (
             token VARCHAR(100) PRIMARY KEY,

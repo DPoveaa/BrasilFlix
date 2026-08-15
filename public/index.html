@@ -2258,15 +2258,34 @@
                                 <div style="font-size: 10px; color: var(--text-muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${j.progressDetails || j.error || ''}</div>
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-primary" onclick="handleMoveJobTop('${j.id}')" title="Mover para o Topo (Próximo)">⬆️ Topo</button>
-                                ${j.status === 'failed' ? `<button class="btn-action btn-action-success" onclick="handleRetryJob('${j.id}')" title="Tentar Novamente">🔄 Reprocessar</button>` : ''}
-                                <button class="btn-action btn-action-danger" onclick="handleCancelJob('${j.id}')" title="Excluir da Fila">✕</button>
+                                <div style="display: inline-flex; gap: 4px;">
+                                    <button class="btn-action" style="padding: 4px 7px;" onclick="handleMoveJobStep('${j.id}', 'up')" title="Subir 1 posição na fila">⬆️</button>
+                                    <button class="btn-action" style="padding: 4px 7px;" onclick="handleMoveJobStep('${j.id}', 'down')" title="Descer 1 posição na fila">⬇️</button>
+                                    <button class="btn-action btn-action-primary" style="padding: 4px 8px;" onclick="handleMoveJobTop('${j.id}')" title="Mover para o Topo Absoluto (Próximo)">🔝 Topo</button>
+                                    ${j.status === 'failed' ? `<button class="btn-action btn-action-success" style="padding: 4px 8px;" onclick="handleRetryJob('${j.id}')" title="Tentar Novamente">🔄</button>` : ''}
+                                    <button class="btn-action btn-action-danger" style="padding: 4px 8px;" onclick="handleCancelJob('${j.id}')" title="Excluir da Fila">✕</button>
+                                </div>
                             </td>
                         </tr>
                     `;
                 }).join('');
             } catch (e) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar fila.</td></tr>';
+            }
+        }
+
+        async function handleMoveJobStep(jobId, direction) {
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}/move-step`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ direction })
+                });
+                if (!res.ok) throw new Error();
+                showToast(`Trabalho movido para ${direction === 'up' ? 'cima' : 'baixo'}!`, 'success');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao movimentar item na fila.', 'error');
             }
         }
 
