@@ -132,7 +132,7 @@ class TelegramUploader {
                 const empty = Math.max(0, barLength - filled);
                 const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-                const logLine = `📤 [Upload: "${nome}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}`;
+                const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${nome}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}\x1b[0m`;
 
                 if (process.stdout.isTTY) {
                     process.stdout.write(`\r${logLine} `);

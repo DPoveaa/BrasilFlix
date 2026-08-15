@@ -206,30 +206,126 @@ class CatalogoManager {
         return this.catalogo.series.find(s => s.nome.toLowerCase() === nomeLower);
     }
 
+    normalizarTexto(texto) {
+        if (!texto) return '';
+        return texto.toLowerCase()
+            .replace(/ç/g, 's')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/c(?=[eiy])|xc|sc|ss|z/g, 's')
+            .replace(/ch/g, 'x')
+            .replace(/ph/g, 'f')
+            .replace(/y/g, 'i')
+            .replace(/w/g, 'u')
+            .replace(/(.)\1+/g, '$1')
+            .replace(/[^a-z0-9]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    calcularDistanciaLevenshtein(a, b) {
+        const matrix = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+        for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+        for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= a.length; i++) {
+            for (let j = 1; j <= b.length; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j - 1] + cost
+                );
+            }
+        }
+        return matrix[a.length][b.length];
+    }
+
+    calcularSimilaridade(s1, s2) {
+        if (!s1 || !s2) return 0;
+        const longer = s1.length > s2.length ? s1 : s2;
+        const shorter = s1.length > s2.length ? s2 : s1;
+        if (longer.length === 0) return 1.0;
+        return (longer.length - this.calcularDistanciaLevenshtein(longer, shorter)) / longer.length;
+    }
+
     buscarItem(termo) {
-        const termoLower = termo.toLowerCase().trim();
-        const resultados = [];
+        if (!termo || termo.trim().length === 0) return [];
+        const termoBruto = termo.toLowerCase().trim();
+        const termoFonetico = this.normalizarTexto(termo);
+        const palavrasTermo = termoFonetico.split(' ').filter(p => p.length > 1);
 
-        this.catalogo.filmes.forEach(filme => {
-            if (this.itemCorresponde(filme, termoLower)) {
-                resultados.push({ ...filme, tipo: 'filme' });
+        const todosItens = [
+            ...(this.catalogo.filmes || []).map(f => ({ ...f, tipo: 'filme' })),
+            ...(this.catalogo.series || []).map(s => ({ ...s, tipo: 'serie' }))
+        ];
+
+        const pontuados = [];
+
+        for (const item of todosItens) {
+            const nomeBruto = (item.nome || '').toLowerCase();
+            const nomeFonetico = this.normalizarTexto(item.nome || '');
+            const nomeOriginalFonetico = this.normalizarTexto(item.nomeOriginal || '');
+            const sinopseFonetica = this.normalizarTexto(item.sinopse || item.descricao || '');
+
+            let score = 0;
+
+            // 1. Match direto exato / substring
+            if (nomeBruto.includes(termoBruto)) {
+                score += 100;
+            } else if (nomeFonetico.includes(termoFonetico)) {
+                score += 90;
+            } else if (nomeOriginalFonetico.includes(termoFonetico)) {
+                score += 80;
             }
-        });
 
-        this.catalogo.series.forEach(serie => {
-            if (this.itemCorresponde(serie, termoLower)) {
-                resultados.push({ ...serie, tipo: 'serie' });
+            // 2. Similaridade fonética global
+            const simFonetica = this.calcularSimilaridade(termoFonetico, nomeFonetico);
+            if (simFonetica >= 0.70) {
+                score += Math.round(simFonetica * 70);
             }
-        });
 
-        return resultados;
+            // 3. Similaridade palavra por palavra (ex: "homem aranja" -> "homem aranha")
+            const palavrasItem = nomeFonetico.split(' ').filter(p => p.length > 1);
+            let palavrasCorrespondidas = 0;
+
+            for (const pTermo of palavrasTermo) {
+                for (const pItem of palavrasItem) {
+                    if (pTermo === pItem) {
+                        score += 30;
+                        palavrasCorrespondidas++;
+                        break;
+                    } else if (pItem.includes(pTermo) || pTermo.includes(pItem)) {
+                        score += 20;
+                        palavrasCorrespondidas++;
+                        break;
+                    } else {
+                        const simPalavra = this.calcularSimilaridade(pTermo, pItem);
+                        if (simPalavra >= 0.70) {
+                            score += Math.round(simPalavra * 25);
+                            palavrasCorrespondidas++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 4. Busca nas tags e sinopse
+            if (sinopseFonetica.includes(termoFonetico)) {
+                score += 15;
+            }
+
+            if (score >= 20 || (palavrasTermo.length > 0 && palavrasCorrespondidas === palavrasTermo.length)) {
+                pontuados.push({ item, score });
+            }
+        }
+
+        // Ordenar por relevância (score decrescente)
+        pontuados.sort((a, b) => b.score - a.score);
+        return pontuados.map(p => p.item);
     }
 
     itemCorresponde(item, termo) {
-        return (item.nome && item.nome.toLowerCase().includes(termo)) ||
-               (item.nomeOriginal && item.nomeOriginal.toLowerCase().includes(termo)) ||
-               (item.descricao && item.descricao.toLowerCase().includes(termo)) ||
-               (item.tags && item.tags.some(tag => tag.includes(termo)));
+        const resultados = this.buscarItem(termo);
+        return resultados.some(r => r.id === item.id);
     }
 
     getItemPorId(id) {

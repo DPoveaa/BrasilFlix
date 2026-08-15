@@ -276,34 +276,19 @@ class MessageHandler {
             return;
         }
 
-        const itemSelecionado = resultadosBusca[numeroSelecao - 1];
-        
-        // Verificar se é assinante
-        const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
-        if (!isAssinante) {
-            await this.commandHandler.mostrarMensagemConversao(chatId, userId, null);
-            return;
-        }
-
         try {
-            // Reenviar arquivo do grupo de armazenamento
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, itemSelecionado.messageId);
-            
-            const mensagem = `✅ *${itemSelecionado.nome}*\n\n` +
-                           `📝 ${itemSelecionado.descricao || 'Sem descrição'}\n` +
-                           `🎬 Tipo: ${itemSelecionado.tipo === 'filme' ? 'Filme' : 'Série'}\n` +
-                           `📅 Adicionado em: ${new Date(itemSelecionado.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                           `🎉 *Aproveite o conteúdo!*`;
-            
-            await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
-            
-            // Limpar resultados de busca temporários
+            const itemSelecionado = resultadosBusca[numeroSelecao - 1];
+
+            if (itemSelecionado.tipo === 'filme') {
+                await this.commandHandler.handleInfoFilme(chatId, userId, itemSelecionado.id, null);
+            } else {
+                await this.commandHandler.handleInfoSerie(chatId, userId, itemSelecionado.id, null);
+            }
             this.commandHandler.resultadosBuscaTemp.delete(userId);
-            
         } catch (error) {
-            console.error('❌ Erro ao enviar arquivo:', error);
+            console.error('❌ Erro ao exibir item da busca:', error);
             await this.bot.sendMessage(chatId, 
-                '❌ Erro ao enviar arquivo. A mensagem pode ter sido removida do grupo de armazenamento.',
+                '❌ Erro ao exibir detalhes do item selecionado.',
                 { parse_mode: 'Markdown' }
             );
         }

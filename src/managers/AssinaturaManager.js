@@ -69,6 +69,8 @@ class AssinaturaManager {
             data.setMonth(data.getMonth() + 1);
         } else if (plano === 'trimestral') {
             data.setMonth(data.getMonth() + 3);
+        } else if (plano === 'semestral') {
+            data.setMonth(data.getMonth() + 6);
         } else if (plano === 'anual') {
             data.setFullYear(data.getFullYear() + 1);
         }
@@ -85,7 +87,7 @@ class AssinaturaManager {
             // Criar pagamento PIX diretamente
             const payment = {
                 transaction_amount: preco,
-                description: `BrasilFlix - Plano ${plano}`,
+                description: `BrasilFlix VIP - Plano ${plano.toUpperCase()}`,
                 payment_method_id: 'pix',
                 payer: {
                     email: `user${userId}@brasilflix.com`,
@@ -99,16 +101,6 @@ class AssinaturaManager {
             const response = await mercadopago.payment.save(payment);
             console.log('✅ Pagamento PIX criado com sucesso:', response.body.id);
             
-            // Log detalhado da resposta
-            console.log('📋 Dados da resposta:', {
-                id: response.body.id,
-                status: response.body.status,
-                has_point_of_interaction: !!response.body.point_of_interaction,
-                has_transaction_data: !!response.body.point_of_interaction?.transaction_data,
-                has_qr_code: !!response.body.point_of_interaction?.transaction_data?.qr_code,
-                has_qr_code_base64: !!response.body.point_of_interaction?.transaction_data?.qr_code_base64
-            });
-            
             const result = {
                 id: response.body.id,
                 init_point: `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${response.body.id}`,
@@ -121,28 +113,21 @@ class AssinaturaManager {
                 status: response.body.status
             };
             
-            console.log('📱 QR Code disponível:', !!result.qr_code);
-            console.log('🖼️ QR Code Base64 disponível:', !!result.qr_code_base64);
-            
             return result;
         } catch (error) {
             console.error('❌ Erro ao criar pagamento:', error);
-            console.error('❌ Detalhes do erro:', {
-                message: error.message,
-                status: error.status,
-                response: error.response?.data
-            });
             throw error;
         }
     }
 
     getPrecoPlano(plano) {
         const precos = {
-            'mensal': 19.90,
-            'trimestral': 49.90,
-            'anual': 159.90
+            'mensal': 15.00,
+            'trimestral': 38.00, // R$ 12,66/mês (15% OFF)
+            'semestral': 69.00,  // R$ 11,50/mês (23% OFF)
+            'anual': 120.00      // R$ 10,00/mês (33% OFF)
         };
-        return precos[plano] || 19.90;
+        return precos[plano] || 15.00;
     }
 
     verificarAssinatura(userId) {

@@ -268,11 +268,13 @@ class DownloaderManager extends EventEmitter {
                     const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
 
+                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}\x1b[0m`;
+
                     if (process.stdout.isTTY) {
-                        process.stdout.write(`\r📥 Baixando "${mediaTitle}": [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} (${speedMB} MB/s) | ⏱️ ${elapsedFormatted} (⏳ ${remainingFormatted}) | Peers: ${torrent.numPeers} `);
+                        process.stdout.write(`\r${logLine} `);
                     } else if (now - lastLogTime >= 5000) {
                         lastLogTime = now;
-                        console.log(`📥 [Download: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}`);
+                        console.log(logLine);
                     }
 
                     if (onProgress) {

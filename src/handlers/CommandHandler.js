@@ -540,33 +540,336 @@ class CommandHandler {
         }
 
         const termo = match[1].trim();
-        
-        if (termo.length < 2) {
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* O termo de busca deve ter pelo menos 2 caracteres.', 
-                { parse_mode: 'Markdown' }
-            );
+        await this.mostrarResultadosBusca(chatId, userId, termo);
+    }
+
+    async mostrarResultadosBusca(chatId, userId, termo, callbackQuery = null) {
+        if (!termo || termo.length < 2) {
+            await this.bot.sendMessage(chatId, '❌ O termo de busca deve ter pelo menos 2 caracteres.');
             return;
         }
 
         const resultados = this.catalogoManager.buscarItem(termo);
-        
-        // Armazenar resultados temporariamente para seleção
+
         if (resultados.length > 0) {
             this.resultadosBuscaTemp.set(userId, resultados);
-            console.log(`💾 Resultados armazenados para usuário ${userId}: ${resultados.length} itens`);
         }
-        
-        const mensagem = this.catalogoManager.formatarResultadosBusca(resultados);
-        
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+
+        if (resultados.length === 0) {
+            const msgVazia = `🔍 *Busca:* "${termo}"\n\n❌ Nenhum título encontrado no catálogo.\n\n💡 *Deseja solicitar este lançamento?*`;
+            const kbVazio = {
+                inline_keyboard: [
+                    [{ text: '📝 Fazer Pedido', callback_data: `confirmar_pedido_${termo}` }],
+                    [{ text: '🔍 Buscar Outro', callback_data: 'buscar' }],
+                    [{ text: '🔙 Menu Principal', callback_data: 'voltar_menu' }]
+                ]
+            };
+            await this.sendOrEdit(chatId, msgVazia, { parse_mode: 'Markdown', reply_markup: kbVazio }, callbackQuery);
+            return;
+        }
+
+        let mensagem = `🔍 *Resultados para:* "${termo}" (${resultados.length})\n\n💡 *Selecione o título para ver a sinopse e assistir:*`;
+        const keyboard = { inline_keyboard: [] };
+
+        resultados.slice(0, 8).forEach((item, index) => {
+            const icone = item.tipo === 'filme' ? '🎬' : '📺';
+            const ano = item.ano ? ` (${item.ano})` : '';
+            const nota = item.nota ? ` ⭐ ${item.nota}` : '';
+            const nomeExibicao = `${icone} ${index + 1}. ${item.nome}${ano}${nota}`;
+            const callbackData = item.tipo === 'filme' ? `info_filme_${item.id}` : `info_serie_${item.id}`;
+
+            keyboard.inline_keyboard.push([
+                { text: nomeExibicao.length > 35 ? nomeExibicao.substring(0, 32) + '...' : nomeExibicao, callback_data: callbackData }
+            ]);
+        });
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Nova Busca', callback_data: 'buscar' },
+            { text: '🔙 Menu Principal', callback_data: 'voltar_menu' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
     }
 
     async handleCatalogo(msg) {
         const chatId = msg.chat.id;
-        const mensagem = this.catalogoManager.formatarCatalogo();
+        const userId = msg.from?.id;
+        await this.mostrarMenuCatalogo(chatId, userId, null);
+    }
+
+    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+        let filmes = this.catalogoManager.catalogo.filmes;
+        let tituloCategoria = '🎬 *Filmes Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            filmes = this.catalogoManager.getFilmesDublados();
+            tituloCategoria = '🎬 *Filmes Dublados*';
+        } else if (audioFiltro === 'legendado') {
+            filmes = this.catalogoManager.getFilmesLegendados();
+            tituloCategoria = '💬 *Filmes Legendados*';
+        }
         
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+        if (filmes.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum título encontrado em ${tituloCategoria} no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const filmesPorPagina = 8;
+        const paginas = Math.ceil(filmes.length / filmesPorPagina);
+        const paginaAtual = 0;
+        
+        const inicio = paginaAtual * filmesPorPagina;
+        const fim = Math.min(inicio + filmesPorPagina, filmes.length);
+        const filmesPagina = filmes.slice(inicio, fim);
+
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
+                        `Selecione um filme para ver detalhes e assistir:`;
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        filmesPagina.forEach(filme => {
+            const ano = filme.ano ? ` (${filme.ano})` : '';
+            const nota = filme.nota ? ` ⭐ ${filme.nota}` : '';
+            const nomeExibicao = `${filme.nome}${ano}${nota}`;
+            
+            keyboard.inline_keyboard.push([
+                { text: `🎬 ${nomeExibicao.length > 32 ? nomeExibicao.substring(0, 29) + '...' : nomeExibicao}`, callback_data: `info_filme_${filme.id}` }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (paginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `filmes_pagina_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < paginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `filmes_pagina_${paginaAtual + 1}` });
+            }
+        }
+        
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Buscar Filme', callback_data: 'buscar' },
+            { text: '🔙 Voltar', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+        let series = this.catalogoManager.catalogo.series;
+        let tituloCategoria = '📺 *Séries Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            series = this.catalogoManager.getSeriesDubladas();
+            tituloCategoria = '📺 *Séries Dubladas*';
+        } else if (audioFiltro === 'legendado') {
+            series = this.catalogoManager.getSeriesLegendadas();
+            tituloCategoria = '💬 *Séries Legendadas*';
+        }
+        
+        if (series.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhuma série encontrada em ${tituloCategoria} no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const seriesPorPagina = 8;
+        const paginas = Math.ceil(series.length / seriesPorPagina);
+        const paginaAtual = 0;
+        
+        const inicio = paginaAtual * seriesPorPagina;
+        const fim = Math.min(inicio + seriesPorPagina, series.length);
+        const seriesPagina = series.slice(inicio, fim);
+
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${series.length} séries\n\n` +
+                        `Selecione uma série para ver detalhes e episódios:`;
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        seriesPagina.forEach(serie => {
+            const ano = serie.ano ? ` (${serie.ano})` : '';
+            const nota = serie.nota ? ` ⭐ ${serie.nota}` : '';
+            const nomeExibicao = `${serie.nome}${ano}${nota}`;
+            
+            keyboard.inline_keyboard.push([
+                { text: `📺 ${nomeExibicao.length > 32 ? nomeExibicao.substring(0, 29) + '...' : nomeExibicao}`, callback_data: `info_serie_${serie.id}` }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (paginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `series_pagina_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < paginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `series_pagina_${paginaAtual + 1}` });
+            }
+        }
+        
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Buscar Série', callback_data: 'buscar' },
+            { text: '🔙 Voltar', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleInfoFilme(chatId, userId, filmeId, callbackQuery) {
+        const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
+        if (!filme) {
+            await this.bot.sendMessage(chatId, '❌ Filme não encontrado no catálogo.');
+            return;
+        }
+
+        const ano = filme.ano ? ` (${filme.ano})` : '';
+        const nota = filme.nota ? `⭐ *Avaliação:* ${filme.nota}/10\n` : '';
+        const generos = (filme.generos && filme.generos.length > 0) ? `🎭 *Gêneros:* ${filme.generos.join(', ')}\n` : '';
+        const qualidade = filme.isCam ? '📹 Versão Cinema (Provisória)' : (filme.qualidade || '1080p Full HD');
+        const audio = filme.isLegendado || (filme.audio && filme.audio.toLowerCase().includes('legendado')) ? 'Legendado' : 'Dublado (Áudio PT-BR)';
+        const sinopse = (filme.sinopse || filme.descricao || 'Disponível no catálogo com máxima qualidade.').trim();
+
+        const mensagem = `🎬 *${filme.nome}*${ano}\n\n` +
+                        `${nota}` +
+                        `${generos}` +
+                        `✨ *Qualidade:* ${qualidade} | 🔊 *Áudio:* ${audio}\n\n` +
+                        `📝 *Sinopse:*\n_${sinopse}_`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '▶️ Assistir Filme', callback_data: `assistir_filme_${filme.id}` }
+                ],
+                [
+                    { text: '🔍 Fazer Busca', callback_data: 'buscar' },
+                    { text: '🔙 Voltar', callback_data: 'catalogo' }
+                ]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async handleInfoSerie(chatId, userId, serieId, callbackQuery) {
+        const serie = this.catalogoManager.getItemPorId(parseInt(serieId));
+        if (!serie) {
+            await this.bot.sendMessage(chatId, '❌ Série não encontrada no catálogo.');
+            return;
+        }
+
+        const temporadas = serie.temporadas || [];
+        const totalEpisodios = temporadas.reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+        const ano = serie.ano ? ` (${serie.ano})` : '';
+        const nota = serie.nota ? `⭐ *Avaliação:* ${serie.nota}/10\n` : '';
+        const generos = (serie.generos && serie.generos.length > 0) ? `🎭 *Gêneros:* ${serie.generos.join(', ')}\n` : '';
+        const sinopse = (serie.sinopse || serie.descricao || 'Disponível no catálogo BrasilFlix.').trim();
+
+        const mensagem = `📺 *${serie.nome}*${ano}\n\n` +
+                        `${nota}` +
+                        `${generos}` +
+                        `📊 *Temporadas:* ${temporadas.length} | *Episódios:* ${totalEpisodios}\n\n` +
+                        `📝 *Sinopse:*\n_${sinopse}_\n\n` +
+                        `🍿 *Selecione a temporada:*`;
+
+        const keyboard = { inline_keyboard: [] };
+        let row = [];
+        temporadas.forEach(t => {
+            row.push({ text: `Temporada ${t.numero}`, callback_data: `temp_${serie.id}_${t.numero}` });
+            if (row.length === 2) {
+                keyboard.inline_keyboard.push(row);
+                row = [];
+            }
+        });
+        if (row.length > 0) keyboard.inline_keyboard.push(row);
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Fazer Busca', callback_data: 'buscar' },
+            { text: '🔙 Voltar', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async handleAssistirFilme(chatId, userId, filmeId, callbackQuery) {
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+        const jaUsouTeste = this.verificarTesteGratuitoUsado(userId);
+
+        if (!isAssinante && jaUsouTeste) {
+            await this.handleVerPlanosButton(chatId, userId, callbackQuery);
+            return;
+        }
+
+        const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
+        if (!filme || !filme.messageId) {
+            await this.bot.sendMessage(chatId, '❌ Arquivo de vídeo indisponível no momento.');
+            return;
+        }
+
+        try {
+            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, filme.messageId);
+
+            if (!isAssinante) {
+                this.marcarTesteGratuitoUsado(userId);
+                const msgTeste = `🎁 *Você utilizou seu Teste Gratuito de 1 filme!*\n\n` +
+                                `Esperamos que aproveite a experiência BrasilFlix! 🍿\n\n` +
+                                `💡 *Para assistir a filmes e séries ilimitados, assine por apenas R$ 15,00/mês!*`;
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '💎 Ver Planos VIP - R$ 15', callback_data: 'ver_planos' }],
+                        [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
+                    ]
+                };
+                await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: keyboard });
+            } else {
+                await this.bot.sendMessage(chatId, `🍿 *Bom filme, assinante VIP!*`, { parse_mode: 'Markdown' });
+            }
+        } catch (error) {
+            console.error('❌ Erro ao enviar filme:', error);
+            await this.bot.sendMessage(chatId, '❌ Erro ao entregar o vídeo. Contate o suporte.');
+        }
     }
 
     async handleAdicionar(msg) {
@@ -1033,17 +1336,38 @@ class CommandHandler {
                 case 'voltar_menu_admin':
                     await this.handleVoltarMenuAdmin(chatId, userId, callbackQuery);
                     break;
-                // Callbacks para enviar conteúdo
+                // Callbacks para ficha técnica e assistir
+                case data.match(/^info_filme_(\d+)$/)?.input: {
+                    const id = data.match(/^info_filme_(\d+)$/)?.[1];
+                    if (id) await this.handleInfoFilme(chatId, userId, id, callbackQuery);
+                    break;
+                }
+                case data.match(/^info_serie_(\d+)$/)?.input: {
+                    const id = data.match(/^info_serie_(\d+)$/)?.[1];
+                    if (id) await this.handleInfoSerie(chatId, userId, id, callbackQuery);
+                    break;
+                }
+                case data.match(/^assistir_filme_(\d+)$/)?.input: {
+                    const id = data.match(/^assistir_filme_(\d+)$/)?.[1];
+                    if (id) await this.handleAssistirFilme(chatId, userId, id, callbackQuery);
+                    break;
+                }
+                case data.match(/^assistir_serie_(\d+)$/)?.input: {
+                    const id = data.match(/^assistir_serie_(\d+)$/)?.[1];
+                    if (id) await this.handleAssistirSerie(chatId, userId, id, callbackQuery);
+                    break;
+                }
+                // Callbacks para enviar conteúdo (legado)
                 case data.match(/^enviar_filme_(\d+)$/)?.input:
                     const filmeId = data.match(/^enviar_filme_(\d+)$/)?.[1];
                     if (filmeId) {
-                        await this.handleEnviarFilme(chatId, userId, filmeId, callbackQuery);
+                        await this.handleInfoFilme(chatId, userId, filmeId, callbackQuery);
                     }
                     break;
                 case data.match(/^enviar_serie_(\d+)$/)?.input:
                     const serieId = data.match(/^enviar_serie_(\d+)$/)?.[1];
                     if (serieId) {
-                        await this.handleEnviarSerie(chatId, userId, serieId, callbackQuery);
+                        await this.handleInfoSerie(chatId, userId, serieId, callbackQuery);
                     }
                     break;
                 // Callbacks para confirmar pedidos
@@ -1067,15 +1391,15 @@ class CommandHandler {
                     break;
                 // Callbacks de planos
                 case 'plano_mensal':
-                    console.log('📅 Processando plano mensal...');
                     await this.handlePlanoEscolhido(chatId, userId, 'mensal', callbackQuery);
                     break;
                 case 'plano_trimestral':
-                    console.log('📅 Processando plano trimestral...');
                     await this.handlePlanoEscolhido(chatId, userId, 'trimestral', callbackQuery);
                     break;
+                case 'plano_semestral':
+                    await this.handlePlanoEscolhido(chatId, userId, 'semestral', callbackQuery);
+                    break;
                 case 'plano_anual':
-                    console.log('📅 Processando plano anual...');
                     await this.handlePlanoEscolhido(chatId, userId, 'anual', callbackQuery);
                     break;
                 // Callbacks de renovação
@@ -1351,25 +1675,23 @@ class CommandHandler {
         
         if (!assinatura) {
             // Usuário sem assinatura - mostrar planos com foco em vendas
-            const mensagem = `💎 *ASSINAR BRASILFLIX*\n\n` +
-                           `🔥 *ACESSO EXCLUSIVO A MILHARES DE FILMES E SÉRIES*\n\n` +
-                           `✨ *Benefícios Premium:*\n` +
-                           `• 🎭 Catálogo completo com milhares de títulos\n` +
-                           `• 🚀 Entrega instantânea e segura\n` +
-                           `• ⭐ Prioridade total em todos os pedidos\n` +
-                           `• 📱 Suporte 24/7 exclusivo\n` +
-                           `• 🎁 Conteúdo exclusivo e lançamentos\n` +
-                           `• 💎 Qualidade premium garantida\n\n` +
-                           `💡 *Escolha seu plano e comece a aproveitar agora!*`;
+            const mensagem = `💎 *Planos VIP BrasilFlix*\n\n` +
+                           `🍿 *Acesso Ilimitado a Todos os Filmes e Séries em 1080p Full HD!*\n\n` +
+                           `• 🥉 *Mensal:* R$ 15,00 / mês\n` +
+                           `• 🥈 *Trimestral (3 meses):* R$ 38,00 _(R$ 12,66/mês - 15% OFF)_\n` +
+                           `• 🥇 *Semestral (6 meses):* R$ 69,00 _(R$ 11,50/mês - 23% OFF)_\n` +
+                           `• 👑 *Anual (12 meses):* R$ 120,00 _(R$ 10,00/mês - 33% OFF)_\n\n` +
+                           `⚡ *Liberação instantânea via PIX automático!*`;
 
             const keyboard = {
                 inline_keyboard: [
                     [
-                        { text: '💎 Mensal - R$ 19,90', callback_data: 'plano_mensal' },
-                        { text: '💎 Trimestral - R$ 49,90', callback_data: 'plano_trimestral' }
+                        { text: '🥉 Mensal - R$ 15', callback_data: 'plano_mensal' },
+                        { text: '🥈 Trimestral - R$ 38', callback_data: 'plano_trimestral' }
                     ],
                     [
-                        { text: '💎 Anual - R$ 159,90', callback_data: 'plano_anual' }
+                        { text: '🥇 Semestral - R$ 69', callback_data: 'plano_semestral' },
+                        { text: '👑 Anual - R$ 120', callback_data: 'plano_anual' }
                     ],
                     [
                         { text: '❓ Como Funciona', callback_data: 'como_funciona' },
@@ -1381,27 +1703,27 @@ class CommandHandler {
                 ]
             };
 
-            await this.bot.sendMessage(chatId, mensagem, { 
+            await this.sendOrEdit(chatId, mensagem, { 
                 parse_mode: 'Markdown',
                 reply_markup: keyboard
-            });
+            }, callbackQuery);
         } else {
             // Usuário com assinatura - mostrar status e opções de renovação
             const info = this.assinaturaManager.formatarAssinatura(assinatura);
             
-            const mensagem = `📋 *Minha Assinatura*\n\n` +
+            const mensagem = `📋 *Minha Assinatura VIP*\n\n` +
                            `👤 *Usuário:* ${assinatura.username}\n` +
                            `📅 *Plano:* ${info.plano}\n` +
-                           `⭐ *Status:* ${info.status}\n` +
+                           `⭐ *Status:* 🟢 Ativa\n` +
                            `📅 *Vencimento:* ${info.vencimento}\n` +
                            `⏰ *Dias restantes:* ${info.diasRestantes}\n\n` +
-                           `Quer renovar ou mudar de plano?`;
+                           `Deseja estender ou alterar seu plano?`;
 
             const keyboard = {
                 inline_keyboard: [
                     [
                         { text: '🔄 Renovar Plano', callback_data: 'renovar_plano' },
-                        { text: '📅 Mudar Plano', callback_data: 'mudar_plano' }
+                        { text: '💎 Ver Planos', callback_data: 'ver_planos' }
                     ],
                     [
                         { text: '🔙 Voltar ao Menu', callback_data: 'voltar_menu' }
@@ -1409,10 +1731,10 @@ class CommandHandler {
                 ]
             };
 
-            await this.bot.sendMessage(chatId, mensagem, { 
+            await this.sendOrEdit(chatId, mensagem, { 
                 parse_mode: 'Markdown',
                 reply_markup: keyboard
-            });
+            }, callbackQuery);
         }
         
         // Responder ao callback query se existir
@@ -1601,29 +1923,23 @@ class CommandHandler {
     }
 
     async handleVerPlanosButton(chatId, userId, callbackQuery) {
-        const mensagem = `📋 *Planos Disponíveis*\n\n` +
-                        `💎 *Plano Mensal:* R$ 19,90/mês\n` +
-                        `• Acesso completo ao catálogo\n` +
-                        `• Prioridade nos pedidos\n` +
-                        `• Suporte 24/7\n\n` +
-                        `💎 *Plano Trimestral:* R$ 49,90/3 meses\n` +
-                        `• Tudo do plano mensal\n` +
-                        `• 15% de desconto\n` +
-                        `• Conteúdo exclusivo\n\n` +
-                        `💎 *Plano Anual:* R$ 159,90/ano\n` +
-                        `• Tudo dos outros planos\n` +
-                        `• 33% de desconto\n` +
-                        `• Acesso antecipado a lançamentos\n\n` +
-                        `🔥 *Escolha seu plano e comece a aproveitar!*`;
+        const mensagem = `💎 *Planos VIP BrasilFlix*\n\n` +
+                        `Assista a filmes e séries ilimitados em 1080p Full HD direto no Telegram!\n\n` +
+                        `• 🥉 *Mensal:* R$ 15,00 / mês\n` +
+                        `• 🥈 *Trimestral (3 meses):* R$ 38,00 _(R$ 12,66/mês - 15% OFF)_\n` +
+                        `• 🥇 *Semestral (6 meses):* R$ 69,00 _(R$ 11,50/mês - 23% OFF)_\n` +
+                        `• 👑 *Anual (12 meses):* R$ 120,00 _(R$ 10,00/mês - 33% OFF)_\n\n` +
+                        `⚡ *Liberação instantânea via PIX automático!*`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '💎 Assinar Mensal', callback_data: 'plano_mensal' },
-                    { text: '💎 Assinar Trimestral', callback_data: 'plano_trimestral' }
+                    { text: '🥉 Mensal - R$ 15', callback_data: 'plano_mensal' },
+                    { text: '🥈 Trimestral - R$ 38', callback_data: 'plano_trimestral' }
                 ],
                 [
-                    { text: '💎 Assinar Anual', callback_data: 'plano_anual' }
+                    { text: '🥇 Semestral - R$ 69', callback_data: 'plano_semestral' },
+                    { text: '👑 Anual - R$ 120', callback_data: 'plano_anual' }
                 ],
                 [
                     { text: '🔙 Voltar', callback_data: 'voltar_menu' }
@@ -1631,10 +1947,10 @@ class CommandHandler {
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async handleComoFuncionaButton(chatId, userId, callbackQuery) {
@@ -3191,27 +3507,8 @@ class CommandHandler {
 
     async processarBuscaCapturada(msg, termo) {
         const chatId = msg.chat.id;
-        
-        if (termo.length < 2) {
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* O termo de busca deve ter pelo menos 2 caracteres.', 
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-
-        try {
-            const resultados = this.catalogoManager.buscarItem(termo);
-            const mensagem = this.catalogoManager.formatarResultadosBusca(resultados);
-            
-            await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
-        } catch (error) {
-            console.error('❌ Erro ao buscar no catálogo:', error);
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* Não foi possível buscar no catálogo no momento. Tente novamente.', 
-                { parse_mode: 'Markdown' }
-            );
-        }
+        const userId = msg.from.id;
+        await this.mostrarResultadosBusca(chatId, userId, termo);
     }
 
     async processarTesteBuscaCapturada(msg, termo) {
