@@ -200,11 +200,6 @@ class QueueManager extends EventEmitter {
             console.error(`❌ Falha no processamento de "${nextJob.title}":`, error.message);
             nextJob.status = 'failed';
             nextJob.error = error.message;
-
-            // Se for pedido de usuário, avisa do erro
-            if (nextJob.userId && this.bot) {
-                this.bot.sendMessage(nextJob.userId, `⚠️ Não conseguimos baixar "${nextJob.title}" automaticamente no momento. Nossa equipe foi notificada!`).catch(() => {});
-            }
         } finally {
             this.saveQueue();
             this.isProcessing = false;
@@ -234,11 +229,6 @@ class QueueManager extends EventEmitter {
             }
         } catch (e) {
             console.warn('⚠️ Erro ao consultar TMDB, usando metadados básicos:', e.message);
-        }
-
-        // Notifica usuário sobre início do processamento apenas se for filme ou primeiro episódio
-        if (job.userId && this.bot && (job.type === 'filme' || (job.season === 1 && job.episode === 1))) {
-            this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade...`, { parse_mode: 'Markdown' }).catch(() => {});
         }
 
         // Validação de Ordem Cronológica e Verificação de Existência de Episódios para Séries/Doramas
@@ -635,16 +625,24 @@ class QueueManager extends EventEmitter {
             } else {
                 // Temporada atual concluída! Notifica quem pediu sobre a temporada completa
                 if (job.userId && this.bot) {
+                    const itemSalvo = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                    const sId = itemSalvo?.id || '';
                     const msgTemporada = `🎉 *Temporada ${currentSeasonNum} Completa Disponível!*\n\n` +
                                          `📺 *${metadata.nome || job.title}*\n` +
-                                         `✨ Todos os episódios da Temporada ${currentSeasonNum} já estão catalogados em alta qualidade!\n\n` +
+                                         `✨ Todos os episódios da Temporada ${currentSeasonNum} já estão catalogados em 1080p Full HD!\n\n` +
                                          `🍿 Aproveite e assista agora!`;
                     this.bot.sendMessage(job.userId, msgTemporada, {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            inline_keyboard: [[{ text: '▶️ Assistir Série', callback_data: `info_serie_${itemId || ''}` }]]
+                            inline_keyboard: [[{ text: '▶️ Assistir Série', callback_data: `info_serie_${sId}` }]]
                         }
                     }).catch(() => {});
+
+                    if (this.pedidosManager) {
+                        const pedidos = this.pedidosManager.getPedidos() || [];
+                        const matchP = pedidos.filter(p => !p.processado && p.nome && (metadata.nome || job.title).toLowerCase().includes(p.nome.toLowerCase().trim()));
+                        matchP.forEach(p => this.pedidosManager.marcarComoProcessado(p.id));
+                    }
                 }
 
                 // Avança para a próxima temporada
