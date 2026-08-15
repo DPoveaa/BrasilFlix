@@ -228,118 +228,154 @@ class QueueManager extends EventEmitter {
             this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade (1080p)...`, { parse_mode: 'Markdown' }).catch(() => {});
         }
 
-        // 2. Buscar fontes (Torrents / Direct)
-        const sources = await MediaSearchService.search(job.title, job.type, {
-            nomeOriginal: metadata.nomeOriginal,
-            ano: metadata.ano,
-            tmdbId: metadata.tmdbId,
-            imdbId: metadata.imdbId,
-            season: job.season || 1,
-            episode: job.episode || 1,
-            audioPreference: job.audioPreference || 'dublado'
-        });
-        if (sources.length === 0) {
-            if (job.userId && this.bot) {
-                const aviso = `🔔 *Aviso sobre o seu pedido: "${job.title}"*\n\n` +
-                              `Informamos que este título ainda não possui versão Dublada ou Legendada em Português disponível no momento.\n\n` +
-                              `🔄 *Fique tranquilo!* Nosso sistema cadastrou seu pedido no radar e monitorará diariamente. Assim que a versão em Português for lançada, ela será baixada e você será notificado! 🍿`;
-                this.bot.sendMessage(job.userId, aviso, { parse_mode: 'Markdown' }).catch(() => {});
-            }
-            throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
-        }
-
-        // 3. Download com Fallback Automático entre as melhores opções
-        job.status = 'downloading';
-        this.saveQueue();
-
+        // 2. Buscar fontes (Torrents / Direct) se necessário
+        let sources = [];
         let downloadedMedia = null;
-        let bestSource = null;
-        let lastError = null;
+        let bestSource = job.bestSource || null;
+        let rawFilePath = job.rawFilePath || null;
+        let optimizedPath = job.optimizedPath || null;
+        let langInfo = job.langInfo || { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
 
-        const maxAttempts = Math.min(3, sources.length);
-        for (let i = 0; i < maxAttempts; i++) {
-            const currentSource = sources[i];
-            console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio})`);
-            
+        // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD para retomada imediata
+        let resumeFromOptimized = false;
+        let resumeFromRaw = false;
+
+        if (optimizedPath && fs.existsSync(optimizedPath)) {
             try {
-                if (currentSource.magnet) {
-                    downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
-                        job.progress = progress.percent;
-                        job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                    }, { title: job.title, season: job.season, episode: job.episode });
-                } else if (currentSource.url) {
-                    const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
-                    downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
-                        job.progress = progress.percent;
-                        job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-                    }, { title: job.title, season: job.season, episode: job.episode });
+                const optStat = fs.statSync(optimizedPath);
+                if (optStat.size > 20 * 1024 * 1024) {
+                    console.log(`⚡ [Retomada Inteligente] Arquivo já codificado encontrado no SSD (${(optStat.size / (1024*1024)).toFixed(1)} MB)! Pulando download e FFmpeg, avançando direto para Upload...`);
+                    resumeFromOptimized = true;
+                }
+            } catch (e) {}
+        }
+
+        if (!resumeFromOptimized && rawFilePath && fs.existsSync(rawFilePath)) {
+            try {
+                const rawStat = fs.statSync(rawFilePath);
+                if (rawStat.size > 50 * 1024 * 1024) {
+                    console.log(`⚡ [Retomada Inteligente] Arquivo baixado encontrado no SSD (${(rawStat.size / (1024*1024)).toFixed(1)} MB)! Pulando download via torrent, avançando direto para conversão...`);
+                    resumeFromRaw = true;
+                }
+            } catch (e) {}
+        }
+
+        if (!resumeFromOptimized && !resumeFromRaw) {
+            sources = await MediaSearchService.search(job.title, job.type, {
+                nomeOriginal: metadata.nomeOriginal,
+                ano: metadata.ano,
+                tmdbId: metadata.tmdbId,
+                imdbId: metadata.imdbId,
+                season: job.season || 1,
+                episode: job.episode || 1,
+                audioPreference: job.audioPreference || 'dublado'
+            });
+            if (sources.length === 0) {
+                if (job.userId && this.bot) {
+                    const aviso = `🔔 *Aviso sobre o seu pedido: "${job.title}"*\n\n` +
+                                  `Informamos que este título ainda não possui versão Dublada ou Legendada em Português disponível no momento.\n\n` +
+                                  `🔄 *Fique tranquilo!* Nosso sistema cadastrou seu pedido no radar e monitorará diariamente. Assim que a versão em Português for lançada, ela será baixada e você será notificado! 🍿`;
+                    this.bot.sendMessage(job.userId, aviso, { parse_mode: 'Markdown' }).catch(() => {});
+                }
+                throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
+            }
+
+            // 3. Download com Fallback Automático entre as melhores opções
+            job.status = 'downloading';
+            this.saveQueue();
+
+            let lastError = null;
+            const maxAttempts = Math.min(3, sources.length);
+            for (let i = 0; i < maxAttempts; i++) {
+                const currentSource = sources[i];
+                console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio})`);
+                
+                try {
+                    if (currentSource.magnet) {
+                        downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
+                            job.progress = progress.percent;
+                            job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
+                        }, { title: job.title, season: job.season, episode: job.episode });
+                    } else if (currentSource.url) {
+                        const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
+                        downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
+                            job.progress = progress.percent;
+                            job.progressDetails = `${progress.downloaded} / ${progress.total}`;
+                        }, { title: job.title, season: job.season, episode: job.episode });
+                    }
+
+                    if (downloadedMedia && downloadedMedia.filePath) {
+                        bestSource = currentSource;
+                        break;
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
+                    lastError = err;
+                }
+            }
+
+            if (!downloadedMedia || !bestSource) {
+                throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
+            }
+
+            rawFilePath = downloadedMedia.filePath;
+            job.rawFilePath = rawFilePath;
+            job.bestSource = bestSource;
+            this.saveQueue();
+        }
+
+        if (!resumeFromOptimized) {
+            // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
+            try {
+                const videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
+
+                // Verificação de Duração Mínima (Anti-Sample / Anti-Propaganda de 30s)
+                const minDurationSec = 300;
+                if (videoInfo.duration && videoInfo.duration < minDurationSec) {
+                    console.log(`⚠️ Arquivo descartado: Duração inválida de apenas ${videoInfo.durationFormatted} (${Math.round(videoInfo.duration)}s). Mínimo exigido: 5 minutos. Possível amostra/vídeo promocional falso para "${job.title}".`);
+                    await DownloaderManager.cleanupFile(rawFilePath);
+                    throw new Error(`Vídeo com duração inferior a 5 minutos (${Math.round(videoInfo.duration)}s). Amostra descartada.`);
                 }
 
-                if (downloadedMedia && downloadedMedia.filePath) {
-                    bestSource = currentSource;
-                    break;
+                langInfo = VideoProcessor.validatePortugueseContent(videoInfo, path.basename(rawFilePath), bestSource || {});
+
+                if (!langInfo.isValid) {
+                    console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado nem legenda em Português detectada no download de "${job.title}".`);
+                    await DownloaderManager.cleanupFile(rawFilePath);
+                    throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
                 }
+
+                console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted})`);
             } catch (err) {
-                console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
-                lastError = err;
+                if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
+                    throw err;
+                }
             }
+
+            // 4. Otimização de Vídeo 1080p com FFmpeg
+            job.status = 'processing';
+            job.progressDetails = 'Otimizando para 1080p...';
+            job.langInfo = langInfo;
+            this.saveQueue();
+
+            optimizedPath = path.join(path.dirname(rawFilePath), `opt_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
+            job.optimizedPath = optimizedPath;
+            this.saveQueue();
+            
+            await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent) => {
+                job.progress = percent;
+                job.progressDetails = `Codificando 1080p: ${percent}%`;
+            });
         }
-
-        if (!downloadedMedia || !bestSource) {
-            throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
-        }
-
-        const rawFilePath = downloadedMedia.filePath;
-
-        // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
-        let langInfo = { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
-        try {
-            const videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
-
-            // Verificação de Duração Mínima (Anti-Sample / Anti-Propaganda de 30s)
-            // Nenhum filme ou série tem menos de 5 minutos (300 segundos)
-            const minDurationSec = 300;
-            if (videoInfo.duration && videoInfo.duration < minDurationSec) {
-                console.log(`⚠️ Arquivo descartado: Duração inválida de apenas ${videoInfo.durationFormatted} (${Math.round(videoInfo.duration)}s). Mínimo exigido: 5 minutos. Possível amostra/vídeo promocional falso para "${job.title}".`);
-                await DownloaderManager.cleanupFile(rawFilePath);
-                throw new Error(`Vídeo com duração inferior a 5 minutos (${Math.round(videoInfo.duration)}s). Amostra descartada.`);
-            }
-
-            langInfo = VideoProcessor.validatePortugueseContent(videoInfo, downloadedMedia.fileName, bestSource);
-
-            if (!langInfo.isValid) {
-                console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado nem legenda em Português detectada no download de "${job.title}".`);
-                await DownloaderManager.cleanupFile(rawFilePath);
-                throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
-            }
-
-            console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted})`);
-        } catch (err) {
-            if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
-                throw err;
-            }
-        }
-
-        // 4. Otimização de Vídeo 1080p com FFmpeg
-        job.status = 'processing';
-        job.progressDetails = 'Otimizando para 1080p...';
-        this.saveQueue();
-
-        const optimizedPath = path.join(path.dirname(rawFilePath), `opt_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
-        
-        await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent) => {
-            job.progress = percent;
-            job.progressDetails = `Codificando 1080p: ${percent}%`;
-        });
 
         // 5. Upload para o Canal de Armazenamento
         job.status = 'uploading';
         job.progressDetails = 'Enviando para o Telegram...';
         this.saveQueue();
 
-        metadata.qualidade = bestSource.quality || '1080p';
-        metadata.isCam = bestSource.isCam || false;
-        metadata.audio = langInfo.audioText || bestSource.audio || (bestSource.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)');
+        metadata.qualidade = bestSource?.quality || '1080p';
+        metadata.isCam = bestSource?.isCam || false;
+        metadata.audio = langInfo.audioText || bestSource?.audio || 'Dublado (PT-BR)';
         metadata.isDublado = langInfo.isDublado;
         metadata.isLegendado = langInfo.isLegendado;
 

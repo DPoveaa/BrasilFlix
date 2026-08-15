@@ -11,22 +11,11 @@ class DownloaderManager extends EventEmitter {
         super();
         this.downloadDir = path.resolve(config.DOWNLOAD_DIR || './downloads/temp');
         this.ensureDirectories();
-        this.cleanupTempDirectory();
+        // Não limpa o diretório temp no início para permitir retomada inteligente de downloads/conversões anteriores
     }
 
     ensureDirectories() {
         fs.ensureDirSync(this.downloadDir);
-    }
-
-    cleanupTempDirectory() {
-        try {
-            if (fs.existsSync(this.downloadDir)) {
-                fs.emptyDirSync(this.downloadDir);
-                console.log('🧹 Pasta de downloads temporários limpa no início (SSD protegido contra acúmulo de arquivos incompletos).');
-            }
-        } catch (e) {
-            console.warn('⚠️ Aviso ao limpar pasta temp:', e.message);
-        }
     }
 
     async getWebTorrentClass() {
@@ -246,7 +235,10 @@ class DownloaderManager extends EventEmitter {
             torrent.on('download', () => {
                 if (finished) return;
 
-                // Se o arquivo do episódio tiver 100% de progresso verificado
+                // Se o download atingiu 100% (seja o torrent completo ou o episódio selecionado)
+                if (torrent.progress >= 0.999 || (torrent.length > 0 && torrent.downloaded >= torrent.length)) {
+                    return onComplete();
+                }
                 if (targetEpisodeFile && (targetEpisodeFile.progress >= 0.999 || targetEpisodeFile.done || (targetEpisodeFile.downloaded >= targetEpisodeFile.length && targetEpisodeFile.length > 0))) {
                     return onComplete();
                 }

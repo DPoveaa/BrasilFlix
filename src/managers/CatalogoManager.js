@@ -69,10 +69,15 @@ class CatalogoManager {
         const temDub = item.isDublado || !!item.versoes?.dublado || (item.audio && !item.audio.toLowerCase().includes('legendado'));
         const temLeg = item.isLegendado || !!item.versoes?.legendado || (item.audio && item.audio.toLowerCase().includes('legendado'));
 
-        if (temDub && temLeg) return '[D/L]';
-        if (temDub) return '[D]';
-        if (temLeg) return '[L]';
-        return '';
+        let audioCode = '';
+        if (temDub && temLeg) audioCode = 'D/L';
+        else if (temDub) audioCode = 'D';
+        else if (temLeg) audioCode = 'L';
+
+        if (item.isCam) {
+            return audioCode ? `[CAM/${audioCode}]` : '[CAM]';
+        }
+        return audioCode ? `[${audioCode}]` : '';
     }
 
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
