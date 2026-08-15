@@ -248,79 +248,81 @@ class DownloaderManager extends EventEmitter {
                 }
             });
 
+            let isCompleting = false;
             const checkAndComplete = async () => {
-                if (finished) return;
+                if (finished || isCompleting) return;
+                isCompleting = true;
 
-                let selectedFile = targetEpisodeFile;
-                if (!selectedFile) {
-                    const videoFiles = torrent.files.filter(f => {
-                        const ext = path.extname(f.name).toLowerCase();
-                        return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext);
-                    });
-
-                    // Filtra arquivos que NÃO sejam amostras ou propagandas
-                    const realVideoFiles = videoFiles.filter(f => {
-                        const lower = f.name.toLowerCase();
-                        return !lower.includes('sample') && !lower.includes('amostra') && !lower.includes('trailer') && !lower.includes('teaser') && !lower.includes('comando.to') && !lower.includes('baixe');
-                    });
-
-                    const candidateFiles = realVideoFiles.length > 0 ? realVideoFiles : videoFiles;
-                    if (candidateFiles.length > 0) {
-                        selectedFile = candidateFiles.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), candidateFiles[0]);
-                    }
-                }
-
-                if (!selectedFile) {
-                    selectedFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
-                }
-
-                const fullPath = path.join(this.downloadDir, selectedFile.path);
-
-                // 1. Verificação de existência do arquivo físico
-                if (!fs.existsSync(fullPath)) {
-                    return;
-                }
-
-                // 2. Verificação de tamanho do arquivo em disco
-                const stat = fs.statSync(fullPath);
-                const expectedSize = selectedFile.length;
-
-                const isTargetDone = targetEpisodeFile 
-                    ? (targetEpisodeFile.progress >= 0.99 || (targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.985) || targetEpisodeFile.done) 
-                    : (torrent.progress >= 0.99 || (torrent.downloaded >= torrent.length * 0.985) || torrent.done);
-
-                if (!isTargetDone) {
-                    // Ainda restam peças sendo baixadas pelo WebTorrent
-                    return;
-                }
-
-                if (expectedSize > 0 && stat.size < expectedSize * 0.98) {
-                    return;
-                }
-
-                // 3. Verificação de integridade estrutural via ffprobe
                 try {
-                    const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
-                    if (!videoInfo.duration || videoInfo.duration <= 0) {
+                    let selectedFile = targetEpisodeFile;
+                    if (!selectedFile) {
+                        const videoFiles = torrent.files.filter(f => {
+                            const ext = path.extname(f.name).toLowerCase();
+                            return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext);
+                        });
+
+                        // Filtra arquivos que NÃO sejam amostras ou propagandas
+                        const realVideoFiles = videoFiles.filter(f => {
+                            const lower = f.name.toLowerCase();
+                            return !lower.includes('sample') && !lower.includes('amostra') && !lower.includes('trailer') && !lower.includes('teaser') && !lower.includes('comando.to') && !lower.includes('baixe');
+                        });
+
+                        const candidateFiles = realVideoFiles.length > 0 ? realVideoFiles : videoFiles;
+                        if (candidateFiles.length > 0) {
+                            selectedFile = candidateFiles.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), candidateFiles[0]);
+                        }
+                    }
+
+                    if (!selectedFile) {
+                        selectedFile = torrent.files.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), torrent.files[0]);
+                    }
+
+                    if (!selectedFile) {
+                        isCompleting = false;
                         return;
                     }
+
+                    const fullPath = path.join(this.downloadDir, selectedFile.path);
+
+                    // 1. Verificação de existência do arquivo físico
+                    if (!fs.existsSync(fullPath)) {
+                        isCompleting = false;
+                        return;
+                    }
+
+                    // 2. Verificação de tamanho do arquivo em disco
+                    const stat = fs.statSync(fullPath);
+                    const expectedSize = selectedFile.length;
+
+                    if (expectedSize > 0 && stat.size < expectedSize * 0.95) {
+                        isCompleting = false;
+                        return;
+                    }
+
+                    // 3. Verificação de integridade estrutural via ffprobe
+                    const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
+                    if (!videoInfo.duration || videoInfo.duration <= 0) {
+                        isCompleting = false;
+                        return;
+                    }
+
+                    finished = true;
+                    process.stdout.write('\n');
+                    console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
+
+                    const fileInfo = {
+                        filePath: fullPath,
+                        fileName: selectedFile.name,
+                        sizeBytes: stat.size,
+                        totalTorrentFiles: torrent.files.length
+                    };
+
+                    safeCleanup();
+                    resolve(fileInfo);
                 } catch (e) {
-                    return;
+                    console.warn('⚠️ Validação de download:', e.message);
+                    isCompleting = false;
                 }
-
-                finished = true;
-                process.stdout.write('\n');
-                console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
-
-                const fileInfo = {
-                    filePath: fullPath,
-                    fileName: selectedFile.name,
-                    sizeBytes: stat.size,
-                    totalTorrentFiles: torrent.files.length
-                };
-
-                safeCleanup();
-                resolve(fileInfo);
             };
 
             torrent.on('download', () => {
@@ -331,8 +333,10 @@ class DownloaderManager extends EventEmitter {
                     ? (targetEpisodeFile.downloaded || 0)
                     : (torrent.downloaded || 0);
 
-                // Se o arquivo selecionado ou torrent atingiu 100%, verifica o disco e conclui
-                if (curTotal > 0 && curDownloaded >= curTotal * 0.995) {
+                const curRatio = curTotal > 0 ? (curDownloaded / curTotal) : 0;
+
+                // Se o arquivo selecionado ou torrent atingiu 98%+, conclui imediatamente
+                if (curRatio >= 0.98 || torrent.progress >= 0.98) {
                     checkAndComplete();
                 }
 
@@ -398,7 +402,7 @@ class DownloaderManager extends EventEmitter {
                 const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
                 const curDownloaded = targetEpisodeFile ? (targetEpisodeFile.downloaded || 0) : (torrent.downloaded || 0);
 
-                if (curTotal > 0 && (curDownloaded >= curTotal * 0.99 || torrent.progress >= 0.99)) {
+                if (curTotal > 0 && (curDownloaded >= curTotal * 0.98 || torrent.progress >= 0.98 || torrent.done)) {
                     checkAndComplete();
                     return;
                 }
