@@ -3203,26 +3203,34 @@ class CommandHandler {
         await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
     }
 
+    getStremioLinks(token) {
+        const domain = (config.SERVER_HOST || 'brasilflix.kapsu.com.br').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        const isLocal = domain.includes('localhost') || domain.includes('127.0.0.1') || domain.startsWith('192.168.');
+        const protocol = isLocal ? 'http' : 'https';
+        const manifestUrl = `${protocol}://${domain}/${token}/manifest.json`;
+        const stremioApp = `stremio://${domain}/${token}/manifest.json`;
+        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+        const landingUrl = `${protocol}://${domain}/${token}`;
+
+        return { domain, manifestUrl, stremioApp, webStremio, landingUrl };
+    }
+
     async handleAdminGerarTokenVitalicio(chatId, userId, callbackQuery) {
         if (userId !== config.ADMIN_ID) return;
 
         const acesso = this.assinaturaManager.gerarTokenVitalicio('Parente / Amigo VIP');
         const token = acesso.token;
-
-        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
-        const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
-        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-        const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
+        const links = this.getStremioLinks(token);
 
         const mensagem = `🎉 *Novo Acesso Vitalício Gerado!*\n\n` +
                         `🔑 *Token de Acesso:* \`${token}\`\n\n` +
                         `📲 *Links para enviar ao seu parente / amigo:*\n\n` +
                         `1️⃣ *Instalar no App do Stremio (1 clique):*\n` +
-                        `\`${stremioApp}\`\n\n` +
+                        `\`${links.stremioApp}\`\n\n` +
                         `2️⃣ *Abrir no Stremio Web:*\n` +
-                        `[Abrir Stremio Web](${webStremio})\n\n` +
+                        `[Abrir Stremio Web](${links.webStremio})\n\n` +
                         `3️⃣ *Página Web com Botões de Instalação:*\n` +
-                        `\`http://${hostIp}/${token}\`\n\n` +
+                        `\`${links.landingUrl}\`\n\n` +
                         `✨ _Esse link dá acesso vitalício e ilimitado a todos os filmes e séries sem expirar!_`;
 
         const keyboard = {
@@ -3266,18 +3274,15 @@ class CommandHandler {
         }
 
         const assinatura = this.assinaturaManager.autorizarUsernameVitalicio(cleanUser);
-        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
-        const manifestUrl = `http://${hostIp}/${cleanUser}/manifest.json`;
-        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-        const stremioApp = `stremio://${hostIp}/${cleanUser}/manifest.json`;
+        const links = this.getStremioLinks(cleanUser);
 
         const mensagem = `👑 *Acesso Vitalício Liberado com Sucesso!*\n\n` +
                         `👤 *Usuário:* @${cleanUser}\n` +
                         `💎 *Plano:* Vitalício Permanente (2099)\n\n` +
                         `📲 *Links do Stremio para ele:*\n` +
-                        `• *Link do Addon:* \`${manifestUrl}\`\n` +
-                        `• *App Stremio:* \`${stremioApp}\`\n` +
-                        `• *Página de Instalação:* \`http://${hostIp}/${cleanUser}\``;
+                        `• *Link do Addon:* \`${links.manifestUrl}\`\n` +
+                        `• *App Stremio:* \`${links.stremioApp}\`\n` +
+                        `• *Página de Instalação:* \`${links.landingUrl}\``;
 
         const keyboard = {
             inline_keyboard: [
@@ -3373,19 +3378,16 @@ class CommandHandler {
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
 
         const token = msg.from.username || userId.toString();
-        const hostIp = config.SERVER_HOST || '192.168.15.50:7000';
-        const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
-        const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
-        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+        const links = this.getStremioLinks(token);
 
         let mensagem = `📺 *BrasilFlix no Stremio (Smart TV & Celular)*\n\n` +
                        `Assista a todos os filmes e séries do nosso catálogo em *1080p Full HD* direto no Stremio!\n\n`;
 
         if (isAssinante) {
             mensagem += `✨ *Sua conta VIP está ativa!* Seus links personalizados de instalação:\n\n` +
-                        `🚀 *Instalar no App Stremio:* [Clique aqui](${stremioApp})\n` +
-                        `🌐 *Abrir no Stremio Web:* [Clique aqui](${webStremio})\n` +
-                        `🔗 *URL do Addon:* \`${manifestUrl}\``;
+                        `🚀 *Instalar no App Stremio (1 toque):*\n\`${links.stremioApp}\`\n\n` +
+                        `🌐 *Abrir no Stremio Web:*\n[Clique aqui para abrir no Stremio Web](${links.webStremio})\n\n` +
+                        `🔗 *URL do Addon:* \`${links.manifestUrl}\``;
         } else {
             mensagem += `💡 *Disponível para Assinantes VIP!*\n` +
                         `Assine por apenas R$ 15,00/mês para liberar a reprodução ilimitada no Stremio na sua TV de casa!`;
@@ -3394,7 +3396,9 @@ class CommandHandler {
         const keyboard = {
             inline_keyboard: [
                 isAssinante ? 
-                    [{ text: '🚀 Instalar no Stremio', url: webStremio }] :
+                    [
+                        { text: '🌐 Abrir no Stremio Web', url: links.webStremio }
+                    ] :
                     [{ text: '💎 Assinar VIP - R$ 15', callback_data: 'ver_planos' }],
                 [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
             ]

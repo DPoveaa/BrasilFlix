@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const path = require('path');
 const fs = require('fs-extra');
 const config = require('../../config');
@@ -33,9 +33,12 @@ class StremioServer {
     }
 
     getBaseUrl(req) {
-        const host = req.get('host');
-        const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-        return `${protocol}://${host}`;
+        const forwardedHost = req?.get ? (req.get('x-forwarded-host') || req.get('host')) : null;
+        if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('127.0.0.1')) {
+            const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+            return `${protocol}://${forwardedHost}`;
+        }
+        return `https://${config.SERVER_HOST || 'brasilflix.kapsu.com.br'}`;
     }
 
     setupRoutes() {

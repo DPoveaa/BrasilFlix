@@ -34,7 +34,7 @@ module.exports = {
 
     // Web & Stremio
     STREMIO_PORT: parseInt(process.env.STREMIO_PORT || '7000', 10),
-    SERVER_HOST: process.env.SERVER_HOST || '192.168.15.50:7000',
+    SERVER_HOST: process.env.SERVER_HOST || 'brasilflix.kapsu.com.br',
 
     // Diretórios Locais
     DATA_DIR: './data',
