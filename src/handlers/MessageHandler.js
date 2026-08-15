@@ -48,6 +48,11 @@ class MessageHandler {
             return;
         }
 
+        // Ignora mensagens enviadas pelo próprio robô ou que já possuem a assinatura oficial do BrasilFlix
+        if (caption.includes('BrasilFlix Oficial') || caption.includes('Qualidade:') || caption.includes('Filme Catalogado') || caption.includes('Episódio de Série')) {
+            return;
+        }
+
         // Se o arquivo já foi catalogado pelo próprio QueueManager, ignora
         const jaExiste = this.catalogoManager.getItemPorMessageId(messageId);
         if (jaExiste) {
@@ -55,7 +60,10 @@ class MessageHandler {
         }
 
         const fileName = (video && video.file_name) || (document && document.file_name) || '';
-        const textToProcess = caption.trim() || fileName.trim();
+        
+        // Se for upload manual com legenda, pega preferencialmente a 1ª linha
+        let rawCaption = caption.split('\n')[0] || '';
+        const textToProcess = rawCaption.trim() || fileName.trim();
 
         if (textToProcess) {
             await this.processarAdicaoCatalogo(msg, textToProcess);

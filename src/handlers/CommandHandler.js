@@ -40,6 +40,98 @@ class CommandHandler {
         }
     }
 
+    async handleStart(msg, callbackQuery = null) {
+        const userId = msg.from.id;
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+        if (isAssinante) {
+            await this.handleAssinanteStart(msg, callbackQuery);
+        } else {
+            await this.handleNaoAssinanteStart(msg, callbackQuery);
+        }
+    }
+
+    async handleRemoverAdmin(msg, match) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+
+        if (userId !== config.ADMIN_ID) {
+            await this.bot.sendMessage(chatId, '❌ Apenas o administrador pode remover títulos do catálogo.');
+            return;
+        }
+
+        const query = match && match[1] ? match[1].trim() : '';
+        if (!query) {
+            await this.bot.sendMessage(chatId, 
+                '🗑️ *Como remover um título do catálogo:*\n\n' +
+                '• `/remover Nome do Filme`\n' +
+                '• `/remover ID_DO_FILME`\n\n' +
+                '💡 *Dica:* O robô apagará o registro do catálogo e também excluirá o arquivo de vídeo do canal de armazenamento do Telegram!',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        try {
+            // 1. Tentar encontrar por ID
+            let item = !isNaN(parseInt(query)) ? this.catalogoManager.getItemPorId(parseInt(query)) : null;
+
+            // 2. Se não achou por ID, busca por nome
+            if (!item) {
+                const resultados = this.catalogoManager.buscarItem(query);
+                if (resultados.length > 0) {
+                    item = resultados[0];
+                }
+            }
+
+            if (!item) {
+                await this.bot.sendMessage(chatId, `❌ Título *"${query}"* não foi encontrado no catálogo.`, { parse_mode: 'Markdown' });
+                return;
+            }
+
+            // 3. Excluir mensagens do Telegram no Storage Group
+            let mensagensApagadas = 0;
+            if (item.tipo === 'filme' && item.messageId) {
+                try {
+                    await this.bot.deleteMessage(config.STORAGE_GROUP_ID, item.messageId);
+                    mensagensApagadas++;
+                } catch (e) {
+                    console.warn(`⚠️ Não foi possível apagar mensagem ${item.messageId} no canal:`, e.message);
+                }
+            } else if (item.tipo === 'serie') {
+                for (const temp of (item.temporadas || [])) {
+                    for (const ep of (temp.episodios || [])) {
+                        if (ep.messageId) {
+                            try {
+                                await this.bot.deleteMessage(config.STORAGE_GROUP_ID, ep.messageId);
+                                mensagensApagadas++;
+                            } catch (e) {}
+                        }
+                    }
+                }
+            }
+
+            // 4. Remover do catálogo JSON
+            const removido = this.catalogoManager.removerItem(item.id);
+
+            if (removido) {
+                await this.bot.sendMessage(chatId,
+                    `🗑️ *Título removido com sucesso!*\n\n` +
+                    `🎬 *Nome:* ${item.nome}\n` +
+                    `📦 *Tipo:* ${item.tipo === 'filme' ? 'Filme' : 'Série'}\n` +
+                    `🆔 *ID:* ${item.id}\n` +
+                    `📤 *Mídias excluídas do canal de armazenamento:* ${mensagensApagadas}\n\n` +
+                    `✅ *Remoção permanente concluída.*`,
+                    { parse_mode: 'Markdown' }
+                );
+            } else {
+                await this.bot.sendMessage(chatId, '❌ Erro ao remover do catálogo.');
+            }
+        } catch (error) {
+            console.error('❌ Erro no comando /remover:', error);
+            await this.bot.sendMessage(chatId, `❌ Erro ao processar remoção: ${error.message}`);
+        }
+    }
+
     async handleAssinanteStart(msg, callbackQuery = null) {
         const chatId = msg.chat.id;
         const username = msg.from.username || msg.from.first_name;

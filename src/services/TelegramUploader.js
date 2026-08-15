@@ -100,12 +100,58 @@ class TelegramUploader {
 
         try {
             const client = await this.getClient();
+
+            // Determina a etiqueta de áudio resumida
+            const audioEtiqueta = metadata.isLegendado || (audio && audio.toLowerCase().includes('legendado')) ? 'Legendado' : 'Dublado';
+            const totalBytes = fs.statSync(filePath).size;
+            const formatBytesHelper = (bytes) => {
+                const gb = bytes / (1024 * 1024 * 1024);
+                if (gb >= 1.0) return `${gb.toFixed(2)} GB`;
+                const mb = bytes / (1024 * 1024);
+                return `${mb.toFixed(1)} MB`;
+            };
+            const totalStr = formatBytesHelper(totalBytes);
+
+            // Upload ultrarrápido com pipeline paralelo contínuo
+            const inputFile = await this.uploadBigFileFast(client, filePath, (fraction) => {
+                const now = Date.now();
+                const percent = Math.min(100, Math.max(0, fraction * 100)).toFixed(1);
+                const elapsedSec = Math.max(1, (now - uploadStartTime) / 1000);
+                const uploadedBytes = totalBytes * fraction;
+                const uploadedStr = formatBytesHelper(uploadedBytes);
+
+                const speedMBs = (uploadedBytes / (1024 * 1024) / elapsedSec).toFixed(2);
+                const remainingSec = speedMBs > 0 ? Math.max(0, Math.round((totalBytes - uploadedBytes) / (speedMBs * 1024 * 1024))) : 0;
+                
+                const elapsedFormatted = VideoProcessor.formatDuration(elapsedSec);
+                const remainingFormatted = VideoProcessor.formatDuration(remainingSec);
+
+                // Barra de progresso visual (25 caracteres)
+                const barLength = 25;
+                const filled = Math.min(barLength, Math.round((fraction) * barLength));
+                const empty = Math.max(0, barLength - filled);
+                const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+                const logLine = `📤 [Upload: "${nome}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}`;
+
+                if (process.stdout.isTTY) {
+                    process.stdout.write(`\r${logLine} `);
+                } else if (now - lastLogTime >= 3500) {
+                    lastLogTime = now;
+                    console.log(logLine);
+                }
+                if (onProgress) {
+                    onProgress({ percent: parseFloat(percent), speed: `${speedMBs} MB/s` });
+                }
+            });
+
+            if (process.stdout.isTTY) process.stdout.write('\n');
+
             const sentMessage = await client.sendFile(this.storageGroupId, {
-                file: filePath,
+                file: inputFile,
                 caption: caption,
                 parseMode: 'md',
                 supportsStreaming: true,
-                workers: 8, // 8 conexões simultâneas em paralelo (velocidade máxima MTProto)
                 thumb: hasThumb ? thumbPath : undefined,
                 attributes: [
                     new Api.DocumentAttributeVideo({
@@ -114,29 +160,8 @@ class TelegramUploader {
                         h: videoInfo.height || 1080,
                         supportsStreaming: true
                     })
-                ],
-                progressCallback: (fraction) => {
-                    const now = Date.now();
-                    const percent = (fraction * 100).toFixed(1);
-                    const elapsedSec = Math.max(1, (now - uploadStartTime) / 1000);
-                    const uploadedMB = (parseFloat(sizeMB) * fraction).toFixed(1);
-                    const speedMbs = (uploadedMB / elapsedSec).toFixed(2);
-                    const remainingSec = speedMbs > 0 ? Math.max(0, Math.round((parseFloat(sizeMB) - uploadedMB) / speedMbs)) : 0;
-                    const remainingFormatted = VideoProcessor.formatDuration(remainingSec);
-
-                    if (process.stdout.isTTY) {
-                        process.stdout.write(`\r📤 [Upload Telegram] ${percent}% (${uploadedMB}/${sizeMB} MB) | ${speedMbs} MB/s | ⏳ Restante: ~${remainingFormatted} `);
-                    } else if (now - lastLogTime >= 4000) {
-                        lastLogTime = now;
-                        console.log(`📤 [Upload Telegram] ${percent}% de ${sizeMB} MB enviado | ${speedMbs} MB/s | ⏳ Restante: ~${remainingFormatted}`);
-                    }
-                    if (onProgress) {
-                        onProgress({ percent: parseFloat(percent), speed: `${speedMbs} MB/s` });
-                    }
-                }
+                ]
             });
-
-            if (process.stdout.isTTY) process.stdout.write('\n');
 
             if (hasThumb) {
                 await fs.remove(thumbPath).catch(() => {});
@@ -163,6 +188,68 @@ class TelegramUploader {
             console.error('❌ Erro no upload para o Telegram:', error.message);
             throw error;
         }
+    }
+
+    async uploadBigFileFast(client, filePath, onProgress = null) {
+        const bigInt = require('big-integer');
+        const stat = await fs.promises.stat(filePath);
+        const size = stat.size;
+        const partSize = 512 * 1024; // 512 KB (padrão ótimo MTProto)
+        const partCount = Math.floor((size + partSize - 1) / partSize);
+        const fileId = bigInt.randBetween(bigInt(1), bigInt('9223372036854775807'));
+        const fileName = path.basename(filePath);
+
+        const fileHandle = await fs.promises.open(filePath, 'r');
+        let nextPart = 0;
+        let uploadedCount = 0;
+        const totalWorkers = Math.min(16, partCount);
+
+        try {
+            const worker = async () => {
+                while (true) {
+                    const currentPart = nextPart++;
+                    if (currentPart >= partCount) break;
+
+                    const offset = currentPart * partSize;
+                    const length = Math.min(partSize, size - offset);
+                    const buffer = Buffer.alloc(length);
+                    await fileHandle.read(buffer, 0, length, offset);
+
+                    let attempts = 0;
+                    while (true) {
+                        try {
+                            const sender = await client.getSender(client.session.dcId);
+                            await sender.send(new Api.upload.SaveBigFilePart({
+                                fileId: fileId,
+                                filePart: currentPart,
+                                fileTotalParts: partCount,
+                                bytes: buffer
+                            }));
+                            break;
+                        } catch (err) {
+                            attempts++;
+                            if (attempts > 5) throw err;
+                            await new Promise(r => setTimeout(r, 800 * attempts));
+                        }
+                    }
+
+                    uploadedCount++;
+                    if (onProgress) {
+                        onProgress(uploadedCount / partCount);
+                    }
+                }
+            };
+
+            await Promise.all(Array.from({ length: totalWorkers }, () => worker()));
+        } finally {
+            await fileHandle.close().catch(() => {});
+        }
+
+        return new Api.InputFileBig({
+            id: fileId,
+            parts: partCount,
+            name: fileName
+        });
     }
 }
 
