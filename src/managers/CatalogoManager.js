@@ -585,6 +585,52 @@ class CatalogoManager {
         mensagem += `\n💡 *Clique ou digite o número do item que deseja assistir!*`;
         return mensagem;
     }
+
+    getPublicCatalogo() {
+        const filmes = (this.catalogo.filmes || []).map(f => ({
+            id: f.id,
+            nome: f.nome,
+            nomeOriginal: f.nomeOriginal || '',
+            sinopse: f.sinopse || f.descricao || '',
+            posterUrl: f.posterUrl || null,
+            backdropUrl: f.backdropUrl || null,
+            ano: f.ano || null,
+            nota: f.nota || null,
+            generos: f.generos || [],
+            qualidade: f.qualidade || '1080p',
+            isCam: !!f.isCam,
+            isDublado: !!f.isDublado || !!f.versoes?.dublado,
+            isLegendado: !!f.isLegendado || !!f.versoes?.legendado,
+            audioBadge: this.getAudioBadge(f),
+            dataAdicionado: f.dataAdicionado || null
+        }));
+
+        const series = (this.catalogo.series || []).map(s => {
+            const totalEps = (s.temporadas || []).reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+            return {
+                id: s.id,
+                nome: s.nome,
+                nomeOriginal: s.nomeOriginal || '',
+                sinopse: s.sinopse || s.descricao || '',
+                posterUrl: s.posterUrl || null,
+                backdropUrl: s.backdropUrl || null,
+                ano: s.ano || null,
+                nota: s.nota || null,
+                generos: s.generos || [],
+                qualidade: s.qualidade || '1080p',
+                isCam: !!s.isCam,
+                isDublado: !!s.isDublado,
+                isLegendado: !!s.isLegendado,
+                isDorama: !!s.isDorama,
+                audioBadge: this.getAudioBadge(s),
+                totalTemporadas: (s.temporadas || []).length,
+                totalEpisodios: totalEps,
+                dataAdicionado: s.dataAdicionado || null
+            };
+        });
+
+        return { filmes, series };
+    }
 }
 
 module.exports = CatalogoManager;

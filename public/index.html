@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrasilFlix • Status, Fila & Catálogo em Tempo Real</title>
+    <meta name="description" content="Acompanhe em tempo real o processamento de downloads, a fila de espera e navegue por todo o catálogo oficial de filmes e séries 1080p do BrasilFlix.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #090d16;
+            --bg-card: rgba(17, 24, 39, 0.75);
+            --bg-card-hover: rgba(31, 41, 55, 0.9);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+            --accent-gradient: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+        
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 10% 0%, rgba(239, 68, 68, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 90% 100%, rgba(59, 130, 246, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+            overflow-x: hidden;
+        }
+
+        /* HEADER */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(9, 13, 22, 0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 14px 24px;
+        }
+
+        .header-container {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .brand-logo {
+            font-size: 26px;
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(16, 185, 129, 0.12);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 14px #10b981; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+
+        /* NAVIGATION TABS */
+        .nav-tabs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(17, 24, 39, 0.8);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-tab:hover { color: var(--text-main); }
+        .nav-tab.active {
+            background: var(--accent-gradient);
+            color: white;
+            box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-header {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-header:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* CONTAINER */
+        .main-container {
+            max-width: 1300px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* METRICS BAR */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(239, 68, 68, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #ef4444;
+        }
+
+        .stat-info h3 { font-size: 24px; font-weight: 800; color: #fff; }
+        .stat-info p { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* LIVE ACTIVITY CARD */
+        .live-card {
+            background: rgba(17, 24, 39, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 20px;
+            padding: 28px;
+            margin-bottom: 28px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+        }
+
+        .live-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--accent-gradient);
+        }
+
+        .live-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .live-title-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .live-tag {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .live-item-title {
+            font-size: 20px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .live-progress-container {
+            background: rgba(31, 41, 55, 0.8);
+            border-radius: 12px;
+            height: 20px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 14px;
+            border: 1px solid var(--border-color);
+        }
+
+        .live-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ef4444 0%, #f97316 50%, #10b981 100%);
+            border-radius: 12px;
+            transition: width 0.4s ease;
+            position: relative;
+        }
+
+        .live-progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background-image: linear-gradient(-45deg, rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.2) 75%, transparent 75%, transparent);
+            background-size: 30px 30px;
+            animation: moveStripes 1s linear infinite;
+        }
+
+        @keyframes moveStripes {
+            0% { background-position: 0 0; }
+            100% { background-position: 30px 0; }
+        }
+
+        .live-details-grid {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 600;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .idle-state {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--text-muted);
+        }
+
+        .idle-icon {
+            font-size: 42px;
+            margin-bottom: 12px;
+            opacity: 0.8;
+        }
+
+        /* QUEUE & RECENT GRIDS */
+        .queue-section {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 900px) {
+            .queue-section { grid-template-columns: 1fr; }
+        }
+
+        .panel-box {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 24px;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-header h3 {
+            font-size: 17px;
+            font-weight: 800;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 450px;
+            overflow-y: auto;
+        }
+
+        .queue-item {
+            background: rgba(31, 41, 55, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .queue-item:hover {
+            background: rgba(31, 41, 55, 0.7);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .queue-item-info h4 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .queue-item-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge-priority {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .badge-completed {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* CATALOGO INTERATIVO */
+        .catalog-controls {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            padding: 20px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .search-box {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+            background: rgba(17, 24, 39, 0.9);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 18px 14px 44px;
+            color: #fff;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-red);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 18px;
+        }
+
+        .filter-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .filter-chip {
+            background: rgba(31, 41, 55, 0.6);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .filter-chip:hover { color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+        .filter-chip.active {
+            background: rgba(239, 68, 68, 0.25);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        .catalog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .catalog-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        }
+
+        .media-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .media-card:hover {
+            transform: translateY(-6px) scale(1.02);
+            border-color: rgba(239, 68, 68, 0.4);
+            box-shadow: 0 15px 30px -10px rgba(0, 0, 0, 0.8);
+        }
+
+        .poster-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 150%;
+            background: #1f2937;
+            overflow: hidden;
+        }
+
+        .poster-img {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .media-card:hover .poster-img { transform: scale(1.05); }
+
+        .badge-overlay {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(6px);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-cam-tag { color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
+        .badge-dub-tag { color: #34d399; border-color: rgba(16, 185, 129, 0.4); }
+        .badge-leg-tag { color: #60a5fa; border-color: rgba(59, 130, 246, 0.4); }
+
+        .rating-overlay {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(6px);
+            color: #fbbf24;
+            padding: 3px 6px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .media-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            justify-content: space-between;
+        }
+
+        .media-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.3;
+            margin-bottom: 4px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .media-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* MODAL */
+        .modal-backdrop {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-backdrop.active { display: flex; animation: fadeIn 0.2s ease; }
+
+        .modal-card {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            max-width: 650px;
+            width: 100%;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            position: relative;
+        }
+
+        .modal-header-img {
+            height: 200px;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+        }
+
+        .modal-header-img::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to top, #111827 0%, transparent 100%);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 14px; right: 14px;
+            background: rgba(0, 0, 0, 0.6);
+            border: none;
+            color: #fff;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .modal-meta-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .modal-synopsis {
+            font-size: 14px;
+            color: #d1d5db;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn-modal {
+            flex: 1;
+            min-width: 160px;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-modal-primary {
+            background: var(--accent-gradient);
+            color: #fff;
+        }
+
+        .btn-modal-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            border: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <div class="header-container">
+            <a href="/" class="brand">
+                <span class="brand-logo">🍿 BrasilFlix</span>
+                <div class="status-pill">
+                    <div class="pulse-dot"></div>
+                    <span>1080p Engine Online</span>
+                </div>
+            </a>
+
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="switchTab('tab-status', event)">
+                    ⚡ Monitor & Fila
+                </button>
+                <button class="nav-tab" onclick="switchTab('tab-catalogo', event)">
+                    🎬 Catálogo (<span id="count-total">...</span>)
+                </button>
+                <button class="nav-tab" onclick="switchTab('tab-stremio', event)">
+                    📺 Stremio VIP
+                </button>
+            </div>
+
+            <div class="header-actions">
+                <a href="https://t.me/brasilflix_vip_bot" target="_blank" class="btn-header">
+                    🤖 Bot Telegram
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-container">
+
+        <!-- TAB 1: MONITOR & FILA -->
+        <div id="tab-status" class="tab-content active">
+            
+            <!-- STATS CARDS -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🎬</div>
+                    <div class="stat-info">
+                        <h3 id="stat-filmes">...</h3>
+                        <p>Filmes 1080p</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📺</div>
+                    <div class="stat-info">
+                        <h3 id="stat-series">...</h3>
+                        <p>Séries & Doramas</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⏳</div>
+                    <div class="stat-info">
+                        <h3 id="stat-fila">0</h3>
+                        <p>Na Fila de Espera</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-info">
+                        <h3 id="stat-uptime">100%</h3>
+                        <p>Disponibilidade</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LIVE ACTIVITY CARD -->
+            <div class="live-card" id="live-activity-card">
+                <div class="idle-state" id="idle-message">
+                    <div class="idle-icon">🛰️</div>
+                    <h3 style="font-size: 18px; color: #fff; margin-bottom: 6px;">Robô em Monitoramento Contínuo</h3>
+                    <p style="font-size: 14px;">Buscando novos lançamentos populares e aguardando novos pedidos pelo Bot do Telegram.</p>
+                </div>
+
+                <div id="active-task-container" style="display: none;">
+                    <div class="live-header">
+                        <div class="live-title-area">
+                            <span class="live-tag" id="live-task-type">PROCESSANDO</span>
+                            <h2 class="live-item-title" id="live-task-title">Carregando...</h2>
+                        </div>
+                        <span class="badge-priority" id="live-task-priority">VIP</span>
+                    </div>
+
+                    <div class="live-progress-container">
+                        <div class="live-progress-bar" id="live-progress-bar" style="width: 0%;"></div>
+                    </div>
+
+                    <div class="live-details-grid">
+                        <span id="live-stage">Codificando 1080p Full HD...</span>
+                        <span id="live-speed" style="color: #34d399; font-weight: 700;">8.4 MB/s</span>
+                        <span id="live-percent" style="color: #fff; font-weight: 800;">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QUEUE & RECENT SECTION -->
+            <div class="queue-section">
+                <div class="panel-box">
+                    <div class="panel-header">
+                        <h3>⏳ Fila de Processamento</h3>
+                        <span style="font-size: 12px; color: var(--text-muted);" id="queue-counter">0 títulos aguardando</span>
+                    </div>
+                    <div class="queue-list" id="queue-items-container">
+                        <div style="text-align: center; color: var(--text-muted); padding: 30px;">
+                            Nenhum pedido pendente na fila no momento.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-box">
+                    <div class="panel-header">
+                        <h3>✅ Adicionados Recentemente</h3>
+                        <span style="font-size: 12px; color: #34d399;">100% Concluídos</span>
+                    </div>
+                    <div class="queue-list" id="recent-items-container">
+                        <div style="text-align: center; color: var(--text-muted); padding: 30px;">
+                            Carregando histórico...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- TAB 2: CATÁLOGO INTERATIVO -->
+        <div id="tab-catalogo" class="tab-content">
+            
+            <div class="catalog-controls">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="catalog-search" class="search-input" placeholder="Buscar por título, dorama, ator ou gênero..." oninput="filterCatalog()">
+                </div>
+
+                <div class="filter-row">
+                    <button class="filter-chip active" onclick="setCategoryFilter('todos', this)">Todos</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('filme', this)">🎬 Filmes</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('serie', this)">📺 Séries</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('dorama', this)">🎎 Doramas</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('dublado', this)">🇧🇷 Dublados</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('legendado', this)">💬 Legendados</button>
+                    <button class="filter-chip" onclick="setCategoryFilter('cam', this)">📹 Versão Cinema</button>
+                </div>
+            </div>
+
+            <!-- GRID DE TÍTULOS -->
+            <div class="catalog-grid" id="catalog-grid-container">
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
+                    Carregando catálogo completo...
+                </div>
+            </div>
+
+        </div>
+
+        <!-- TAB 3: STREMIO VIP -->
+        <div id="tab-stremio" class="tab-content">
+            <div style="max-width: 680px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 24px; padding: 36px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 800; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px;">
+                    🍿 BrasilFlix no Stremio
+                </div>
+                <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 24px; line-height: 1.6;">
+                    Assista a todos os filmes e séries do catálogo em <b>1080p Full HD</b> na sua <b>Smart TV, TV Box, PC ou Celular</b> com streaming ultrarrápido!
+                </p>
+
+                <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+                    <a id="btn-stremio-app" href="#" class="btn-modal btn-modal-primary" style="padding: 16px;">
+                        🚀 Instalar Addon no App Stremio
+                    </a>
+                    <a id="btn-stremio-web" href="#" target="_blank" class="btn-modal btn-modal-secondary" style="padding: 16px;">
+                        🌐 Abrir no Stremio Web
+                    </a>
+                </div>
+
+                <div style="background: #030712; border-radius: 12px; padding: 12px 16px; font-family: monospace; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--border-color);">
+                    <span id="manifest-url-text" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px;">...</span>
+                    <button onclick="copyManifestUrl()" style="background: #374151; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 700;">Copiar</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL DE DETALHES -->
+    <div class="modal-backdrop" id="media-modal" onclick="closeModal(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeModalDirect()">✕</button>
+            <div class="modal-header-img" id="modal-backdrop-img"></div>
+            <div class="modal-body">
+                <h2 class="modal-title" id="modal-title">Título do Filme</h2>
+                <div class="modal-meta-row" id="modal-meta">
+                    <span>2026</span> • <span>⭐ 8.5</span> • <span>Dublado</span>
+                </div>
+                <p class="modal-synopsis" id="modal-synopsis">
+                    Sinopse detalhada do filme ou série...
+                </p>
+                <div class="modal-actions">
+                    <a href="https://t.me/brasilflix_vip_bot" target="_blank" class="btn-modal btn-modal-primary">
+                        🍿 Assistir / Pedir no Bot
+                    </a>
+                    <a id="modal-stremio-link" href="#" class="btn-modal btn-modal-secondary">
+                        📺 Abrir no Stremio
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let fullCatalog = { filmes: [], series: [] };
+        let activeCategory = 'todos';
+
+        // Configuração dos links de manifesto baseados na URL atual
+        const currentOrigin = window.location.origin;
+        const currentHost = window.location.host;
+        const manifestUrl = currentOrigin + '/manifest.json';
+        const stremioDeepLink = 'stremio://' + currentHost + '/manifest.json';
+        const webStremioLink = 'https://web.stremio.com/#/addons?addon=' + encodeURIComponent(manifestUrl);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const manifestText = document.getElementById('manifest-url-text');
+            if (manifestText) manifestText.innerText = manifestUrl;
+
+            const btnApp = document.getElementById('btn-stremio-app');
+            if (btnApp) btnApp.href = stremioDeepLink;
+
+            const btnWeb = document.getElementById('btn-stremio-web');
+            if (btnWeb) btnWeb.href = webStremioLink;
+
+            const modalStremio = document.getElementById('modal-stremio-link');
+            if (modalStremio) modalStremio.href = stremioDeepLink;
+
+            fetchStatus();
+            loadCatalog();
+            setInterval(fetchStatus, 3000);
+        });
+
+        function copyManifestUrl() {
+            navigator.clipboard.writeText(manifestUrl);
+            alert('Link do Addon copiado com sucesso!');
+        }
+
+        function switchTab(tabId, e) {
+            document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            if (e && e.target) e.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+
+            if (tabId === 'tab-catalogo' && fullCatalog.filmes.length === 0) {
+                loadCatalog();
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                if (data.stats) {
+                    document.getElementById('stat-filmes').innerText = data.stats.totalFilmes || 0;
+                    document.getElementById('stat-series').innerText = data.stats.totalSeries || 0;
+                    document.getElementById('count-total').innerText = (data.stats.totalFilmes || 0) + (data.stats.totalSeries || 0);
+                }
+
+                if (data.queue) {
+                    document.getElementById('stat-fila').innerText = data.queue.totalQueued || 0;
+                    document.getElementById('queue-counter').innerText = (data.queue.totalQueued || 0) + ' títulos aguardando';
+
+                    const activeContainer = document.getElementById('active-task-container');
+                    const idleMessage = document.getElementById('idle-message');
+
+                    if (data.queue.activeTask) {
+                        const task = data.queue.activeTask;
+                        idleMessage.style.display = 'none';
+                        activeContainer.style.display = 'block';
+
+                        document.getElementById('live-task-title').innerText = task.title + (task.season ? ' (S' + task.season + 'E' + task.episode + ')' : '');
+                        document.getElementById('live-task-type').innerText = (task.status || 'PROCESSANDO').toUpperCase();
+                        document.getElementById('live-task-priority').innerText = task.priority || 'Normal';
+                        document.getElementById('live-progress-bar').style.width = task.progress + '%';
+                        document.getElementById('live-percent').innerText = task.progress + '%';
+                        document.getElementById('live-stage').innerText = task.progressDetails || 'Processando em 1080p...';
+                        document.getElementById('live-speed').innerText = task.progressDetails && task.progressDetails.includes('MB/s') ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' : 'Ativo';
+                    } else {
+                        idleMessage.style.display = 'block';
+                        activeContainer.style.display = 'none';
+                    }
+
+                    const queueList = document.getElementById('queue-items-container');
+                    if (data.queue.queue && data.queue.queue.length > 0) {
+                        queueList.innerHTML = data.queue.queue.map(item => {
+                            const epStr = item.season ? ' (S' + item.season + 'E' + item.episode + ')' : '';
+                            const audioStr = item.audioPreference === 'dublado' ? '🇧🇷 Dublado' : '💬 Legendado';
+                            const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
+                            return '<div class="queue-item">' +
+                                '<div class="queue-item-info">' +
+                                    '<h4>' + item.title + epStr + '</h4>' +
+                                    '<div class="queue-item-meta">' +
+                                        '<span class="badge-priority">' + item.priority + '</span>' +
+                                        '<span>' + typeStr + '</span>' +
+                                        '<span>• ' + audioStr + '</span>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<span style="font-size: 12px; color: var(--text-muted);">Aguardando</span>' +
+                            '</div>';
+                        }).join('');
+                    } else {
+                        queueList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px;">Nenhum pedido pendente na fila no momento.</div>';
+                    }
+
+                    const recentList = document.getElementById('recent-items-container');
+                    if (data.queue.recentCompleted && data.queue.recentCompleted.length > 0) {
+                        recentList.innerHTML = data.queue.recentCompleted.map(item => {
+                            const epStr = item.season ? ' (S' + item.season + 'E' + item.episode + ')' : '';
+                            const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
+                            return '<div class="queue-item">' +
+                                '<div class="queue-item-info">' +
+                                    '<h4>' + item.title + epStr + '</h4>' +
+                                    '<div class="queue-item-meta">' +
+                                        '<span class="badge-completed">1080p Full HD</span>' +
+                                        '<span>' + typeStr + '</span>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<span style="color: #34d399; font-weight: 700;">✓ Pronto</span>' +
+                            '</div>';
+                        }).join('');
+                    }
+                }
+            } catch (e) {
+                console.error('Erro ao buscar status:', e);
+            }
+        }
+
+        async function loadCatalog() {
+            try {
+                const res = await fetch('/api/catalogo');
+                fullCatalog = await res.json();
+                renderCatalog();
+            } catch (e) {
+                console.error('Erro ao carregar catálogo:', e);
+            }
+        }
+
+        function setCategoryFilter(category, btn) {
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            activeCategory = category;
+            renderCatalog();
+        }
+
+        function filterCatalog() {
+            renderCatalog();
+        }
+
+        function renderCatalog() {
+            const query = (document.getElementById('catalog-search')?.value || '').toLowerCase().trim();
+            const grid = document.getElementById('catalog-grid-container');
+
+            let allItems = [
+                ...(fullCatalog.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
+                ...(fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }))
+            ];
+
+            if (activeCategory === 'filme') allItems = allItems.filter(i => i.itemType === 'filme');
+            else if (activeCategory === 'serie') allItems = allItems.filter(i => i.itemType === 'serie');
+            else if (activeCategory === 'dorama') allItems = allItems.filter(i => i.isDorama);
+            else if (activeCategory === 'dublado') allItems = allItems.filter(i => i.isDublado);
+            else if (activeCategory === 'legendado') allItems = allItems.filter(i => i.isLegendado);
+            else if (activeCategory === 'cam') allItems = allItems.filter(i => i.isCam);
+
+            if (query) {
+                allItems = allItems.filter(i => 
+                    i.nome.toLowerCase().includes(query) || 
+                    (i.nomeOriginal && i.nomeOriginal.toLowerCase().includes(query)) ||
+                    (i.generos && i.generos.some(g => g.toLowerCase().includes(query)))
+                );
+            }
+
+            if (allItems.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">Nenhum título encontrado com os filtros selecionados.</div>';
+                return;
+            }
+
+            grid.innerHTML = allItems.map((item, idx) => {
+                const poster = item.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
+                const badgeClass = item.isCam ? 'badge-cam-tag' : (item.isDublado ? 'badge-dub-tag' : 'badge-leg-tag');
+                const badgeText = item.audioBadge || (item.isCam ? '[CAM]' : '[1080p]');
+                const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
+                const subText = item.itemType === 'filme' ? 'Filme' : (item.totalEpisodios ? item.totalEpisodios + ' eps' : 'Série');
+
+                return '<div class="media-card" onclick="openModalById(\'' + item.id + '\', \'' + item.itemType + '\')">' +
+                    '<div class="poster-wrapper">' +
+                        '<img src="' + poster + '" class="poster-img" loading="lazy" alt="' + item.nome + '">' +
+                        '<div class="badge-overlay ' + badgeClass + '">' + badgeText + '</div>' +
+                        '<div class="rating-overlay">⭐ ' + rating + '</div>' +
+                    </div>' +
+                    '<div class="media-content">' +
+                        '<h4 class="media-title">' + item.nome + '</h4>' +
+                        '<div class="media-sub">' +
+                            '<span>' + (item.ano || '2026') + '</span>' +
+                            '<span>' + subText + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }
+
+        function openModalById(id, type) {
+            const list = type === 'filme' ? fullCatalog.filmes : fullCatalog.series;
+            const item = list.find(i => String(i.id) === String(id));
+            if (!item) return;
+
+            document.getElementById('modal-title').innerText = item.nome;
+            document.getElementById('modal-synopsis').innerText = item.sinopse || 'Sinopse oficial disponível em breve.';
+            
+            const backdrop = item.backdropUrl || item.posterUrl || '';
+            document.getElementById('modal-backdrop-img').style.backgroundImage = backdrop ? 'url(' + backdrop + ')' : 'none';
+
+            const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
+            document.getElementById('modal-meta').innerHTML = 
+                '<span>📅 ' + (item.ano || '2026') + '</span> • ' +
+                '<span>⭐ ' + rating + '</span> • ' +
+                '<span>🔊 ' + (item.audioBadge || 'Dublado') + '</span> • ' +
+                '<span>🎞️ ' + (item.qualidade || '1080p Full HD') + '</span>';
+
+            document.getElementById('media-modal').classList.add('active');
+        }
+
+        function closeModal(e) {
+            if (e.target.id === 'media-modal') {
+                document.getElementById('media-modal').classList.remove('active');
+            }
+        }
+
+        function closeModalDirect() {
+            document.getElementById('media-modal').classList.remove('active');
+        }
+    </script>
+</body>
+</html>

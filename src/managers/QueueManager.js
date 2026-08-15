@@ -606,6 +606,48 @@ class QueueManager extends EventEmitter {
             activeTask: this.activeTask
         };
     }
+
+    getPublicStatus() {
+        const priorityLabels = {
+            1: 'VIP 🔥',
+            2: 'Pedido 🍿',
+            3: 'Série 📺',
+            4: 'Auto-Feeder 🤖'
+        };
+
+        const formatJob = (j) => ({
+            id: j.id,
+            title: j.title,
+            type: j.type,
+            priority: priorityLabels[j.priority] || 'Normal',
+            audioPreference: j.audioPreference || 'dublado',
+            season: j.season || null,
+            episode: j.episode || null,
+            status: j.status,
+            progress: typeof j.progress === 'number' ? Math.round(j.progress) : 0,
+            progressDetails: j.progressDetails || '',
+            createdAt: j.createdAt
+        });
+
+        const active = this.activeTask ? formatJob(this.activeTask) : null;
+        const pending = this.queue
+            .filter(j => j.status === 'queued')
+            .map(formatJob);
+        
+        const recentCompleted = this.queue
+            .filter(j => j.status === 'completed')
+            .slice(-6)
+            .reverse()
+            .map(formatJob);
+
+        return {
+            isProcessing: this.isProcessing,
+            activeTask: active,
+            queue: pending,
+            recentCompleted: recentCompleted,
+            totalQueued: pending.length
+        };
+    }
 }
 
 module.exports = { QueueManager, PRIORITIES };

@@ -20,7 +20,7 @@ class BrasilFlixBot {
         this.favoritosManager = new FavoritosManager();
         this.queueManager = new QueueManager(this.bot, this.catalogoManager, this.pedidosManager, this.favoritosManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager);
-        this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager);
+        this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager, this.queueManager);
         this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager, this.favoritosManager);
         this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
