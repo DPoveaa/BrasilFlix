@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const EventEmitter = require('events');
 const config = require('../../config');
+const db = require('../database/db');
 const TMDBService = require('../services/TMDBService');
 const MediaSearchService = require('../services/MediaSearchService');
 const DownloaderManager = require('../services/DownloaderManager');
@@ -24,17 +25,21 @@ class QueueManager extends EventEmitter {
         this.pedidosManager = pedidosManager;
         this.favoritosManager = favoritosManager;
         this.uploader = new TelegramUploader(bot);
-        this.queueFile = config.QUEUE_FILE || './data/queue.json';
-        this.queue = [];
+        this.queue = []; // cache em memória sincronizado com o banco
         this.activeTask = null;
         this.isProcessing = false;
-        
-        this.loadQueue();
 
-        // Inicia processamento 2s após inicializar
-        setTimeout(() => {
-            this.processNext();
-        }, 2000);
+        // Inicializa banco e carrega fila de forma assíncrona
+        this._init();
+    }
+
+    async _init() {
+        try {
+            await this.loadQueue();
+        } catch (e) {
+            console.error('❌ Erro ao inicializar fila do banco:', e.message);
+        }
+        setTimeout(() => this.processNext(), 2000);
     }
 
     setManagers(pedidosManager, favoritosManager) {
@@ -47,35 +52,106 @@ class QueueManager extends EventEmitter {
         this.uploader.setBot(bot);
     }
 
-    loadQueue() {
+    // ─── Persistência no PostgreSQL ───────────────────────────────────────────
+
+    async loadQueue() {
         try {
-            if (fs.existsSync(this.queueFile)) {
-                this.queue = fs.readJsonSync(this.queueFile);
-                // Reseta tarefas interrompidas para que sejam retomadas
-                this.queue.forEach(j => {
-                    if (['processing', 'downloading', 'uploading'].includes(j.status)) {
-                        j.status = 'queued';
-                        j.progress = 0;
-                    }
-                });
-                this.saveQueue();
-            } else {
-                this.queue = [];
-                this.saveQueue();
-            }
+            // Reseta jobs interrompidos (crash recovery) e carrega todos os jobs não-completados
+            await db.query(
+                `UPDATE queue_jobs SET status = 'queued', progress = 0
+                 WHERE status IN ('processing', 'downloading', 'uploading')`
+            );
+            const res = await db.query(
+                `SELECT * FROM queue_jobs
+                 WHERE status NOT IN ('completed', 'failed')
+                 ORDER BY priority ASC, created_at ASC`
+            );
+            this.queue = res.rows.map(r => this._rowToJob(r));
+            console.log(`📋 Fila PostgreSQL carregada: ${this.queue.length} jobs pendentes.`);
         } catch (e) {
-            console.error('❌ Erro ao carregar fila:', e.message);
+            console.error('❌ Erro ao carregar fila do PostgreSQL:', e.message);
             this.queue = [];
         }
     }
 
-    saveQueue() {
+    async saveJob(job) {
         try {
-            fs.writeJsonSync(this.queueFile, this.queue, { spaces: 2 });
+            await db.query(
+                `INSERT INTO queue_jobs
+                    (id, title, type, priority, audio_preference, season, episode,
+                     status, progress, progress_details, user_id, username, tmdb_id,
+                     extra_data, error, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+                 ON CONFLICT (id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    progress = EXCLUDED.progress,
+                    progress_details = EXCLUDED.progress_details,
+                    priority = EXCLUDED.priority,
+                    extra_data = EXCLUDED.extra_data,
+                    error = EXCLUDED.error,
+                    updated_at = NOW()`,
+                [
+                    job.id,
+                    job.title,
+                    job.type,
+                    job.priority,
+                    job.audioPreference || 'dublado',
+                    job.season || null,
+                    job.episode || null,
+                    job.status,
+                    Math.round(job.progress || 0),
+                    job.progressDetails || '',
+                    job.userId || null,
+                    job.username || null,
+                    job.tmdbId || null,
+                    JSON.stringify({
+                        rawFilePath: job.rawFilePath,
+                        optimizedPath: job.optimizedPath,
+                        expectedSize: job.expectedSize,
+                        bestSource: job.bestSource,
+                        langInfo: job.langInfo
+                    }),
+                    job.error || null,
+                    job.createdAt || new Date().toISOString()
+                ]
+            );
         } catch (e) {
-            console.error('❌ Erro ao salvar fila:', e.message);
+            console.error('❌ Erro ao persistir job no PostgreSQL:', e.message);
         }
     }
+
+    // Mantido como alias síncrono-compatível para chamadas legadas
+    saveQueue() {
+        // No-op: persistência é feita job a job via saveJob()
+    }
+
+    _rowToJob(row) {
+        const extra = row.extra_data || {};
+        return {
+            id: row.id,
+            title: row.title,
+            type: row.type,
+            priority: row.priority,
+            audioPreference: row.audio_preference,
+            season: row.season,
+            episode: row.episode,
+            userId: row.user_id ? Number(row.user_id) : null,
+            username: row.username,
+            tmdbId: row.tmdb_id,
+            status: row.status,
+            progress: row.progress,
+            progressDetails: row.progress_details,
+            error: row.error,
+            rawFilePath: extra.rawFilePath || null,
+            optimizedPath: extra.optimizedPath || null,
+            expectedSize: extra.expectedSize || null,
+            bestSource: extra.bestSource || null,
+            langInfo: extra.langInfo || null,
+            createdAt: row.created_at
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     addJob(title, type = 'filme', priority = PRIORITIES.FEEDER, extraData = {}) {
         const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -113,7 +189,7 @@ class QueueManager extends EventEmitter {
                 existing.userId = job.userId;
                 existing.username = job.username;
                 this.sortQueue();
-                this.saveQueue();
+                this.saveJob(existing).catch(() => {});
             }
             return existing;
         }
@@ -156,7 +232,7 @@ class QueueManager extends EventEmitter {
 
         this.queue.push(job);
         this.sortQueue();
-        this.saveQueue();
+        this.saveJob(job).catch(() => {});
 
         console.log(`📌 Novo trabalho na fila: "${job.title}" [Áudio: ${job.audioPreference}, Prioridade: ${job.priority}] (Total na fila: ${this.queue.length})`);
         
@@ -187,7 +263,7 @@ class QueueManager extends EventEmitter {
         this.isProcessing = true;
         this.activeTask = nextJob;
         nextJob.status = 'processing';
-        this.saveQueue();
+        await this.saveJob(nextJob);
 
         console.log(`\n⚙️ INICIANDO PROCESSAMENTO: "${nextJob.title}" (Prioridade: ${nextJob.priority})`);
 
@@ -195,13 +271,18 @@ class QueueManager extends EventEmitter {
             await this.executeJob(nextJob);
             nextJob.status = 'completed';
             nextJob.progress = 100;
+            await this.saveJob(nextJob);
+            // Remove da fila em memória (não é mais necessário processar)
+            this.queue = this.queue.filter(j => j.id !== nextJob.id);
             console.log(`🎉 Trabalho concluído com sucesso: "${nextJob.title}"`);
         } catch (error) {
             console.error(`❌ Falha no processamento de "${nextJob.title}":`, error.message);
             nextJob.status = 'failed';
             nextJob.error = error.message;
+            await this.saveJob(nextJob);
+            // Remove da fila em memória
+            this.queue = this.queue.filter(j => j.id !== nextJob.id);
         } finally {
-            this.saveQueue();
             this.isProcessing = false;
             this.activeTask = null;
 
@@ -251,14 +332,14 @@ class QueueManager extends EventEmitter {
                     if (!epsCadastrados.includes(ep)) {
                         console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" solicitou o Ep ${requestedEp}, mas o Ep ${ep} ainda não existe no catálogo. Ajustando download para T${seasonNum}E${ep} primeiro!`);
                         job.episode = ep;
-                        this.saveQueue();
+                        this.saveJob(job).catch(() => {});
                         break;
                     }
                 }
             } else if (requestedEp > 1) {
                 console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Forçando início a partir do Episódio 1 (T${seasonNum}E1)!`);
                 job.episode = 1;
-                this.saveQueue();
+                this.saveJob(job).catch(() => {});
             }
         }
 
@@ -315,7 +396,7 @@ class QueueManager extends EventEmitter {
 
             // 3. Download com Fallback Automático entre as melhores opções
             job.status = 'downloading';
-            this.saveQueue();
+            await this.saveJob(job);
 
             let lastError = null;
             const maxAttempts = Math.min(3, sources.length);
@@ -355,7 +436,7 @@ class QueueManager extends EventEmitter {
             job.rawFilePath = rawFilePath;
             job.expectedSize = downloadedMedia.sizeBytes;
             job.bestSource = bestSource;
-            this.saveQueue();
+            await this.saveJob(job);
 
             // Validação estrita: tamanho físico do arquivo deve bater com o tamanho informado no torrent
             if (fs.existsSync(rawFilePath)) {
@@ -400,11 +481,11 @@ class QueueManager extends EventEmitter {
             job.status = 'processing';
             job.progressDetails = 'Otimizando para 1080p...';
             job.langInfo = langInfo;
-            this.saveQueue();
+            await this.saveJob(job);
 
             optimizedPath = path.join(path.dirname(rawFilePath), `opt_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
             job.optimizedPath = optimizedPath;
-            this.saveQueue();
+            await this.saveJob(job);
             
             await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
                 job.progress = percent;
@@ -421,7 +502,7 @@ class QueueManager extends EventEmitter {
         // 5. Upload para o Canal de Armazenamento
         job.status = 'uploading';
         job.progressDetails = 'Enviando para o Telegram...';
-        this.saveQueue();
+        await this.saveJob(job);
 
         metadata.tipo = job.type;
         metadata.season = job.season;
