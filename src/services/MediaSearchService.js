@@ -205,6 +205,19 @@ class MediaSearchService {
                     continue;
                 }
 
+                // Descarta títulos com propaganda/falsos (ex: comando.to, baixe no comando, amostra, trailer, teaser)
+                if (/\b(comando\.to|comandotorrents\.to|baixe[-_ .]?no[-_ .]?comando|amostra|sample|trailer|teaser)\b/i.test(title) || /\b(comando\.to|comandotorrents\.to|baixe[-_ .]?no[-_ .]?comando)\b/i.test(rawTitle)) {
+                    continue;
+                }
+
+                // Descarta arquivos anormalmente pequenos (filmes < 500MB ou episódios < 100MB são falsos/amostras)
+                if (tipo === 'filme' && parseFloat(sizeMB) < 500) {
+                    continue;
+                }
+                if (tipo === 'serie' && parseFloat(sizeMB) < 100) {
+                    continue;
+                }
+
                 // Se for filme, descarta arquivos gigantes (> 5.5 GB)
                 if (tipo === 'filme' && parseFloat(sizeMB) > 5500) {
                     continue;

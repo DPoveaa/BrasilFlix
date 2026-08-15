@@ -291,10 +291,20 @@ class QueueManager extends EventEmitter {
 
         const rawFilePath = downloadedMedia.filePath;
 
-        // 3.5 Verificação de Idioma (Garantia de Áudio Dublado ou Legendas PT-BR)
+        // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
         let langInfo = { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
         try {
             const videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
+
+            // Verificação de Duração Mínima (Anti-Sample / Anti-Propaganda de 30s)
+            // Nenhum filme ou série tem menos de 5 minutos (300 segundos)
+            const minDurationSec = 300;
+            if (videoInfo.duration && videoInfo.duration < minDurationSec) {
+                console.log(`⚠️ Arquivo descartado: Duração inválida de apenas ${videoInfo.durationFormatted} (${Math.round(videoInfo.duration)}s). Mínimo exigido: 5 minutos. Possível amostra/vídeo promocional falso para "${job.title}".`);
+                await DownloaderManager.cleanupFile(rawFilePath);
+                throw new Error(`Vídeo com duração inferior a 5 minutos (${Math.round(videoInfo.duration)}s). Amostra descartada.`);
+            }
+
             langInfo = VideoProcessor.validatePortugueseContent(videoInfo, downloadedMedia.fileName, bestSource);
 
             if (!langInfo.isValid) {
@@ -303,9 +313,9 @@ class QueueManager extends EventEmitter {
                 throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
             }
 
-            console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText}`);
+            console.log(`🎙️ Conteúdo em Português validado com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted})`);
         } catch (err) {
-            if (err.message.includes('não contém áudio nem legendas')) {
+            if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
                 throw err;
             }
         }

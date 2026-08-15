@@ -210,13 +210,20 @@ class DownloaderManager extends EventEmitter {
 
                 let selectedFile = targetEpisodeFile;
                 if (!selectedFile) {
-                    for (const file of torrent.files) {
-                        const ext = path.extname(file.name).toLowerCase();
-                        if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) {
-                            if (!selectedFile || file.length > selectedFile.length) {
-                                selectedFile = file;
-                            }
-                        }
+                    const videoFiles = torrent.files.filter(f => {
+                        const ext = path.extname(f.name).toLowerCase();
+                        return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext);
+                    });
+
+                    // Filtra arquivos que NÃO sejam amostras ou propagandas
+                    const realVideoFiles = videoFiles.filter(f => {
+                        const lower = f.name.toLowerCase();
+                        return !lower.includes('sample') && !lower.includes('amostra') && !lower.includes('trailer') && !lower.includes('teaser') && !lower.includes('comando.to') && !lower.includes('baixe');
+                    });
+
+                    const candidateFiles = realVideoFiles.length > 0 ? realVideoFiles : videoFiles;
+                    if (candidateFiles.length > 0) {
+                        selectedFile = candidateFiles.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), candidateFiles[0]);
                     }
                 }
 
