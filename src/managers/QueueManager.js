@@ -9,9 +9,11 @@ const VideoProcessor = require('../services/VideoProcessor');
 const TelegramUploader = require('../services/TelegramUploader');
 
 const PRIORITIES = {
-    USER: 1,      // Pedido direto de assinante (Fura-fila)
-    SERIES: 2,    // Continuação de série/dorama em andamento
-    FEEDER: 3     // Auto-Feeder (população em background)
+    VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila)
+    USER: 1,      // Compatibilidade
+    FREE_USER: 2, // Pedido de Usuário Gratuito (Fila normal)
+    SERIES: 3,    // Continuação de série/dorama em andamento
+    FEEDER: 4     // Auto-Feeder (população em background)
 };
 
 class QueueManager extends EventEmitter {
