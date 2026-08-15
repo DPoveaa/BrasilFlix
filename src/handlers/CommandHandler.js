@@ -1,4 +1,5 @@
 const config = require('../../config');
+const TelegramUploader = require('../services/TelegramUploader');
 
 class CommandHandler {
     constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null, favoritosManager = null) {
@@ -8,6 +9,7 @@ class CommandHandler {
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
         this.favoritosManager = favoritosManager;
+        this.uploader = new TelegramUploader(this.bot);
         this.pagamentosTemp = {}; // Inicializar o objeto de pagamentos temporários
         this.estadosTemporarios = {}; // Estados temporários para captura de mensagens
         this.testesGratuitos = {}; // Usuários que já usaram o teste gratuito
@@ -94,26 +96,24 @@ class CommandHandler {
                 return;
             }
 
-            // 3. Excluir mensagens do Telegram no Storage Group
-            let mensagensApagadas = 0;
-            if (item.tipo === 'filme' && item.messageId) {
-                try {
-                    await this.bot.deleteMessage(config.STORAGE_GROUP_ID, item.messageId);
-                    mensagensApagadas++;
-                } catch (e) {
-                    console.warn(`⚠️ Não foi possível apagar mensagem ${item.messageId} no canal:`, e.message);
-                }
+            // 3. Excluir mensagens do Telegram no Storage Group via MTProto
+            let messageIdsParaApagar = [];
+            if (item.tipo === 'filme') {
+                if (item.messageId) messageIdsParaApagar.push(item.messageId);
+                if (item.versoes?.dublado?.messageId) messageIdsParaApagar.push(item.versoes.dublado.messageId);
+                if (item.versoes?.legendado?.messageId) messageIdsParaApagar.push(item.versoes.legendado.messageId);
             } else if (item.tipo === 'serie') {
                 for (const temp of (item.temporadas || [])) {
                     for (const ep of (temp.episodios || [])) {
-                        if (ep.messageId) {
-                            try {
-                                await this.bot.deleteMessage(config.STORAGE_GROUP_ID, ep.messageId);
-                                mensagensApagadas++;
-                            } catch (e) {}
-                        }
+                        if (ep.messageId) messageIdsParaApagar.push(ep.messageId);
+                        if (ep.versoes?.dublado?.messageId) messageIdsParaApagar.push(ep.versoes.dublado.messageId);
+                        if (ep.versoes?.legendado?.messageId) messageIdsParaApagar.push(ep.versoes.legendado.messageId);
                     }
                 }
+            }
+
+            if (messageIdsParaApagar.length > 0 && this.uploader) {
+                await this.uploader.deleteStorageMessages(messageIdsParaApagar);
             }
 
             // 4. Remover do catálogo JSON
@@ -125,7 +125,7 @@ class CommandHandler {
                     `🎬 *Nome:* ${item.nome}\n` +
                     `📦 *Tipo:* ${item.tipo === 'filme' ? 'Filme' : 'Série'}\n` +
                     `🆔 *ID:* ${item.id}\n` +
-                    `📤 *Mídias excluídas do canal de armazenamento:* ${mensagensApagadas}\n\n` +
+                    `📤 *Mídias excluídas do canal de armazenamento:* ${messageIdsParaApagar.length}\n\n` +
                     `✅ *Remoção permanente concluída.*`,
                     { parse_mode: 'Markdown' }
                 );
@@ -918,7 +918,17 @@ class CommandHandler {
     }
 
     async entregarVideoAoUsuario(chatId, messageId, fileId, caption = '') {
-        // 1. Tenta copyMessage (entrega direta limpa)
+        // 1. Tenta envio ultra-rápido direto via MTProto (GramJS) com dropAuthor: true (limpo, sem cabeçalho de encaminhamento e sem restrições de tamanho/bot)
+        if (messageId && this.uploader) {
+            try {
+                const mtprotoOk = await this.uploader.forwardStorageMessage(chatId, messageId, caption);
+                if (mtprotoOk) return true;
+            } catch (err0) {
+                console.warn(`⚠️ MTProto forward falhou: ${err0.message}. Tentando Bot API...`);
+            }
+        }
+
+        // 2. Fallback via copyMessage do Bot API
         if (messageId && config.STORAGE_GROUP_ID) {
             try {
                 await this.bot.copyMessage(chatId, config.STORAGE_GROUP_ID, messageId, {
@@ -930,7 +940,7 @@ class CommandHandler {
                 console.warn(`⚠️ copyMessage falhou (MessageId ${messageId}): ${err1.message}. Tentando fallback...`);
             }
 
-            // 2. Tenta forwardMessage
+            // 3. Fallback via forwardMessage
             try {
                 await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
                 return true;
@@ -939,7 +949,7 @@ class CommandHandler {
             }
         }
 
-        // 3. Fallback com file_id direto (apenas se for formato string válido do Bot API)
+        // 4. Fallback com file_id direto (apenas se for formato string válido do Bot API)
         if (fileId && typeof fileId === 'string' && !/^\d+$/.test(fileId)) {
             try {
                 await this.bot.sendVideo(chatId, fileId, { caption, parse_mode: 'Markdown' });

@@ -51,6 +51,41 @@ class TelegramUploader {
         return this.initClientPromise;
     }
 
+    async forwardStorageMessage(targetChatId, messageId, caption = null) {
+        try {
+            const client = await this.getClient();
+            await client.forwardMessages(targetChatId, {
+                messages: [Number(messageId)],
+                fromPeer: this.storageGroupId,
+                dropAuthor: true
+            });
+            console.log(`🚀 [MTProto] Vídeo (MessageId ${messageId}) entregue com sucesso para o usuário ${targetChatId}!`);
+            return true;
+        } catch (error) {
+            console.error(`❌ Erro ao encaminhar vídeo via MTProto (MessageId ${messageId}):`, error.message);
+            return false;
+        }
+    }
+
+    async deleteStorageMessages(messageIds) {
+        if (!messageIds) return false;
+        const ids = (Array.isArray(messageIds) ? messageIds : [messageIds])
+            .map(id => Number(id))
+            .filter(id => !isNaN(id) && id > 0);
+
+        if (ids.length === 0) return false;
+
+        try {
+            const client = await this.getClient();
+            await client.deleteMessages(this.storageGroupId, ids, { revoke: true });
+            console.log(`🗑️ [Storage Group] ${ids.length} mensagem(ns) excluída(s) permanentemente do grupo de armazém:`, ids);
+            return true;
+        } catch (error) {
+            console.warn(`⚠️ Aviso ao excluir mensagens ${ids.join(', ')} do storage:`, error.message);
+            return false;
+        }
+    }
+
     async uploadVideo(filePath, metadata = {}, onProgress = null) {
         if (!fs.existsSync(filePath)) {
             throw new Error(`Arquivo de vídeo não encontrado: ${filePath}`);
