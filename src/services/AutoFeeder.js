@@ -126,7 +126,7 @@ class AutoFeeder {
                         username: pedido.username,
                         tmdbId,
                         nomeOriginal: originalName,
-                        season: 1,
+                        season: tipo === 'serie' ? 1 : null,
                         episode: tipo === 'serie' ? 1 : null
                     });
                 }

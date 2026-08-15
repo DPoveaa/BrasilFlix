@@ -93,7 +93,8 @@ class DownloaderManager extends EventEmitter {
             'udp://opentor.net:6969/announce'
         ];
 
-        const displayTitle = (options.season || options.episode) 
+        const isSerie = options.type === 'serie' || (options.season && options.episode && options.type !== 'filme');
+        const displayTitle = isSerie
             ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})` 
             : mediaTitle;
 

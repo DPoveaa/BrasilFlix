@@ -504,6 +504,87 @@ class AssinaturaManager {
         }
     }
 
+    verificarAssinatura(userId) {
+        const numId = Number(userId);
+        const assinatura = this.assinaturas.find(a => 
+            (Number(a.userId) === numId || a.id === numId) && a.status === 'ativa'
+        );
+
+        if (!assinatura) return false;
+
+        const agora = new Date();
+        const vencimento = new Date(assinatura.dataVencimento);
+
+        if (agora > vencimento) {
+            assinatura.status = 'vencida';
+            this.saveAssinaturas();
+            return false;
+        }
+
+        return true;
+    }
+
+    getAssinatura(userId) {
+        const numId = Number(userId);
+        return this.assinaturas.find(a => Number(a.userId) === numId || a.id === numId);
+    }
+
+    async cancelarAssinatura(userId) {
+        const assinatura = this.getAssinatura(userId);
+        if (assinatura) {
+            assinatura.status = 'cancelada';
+            try {
+                await db.query(`UPDATE assinaturas SET status = 'cancelada' WHERE user_id = $1`, [userId]);
+            } catch (e) {}
+            this.saveAssinaturas();
+            return true;
+        }
+        return false;
+    }
+
+    getAssinaturasVencendo(dias = 7) {
+        const agora = new Date();
+        const limite = new Date();
+        limite.setDate(limite.getDate() + dias);
+
+        return this.assinaturas.filter(assinatura => {
+            if (assinatura.status !== 'ativa') return false;
+            const vencimento = new Date(assinatura.dataVencimento);
+            return vencimento <= limite && vencimento >= agora;
+        });
+    }
+
+    getAssinaturasVencidas() {
+        const agora = new Date();
+        return this.assinaturas.filter(assinatura => {
+            if (assinatura.status !== 'ativa') return false;
+            const vencimento = new Date(assinatura.dataVencimento);
+            return vencimento < agora;
+        });
+    }
+
+    formatarAssinatura(assinatura) {
+        const vencimento = new Date(assinatura.dataVencimento);
+        const agora = new Date();
+        const diasRestantes = Math.ceil((vencimento - agora) / (1000 * 60 * 60 * 24));
+
+        let status = '✅ Ativa';
+        if (assinatura.status === 'vencida') {
+            status = '❌ Vencida';
+        } else if (assinatura.status === 'cancelada') {
+            status = '🚫 Cancelada';
+        } else if (diasRestantes <= 3) {
+            status = '⚠️ Vencendo';
+        }
+
+        return {
+            status,
+            diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
+            vencimento: vencimento.toLocaleDateString('pt-BR'),
+            plano: assinatura.plano
+        };
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // CONTROLE DE LIMITE GRÁTIS NO STREMIO E SITE (1 Filme + 2 Episódios / Mês)
     // ─────────────────────────────────────────────────────────────────────────

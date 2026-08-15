@@ -432,13 +432,13 @@ class QueueManager extends EventEmitter {
                         downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                        }, { title: job.title, season: job.season, episode: job.episode });
+                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type });
                     } else if (currentSource.url) {
                         const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
                         downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-                        }, { title: job.title, season: job.season, episode: job.episode });
+                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type });
                     }
 
                     if (downloadedMedia && downloadedMedia.filePath) {
@@ -518,13 +518,17 @@ class QueueManager extends EventEmitter {
                 nome: job.title,
                 tipo: job.type,
                 season: job.season,
-                episode: job.episode
+                episode: job.episode,
+                totalTemporadas: metadata.totalTemporadas,
+                totalEpisodios: metadata.totalEpisodios
             });
         }
 
-        // 5. Upload para o Canal de Armazenamento
+        // 5. Envio ao Telegram com Barra de Upload em Tempo Real
         job.status = 'uploading';
-        job.progressDetails = 'Enviando para o Telegram...';
+        job.progress = 0;
+        job.progressDetails = 'Iniciando envio ao Telegram...';
+        this.activeTask = job;
         await this.saveJob(job);
 
         metadata.tipo = job.type;
@@ -533,9 +537,9 @@ class QueueManager extends EventEmitter {
         metadata.episodioNome = job.type === 'serie' ? `Episódio ${job.episode || 1}` : '';
         metadata.qualidade = bestSource?.quality || '1080p';
         metadata.isCam = bestSource?.isCam || false;
-        metadata.audio = langInfo.audioText || bestSource?.audio || 'Dublado (PT-BR)';
-        metadata.isDublado = langInfo.isDublado;
-        metadata.isLegendado = langInfo.isLegendado;
+        metadata.audio = langInfo?.audioText || bestSource?.audio || 'Dublado (PT-BR)';
+        metadata.isDublado = langInfo ? langInfo.isDublado : true;
+        metadata.isLegendado = langInfo ? langInfo.isLegendado : false;
 
         const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata, (p) => {
             job.progress = p.percent;
@@ -584,10 +588,11 @@ class QueueManager extends EventEmitter {
             );
         }
 
-        // 7. Notificação formal no Grupo de Notificações
+        // 7. Notificação formal no Grupo de Armazém e Grupo de Notificações
         try {
-            const targetGroupId = config.NOTIFICATION_GROUP_ID || config.ADMIN_ID;
-            if (this.bot && targetGroupId) {
+            const targetGroups = [config.STORAGE_GROUP_ID, config.NOTIFICATION_GROUP_ID].filter(Boolean);
+            const uniqueGroups = [...new Set(targetGroups)];
+            if (this.bot && uniqueGroups.length > 0) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
                 const notifMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
@@ -597,7 +602,9 @@ class QueueManager extends EventEmitter {
                                  `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
                                  `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
                                  `🍿 *Disponível imediatamente para todos os usuários!*`;
-                await this.bot.sendMessage(targetGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                for (const gId of uniqueGroups) {
+                    await this.bot.sendMessage(gId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                }
             }
         } catch (e) {}
 
