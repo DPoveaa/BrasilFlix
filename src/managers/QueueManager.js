@@ -398,9 +398,10 @@ class QueueManager extends EventEmitter {
             job.optimizedPath = optimizedPath;
             this.saveQueue();
             
-            await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent) => {
+            await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
                 job.progress = percent;
-                job.progressDetails = `Codificando 1080p: ${percent}%`;
+                job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
+                this.activeTask = job;
             }, {
                 nome: job.title,
                 tipo: job.type,

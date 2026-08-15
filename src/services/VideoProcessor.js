@@ -214,7 +214,7 @@ class VideoProcessor {
         let finalPath;
 
         if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
-            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido (5s)...`);
+            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido com áudio padrão...`);
             if (portugueseAudioIndex !== null) {
                 console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
             }
@@ -242,23 +242,53 @@ class VideoProcessor {
                 remuxArgs.push('-movflags', '+faststart', '-y', outputPath);
 
                 const ffmpeg = spawn('ffmpeg', remuxArgs);
+                const totalDuration = info.duration || 1;
+                let lastLogTime = 0;
 
-                // Drena o buffer de stderr para evitar deadlock/travamento do processo no Node.js
-                ffmpeg.stderr.on('data', () => {});
+                ffmpeg.stderr.on('data', (data) => {
+                    const text = data.toString();
+                    const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+                    const speedMatch = text.match(/speed=\s*([\d.]+)x/);
+                    
+                    if (timeMatch) {
+                        const hours = parseFloat(timeMatch[1]);
+                        const minutes = parseFloat(timeMatch[2]);
+                        const seconds = parseFloat(timeMatch[3]);
+                        const currentTime = (hours * 3600) + (minutes * 60) + seconds;
+                        const percent = Math.min(99, Math.round((currentTime / totalDuration) * 100));
+                        const speedStr = speedMatch ? `${speedMatch[1]}x` : 'Rápido';
+
+                        const now = Date.now();
+                        if (now - lastLogTime > 400) { // Atualiza a cada 400ms
+                            lastLogTime = now;
+                            const barLength = 25;
+                            const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
+                            const empty = Math.max(0, barLength - filled);
+                            const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+                            process.stdout.write(`\r\x1b[36m⚡ [REMUX: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)} | 🚀 ${speedStr}\x1b[0m `);
+                        }
+
+                        if (onProgress) onProgress(percent, `Remux 1080p (${percent}%) - ${speedStr}`);
+                    }
+                });
+
                 ffmpeg.stdout.on('data', () => {});
 
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
-                        console.log(`✅ [${optTitle}] Remux concluído com sucesso com 100% da qualidade original preservada!`);
-                        if (onProgress) onProgress(100);
+                        process.stdout.write('\n');
+                        console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso com 100% da qualidade original preservada!\x1b[0m`);
+                        if (onProgress) onProgress(100, 'Remux Concluído');
                         resolve(outputPath);
                     } else {
+                        process.stdout.write('\n');
                         console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
-                        // Se falhar o remux por alguma inconsistência do container, cai para a codificação normal
                         this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                     }
                 });
                 ffmpeg.on('error', () => {
+                    process.stdout.write('\n');
                     this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
             });
@@ -326,15 +356,20 @@ class VideoProcessor {
             ffmpeg.stderr.on('data', (data) => {
                 const text = data.toString();
                 const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+                const speedMatch = text.match(/speed=\s*([\d.]+)x/);
+                const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+
                 if (timeMatch) {
                     const hours = parseFloat(timeMatch[1]);
                     const minutes = parseFloat(timeMatch[2]);
                     const seconds = parseFloat(timeMatch[3]);
                     const currentTime = (hours * 3600) + (minutes * 60) + seconds;
                     const percent = Math.min(99, Math.round((currentTime / totalDuration) * 100));
+                    const speedStr = speedMatch ? `${speedMatch[1]}x` : '';
+                    const fpsStr = fpsMatch ? ` | FPS: ${fpsMatch[1]}` : '';
 
                     const now = Date.now();
-                    if (now - lastLogTime > 700) { // Atualiza a cada 700ms
+                    if (now - lastLogTime > 500) { // Atualiza a cada 500ms
                         lastLogTime = now;
                         const barLength = 25;
                         const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
@@ -342,10 +377,10 @@ class VideoProcessor {
                         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
                         // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        process.stdout.write(`\r\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}\x1b[0m `);
+                        process.stdout.write(`\r\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m `);
                     }
 
-                    if (onProgress) onProgress(percent);
+                    if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);
                 }
             });
 
@@ -353,7 +388,7 @@ class VideoProcessor {
                 if (code === 0 && fs.existsSync(outputPath)) {
                     process.stdout.write('\n');
                     console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
-                    if (onProgress) onProgress(100);
+                    if (onProgress) onProgress(100, 'Otimização Concluída');
                     resolve(outputPath);
                 } else {
                     process.stdout.write('\n');
