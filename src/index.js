@@ -5,6 +5,7 @@ const CatalogoManager = require('./managers/CatalogoManager');
 const AssinaturaManager = require('./managers/AssinaturaManager');
 const { QueueManager } = require('./managers/QueueManager');
 const AutoFeeder = require('./services/AutoFeeder');
+const StremioServer = require('./services/StremioServer');
 const MessageHandler = require('./handlers/MessageHandler');
 const CommandHandler = require('./handlers/CommandHandler');
 const cron = require('node-cron');
@@ -17,18 +18,22 @@ class BrasilFlixBot {
         this.assinaturaManager = new AssinaturaManager();
         this.queueManager = new QueueManager(this.bot, this.catalogoManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager);
+        this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager);
         this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager);
         this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
         this.setupEventHandlers();
         this.setupCronJobs();
         this.autoFeeder.start();
-        console.log('🤖 BrasilFlix Bot + Auto-Feeder iniciado com sucesso!');
+        this.stremioServer.start();
+        console.log('🤖 BrasilFlix Bot + Auto-Feeder + Servidor Stremio iniciado com sucesso!');
     }
 
     setupEventHandlers() {
         // Handler para comandos básicos
         this.bot.onText(/\/start/, (msg) => this.commandHandler.handleStart(msg));
+        this.bot.onText(/\/admin/, (msg) => this.commandHandler.handleAdminStart(msg));
+        this.bot.onText(/\/stremio/, (msg) => this.commandHandler.handleStremioCommand(msg));
         this.bot.onText(/\/ajuda/, (msg) => this.commandHandler.handleHelp(msg));
         this.bot.onText(/\/pedido (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
         this.bot.onText(/\/buscar (.+)/, (msg, match) => this.commandHandler.handleBuscar(msg, match));

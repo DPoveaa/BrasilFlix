@@ -23,32 +23,43 @@ class AssinaturaManager {
     loadAssinaturas() {
         try {
             if (fs.existsSync(this.assinaturasFile)) {
-                this.assinaturas = fs.readJsonSync(this.assinaturasFile);
+                const data = fs.readJsonSync(this.assinaturasFile);
+                if (Array.isArray(data)) {
+                    this.assinaturas = data;
+                    this.acessosVitalicios = [];
+                } else {
+                    this.assinaturas = data.assinaturas || [];
+                    this.acessosVitalicios = data.acessosVitalicios || [];
+                }
             } else {
                 this.assinaturas = [];
+                this.acessosVitalicios = [];
                 this.saveAssinaturas();
             }
         } catch (error) {
             console.error('❌ Erro ao carregar assinaturas:', error);
             this.assinaturas = [];
+            this.acessosVitalicios = [];
         }
     }
 
     saveAssinaturas() {
         try {
-            fs.writeJsonSync(this.assinaturasFile, this.assinaturas, { spaces: 2 });
+            const dataToSave = {
+                assinaturas: this.assinaturas,
+                acessosVitalicios: this.acessosVitalicios || []
+            };
+            fs.writeJsonSync(this.assinaturasFile, dataToSave, { spaces: 2 });
         } catch (error) {
             console.error('❌ Erro ao salvar assinaturas:', error);
         }
     }
 
-
-
     async criarAssinatura(userId, username, plano = 'mensal') {
         const assinatura = {
             id: Date.now(),
             userId,
-            username: username || 'Usuário',
+            username: (username || 'Usuário').replace(/^@/, ''),
             plano,
             dataInicio: new Date().toISOString(),
             dataVencimento: this.calcularVencimento(plano),
@@ -56,16 +67,23 @@ class AssinaturaManager {
             pagamentos: []
         };
 
-        this.assinaturas.push(assinatura);
+        const index = this.assinaturas.findIndex(a => a.userId === userId || (username && a.username?.toLowerCase() === username.toLowerCase()));
+        if (index >= 0) {
+            this.assinaturas[index] = assinatura;
+        } else {
+            this.assinaturas.push(assinatura);
+        }
+
         this.saveAssinaturas();
-        
         console.log(`✅ Nova assinatura criada: ${username} - Plano: ${plano}`);
         return assinatura;
     }
 
     calcularVencimento(plano) {
         const data = new Date();
-        if (plano === 'mensal') {
+        if (plano === 'vitalicio') {
+            return '2099-12-31T23:59:59.999Z';
+        } else if (plano === 'mensal') {
             data.setMonth(data.getMonth() + 1);
         } else if (plano === 'trimestral') {
             data.setMonth(data.getMonth() + 3);
@@ -75,6 +93,126 @@ class AssinaturaManager {
             data.setFullYear(data.getFullYear() + 1);
         }
         return data.toISOString();
+    }
+
+    gerarTokenVitalicio(nomeIdentificador = 'Parente / Convidado', criadoPor = 'admin') {
+        const randomPart = Math.random().toString(36).substring(2, 8);
+        const timePart = Date.now().toString(36);
+        const token = `bf_vit_${randomPart}${timePart}`;
+
+        if (!this.acessosVitalicios) this.acessosVitalicios = [];
+
+        const novoAcesso = {
+            token,
+            nome: nomeIdentificador.trim(),
+            criadoPor,
+            dataCriacao: new Date().toISOString(),
+            status: 'ativo'
+        };
+
+        this.acessosVitalicios.push(novoAcesso);
+        this.saveAssinaturas();
+
+        console.log(`🔑 Novo Acesso Vitalício Stremio gerado: "${nomeIdentificador}" [Token: ${token}]`);
+        return novoAcesso;
+    }
+
+    autorizarUsernameVitalicio(usernameInput, criadoPor = 'admin') {
+        const cleanUser = usernameInput.toString().replace(/^@/, '').trim();
+        if (!cleanUser) return null;
+
+        const dummyId = `vit_${Date.now()}`;
+        const assinatura = {
+            id: Date.now(),
+            userId: dummyId,
+            username: cleanUser,
+            plano: 'vitalicio',
+            dataInicio: new Date().toISOString(),
+            dataVencimento: '2099-12-31T23:59:59.999Z',
+            status: 'ativa',
+            criadoPor,
+            pagamentos: []
+        };
+
+        const index = this.assinaturas.findIndex(a => a.username?.toLowerCase() === cleanUser.toLowerCase());
+        if (index >= 0) {
+            this.assinaturas[index].status = 'ativa';
+            this.assinaturas[index].plano = 'vitalicio';
+            this.assinaturas[index].dataVencimento = '2099-12-31T23:59:59.999Z';
+        } else {
+            this.assinaturas.push(assinatura);
+        }
+
+        this.saveAssinaturas();
+        console.log(`👑 Acesso Vitalício concedido ao @${cleanUser}!`);
+        return assinatura;
+    }
+
+    verificarAcessoStremio(tokenOuUser) {
+        if (!tokenOuUser) return { authorized: false, reason: 'Token não fornecido' };
+
+        const str = tokenOuUser.toString().trim().replace(/^@/, '');
+
+        // 1. Admin permanente
+        if (str === config.ADMIN_ID.toString() || str === 'admin' || str === 'bf_admin') {
+            return { authorized: true, user: 'Administrador BrasilFlix', plano: 'vitalicio' };
+        }
+
+        // 2. Token vitalício registrado
+        if (this.acessosVitalicios && Array.isArray(this.acessosVitalicios)) {
+            const tokenFound = this.acessosVitalicios.find(t => t.token === str && t.status === 'ativo');
+            if (tokenFound) {
+                return { authorized: true, user: tokenFound.nome, plano: 'vitalicio' };
+            }
+        }
+
+        // 3. Assinatura ativa por username ou userId
+        const assinatura = this.assinaturas.find(a => 
+            (a.userId?.toString() === str || a.username?.toLowerCase() === str.toLowerCase()) && 
+            a.status === 'ativa'
+        );
+
+        if (assinatura) {
+            const agora = new Date();
+            const vencimento = new Date(assinatura.dataVencimento);
+            if (agora <= vencimento) {
+                return { authorized: true, user: assinatura.username, plano: assinatura.plano };
+            } else {
+                assinatura.status = 'vencida';
+                this.saveAssinaturas();
+                return { authorized: false, reason: 'Assinatura vencida' };
+            }
+        }
+
+        return { authorized: false, reason: 'Usuário ou token não encontrado' };
+    }
+
+    listarAcessosVitalicios() {
+        const tokens = (this.acessosVitalicios || []).filter(t => t.status === 'ativo');
+        const usernames = (this.assinaturas || []).filter(a => a.plano === 'vitalicio' && a.status === 'ativa');
+        return { tokens, usernames };
+    }
+
+    revogarAcessoVitalicio(identificador) {
+        const str = identificador.toString().trim().replace(/^@/, '');
+        let revogado = false;
+
+        if (this.acessosVitalicios) {
+            const t = this.acessosVitalicios.find(item => item.token === str || item.nome.toLowerCase() === str.toLowerCase());
+            if (t) {
+                t.status = 'revogado';
+                revogado = true;
+            }
+        }
+
+        const a = this.assinaturas.find(item => item.username?.toLowerCase() === str.toLowerCase() || item.userId?.toString() === str);
+        if (a && a.plano === 'vitalicio') {
+            a.status = 'cancelada';
+            revogado = true;
+        }
+
+        if (revogado) this.saveAssinaturas();
+        return revogado;
     }
 
     async criarPagamento(userId, username, plano) {

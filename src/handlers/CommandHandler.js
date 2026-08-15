@@ -249,8 +249,8 @@ class CommandHandler {
                     { text: '💳 Assinaturas', callback_data: 'admin_assinaturas' }
                 ],
                 [
-                    { text: '⚡ Fila de Download', callback_data: 'menu_fila' },
-                    { text: '🔄 Re-baixar Mídia', callback_data: 'admin_rebaixar_prompt' }
+                    { text: '📺 Stremio & Acessos VIP', callback_data: 'admin_stremio' },
+                    { text: '⚡ Fila de Download', callback_data: 'menu_fila' }
                 ],
                 [
                     { text: '➕ Adicionar Mídia', callback_data: 'admin_adicionar' },
@@ -258,6 +258,9 @@ class CommandHandler {
                 ],
                 [
                     { text: '📊 Estatísticas', callback_data: 'admin_stats' },
+                    { text: '🔄 Re-baixar Mídia', callback_data: 'admin_rebaixar_prompt' }
+                ],
+                [
                     { text: '🧪 Testar Menu Cliente', callback_data: 'admin_testar_cliente' }
                 ]
             ]
@@ -1575,6 +1578,21 @@ class CommandHandler {
                     break;
                 case 'admin_assinaturas':
                     await this.handleAdminAssinaturasButton(chatId, userId, callbackQuery);
+                    break;
+                case 'admin_stremio':
+                    await this.handleAdminStremioButton(chatId, userId, callbackQuery);
+                    break;
+                case 'admin_gerar_token_vitalicio':
+                    await this.handleAdminGerarTokenVitalicio(chatId, userId, callbackQuery);
+                    break;
+                case 'admin_autorizar_user_prompt':
+                    await this.handleAdminAutorizarUserPrompt(chatId, userId, callbackQuery);
+                    break;
+                case 'admin_listar_vitalicios':
+                    await this.handleAdminListarVitalicios(chatId, userId, callbackQuery);
+                    break;
+                case 'admin_revogar_prompt':
+                    await this.handleAdminRevogarPrompt(chatId, userId, callbackQuery);
                     break;
                 case 'admin_stats':
                     await this.handleAdminStatsButton(chatId, userId, callbackQuery);
@@ -3141,7 +3159,244 @@ class CommandHandler {
         }
 
         await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+    }
 
+    async handleAdminStremioButton(chatId, userId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) {
+            await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
+            return;
+        }
+
+        const { tokens, usernames } = this.assinaturaManager.listarAcessosVitalicios();
+        const stats = this.catalogoManager.getEstatisticas();
+
+        const mensagem = `📺 *Central Stremio & Acessos VIP — BrasilFlix*\n\n` +
+                        `O addon do Stremio permite assistir ao catálogo em *1080p Full HD* com áudio Dublado e Legendado em Smart TVs, TV Box, Celulares e PCs!\n\n` +
+                        `👑 *Acessos Vitalícios Ativos:*\n` +
+                        `• 🔑 Chaves/Tokens gerados: *${tokens.length}*\n` +
+                        `• 👤 Usuários @username autorizados: *${usernames.length}*\n\n` +
+                        `🎬 *Títulos Disponíveis no Stremio:* ${stats.total}\n\n` +
+                        `Escolha uma opção de gerenciamento:`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '🔗 Gerar Link Vitalício (Token)', callback_data: 'admin_gerar_token_vitalicio' }
+                ],
+                [
+                    { text: '👤 Autorizar por @Username ou ID', callback_data: 'admin_autorizar_user_prompt' }
+                ],
+                [
+                    { text: '📋 Listar Acessos Vitalícios', callback_data: 'admin_listar_vitalicios' },
+                    { text: '🗑️ Revogar Acesso', callback_data: 'admin_revogar_prompt' }
+                ],
+                [
+                    { text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }
+                ]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async handleAdminGerarTokenVitalicio(chatId, userId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        const acesso = this.assinaturaManager.gerarTokenVitalicio('Parente / Amigo VIP');
+        const token = acesso.token;
+
+        const hostIp = '192.168.15.50:3000';
+        const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
+        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+        const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
+
+        const mensagem = `🎉 *Novo Acesso Vitalício Gerado!*\n\n` +
+                        `🔑 *Token de Acesso:* \`${token}\`\n\n` +
+                        `📲 *Links para enviar ao seu parente / amigo:*\n\n` +
+                        `1️⃣ *Instalar no App do Stremio (1 clique):*\n` +
+                        `\`${stremioApp}\`\n\n` +
+                        `2️⃣ *Abrir no Stremio Web:*\n` +
+                        `[Abrir Stremio Web](${webStremio})\n\n` +
+                        `3️⃣ *Página Web com Botões de Instalação:*\n` +
+                        `\`http://${hostIp}/${token}\`\n\n` +
+                        `✨ _Esse link dá acesso vitalício e ilimitado a todos os filmes e séries sem expirar!_`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '➕ Gerar Outro Token', callback_data: 'admin_gerar_token_vitalicio' }],
+                [{ text: '🔙 Menu Stremio', callback_data: 'admin_stremio' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async handleAdminAutorizarUserPrompt(chatId, userId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        this.estadosTemporarios[userId] = {
+            tipo: 'admin_autorizar_user',
+            ativo: true,
+            timestamp: Date.now()
+        };
+
+        const mensagem = `👤 *Autorizar Acesso Vitalício por @Username ou ID*\n\n` +
+                        `Digite o *@username* (ex: \`@primo_daniel\`) ou o ID numérico da pessoa que você deseja liberar para sempre no Stremio e no Bot:`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '❌ Cancelar', callback_data: 'admin_stremio' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async processarAutorizarUserCapturado(msg, texto) {
+        const chatId = msg.chat.id;
+        const cleanUser = texto.replace(/^@/, '').trim();
+
+        if (!cleanUser) {
+            await this.bot.sendMessage(chatId, '❌ Nome de usuário inválido.');
+            return;
+        }
+
+        const assinatura = this.assinaturaManager.autorizarUsernameVitalicio(cleanUser);
+        const hostIp = '192.168.15.50:3000';
+        const manifestUrl = `http://${hostIp}/${cleanUser}/manifest.json`;
+        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+        const stremioApp = `stremio://${hostIp}/${cleanUser}/manifest.json`;
+
+        const mensagem = `👑 *Acesso Vitalício Liberado com Sucesso!*\n\n` +
+                        `👤 *Usuário:* @${cleanUser}\n` +
+                        `💎 *Plano:* Vitalício Permanente (2099)\n\n` +
+                        `📲 *Links do Stremio para ele:*\n` +
+                        `• *Link do Addon:* \`${manifestUrl}\`\n` +
+                        `• *App Stremio:* \`${stremioApp}\`\n` +
+                        `• *Página de Instalação:* \`http://${hostIp}/${cleanUser}\``;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔙 Menu Stremio', callback_data: 'admin_stremio' }]
+            ]
+        };
+
+        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard });
+    }
+
+    async handleAdminListarVitalicios(chatId, userId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        const { tokens, usernames } = this.assinaturaManager.listarAcessosVitalicios();
+
+        let mensagem = `📋 *Acessos Vitalícios Cadastrados*\n\n`;
+
+        if (tokens.length === 0 && usernames.length === 0) {
+            mensagem += `_Nenhum acesso vitalício ativo no momento._\n`;
+        } else {
+            if (tokens.length > 0) {
+                mensagem += `🔑 *Chaves/Tokens Gerados:*\n`;
+                tokens.forEach((t, i) => {
+                    mensagem += `${i + 1}. \`${t.token}\` (${t.nome || 'Parente'})\n`;
+                });
+                mensagem += `\n`;
+            }
+            if (usernames.length > 0) {
+                mensagem += `👤 *Usuários @ Liberados:*\n`;
+                usernames.forEach((u, i) => {
+                    mensagem += `${i + 1}. @${u.username} (Criado em: ${new Date(u.dataInicio).toLocaleDateString('pt-BR')})\n`;
+                });
+            }
+        }
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔗 Gerar Novo Token', callback_data: 'admin_gerar_token_vitalicio' }],
+                [{ text: '🔙 Menu Stremio', callback_data: 'admin_stremio' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async handleAdminRevogarPrompt(chatId, userId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        this.estadosTemporarios[userId] = {
+            tipo: 'admin_revogar_acesso',
+            ativo: true,
+            timestamp: Date.now()
+        };
+
+        const mensagem = `🗑️ *Revogar Acesso Vitalício*\n\n` +
+                        `Envie o *@username* ou a *chave token* que deseja revogar:`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '❌ Cancelar', callback_data: 'admin_stremio' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async processarRevogarAcessoCapturado(msg, texto) {
+        const chatId = msg.chat.id;
+        const revogado = this.assinaturaManager.revogarAcessoVitalicio(texto);
+
+        if (revogado) {
+            await this.bot.sendMessage(chatId, `✅ *Acesso "${texto}" revogado com sucesso!*`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[{ text: '🔙 Menu Stremio', callback_data: 'admin_stremio' }]]
+                }
+            });
+        } else {
+            await this.bot.sendMessage(chatId, `⚠️ Nenhum acesso ativo encontrado para "${texto}".`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[{ text: '🔙 Menu Stremio', callback_data: 'admin_stremio' }]]
+                }
+            });
+        }
+    }
+
+    async handleStremioCommand(msg) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const username = msg.from.username || msg.from.first_name || userId.toString();
+
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+
+        const token = msg.from.username || userId.toString();
+        const hostIp = '192.168.15.50:3000';
+        const manifestUrl = `http://${hostIp}/${token}/manifest.json`;
+        const stremioApp = `stremio://${hostIp}/${token}/manifest.json`;
+        const webStremio = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+
+        let mensagem = `📺 *BrasilFlix no Stremio (Smart TV & Celular)*\n\n` +
+                       `Assista a todos os filmes e séries do nosso catálogo em *1080p Full HD* direto no Stremio!\n\n`;
+
+        if (isAssinante) {
+            mensagem += `✨ *Sua conta VIP está ativa!* Seus links personalizados de instalação:\n\n` +
+                        `🚀 *Instalar no App Stremio:* [Clique aqui](${stremioApp})\n` +
+                        `🌐 *Abrir no Stremio Web:* [Clique aqui](${webStremio})\n` +
+                        `🔗 *URL do Addon:* \`${manifestUrl}\``;
+        } else {
+            mensagem += `💡 *Disponível para Assinantes VIP!*\n` +
+                        `Assine por apenas R$ 15,00/mês para liberar a reprodução ilimitada no Stremio na sua TV de casa!`;
+        }
+
+        const keyboard = {
+            inline_keyboard: [
+                isAssinante ? 
+                    [{ text: '🚀 Instalar no Stremio', url: webStremio }] :
+                    [{ text: '💎 Assinar VIP - R$ 15', callback_data: 'ver_planos' }],
+                [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
+            ]
+        };
+
+        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard });
     }
 
     async handleAdminStatsButton(chatId, userId, callbackQuery) {
@@ -3715,6 +3970,10 @@ class CommandHandler {
             await this.processarTesteBuscaCapturada(msg, texto);
         } else if (estado.tipo === 'teste_pedido') {
             await this.processarTestePedidoCapturado(msg, texto);
+        } else if (estado.tipo === 'admin_autorizar_user') {
+            await this.processarAutorizarUserCapturado(msg, texto);
+        } else if (estado.tipo === 'admin_revogar_acesso') {
+            await this.processarRevogarAcessoCapturado(msg, texto);
         }
 
         // Limpar estado após processamento
