@@ -424,7 +424,11 @@ class QueueManager extends EventEmitter {
         metadata.isDublado = langInfo.isDublado;
         metadata.isLegendado = langInfo.isLegendado;
 
-        const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata);
+        const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata, (p) => {
+            job.progress = p.percent;
+            job.progressDetails = `Enviando Telegram: ${p.percent}% (${p.speed})`;
+            this.activeTask = job;
+        });
 
         // 6. Cadastrar ou Atualizar no Catálogo
         if (job.type === 'filme') {
