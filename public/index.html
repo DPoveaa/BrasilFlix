@@ -473,23 +473,18 @@
         }
 
         .catalog-sidebar {
-            width: 260px;
-            min-width: 260px;
+            width: 270px;
+            min-width: 270px;
             background: #11141e;
             border: 1px solid var(--border-color);
             border-radius: 16px;
             padding: 20px;
             position: sticky;
             top: 80px;
-            max-height: calc(100vh - 100px);
-            overflow-y: auto;
-            scrollbar-width: thin;
+            overflow: visible;
             transition: left 0.3s ease;
             z-index: 50;
         }
-
-        .catalog-sidebar::-webkit-scrollbar { width: 4px; }
-        .catalog-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 
         .sidebar-header {
             display: flex;
@@ -555,7 +550,7 @@
             text-align: left;
             background: transparent;
             border: 1px solid transparent;
-            padding: 8px 10px;
+            padding: 7px 10px;
             border-radius: 8px;
             font-size: 13px;
             color: #cbd5e1;
@@ -596,6 +591,58 @@
         .filter-link.active .filter-count {
             background: rgba(229, 9, 20, 0.3);
             color: #fff;
+        }
+
+        /* Grelha de Tags de Gêneros sem rolagem */
+        .genre-tags-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 4px;
+        }
+
+        .genre-tag-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #cbd5e1;
+            padding: 5px 9px;
+            border-radius: 7px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .genre-tag-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .genre-tag-btn.active {
+            background: rgba(229, 9, 20, 0.2);
+            border-color: var(--primary);
+            color: #fff;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(229, 9, 20, 0.3);
+        }
+
+        .genre-tag-count {
+            font-size: 9px;
+            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 1px 5px;
+            border-radius: 999px;
+        }
+
+        .genre-tag-btn.active .genre-tag-count {
+            color: #fca5a5;
+            background: rgba(229, 9, 20, 0.4);
         }
 
         .catalog-main {
@@ -1607,85 +1654,47 @@
                     <!-- 4. CATEGORIAS & GÊNEROS -->
                     <div class="filter-section">
                         <h4 class="filter-title">📁 Categorias & Gêneros</h4>
-                        <ul class="filter-list" id="sidebar-genre-list">
-                            <li>
-                                <button class="filter-link active" data-filter="genre" data-val="todos" onclick="setCatalogFilter('genre', 'todos', this)">
-                                    <span class="filter-name">🏷️ Todas Categorias</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Ação" onclick="setCatalogFilter('genre', 'Ação', this)">
-                                    <span class="filter-name">💥 Ação</span>
-                                    <span class="filter-count" id="count-genre-acao">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Comédia" onclick="setCatalogFilter('genre', 'Comédia', this)">
-                                    <span class="filter-name">😂 Comédia</span>
-                                    <span class="filter-count" id="count-genre-comedia">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Drama" onclick="setCatalogFilter('genre', 'Drama', this)">
-                                    <span class="filter-name">🎭 Drama</span>
-                                    <span class="filter-count" id="count-genre-drama">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Ficção" onclick="setCatalogFilter('genre', 'Ficção', this)">
-                                    <span class="filter-name">🚀 Ficção Científica</span>
-                                    <span class="filter-count" id="count-genre-ficcao">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Terror" onclick="setCatalogFilter('genre', 'Terror', this)">
-                                    <span class="filter-name">👻 Terror</span>
-                                    <span class="filter-count" id="count-genre-terror">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Romance" onclick="setCatalogFilter('genre', 'Romance', this)">
-                                    <span class="filter-name">💖 Romance</span>
-                                    <span class="filter-count" id="count-genre-romance">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Suspense" onclick="setCatalogFilter('genre', 'Suspense', this)">
-                                    <span class="filter-name">🔍 Suspense</span>
-                                    <span class="filter-count" id="count-genre-suspense">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Animação" onclick="setCatalogFilter('genre', 'Animação', this)">
-                                    <span class="filter-name">🎨 Animação</span>
-                                    <span class="filter-count" id="count-genre-animacao">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Aventura" onclick="setCatalogFilter('genre', 'Aventura', this)">
-                                    <span class="filter-name">🗺️ Aventura</span>
-                                    <span class="filter-count" id="count-genre-aventura">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Crime" onclick="setCatalogFilter('genre', 'Crime', this)">
-                                    <span class="filter-name">🔪 Crime</span>
-                                    <span class="filter-count" id="count-genre-crime">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Fantasia" onclick="setCatalogFilter('genre', 'Fantasia', this)">
-                                    <span class="filter-name">🧙 Fantasia</span>
-                                    <span class="filter-count" id="count-genre-fantasia">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="genre" data-val="Documentário" onclick="setCatalogFilter('genre', 'Documentário', this)">
-                                    <span class="filter-name">📜 Documentário</span>
-                                    <span class="filter-count" id="count-genre-doc">0</span>
-                                </button>
-                            </li>
-                        </ul>
+                        <div class="genre-tags-grid" id="sidebar-genre-list">
+                            <button class="genre-tag-btn active" data-filter="genre" data-val="todos" onclick="setCatalogFilter('genre', 'todos', this)">
+                                🏷️ Todas
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Ação" onclick="setCatalogFilter('genre', 'Ação', this)">
+                                💥 Ação <span class="genre-tag-count" id="count-genre-acao">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Comédia" onclick="setCatalogFilter('genre', 'Comédia', this)">
+                                😂 Comédia <span class="genre-tag-count" id="count-genre-comedia">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Drama" onclick="setCatalogFilter('genre', 'Drama', this)">
+                                🎭 Drama <span class="genre-tag-count" id="count-genre-drama">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Ficção" onclick="setCatalogFilter('genre', 'Ficção', this)">
+                                🚀 Ficção <span class="genre-tag-count" id="count-genre-ficcao">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Terror" onclick="setCatalogFilter('genre', 'Terror', this)">
+                                👻 Terror <span class="genre-tag-count" id="count-genre-terror">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Romance" onclick="setCatalogFilter('genre', 'Romance', this)">
+                                💖 Romance <span class="genre-tag-count" id="count-genre-romance">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Suspense" onclick="setCatalogFilter('genre', 'Suspense', this)">
+                                🔍 Suspense <span class="genre-tag-count" id="count-genre-suspense">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Animação" onclick="setCatalogFilter('genre', 'Animação', this)">
+                                🎨 Animação <span class="genre-tag-count" id="count-genre-animacao">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Aventura" onclick="setCatalogFilter('genre', 'Aventura', this)">
+                                🗺️ Aventura <span class="genre-tag-count" id="count-genre-aventura">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Crime" onclick="setCatalogFilter('genre', 'Crime', this)">
+                                🔪 Crime <span class="genre-tag-count" id="count-genre-crime">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Fantasia" onclick="setCatalogFilter('genre', 'Fantasia', this)">
+                                🧙 Fantasia <span class="genre-tag-count" id="count-genre-fantasia">0</span>
+                            </button>
+                            <button class="genre-tag-btn" data-filter="genre" data-val="Documentário" onclick="setCatalogFilter('genre', 'Documentário', this)">
+                                📜 Documentário <span class="genre-tag-count" id="count-genre-doc">0</span>
+                            </button>
+                        </div>
                     </div>
                 </aside>
 
@@ -2527,7 +2536,7 @@
             if (btn) {
                 const section = btn.closest('.filter-section');
                 if (section) {
-                    section.querySelectorAll('.filter-link').forEach(l => l.classList.remove('active'));
+                    section.querySelectorAll('.filter-link, .genre-tag-btn').forEach(l => l.classList.remove('active'));
                     btn.classList.add('active');
                 }
             }
@@ -2555,7 +2564,7 @@
             if (searchInput) searchInput.value = '';
 
             // Reseta visual dos botões no menu lateral
-            document.querySelectorAll('.catalog-sidebar .filter-link').forEach(link => {
+            document.querySelectorAll('.catalog-sidebar .filter-link, .catalog-sidebar .genre-tag-btn').forEach(link => {
                 const isDefault = link.getAttribute('data-val') === 'todos';
                 link.classList.toggle('active', isDefault);
             });
@@ -2578,8 +2587,8 @@
             
             catalogFilters.genre = genre;
 
-            // Destaca o link correspondente na barra lateral
-            document.querySelectorAll('#sidebar-genre-list .filter-link').forEach(link => {
+            // Destaca a tag correspondente na barra lateral
+            document.querySelectorAll('#sidebar-genre-list .genre-tag-btn').forEach(link => {
                 const val = link.getAttribute('data-val') || '';
                 link.classList.toggle('active', val.toLowerCase() === genre.toLowerCase());
             });
