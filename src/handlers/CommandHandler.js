@@ -667,8 +667,9 @@ class CommandHandler {
         const fim = Math.min(inicio + filmesPorPagina, filmes.length);
         const filmesPagina = filmes.slice(inicio, fim);
 
-        const mensagem = `${tituloCategoria}\n` +
-                        `💡 _[D] Dublado | [L] Legendado | [D/L] Dual | [CAM] Cinema (Provisório)_\n\n` +
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado\n` +
+                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
                         `Selecione um filme para ver a sinopse e assistir:`;
 
@@ -753,8 +754,9 @@ class CommandHandler {
         const fim = Math.min(inicio + seriesPorPagina, series.length);
         const seriesPagina = series.slice(inicio, fim);
 
-        const mensagem = `${tituloCategoria}\n` +
-                        `💡 _[D] Dublado | [L] Legendado | [D/L] Dual | [CAM] Cinema (Provisório)_\n\n` +
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado\n` +
+                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${series.length} séries\n\n` +
                         `Selecione uma série para ver episódios e assistir:`;
 
@@ -1980,7 +1982,8 @@ class CommandHandler {
                         `🎬 *Filmes:* ${stats.totalFilmes}\n` +
                         `📺 *Séries & Doramas:* ${stats.totalSeries}\n` +
                         `📊 *Total de Títulos:* ${stats.total}\n\n` +
-                        `💡 _[D] Dublado | [L] Legendado | [D/L] Dual | [CAM] Cinema (Provisório)_\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado\n` +
+                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
                         `Escolha uma opção para navegar:`;
 
         const keyboard = {
@@ -2094,8 +2097,9 @@ class CommandHandler {
         const fim = Math.min(inicio + itensPorPagina, itens.length);
         const itensPagina = itens.slice(inicio, fim);
 
-        const mensagem = `🎭 *Categoria:* ${generoDecodificado}\n` +
-                        `💡 _[D] Dublado | [L] Legendado | [D/L] Dual | [CAM] Cinema (Provisório)_\n\n` +
+        const mensagem = `🎭 *Categoria:* ${generoDecodificado}\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado\n` +
+                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${itens.length} título(s)\n\n` +
                         `Selecione para ver a sinopse e assistir:`;
 
