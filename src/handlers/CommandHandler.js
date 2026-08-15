@@ -1375,9 +1375,17 @@ class CommandHandler {
         }
 
         try {
-            // Reenviar arquivo do grupo de armazenamento
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, item.messageId);
-            
+            // Entregar arquivo com fallback (copyMessage > forwardMessage > file_id)
+            const delivered = await this.entregarVideoAoUsuario(
+                chatId, item.messageId, item.fileId,
+                `*${item.nome}*\n${item.tipo === 'filme' ? '🎬 Filme' : '📺 Série'}`
+            );
+
+            if (!delivered) {
+                await this.bot.sendMessage(chatId, '❌ Não foi possível entregar o arquivo. Tente novamente.');
+                return;
+            }
+
             const mensagem = `✅ *${item.nome}*\n\n` +
                            `📝 ${item.descricao || 'Sem descrição'}\n` +
                            `🎬 Tipo: ${item.tipo === 'filme' ? 'Filme' : 'Série'}\n` +
@@ -1386,7 +1394,7 @@ class CommandHandler {
             await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
             
         } catch (error) {
-            console.error('❌ Erro ao enviar arquivo:', error);
+            console.error('❌ Erro ao enviar arquivo:', error.message);
             await this.bot.sendMessage(chatId, '❌ Erro ao enviar arquivo. Tente novamente.');
         }
     }
@@ -2825,9 +2833,15 @@ class CommandHandler {
         }
 
         try {
-            // Reenviar arquivo do grupo de armazenamento
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, filme.messageId);
-            
+            // Entregar arquivo com fallback seguro
+            const caption = `🎬 *${filme.nome}* (${filme.ano || ''})\n✨ ${filme.qualidade || '1080p Full HD'} | 🔊 ${filme.audio || 'Dublado (PT-BR)'}`;
+            const delivered = await this.entregarVideoAoUsuario(chatId, filme.messageId, filme.fileId, caption);
+
+            if (!delivered) {
+                await this.bot.sendMessage(chatId, '❌ Erro ao entregar o filme. Tente novamente ou contate o suporte.');
+                return;
+            }
+
             let mensagem = `✅ *${filme.nome}*\n\n` +
                            `📝 ${filme.descricao || filme.sinopse || 'Disponível em alta qualidade'}\n` +
                            `✨ Qualidade: ${filme.qualidade || '1080p Full HD'} | 🔊 Áudio: ${filme.audio || 'Dublado'}\n\n`;
@@ -2850,7 +2864,7 @@ class CommandHandler {
             }
             
         } catch (error) {
-            console.error('❌ Erro ao enviar filme:', error);
+            console.error('❌ Erro ao enviar filme:', error.message);
             await this.bot.sendMessage(chatId, '❌ Erro ao enviar filme. Tente novamente ou contate o suporte.');
         }
     }

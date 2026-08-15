@@ -118,8 +118,11 @@ class MediaSearchService {
                         allResults.push(item);
                     }
                 }
+                // Para busca mais eficiente: só para cedo se já tiver fontes suficientes do tipo preferido
                 const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders > 5);
-                if (dubladosComSeeds.length >= 3) break;
+                const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders > 5);
+                const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
+                if (targetCount >= 3) break;
             } catch (e) {}
         }
 
@@ -153,7 +156,20 @@ class MediaSearchService {
         const dublados = ptBrResults.filter(r => r.isDublado);
         const legendados = ptBrResults.filter(r => r.isLegendado);
         console.log(`✅ Encontradas ${ptBrResults.length} opções 1080p/720p em Português (${dublados.length} Dublado(s), ${legendados.length} Legendado(s))!`);
-        
+
+        // Se a preferência for explícita e tiver fontes suficientes do tipo preferido, prioriza só esse tipo
+        if (pref === 'legendado' && legendados.length > 0) {
+            // Usa só legendados quando há disponíveis, mas mantém dublados como fallback
+            const rankedLeg = this.rankResults(legendados, cleanQuery, options);
+            const rankedDub = this.rankResults(dublados, cleanQuery, options);
+            return [...rankedLeg, ...rankedDub];
+        }
+        if (pref === 'dublado' && dublados.length > 0) {
+            const rankedDub = this.rankResults(dublados, cleanQuery, options);
+            const rankedLeg = this.rankResults(legendados, cleanQuery, options);
+            return [...rankedDub, ...rankedLeg];
+        }
+
         return this.rankResults(ptBrResults, cleanQuery, options);
     }
 
