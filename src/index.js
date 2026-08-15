@@ -17,6 +17,7 @@ class BrasilFlixBot {
         this.pedidosManager = new PedidosManager();
         this.catalogoManager = new CatalogoManager();
         this.assinaturaManager = new AssinaturaManager();
+        this.favoritosManager = new FavoritosManager();
         this.queueManager = new QueueManager(this.bot, this.catalogoManager, this.pedidosManager, this.favoritosManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager, this.pedidosManager);
         this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager, this.queueManager);
