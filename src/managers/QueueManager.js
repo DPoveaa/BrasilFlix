@@ -141,6 +141,19 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        // Se for série e o episódio já existir no catálogo, ignora adição duplicada
+        if (type === 'serie') {
+            const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
+            if (serieExistente) {
+                const temporada = (serieExistente.temporadas || []).find(t => t.numero === job.season);
+                const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
+                if (epsCadastrados.includes(job.episode)) {
+                    console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} já está cadastrado no catálogo. Ignorando.`);
+                    return null;
+                }
+            }
+        }
+
         this.queue.push(job);
         this.sortQueue();
         this.saveQueue();
@@ -228,7 +241,7 @@ class QueueManager extends EventEmitter {
             this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade...`, { parse_mode: 'Markdown' }).catch(() => {});
         }
 
-        // Validação de Ordem Cronológica de Episódios para Séries/Doramas
+        // Validação de Ordem Cronológica e Verificação de Existência de Episódios para Séries/Doramas
         if (job.type === 'serie') {
             const seasonNum = job.season || 1;
             const requestedEp = job.episode || 1;
@@ -238,6 +251,11 @@ class QueueManager extends EventEmitter {
             if (serieExistente) {
                 const temporada = (serieExistente.temporadas || []).find(t => t.numero === seasonNum);
                 const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
+
+                if (epsCadastrados.includes(requestedEp)) {
+                    console.log(`✅ [SÉRIE] "${job.title}" T${seasonNum}E${requestedEp} já está no catálogo! Avançando.`);
+                    return;
+                }
 
                 for (let ep = 1; ep < requestedEp; ep++) {
                     if (!epsCadastrados.includes(ep)) {

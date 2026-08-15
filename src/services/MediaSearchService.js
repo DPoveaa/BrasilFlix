@@ -174,17 +174,17 @@ class MediaSearchService {
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
 
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer/i.test(title);
                 const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
-                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(title));
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle) || isBrazilianGroup);
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
-                const isDublado = isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle;
+                const isDublado = isExplicitPtDubInTitle || (isBrazilianGroup && (/\b(dual|dublado|dub)\b/i.test(title) || hasPtAudioFlag)) || hasPtAudioFlag || isDualPtInTitle;
 
                 const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt|subs?\.por|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
                 const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
 
-                const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag);
+                const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag || (isBrazilianGroup && /\b(leg|legendado)\b/i.test(title)));
 
                 // Se não tiver nem áudio dublado nem legenda em português comprovada, descarta imediatamente
                 if (!isDublado && !isLegendado) continue;

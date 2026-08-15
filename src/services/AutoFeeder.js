@@ -5,9 +5,10 @@ const MediaSearchService = require('./MediaSearchService');
 const { PRIORITIES } = require('../managers/QueueManager');
 
 class AutoFeeder {
-    constructor(queueManager, catalogoManager) {
+    constructor(queueManager, catalogoManager, pedidosManager = null) {
         this.queueManager = queueManager;
         this.catalogoManager = catalogoManager;
+        this.pedidosManager = pedidosManager;
         this.isEnabled = config.AUTO_FEEDER_ENABLED !== false;
         this.isRunningCheck = false;
     }
@@ -18,12 +19,12 @@ class AutoFeeder {
             return;
         }
 
-        console.log('🤖 AutoFeeder ativado! Monitorando filmes, séries e episódios semanais...');
+        console.log('🤖 AutoFeeder ativado! Monitorando pedidos de clientes, lançamentos e episódios semanais...');
 
-        // Executa uma verificação inicial após 10 segundos de inicialização
+        // Executa uma verificação inicial após 8 segundos de inicialização
         setTimeout(() => {
             this.runCheck();
-        }, 10000);
+        }, 8000);
 
         // Agendamento periódico: roda a cada 4 horas
         cron.schedule('0 */4 * * *', () => {
@@ -37,41 +38,101 @@ class AutoFeeder {
         this.isRunningCheck = true;
 
         try {
+            // 1. Reprocessar Pedidos Pendentes de Clientes (ex: The Rookie, pedidos que ainda não foram concluídos)
+            await this.checkPendingPedidos();
+
             console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB...');
 
-            // 1. Filmes em alta
+            // 2. Filmes em alta
             const trendingMovies = await TMDBService.getTrendingMovies('week');
             for (const movie of trendingMovies.slice(0, 15)) {
                 await this.considerItem(movie, 'filme');
             }
 
-            // 2. Séries em alta
+            // 3. Séries em alta
             const trendingTV = await TMDBService.getTrendingTV('week');
             for (const tv of trendingTV.slice(0, 10)) {
                 await this.considerItem(tv, 'serie');
             }
 
-            // 3. Doramas populares (K-Dramas)
+            // 4. Doramas populares (K-Dramas)
             const popularDoramas = await TMDBService.getPopularKDramas();
             for (const dorama of popularDoramas.slice(0, 10)) {
                 await this.considerItem(dorama, 'serie', true);
             }
 
-            // 4. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
+            // 5. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
             if (config.AUTO_UPGRADE_CAM) {
                 await this.checkCamUpgrades();
             }
 
-            // 5. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
+            // 6. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
             await this.checkLegendadoUpgrades();
 
-            // 6. Monitor de Lançamentos Semanais / Novas Temporadas de Séries do Catálogo
+            // 7. Monitor de Lançamentos Semanais / Novas Temporadas de Séries do Catálogo
             await this.checkSeriesUpdates();
 
         } catch (error) {
             console.error('❌ Erro no ciclo do AutoFeeder:', error.message);
         } finally {
             this.isRunningCheck = false;
+        }
+    }
+
+    async checkPendingPedidos() {
+        try {
+            if (!this.pedidosManager) return;
+            const pedidosPendentes = (this.pedidosManager.getPedidos() || []).filter(p => !p.processado);
+            if (pedidosPendentes.length === 0) return;
+
+            console.log(`📋 AutoFeeder: Verificando ${pedidosPendentes.length} pedido(s) pendente(s) de clientes...`);
+
+            for (const pedido of pedidosPendentes) {
+                const title = pedido.nome;
+                if (!title) continue;
+
+                // Verifica se já existe no catálogo
+                const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
+                const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
+
+                if (filmeExistente) {
+                    this.pedidosManager.marcarProcessado(pedido.id);
+                    continue;
+                }
+
+                // Detecta tipo no TMDB
+                let tipo = 'filme';
+                let tmdbId = null;
+                let originalName = '';
+                try {
+                    const searchResults = await TMDBService.searchMulti(title);
+                    if (searchResults && searchResults.length > 0) {
+                        tipo = searchResults[0].tipo === 'serie' ? 'serie' : 'filme';
+                        tmdbId = searchResults[0].tmdbId;
+                        originalName = searchResults[0].nomeOriginal || '';
+                    }
+                } catch (e) {}
+
+                const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
+
+                const inQueue = this.queueManager.queue.some(j => 
+                    j.title.toLowerCase() === title.toLowerCase() && j.status !== 'failed'
+                );
+
+                if (!inQueue) {
+                    console.log(`🚀 [PEDIDO PENDENTE] Enfileirando pedido prioritário de cliente: "${title}" (${tipo}) [Prioridade: ${priority}]`);
+                    this.queueManager.addJob(title, tipo, priority, {
+                        userId: pedido.userId,
+                        username: pedido.username,
+                        tmdbId,
+                        nomeOriginal: originalName,
+                        season: 1,
+                        episode: tipo === 'serie' ? 1 : null
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao reprocessar pedidos pendentes no AutoFeeder:', e.message);
         }
     }
 
