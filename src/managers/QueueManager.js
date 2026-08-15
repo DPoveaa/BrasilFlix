@@ -389,6 +389,10 @@ class QueueManager extends EventEmitter {
         job.progressDetails = 'Enviando para o Telegram...';
         this.saveQueue();
 
+        metadata.tipo = job.type;
+        metadata.season = job.season;
+        metadata.episode = job.episode;
+        metadata.episodioNome = job.type === 'serie' ? `Episódio ${job.episode || 1}` : '';
         metadata.qualidade = bestSource?.quality || '1080p';
         metadata.isCam = bestSource?.isCam || false;
         metadata.audio = langInfo.audioText || bestSource?.audio || 'Dublado (PT-BR)';
@@ -433,7 +437,7 @@ class QueueManager extends EventEmitter {
                 uploadResult.fileId,
                 {
                     ...metadata,
-                    episodioNome: `Episódio ${job.episode}`
+                    episodioNome: metadata.episodioNome
                 }
             );
         }
@@ -442,10 +446,12 @@ class QueueManager extends EventEmitter {
         try {
             if (this.bot && config.STORAGE_GROUP_ID) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
+                const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
                 const storageMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
                                    `${tipoTexto}\n` +
                                    `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
                                    `🔊 *Áudio:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n` +
+                                   `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
                                    `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
                                    `🍿 *Disponível imediatamente para todos os usuários!*`;
                 await this.bot.sendMessage(config.STORAGE_GROUP_ID, storageMsg, { parse_mode: 'Markdown' }).catch(() => {});
@@ -464,8 +470,10 @@ class QueueManager extends EventEmitter {
 
             // Notifica quem disparou o job diretamente
             if (job.userId && this.bot) {
+                const tipoIcon = job.type === 'serie' ? '📺' : '🎬';
+                const epLabel = job.type === 'serie' ? ` (T${job.season || 1}E${job.episode || 1})` : '';
                 const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
-                                `${job.type === 'filme' ? '🎬' : '📺'} *${metadata.nome}*\n` +
+                                `${tipoIcon} *${metadata.nome}*${epLabel}\n` +
                                 `✨ *Qualidade:* 1080p Full HD\n` +
                                 `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
                                 `Já está no catálogo e pronto para você assistir!`;

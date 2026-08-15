@@ -82,7 +82,17 @@ class TelegramUploader {
         const qualidadeBadge = isCam ? '📹 Versão Cinema (Provisória)' : (metadata.qualidade || '1080p Full HD');
         const audio = metadata.audio || 'Dublado';
 
-        let caption = `🎬 *${nome}*${ano}\n` +
+        let headerTitulo = '';
+        if (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode) {
+            const sNum = metadata.season || 1;
+            const eNum = metadata.episode || 1;
+            const epNome = metadata.episodioNome && !metadata.episodioNome.startsWith('Episódio') ? ` - ${metadata.episodioNome}` : '';
+            headerTitulo = `📺 *${nome}* (T${sNum}E${eNum})${epNome}${ano}`;
+        } else {
+            headerTitulo = `🎬 *${nome}*${ano}`;
+        }
+
+        let caption = `${headerTitulo}\n` +
                       `✨ *Qualidade:* ${qualidadeBadge} | 🔊 *Áudio:* ${audio}` +
                       `${nota}${genero}\n\n`;
 
