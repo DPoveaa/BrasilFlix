@@ -473,14 +473,27 @@ class CatalogoManager {
     }
 
     getItemPorId(id) {
+        if (!id) return null;
         const numId = Number(id);
-        const filme = this.catalogo.filmes.find(f => f.id === numId);
+        const filme = (this.catalogo.filmes || []).find(f => f.id === numId || String(f.id) === String(id));
         if (filme) return { ...filme, tipo: 'filme' };
 
-        const serie = this.catalogo.series.find(s => s.id === numId);
+        const serie = (this.catalogo.series || []).find(s => s.id === numId || String(s.id) === String(id));
         if (serie) return { ...serie, tipo: 'serie' };
 
         return null;
+    }
+
+    buscarSeriePorId(id) {
+        if (!id) return null;
+        const numId = Number(id);
+        return (this.catalogo.series || []).find(s => s.id === numId || String(s.id) === String(id)) || null;
+    }
+
+    buscarFilmePorId(id) {
+        if (!id) return null;
+        const numId = Number(id);
+        return (this.catalogo.filmes || []).find(f => f.id === numId || String(f.id) === String(id)) || null;
     }
 
     getItemPorMessageId(messageId) {
