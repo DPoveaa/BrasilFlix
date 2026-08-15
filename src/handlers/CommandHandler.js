@@ -354,89 +354,17 @@ class CommandHandler {
     async handlePedido(msg, match) {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        const username = msg.from.username || msg.from.first_name;
+        const username = msg.from.username || msg.from.first_name || 'Usuário';
         
-        if (!match || !match[1]) {
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* Use o formato /pedido <nome do filme/série>\n' +
-                'Exemplo: /pedido Vingadores Ultimato', 
-                { parse_mode: 'Markdown' }
-            );
+        if (!match || !match[1] || match[1].trim().length === 0) {
+            await this.handlePedidoButton(chatId, userId, null);
             return;
         }
 
         const nome = match[1].trim();
-        
-        if (nome.length < 3) {
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* O nome deve ter pelo menos 3 caracteres.', 
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-
-        // Verificar se já existe no catálogo
-        const existente = this.catalogoManager.buscarItem(nome);
-        if (existente.length > 0) {
-            let mensagem = `✅ *Já temos no catálogo!*\n\n`;
-            mensagem += this.catalogoManager.formatarResultadosBusca(existente);
-            await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
-            return;
-        }
-
-        // Verificar similaridade com itens existentes
-        const similares = this.buscarSimilares(nome);
-        
-        if (similares.length > 0) {
-            await this.mostrarVerificacaoSimilaridade(chatId, userId, nome, similares);
-            return;
-        }
-
-        // Verificar se é assinante
-        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
-
-        // Adicionar pedido
-        const pedido = this.pedidosManager.adicionarPedido(userId, username, nome, '', isAssinante);
-        
-        // Detecção automática de Filme vs Série no TMDB
-        let detectedType = 'filme';
-        let tmdbId = null;
-        let originalName = '';
-        try {
-            const TMDBService = require('../services/TMDBService');
-            const searchResults = await TMDBService.searchMulti(nome);
-            if (searchResults && searchResults.length > 0) {
-                const top = searchResults[0];
-                detectedType = top.tipo === 'serie' ? 'serie' : 'filme';
-                tmdbId = top.tmdbId;
-                originalName = top.nomeOriginal || '';
-            }
-        } catch (e) {}
-
-        // Se temos QueueManager, enfileira o download inteligente com prioridade alta para assinantes
-        if (this.queueManager) {
-            const { PRIORITIES } = require('../managers/QueueManager');
-            this.queueManager.addJob(nome, detectedType, isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
-                userId,
-                username,
-                tmdbId,
-                nomeOriginal: originalName,
-                season: 1,
-                episode: detectedType === 'serie' ? 1 : null
-            });
-        }
-        
-        const tipoStr = detectedType === 'serie' ? '📺 Série/Dorama' : '🎬 Filme';
-        const mensagemConfirmacao = `🍿 *Pedido registrado com sucesso!*\n\n` +
-                                   `${tipoStr}: *${pedido.nome}*\n` +
-                                   `⭐ Prioridade: ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
-                                   `🚀 Iniciamos a busca e o processamento em alta qualidade. Você receberá uma notificação assim que estiver pronto para assistir!`;
-
-        await this.bot.sendMessage(chatId, mensagemConfirmacao, { parse_mode: 'Markdown' });
-
-        // Notificar administradores
-        console.log(`📝 Novo pedido: ${nome} por ${username} ${isAssinante ? '(Assinante)' : ''} (ID: ${pedido.id})`);
+        await this.processarPedidoCompleto(chatId, userId, username, nome, null);
     }
+
 
     async handleFila(msg) {
         const chatId = msg.chat.id;
@@ -1538,6 +1466,12 @@ class CommandHandler {
                 case 'pedido':
                     await this.handlePedidoButton(chatId, userId, callbackQuery);
                     break;
+                case 'pedir_tipo_filme':
+                    await this.handlePedirTipoFilme(chatId, userId, callbackQuery);
+                    break;
+                case 'pedir_tipo_serie':
+                    await this.handlePedirTipoSerie(chatId, userId, callbackQuery);
+                    break;
                 case 'buscar':
                     await this.handleBuscarButton(chatId, userId, callbackQuery);
                     break;
@@ -1939,24 +1873,18 @@ class CommandHandler {
     }
 
     async handlePedidoButton(chatId, userId, callbackQuery) {
-        this.estadosTemporarios[userId] = {
-            tipo: 'pedido',
-            ativo: true,
-            timestamp: Date.now()
-        };
-
-        const mensagem = `🎬 *Fazer Pedido de Filme ou Série*\n\n` +
-                        `Não encontrou o que queria no catálogo? Envie o nome do título para o robô localizar e baixar em 1080p Full HD!\n\n` +
-                        `💡 *Exemplos:*\n` +
-                        `• \`Avatar: Fogo e Cinzas (2025)\`\n` +
-                        `• \`Round 6 - Temporada 2\`\n` +
-                        `• \`Divertida Mente 2\`\n\n` +
-                        `✨ _Assinantes VIP têm prioridade máxima na fila de download!_`;
+        const mensagem = `🎬 *Fazer Pedido no BrasilFlix*\n\n` +
+                        `O que você deseja solicitar para o robô baixar em 1080p Full HD?\n\n` +
+                        `Escolha uma das categorias abaixo:`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '❌ Cancelar', callback_data: 'cancelar_operacao' }
+                    { text: '🎬 Pedir um Filme', callback_data: 'pedir_tipo_filme' },
+                    { text: '📺 Pedir Série / Dorama', callback_data: 'pedir_tipo_serie' }
+                ],
+                [
+                    { text: '🔙 Voltar ao Menu', callback_data: 'voltar_menu' }
                 ]
             ]
         };
@@ -1966,6 +1894,62 @@ class CommandHandler {
             reply_markup: keyboard
         }, callbackQuery);
     }
+
+    async handlePedirTipoFilme(chatId, userId, callbackQuery) {
+        this.estadosTemporarios[userId] = {
+            tipo: 'pedido',
+            subTipo: 'filme',
+            ativo: true,
+            timestamp: Date.now()
+        };
+
+        const mensagem = `🎬 *Pedido de Filme*\n\n` +
+                        `Digite o nome do filme que você deseja solicitar:\n\n` +
+                        `💡 *Exemplos:*\n` +
+                        `• \`Avatar: Fogo e Cinzas\`\n` +
+                        `• \`Divertida Mente 2\`\n` +
+                        `• \`Deadpool 3\``;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '❌ Cancelar', callback_data: 'cancelar_operacao' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handlePedirTipoSerie(chatId, userId, callbackQuery) {
+        this.estadosTemporarios[userId] = {
+            tipo: 'pedido',
+            subTipo: 'serie',
+            ativo: true,
+            timestamp: Date.now()
+        };
+
+        const mensagem = `📺 *Pedido de Série ou Dorama*\n\n` +
+                        `Digite o nome da série/dorama que você deseja solicitar:\n\n` +
+                        `💡 *Exemplos:*\n` +
+                        `• \`Reacher\`\n` +
+                        `• \`The Rookie\`\n` +
+                        `• \`Round 6 - Temporada 2\`\n\n` +
+                        `_Se você pedir uma série que já temos no catálogo, o robô verificará automaticamente se há episódios ou temporadas novas para baixar!_`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '❌ Cancelar', callback_data: 'cancelar_operacao' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
 
     async handleBuscarButton(chatId, userId, callbackQuery) {
         this.estadosTemporarios[userId] = {
@@ -4153,7 +4137,7 @@ class CommandHandler {
 
         // Processar baseado no tipo de estado
         if (estado.tipo === 'pedido') {
-            await this.processarPedidoCapturado(msg, texto);
+            await this.processarPedidoCapturado(msg, texto, estado.subTipo);
         } else if (estado.tipo === 'busca') {
             await this.processarBuscaCapturada(msg, texto);
         } else if (estado.tipo === 'suporte') {
@@ -4209,88 +4193,195 @@ class CommandHandler {
         await this.bot.sendMessage(chatId, respostaUser, { parse_mode: 'Markdown', reply_markup: keyboard });
     }
 
-    async processarPedidoCapturado(msg, nome) {
+    async processarPedidoCapturado(msg, nome, tipoForcado = null) {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        
-        // Obter username da mensagem
         const username = msg.from.username || msg.from.first_name || 'Usuário';
-        
-        if (nome.length < 3) {
-            await this.bot.sendMessage(chatId, 
-                '❌ *Erro:* O nome deve ter pelo menos 3 caracteres.', 
-                { parse_mode: 'Markdown' }
-            );
+        await this.processarPedidoCompleto(chatId, userId, username, nome, tipoForcado);
+    }
+
+    async processarPedidoCompleto(chatId, userId, username, nomeInput, tipoForcado = null) {
+        if (!nomeInput || nomeInput.trim().length < 2) {
+            await this.bot.sendMessage(chatId, '❌ *Erro:* O nome deve ter pelo menos 2 caracteres.', { parse_mode: 'Markdown' });
             return;
         }
 
-        // Verificar se já existe no catálogo
-        try {
-            const existente = this.catalogoManager.buscarItem(nome);
-            if (existente && existente.length > 0) {
-                let mensagem = `✅ *Já temos no catálogo!*\n\n`;
-                mensagem += this.catalogoManager.formatarResultadosBusca(existente);
-                await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
-                return;
-            }
-        } catch (error) {
-            console.error('❌ Erro ao verificar catálogo:', error);
-            // Continuar com o pedido mesmo se houver erro na verificação
+        const nomeOriginalInput = nomeInput.trim();
+        let nomeLimpo = nomeOriginalInput;
+
+        // Detectar temporada se mencionada no texto (ex: Reacher Temporada 2, T2, Season 3)
+        let requestedSeason = 1;
+        const seasonMatch = nomeLimpo.match(/\b(?:s|t|season|temporada)\s*(\d{1,2})\b/i);
+        if (seasonMatch) {
+            requestedSeason = parseInt(seasonMatch[1], 10);
+            nomeLimpo = nomeLimpo.replace(/\b(?:s|t|season|temporada)\s*\d{1,2}\b/ig, '').trim();
         }
 
-        // Verificar similaridade com itens existentes
-        const similares = this.buscarSimilares(nome);
-        
-        if (similares.length > 0) {
-            await this.mostrarVerificacaoSimilaridade(chatId, userId, nome, similares);
-            return;
-        }
+        let finalType = tipoForcado;
+        let tmdbData = null;
 
-        // Verificar se é assinante
-        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
-
-        // Adicionar pedido
-        const pedido = this.pedidosManager.adicionarPedido(userId, username, nome, '', isAssinante);
-        
-        // Detecção automática de Filme vs Série no TMDB
-        let detectedType = 'filme';
-        let tmdbId = null;
-        let originalName = '';
         try {
             const TMDBService = require('../services/TMDBService');
-            const searchResults = await TMDBService.searchMulti(nome);
-            if (searchResults && searchResults.length > 0) {
-                const top = searchResults[0];
-                detectedType = top.tipo === 'serie' ? 'serie' : 'filme';
-                tmdbId = top.tmdbId;
-                originalName = top.nomeOriginal || '';
+            if (finalType === 'filme') {
+                const res = await TMDBService.searchMovie(nomeLimpo);
+                if (res && res.length > 0) tmdbData = res[0];
+            } else if (finalType === 'serie') {
+                const res = await TMDBService.searchTV(nomeLimpo);
+                if (res && res.length > 0) tmdbData = res[0];
+            } else {
+                const res = await TMDBService.searchMulti(nomeLimpo);
+                if (res && res.length > 0) {
+                    tmdbData = res[0];
+                    finalType = tmdbData.tipo === 'serie' ? 'serie' : 'filme';
+                } else {
+                    finalType = seasonMatch ? 'serie' : 'filme';
+                }
             }
-        } catch (e) {}
-
-        // Se temos QueueManager, enfileira o download com a prioridade adequada
-        if (this.queueManager) {
-            const { PRIORITIES } = require('../managers/QueueManager');
-            this.queueManager.addJob(nome, detectedType, isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
-                userId,
-                username,
-                tmdbId,
-                nomeOriginal: originalName,
-                season: 1,
-                episode: detectedType === 'serie' ? 1 : null
-            });
+        } catch (e) {
+            if (!finalType) finalType = seasonMatch ? 'serie' : 'filme';
         }
-        
-        const tipoStr = detectedType === 'serie' ? '📺 Série/Dorama' : '🎬 Filme';
-        const mensagemConfirmacao = `🍿 *Pedido registrado com sucesso!*\n\n` +
-                                   `${tipoStr}: *${pedido.nome}*\n` +
-                                   `⭐ Prioridade: ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
-                                   `🚀 Iniciamos a busca e o processamento em alta qualidade. Você receberá uma notificação assim que estiver pronto para assistir!`;
 
-        await this.bot.sendMessage(chatId, mensagemConfirmacao, { parse_mode: 'Markdown' });
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+        const targetTitle = tmdbData?.nome || nomeLimpo;
 
-        // Notificar administradores
-        console.log(`📝 Novo pedido: ${nome} por ${username} ${isAssinante ? '(VIP)' : '(Gratuito)'} (ID: ${pedido.id})`);
+        // 1. Tratamento para FILMES
+        if (finalType === 'filme') {
+            const existingMovie = this.catalogoManager.buscarItemExato(targetTitle, 'filme') || 
+                                  this.catalogoManager.buscarItemExato(nomeLimpo, 'filme');
+
+            if (existingMovie) {
+                if (existingMovie.isCam) {
+                    const msg = `🍿 *Filme já disponível em versão Cinema (CAM)!*\n\n` +
+                                `🎬 *${existingMovie.nome}* (${existingMovie.ano})\n\n` +
+                                `✅ Este filme já está acessível no catálogo provisoriamente em qualidade de cinema.\n` +
+                                `🔔 *Monitoramento Ativo:* Assim que a versão oficial 1080p WEB-DL sair com dublagem, o robô atualizará o arquivo automaticamente!`;
+                    await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+                    return;
+                } else {
+                    const msg = `✅ *Esse filme já está disponível no catálogo!*\n\n` +
+                                `🎬 *${existingMovie.nome}* (${existingMovie.ano})\n` +
+                                `✨ *Qualidade:* 1080p Full HD | 🔊 *Áudio:* ${existingMovie.audio || 'Dublado (PT-BR)'}\n\n` +
+                                `🍿 Você já pode assistir pelo bot ou pelo Stremio!`;
+                    await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+                    return;
+                }
+            }
+
+            // Registrar novo pedido de filme
+            const pedido = this.pedidosManager.adicionarPedido(userId, username, targetTitle, '', isAssinante);
+
+            if (this.queueManager) {
+                const { PRIORITIES } = require('../managers/QueueManager');
+                this.queueManager.addJob(targetTitle, 'filme', isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
+                    userId,
+                    username,
+                    tmdbId: tmdbData?.tmdbId || null,
+                    nomeOriginal: tmdbData?.nomeOriginal || ''
+                });
+            }
+
+            const msgConfirm = `🍿 *Pedido de Filme registrado com sucesso!*\n\n` +
+                              `🎬 *${targetTitle}*${tmdbData?.ano ? ` (${tmdbData.ano})` : ''}\n` +
+                              `⭐ *Prioridade:* ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
+                              `🚀 Iniciamos a busca e o download em 1080p Full HD com áudio em português. Você será notificado assim que o filme estiver pronto!`;
+
+            await this.bot.sendMessage(chatId, msgConfirm, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        // 2. Tratamento para SÉRIES / DORAMAS
+        if (finalType === 'serie') {
+            const existingSerie = this.catalogoManager.buscarItemExato(targetTitle, 'serie') || 
+                                  this.catalogoManager.buscarItemExato(nomeLimpo, 'serie');
+
+            if (existingSerie) {
+                let missingSeason = null;
+                let missingEp = null;
+
+                try {
+                    const TMDBService = require('../services/TMDBService');
+                    const tvDetails = await TMDBService.getTVDetails(existingSerie.tmdbId || tmdbData?.tmdbId);
+                    if (tvDetails && tvDetails.temporadas) {
+                        const hoje = new Date().toISOString().split('T')[0];
+
+                        for (const t of tvDetails.temporadas) {
+                            const sNum = t.numero;
+                            if (sNum <= 0) continue;
+
+                            const sDetail = await TMDBService.getSeasonDetails(tvDetails.tmdbId, sNum);
+                            if (!sDetail || !sDetail.episodios) continue;
+
+                            const epsLancados = sDetail.episodios.filter(ep => ep.dataLancamento && ep.dataLancamento <= hoje);
+                            const tempCatalogo = (existingSerie.temporadas || []).find(temp => temp.numero === sNum);
+                            const epsNoCatalogo = new Set((tempCatalogo?.episodios || []).map(e => e.numero));
+
+                            const proxFaltante = epsLancados.find(ep => !epsNoCatalogo.has(ep.numero));
+                            if (proxFaltante) {
+                                missingSeason = sNum;
+                                missingEp = proxFaltante.numero;
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Aviso ao consultar episódios no TMDB:', e.message);
+                }
+
+                if (missingSeason && missingEp) {
+                    if (this.queueManager) {
+                        const { PRIORITIES } = require('../managers/QueueManager');
+                        this.queueManager.addJob(existingSerie.nome, 'serie', isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
+                            userId,
+                            username,
+                            tmdbId: existingSerie.tmdbId,
+                            season: missingSeason,
+                            episode: missingEp,
+                            nomeOriginal: existingSerie.nomeOriginal,
+                            isDorama: existingSerie.isDorama
+                        });
+                    }
+
+                    const msgAtualizacao = `✨ *Atualização de Série Encontrada!*\n\n` +
+                                           `📺 *${existingSerie.nome}* já está no catálogo!\n` +
+                                           `Identificamos novos episódios disponíveis para baixar.\n\n` +
+                                           `🚀 *Iniciando download a partir da Temporada ${missingSeason}, Episódio ${missingEp}!*`;
+                    await this.bot.sendMessage(chatId, msgAtualizacao, { parse_mode: 'Markdown' });
+                    return;
+                } else {
+                    const msgEmDia = `✅ *Esta série já está 100% em dia no catálogo!*\n\n` +
+                                     `📺 *${existingSerie.nome}* já possui todos os episódios lançados até o momento disponíveis.\n\n` +
+                                     `🔔 Nosso monitor automático continuará acompanhando e baixará os próximos episódios assim que forem ao ar!`;
+                    await this.bot.sendMessage(chatId, msgEmDia, { parse_mode: 'Markdown' });
+                    return;
+                }
+            }
+
+            // Nova série que não temos no catálogo
+            const pedido = this.pedidosManager.adicionarPedido(userId, username, targetTitle, '', isAssinante);
+
+            if (this.queueManager) {
+                const { PRIORITIES } = require('../managers/QueueManager');
+                this.queueManager.addJob(targetTitle, 'serie', isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
+                    userId,
+                    username,
+                    tmdbId: tmdbData?.tmdbId || null,
+                    nomeOriginal: tmdbData?.nomeOriginal || '',
+                    season: requestedSeason || 1,
+                    episode: 1,
+                    isDorama: tmdbData?.isDorama || false
+                });
+            }
+
+            const msgConfirm = `🍿 *Pedido de Série registrado com sucesso!*\n\n` +
+                              `📺 *${targetTitle}*${requestedSeason > 1 ? ` (Temporada ${requestedSeason})` : ''}\n` +
+                              `⭐ *Prioridade:* ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
+                              `🚀 Iniciamos o download em alta qualidade (1080p). Você será notificado assim que a temporada inteira for concluída!`;
+
+            await this.bot.sendMessage(chatId, msgConfirm, { parse_mode: 'Markdown' });
+            return;
+        }
     }
+
 
     async processarBuscaCapturada(msg, termo) {
         const chatId = msg.chat.id;

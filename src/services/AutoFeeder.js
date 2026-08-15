@@ -18,7 +18,7 @@ class AutoFeeder {
             return;
         }
 
-        console.log('🤖 AutoFeeder ativado! Monitorando filmes e doramas populares...');
+        console.log('🤖 AutoFeeder ativado! Monitorando filmes, séries e episódios semanais...');
 
         // Executa uma verificação inicial após 10 segundos de inicialização
         setTimeout(() => {
@@ -53,6 +53,9 @@ class AutoFeeder {
 
             // 3. Doramas populares (K-Dramas)
             const popularDoramas = await TMDBService.getPopularKDramas();
+            for (const dorama of popularDoramas.slice(0, 10)) {
+                await this.considerItem(dorama, 'serie', true);
+            }
 
             // 4. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
             if (config.AUTO_UPGRADE_CAM) {
@@ -62,10 +65,76 @@ class AutoFeeder {
             // 5. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
             await this.checkLegendadoUpgrades();
 
+            // 6. Monitor de Lançamentos Semanais / Novas Temporadas de Séries do Catálogo
+            await this.checkSeriesUpdates();
+
         } catch (error) {
             console.error('❌ Erro no ciclo do AutoFeeder:', error.message);
         } finally {
             this.isRunningCheck = false;
+        }
+    }
+
+    async checkSeriesUpdates() {
+        try {
+            const seriesList = this.catalogoManager.catalogo.series || [];
+            if (seriesList.length === 0) return;
+
+            console.log(`📺 AutoFeeder: Verificando lançamentos e episódios semanais para ${seriesList.length} série(s) do catálogo...`);
+
+            for (const serie of seriesList) {
+                let tmdbData = null;
+                if (serie.tmdbId) {
+                    tmdbData = await TMDBService.getTVDetails(serie.tmdbId);
+                } else {
+                    const search = await TMDBService.searchTV(serie.nome, serie.ano);
+                    if (search && search.length > 0) {
+                        tmdbData = await TMDBService.getTVDetails(search[0].tmdbId);
+                    }
+                }
+
+                if (!tmdbData || !tmdbData.temporadas) continue;
+
+                const hoje = new Date().toISOString().split('T')[0];
+
+                for (const t of tmdbData.temporadas) {
+                    const sNum = t.numero;
+                    if (sNum <= 0) continue;
+
+                    const seasonDetail = await TMDBService.getSeasonDetails(tmdbData.tmdbId, sNum);
+                    if (!seasonDetail || !seasonDetail.episodios) continue;
+
+                    const epsLancados = seasonDetail.episodios.filter(ep => ep.dataLancamento && ep.dataLancamento <= hoje);
+                    const tempNoCatalogo = (serie.temporadas || []).find(temp => temp.numero === sNum);
+                    const epsNoCatalogo = new Set((tempNoCatalogo?.episodios || []).map(e => e.numero));
+
+                    const proximoEpFaltante = epsLancados.find(ep => !epsNoCatalogo.has(ep.numero));
+
+                    if (proximoEpFaltante) {
+                        const jaNaFila = this.queueManager.queue.some(j => 
+                            j.type === 'serie' && 
+                            j.title.toLowerCase() === serie.nome.toLowerCase() && 
+                            j.season === sNum && 
+                            j.episode === proximoEpFaltante.numero &&
+                            j.status !== 'failed'
+                        );
+
+                        if (!jaNaFila) {
+                            console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${sNum}E${proximoEpFaltante.numero} ("${proximoEpFaltante.nome}")! Enfileirando download...`);
+                            this.queueManager.addJob(serie.nome, 'serie', PRIORITIES.FEEDER, {
+                                tmdbId: tmdbData.tmdbId,
+                                season: sNum,
+                                episode: proximoEpFaltante.numero,
+                                nomeOriginal: serie.nomeOriginal,
+                                isDorama: serie.isDorama
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao verificar episódios de séries no AutoFeeder:', e.message);
         }
     }
 
@@ -77,7 +146,6 @@ class AutoFeeder {
             console.log(`🔄 AutoFeeder: Verificando possíveis upgrades para ${camMovies.length} filme(s) em qualidade de Cinema...`);
 
             for (const filme of camMovies) {
-                // Pesquisa apenas por versões não-CAM (WEB-DL / BluRay)
                 const sources = await MediaSearchService.search(filme.nome, 'filme', {
                     nomeOriginal: filme.nomeOriginal,
                     ano: filme.ano,
@@ -87,7 +155,6 @@ class AutoFeeder {
                 const officialSource = sources.find(s => s.isWebDl && s.seeders > 0);
                 if (officialSource) {
                     console.log(`🌟 UPGRADE ENCONTRADO para "${filme.nome}"! Fonte Oficial: ${officialSource.title}`);
-                    // Enfileira com prioridade alta para upgrade
                     this.queueManager.addJob(filme.nome, 'filme', 2, {
                         tmdbId: filme.tmdbId,
                         isUpgrade: true,
@@ -102,7 +169,6 @@ class AutoFeeder {
 
     async checkLegendadoUpgrades() {
         try {
-            // Verifica apenas filmes que TEM Legendado mas NÃO TEM Dublado ainda
             const apenasLegendados = this.catalogoManager.buscarFilmesApenasLegendados();
             if (apenasLegendados.length === 0) return;
 
@@ -134,19 +200,17 @@ class AutoFeeder {
         const title = item.nome;
         if (!title) return;
 
-        // 1. Verifica se já existe no catálogo
         const existing = this.catalogoManager.buscarItemExato(title, tipo);
         if (existing) {
-            return; // Já temos no catálogo
+            return;
         }
 
-        // 2. Verifica se já está na fila
         const inQueue = this.queueManager.queue.some(j => 
             j.title.toLowerCase() === title.toLowerCase() && j.status !== 'failed'
         );
 
         if (inQueue) {
-            return; // Já está na fila
+            return;
         }
 
         console.log(`✨ AutoFeeder adicionando à fila de background: "${title}" (${tipo}${isDorama ? ' - Dorama' : ''})`);
