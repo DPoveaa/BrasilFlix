@@ -110,6 +110,37 @@ class CatalogoManager {
         return (this.catalogo.filmes || []).filter(f => f.isLegendado === true || (f.audio && f.audio.toLowerCase().includes('legendado')));
     }
 
+    getGenerosDisponiveis() {
+        const generoCounts = {};
+        const todosItens = [...(this.catalogo.filmes || []), ...(this.catalogo.series || [])];
+
+        todosItens.forEach(item => {
+            if (item.generos && Array.isArray(item.generos)) {
+                item.generos.forEach(g => {
+                    const gFormatado = g.trim();
+                    if (gFormatado && gFormatado.toLowerCase() !== 'geral') {
+                        generoCounts[gFormatado] = (generoCounts[gFormatado] || 0) + 1;
+                    }
+                });
+            }
+        });
+
+        return Object.entries(generoCounts)
+            .map(([nome, count]) => ({ nome, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    getItemsPorGenero(generoNome) {
+        const gBusca = generoNome.toLowerCase().trim();
+        const filmes = (this.catalogo.filmes || []).filter(f => 
+            (f.generos || []).some(g => g.toLowerCase().trim() === gBusca)
+        );
+        const series = (this.catalogo.series || []).filter(s => 
+            (s.generos || []).some(g => g.toLowerCase().trim() === gBusca)
+        );
+        return [...filmes, ...series];
+    }
+
     atualizarMidiaFilme(idOuNome, novaMidia = {}) {
         const filme = (this.catalogo.filmes || []).find(f => 
             f.id === idOuNome || 

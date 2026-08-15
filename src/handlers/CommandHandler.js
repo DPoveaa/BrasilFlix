@@ -602,7 +602,7 @@ class CommandHandler {
         await this.mostrarMenuCatalogo(chatId, userId, null);
     }
 
-    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'dublado', pagina = 0) {
         let filmes = this.catalogoManager.catalogo.filmes;
         let tituloCategoria = '🎬 *Filmes Disponíveis*';
 
@@ -633,7 +633,7 @@ class CommandHandler {
 
         const filmesPorPagina = 8;
         const paginas = Math.ceil(filmes.length / filmesPorPagina);
-        const paginaAtual = 0;
+        const paginaAtual = Math.max(0, Math.min(pagina, paginas - 1));
         
         const inicio = paginaAtual * filmesPorPagina;
         const fim = Math.min(inicio + filmesPorPagina, filmes.length);
@@ -660,10 +660,10 @@ class CommandHandler {
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
-                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `filmes_pagina_${paginaAtual - 1}` });
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `filmes_${audioFiltro}_pagina_${paginaAtual - 1}` });
             }
             if (paginaAtual < paginas - 1) {
-                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `filmes_pagina_${paginaAtual + 1}` });
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `filmes_${audioFiltro}_pagina_${paginaAtual + 1}` });
             }
         }
         
@@ -673,7 +673,7 @@ class CommandHandler {
 
         keyboard.inline_keyboard.push([
             { text: '🔍 Buscar Filme', callback_data: 'buscar' },
-            { text: '🔙 Voltar', callback_data: 'catalogo' }
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
         ]);
 
         await this.sendOrEdit(chatId, mensagem, { 
@@ -682,7 +682,7 @@ class CommandHandler {
         }, callbackQuery);
     }
 
-    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'dublado') {
+    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'dublado', pagina = 0) {
         let series = this.catalogoManager.catalogo.series;
         let tituloCategoria = '📺 *Séries Disponíveis*';
 
@@ -713,7 +713,7 @@ class CommandHandler {
 
         const seriesPorPagina = 8;
         const paginas = Math.ceil(series.length / seriesPorPagina);
-        const paginaAtual = 0;
+        const paginaAtual = Math.max(0, Math.min(pagina, paginas - 1));
         
         const inicio = paginaAtual * seriesPorPagina;
         const fim = Math.min(inicio + seriesPorPagina, series.length);
@@ -740,10 +740,10 @@ class CommandHandler {
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
-                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `series_pagina_${paginaAtual - 1}` });
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `series_${audioFiltro}_pagina_${paginaAtual - 1}` });
             }
             if (paginaAtual < paginas - 1) {
-                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `series_pagina_${paginaAtual + 1}` });
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `series_${audioFiltro}_pagina_${paginaAtual + 1}` });
             }
         }
         
@@ -753,7 +753,7 @@ class CommandHandler {
 
         keyboard.inline_keyboard.push([
             { text: '🔍 Buscar Série', callback_data: 'buscar' },
-            { text: '🔙 Voltar', callback_data: 'catalogo' }
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
         ]);
 
         await this.sendOrEdit(chatId, mensagem, { 
@@ -782,6 +782,7 @@ class CommandHandler {
                         `✨ *Qualidade:* ${qualidade} | 🔊 *Áudio:* ${audio}\n\n` +
                         `📝 *Sinopse:*\n_${sinopse}_`;
 
+        const voltarDestino = filme.isLegendado ? 'catalogo_filmes_legendados' : 'catalogo_filmes_dublados';
         const keyboard = {
             inline_keyboard: [
                 [
@@ -789,7 +790,7 @@ class CommandHandler {
                 ],
                 [
                     { text: '🔍 Fazer Busca', callback_data: 'buscar' },
-                    { text: '🔙 Voltar', callback_data: 'catalogo' }
+                    { text: '🔙 Voltar à Lista', callback_data: voltarDestino }
                 ]
             ]
         };
@@ -829,12 +830,50 @@ class CommandHandler {
         });
         if (row.length > 0) keyboard.inline_keyboard.push(row);
 
+        const voltarDestino = serie.isLegendado ? 'catalogo_series_legendadas' : 'catalogo_series_dubladas';
         keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
-            { text: '🔙 Voltar', callback_data: 'catalogo' }
+            { text: '🔙 Voltar à Lista', callback_data: voltarDestino }
         ]);
 
         await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+    }
+
+    async entregarVideoAoUsuario(chatId, messageId, fileId, caption = '') {
+        // 1. Tenta copyMessage (entrega direta limpa)
+        if (messageId && config.STORAGE_GROUP_ID) {
+            try {
+                await this.bot.copyMessage(chatId, config.STORAGE_GROUP_ID, messageId);
+                return true;
+            } catch (err1) {
+                console.warn(`⚠️ copyMessage falhou (MessageId ${messageId}): ${err1.message}. Tentando fallback...`);
+            }
+
+            // 2. Tenta forwardMessage
+            try {
+                await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
+                return true;
+            } catch (err2) {
+                console.warn(`⚠️ forwardMessage falhou: ${err2.message}. Tentando por file_id...`);
+            }
+        }
+
+        // 3. Fallback com file_id direto
+        if (fileId) {
+            try {
+                await this.bot.sendVideo(chatId, fileId, { caption, parse_mode: 'Markdown' });
+                return true;
+            } catch (err3) {
+                try {
+                    await this.bot.sendDocument(chatId, fileId, { caption, parse_mode: 'Markdown' });
+                    return true;
+                } catch (err4) {
+                    console.error(`❌ Falha na entrega por file_id:`, err4.message);
+                }
+            }
+        }
+
+        return false;
     }
 
     async handleAssistirFilme(chatId, userId, filmeId, callbackQuery) {
@@ -848,13 +887,18 @@ class CommandHandler {
         }
 
         const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
-        if (!filme || !filme.messageId) {
+        if (!filme || (!filme.messageId && !filme.fileId)) {
             await this.bot.sendMessage(chatId, '❌ Arquivo de vídeo indisponível no momento.');
             return;
         }
 
         try {
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, filme.messageId);
+            const entregue = await this.entregarVideoAoUsuario(chatId, filme.messageId, filme.fileId, `🎬 *${filme.nome}* 🍿 BrasilFlix`);
+
+            if (!entregue) {
+                await this.bot.sendMessage(chatId, '❌ Não foi possível entregar o vídeo neste momento. O suporte já foi notificado.');
+                return;
+            }
 
             if (!isAssinante) {
                 this.consumirCotaGratis(userId, username, 'filme');
@@ -1337,6 +1381,36 @@ class CommandHandler {
                 case 'catalogo_series_legendadas':
                     await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'legendado');
                     break;
+                case 'catalogo_categorias':
+                    await this.handleCatalogoCategorias(chatId, userId, callbackQuery);
+                    break;
+                case data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/)?.input: {
+                    const match = data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/);
+                    if (match) {
+                        const audio = match[1];
+                        const pag = parseInt(match[2], 10) || 0;
+                        await this.handleCatalogoFilmes(chatId, userId, callbackQuery, audio, pag);
+                    }
+                    break;
+                }
+                case data.match(/^series_(dublado|legendado)_pagina_(\d+)$/)?.input: {
+                    const match = data.match(/^series_(dublado|legendado)_pagina_(\d+)$/);
+                    if (match) {
+                        const audio = match[1];
+                        const pag = parseInt(match[2], 10) || 0;
+                        await this.handleCatalogoSeries(chatId, userId, callbackQuery, audio, pag);
+                    }
+                    break;
+                }
+                case data.match(/^genero_(.+)_(\d+)$/)?.input: {
+                    const match = data.match(/^genero_(.+)_(\d+)$/);
+                    if (match) {
+                        const genero = match[1];
+                        const pag = parseInt(match[2], 10) || 0;
+                        await this.handleCategoriaFiltrada(chatId, userId, genero, pag, callbackQuery);
+                    }
+                    break;
+                }
                 case 'voltar_menu':
                     await this.handleVoltarMenu(chatId, userId, callbackQuery);
                     break;
@@ -1659,12 +1733,144 @@ class CommandHandler {
                     { text: '🔍 Buscar no Catálogo', callback_data: 'buscar' }
                 ],
                 [
+                    { text: '🎭 Explorar por Categorias', callback_data: 'catalogo_categorias' }
+                ],
+                [
                     { text: '🔙 Voltar ao Menu', callback_data: 'voltar_menu' }
                 ]
             ]
         };
 
         await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleCatalogoCategorias(chatId, userId, callbackQuery) {
+        const generos = this.catalogoManager.getGenerosDisponiveis();
+
+        if (!generos || generos.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhuma categoria encontrada no catálogo no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const iconesGeneros = {
+            'ação': '💥', 'aventura': '🏹', 'animação': '🎨', 'comédia': '😂',
+            'crime': '🕵️', 'documentário': '📽️', 'drama': '🎭', 'família': '👨‍👩‍👧',
+            'fantasia': '🧙', 'ficção científica': '🚀', 'guerra': '⚔️', 'história': '📜',
+            'mistério': '🔍', 'música': '🎵', 'romance': '💖', 'suspense': '😱',
+            'terror': '👻', 'faroeste': '🤠'
+        };
+
+        const keyboard = { inline_keyboard: [] };
+        let row = [];
+
+        generos.forEach(g => {
+            const icone = iconesGeneros[g.nome.toLowerCase()] || '🎬';
+            row.push({
+                text: `${icone} ${g.nome} (${g.count})`,
+                callback_data: `genero_${encodeURIComponent(g.nome)}_0`
+            });
+            if (row.length === 2) {
+                keyboard.inline_keyboard.push(row);
+                row = [];
+            }
+        });
+        if (row.length > 0) keyboard.inline_keyboard.push(row);
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Fazer Busca', callback_data: 'buscar' },
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        const mensagem = `🎭 *Categorias & Gêneros BrasilFlix*\n\n` +
+                        `Escolha um gênero para ver todos os filmes e séries disponíveis:`;
+
+        await this.sendOrEdit(chatId, mensagem, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleCategoriaFiltrada(chatId, userId, generoNome, pagina = 0, callbackQuery = null) {
+        const generoDecodificado = decodeURIComponent(generoNome);
+        const itens = this.catalogoManager.getItemsPorGenero(generoDecodificado);
+
+        if (!itens || itens.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum título encontrado na categoria *${generoDecodificado}*.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🎭 Outras Categorias', callback_data: 'catalogo_categorias' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const itensPorPagina = 8;
+        const totalPaginas = Math.ceil(itens.length / itensPorPagina);
+        const paginaAtual = Math.max(0, Math.min(pagina, totalPaginas - 1));
+
+        const inicio = paginaAtual * itensPorPagina;
+        const fim = Math.min(inicio + itensPorPagina, itens.length);
+        const itensPagina = itens.slice(inicio, fim);
+
+        const mensagem = `🎭 *Categoria:* ${generoDecodificado}\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${itens.length} título(s)\n\n` +
+                        `Selecione para ver a sinopse e assistir:`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        itensPagina.forEach(item => {
+            const icone = item.tipo === 'filme' ? '🎬' : '📺';
+            const ano = item.ano ? ` (${item.ano})` : '';
+            const nota = item.nota ? ` ⭐ ${item.nota}` : '';
+            const nomeExibicao = `${icone} ${item.nome}${ano}${nota}`;
+            const callbackData = item.tipo === 'filme' ? `info_filme_${item.id}` : `info_serie_${item.id}`;
+
+            keyboard.inline_keyboard.push([
+                { text: nomeExibicao.length > 32 ? nomeExibicao.substring(0, 29) + '...' : nomeExibicao, callback_data: callbackData }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (totalPaginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `genero_${encodeURIComponent(generoDecodificado)}_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < totalPaginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `genero_${encodeURIComponent(generoDecodificado)}_${paginaAtual + 1}` });
+            }
+        }
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🎭 Outras Categorias', callback_data: 'catalogo_categorias' },
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, {
             parse_mode: 'Markdown',
             reply_markup: keyboard
         }, callbackQuery);
@@ -4566,13 +4772,18 @@ class CommandHandler {
         const temporada = serie?.temporadas?.find(t => t.numero === seasonNum);
         const ep = temporada?.episodios?.find(e => e.numero === epNum);
 
-        if (!ep || !ep.messageId) {
+        if (!ep || (!ep.messageId && !ep.fileId)) {
             await this.bot.sendMessage(chatId, '❌ Episódio não disponível no momento.');
             return;
         }
 
         try {
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, ep.messageId);
+            const entregue = await this.entregarVideoAoUsuario(chatId, ep.messageId, ep.fileId, `📺 *${serie.nome}* - T${seasonNum}E${epNum} 🍿 BrasilFlix`);
+
+            if (!entregue) {
+                await this.bot.sendMessage(chatId, '❌ Não foi possível entregar o episódio neste momento. O suporte já foi notificado.');
+                return;
+            }
 
             if (!isAssinante) {
                 this.consumirCotaGratis(userId, username, 'serie');
