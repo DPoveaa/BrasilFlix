@@ -1,64 +1,65 @@
 const fs = require('fs-extra');
-const path = require('path');
 const config = require('../../config');
+const db = require('../database/db');
 
 class PedidosManager {
     constructor() {
-        this.pedidosFile = config.PEDIDOS_FILE;
-        this.pedidos = []; // Armazenamento em memória
-        this.pedidosPendentes = new Map(); // Cache rápido para pedidos pendentes
+        this.pedidos = [];
+        this.pedidosPendentes = new Map();
         this.ensureDataDirectory();
         this.loadPedidos();
-        
-        // Salvar pedidos periodicamente (a cada 5 minutos)
-        setInterval(() => {
-            this.savePedidos();
-        }, 5 * 60 * 1000);
-        
-        // Salvar ao sair
-        process.on('SIGINT', () => {
-            this.savePedidos();
-            process.exit(0);
-        });
     }
 
     ensureDataDirectory() {
         fs.ensureDirSync(config.DATA_DIR);
     }
 
-    loadPedidos() {
+    async loadPedidos() {
         try {
-            if (fs.existsSync(this.pedidosFile)) {
-                this.pedidos = fs.readJsonSync(this.pedidosFile);
-                // Reconstruir cache de pedidos pendentes
-                this.pedidos.forEach(pedido => {
-                    if (pedido.status === 'pendente') {
-                        this.pedidosPendentes.set(pedido.id, pedido);
-                    }
-                });
-                console.log(`📋 Carregados ${this.pedidos.length} pedidos do arquivo`);
-            } else {
-                this.pedidos = [];
-                this.savePedidos();
-                console.log('📋 Arquivo de pedidos criado');
+            const res = await db.query(`SELECT * FROM pedidos ORDER BY created_at ASC`);
+            this.pedidos = res.rows.map(p => ({
+                id: p.id,
+                userId: p.user_id ? Number(p.user_id) : 0,
+                username: p.username || 'Usuário',
+                nome: p.nome,
+                tipo: p.tipo || 'filme',
+                data: p.created_at,
+                status: p.processado ? 'adicionado' : 'pendente',
+                isAssinante: p.is_assinante,
+                prioridade: p.is_assinante ? 'alta' : 'normal'
+            }));
+
+            this.pedidosPendentes.clear();
+            this.pedidos.forEach(p => {
+                if (p.status === 'pendente') {
+                    this.pedidosPendentes.set(p.id, p);
+                }
+            });
+
+            console.log(`📋 Carregados ${this.pedidos.length} pedidos do PostgreSQL`);
+        } catch (error) {
+            console.error('❌ Erro ao carregar pedidos do PostgreSQL:', error.message);
+            if (fs.existsSync(config.PEDIDOS_FILE)) {
+                try {
+                    this.pedidos = fs.readJsonSync(config.PEDIDOS_FILE);
+                    this.pedidos.forEach(p => {
+                        if (p.status === 'pendente') this.pedidosPendentes.set(p.id, p);
+                    });
+                } catch (e) {}
             }
-        } catch (error) {
-            console.error('❌ Erro ao carregar pedidos:', error);
-            this.pedidos = [];
         }
     }
 
-    savePedidos() {
+    async savePedidos() {
         try {
-            fs.writeJsonSync(this.pedidosFile, this.pedidos, { spaces: 2 });
-        } catch (error) {
-            console.error('❌ Erro ao salvar pedidos:', error);
-        }
+            fs.writeJsonSync(config.PEDIDOS_FILE, this.pedidos, { spaces: 2 });
+        } catch (e) {}
     }
 
-    adicionarPedido(userId, username, nome, descricao = '', isAssinante = false) {
+    async adicionarPedido(userId, username, nome, descricao = '', isAssinante = false) {
+        const id = `ped_${Date.now()}`;
         const pedido = {
-            id: Date.now(),
+            id: id,
             userId,
             username: username || 'Usuário',
             nome: nome.trim(),
@@ -69,24 +70,31 @@ class PedidosManager {
             prioridade: isAssinante ? 'alta' : 'normal'
         };
 
+        try {
+            await db.query(`
+                INSERT INTO pedidos (id, user_id, username, nome, tipo, is_assinante, processado, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            `, [
+                id, userId, username || 'Usuário', nome.trim(),
+                'filme', isAssinante, false
+            ]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir pedido no PostgreSQL:', e.message);
+        }
+
         this.pedidos.push(pedido);
-        
-        // Adicionar ao cache de pendentes
         this.pedidosPendentes.set(pedido.id, pedido);
-        
         this.ordenarPedidos();
-        
-        console.log(`📝 Novo pedido adicionado: ${nome} por ${username} ${isAssinante ? '(Assinante)' : ''}`);
+        this.savePedidos();
+
+        console.log(`📝 Novo pedido registrado: ${nome} por ${username} ${isAssinante ? '(Assinante VIP)' : ''}`);
         return pedido;
     }
 
     ordenarPedidos() {
         this.pedidos.sort((a, b) => {
-            // Primeiro por prioridade (assinantes primeiro)
             if (a.prioridade === 'alta' && b.prioridade !== 'alta') return -1;
             if (a.prioridade !== 'alta' && b.prioridade === 'alta') return 1;
-            
-            // Depois por data (mais antigo primeiro)
             return new Date(a.data) - new Date(b.data);
         });
     }
@@ -96,35 +104,47 @@ class PedidosManager {
     }
 
     getPedidosPendentes() {
-        // Usar cache em vez de filtrar toda a lista
         return Array.from(this.pedidosPendentes.values());
     }
 
-    marcarComoAdicionado(pedidoId) {
-        const pedido = this.pedidos.find(p => p.id === pedidoId);
+    async marcarComoAdicionado(pedidoId) {
+        return this.marcarComoProcessado(pedidoId);
+    }
+
+    async marcarComoProcessado(pedidoId) {
+        const pedido = this.pedidos.find(p => String(p.id) === String(pedidoId));
         if (pedido) {
             pedido.status = 'adicionado';
+            pedido.processado = true;
             pedido.dataAdicionado = new Date().toISOString();
-            
-            // Remover do cache de pendentes
-            this.pedidosPendentes.delete(pedidoId);
-            
+            this.pedidosPendentes.delete(pedido.id);
+
+            try {
+                await db.query(`UPDATE pedidos SET processado = true WHERE id = $1`, [pedido.id]);
+            } catch (e) {
+                console.warn('⚠️ Erro ao atualizar pedido no PostgreSQL:', e.message);
+            }
+
             this.savePedidos();
-            console.log(`✅ Pedido marcado como adicionado: ${pedido.nome}`);
+            console.log(`✅ Pedido marcado como processado: ${pedido.nome}`);
             return true;
         }
         return false;
     }
 
-    removerPedido(pedidoId) {
-        const index = this.pedidos.findIndex(p => p.id === pedidoId);
+    async removerPedido(pedidoId) {
+        const index = this.pedidos.findIndex(p => String(p.id) === String(pedidoId));
         if (index !== -1) {
             const pedido = this.pedidos[index];
             this.pedidos.splice(index, 1);
-            
-            // Remover do cache de pendentes se estiver lá
-            this.pedidosPendentes.delete(pedidoId);
-            
+            this.pedidosPendentes.delete(pedido.id);
+
+            try {
+                await db.query(`DELETE FROM pedidos WHERE id = $1`, [pedido.id]);
+            } catch (e) {
+                console.warn('⚠️ Erro ao deletar pedido no PostgreSQL:', e.message);
+            }
+
             this.savePedidos();
             console.log(`🗑️ Pedido removido: ${pedido.nome}`);
             return true;
@@ -137,7 +157,7 @@ class PedidosManager {
     }
 
     getPedidoPorId(pedidoId) {
-        return this.pedidos.find(pedido => pedido.id === pedidoId);
+        return this.pedidos.find(pedido => String(pedido.id) === String(pedidoId));
     }
 
     formatarPedidosParaAdmin() {
@@ -146,10 +166,8 @@ class PedidosManager {
         }
 
         let mensagem = '📝 *Lista de Pedidos:*\n\n';
-        
-        // Adicionar estatísticas no topo (usando cache para pendentes)
         const total = this.pedidos.length;
-        const pendentes = this.pedidosPendentes.size; // Usar cache
+        const pendentes = this.pedidosPendentes.size;
         const adicionados = this.pedidos.filter(p => p.status === 'adicionado').length;
         const assinantes = this.pedidos.filter(p => p.isAssinante).length;
         
@@ -159,70 +177,19 @@ class PedidosManager {
         mensagem += `• Adicionados: ${adicionados}\n`;
         mensagem += `• Assinantes: ${assinantes}\n\n`;
         
-        // Se houver muitos pedidos, mostrar apenas os primeiros e últimos
-        const maxExibir = 50;
-        
-        if (total > maxExibir) {
-            const primeiros = this.pedidos.slice(0, 25);
-            const ultimos = this.pedidos.slice(-25);
+        const ultimos = this.pedidos.slice(-30).reverse();
+        ultimos.forEach((pedido, index) => {
+            const status = pedido.status === 'pendente' ? '⏳' : '✅';
+            const data = new Date(pedido.data).toLocaleDateString('pt-BR');
+            const prioridade = pedido.isAssinante ? '🔥 ASSINANTE' : '👤 Usuário';
             
-            mensagem += `⚠️ *Muitos pedidos (${total}). Mostrando primeiros 25 e últimos 25:*\n\n`;
-            
-            // Mostrar primeiros
-            mensagem += `📋 *Primeiros 25:*\n`;
-            primeiros.forEach((pedido, index) => {
-                const status = pedido.status === 'pendente' ? '⏳' : '✅';
-                const data = new Date(pedido.data).toLocaleDateString('pt-BR');
-                const prioridade = pedido.isAssinante ? '🔥 ASSINANTE' : '👤 Usuário';
-                
-                mensagem += `${status} *${index + 1}.* ${pedido.nome}\n`;
-                mensagem += `${prioridade} - ${pedido.username}\n`;
-                mensagem += `📅 ${data}\n`;
-                if (pedido.descricao) {
-                    mensagem += `📝 ${pedido.descricao}\n`;
-                }
-                mensagem += `🆔 ID: ${pedido.id}\n\n`;
-            });
-            
-            mensagem += `...\n\n`;
-            
-            // Mostrar últimos
-            mensagem += `📋 *Últimos 25:*\n`;
-            ultimos.forEach((pedido, index) => {
-                const status = pedido.status === 'pendente' ? '⏳' : '✅';
-                const data = new Date(pedido.data).toLocaleDateString('pt-BR');
-                const prioridade = pedido.isAssinante ? '🔥 ASSINANTE' : '👤 Usuário';
-                
-                mensagem += `${status} *${index + 1}.* ${pedido.nome}\n`;
-                mensagem += `${prioridade} - ${pedido.username}\n`;
-                mensagem += `📅 ${data}\n`;
-                if (pedido.descricao) {
-                    mensagem += `📝 ${pedido.descricao}\n`;
-                }
-                mensagem += `🆔 ID: ${pedido.id}\n\n`;
-            });
-            
-            mensagem += `📊 *Total de pedidos: ${total}*\n`;
-            mensagem += `💡 *Dica:* Use filtros para ver pedidos específicos`;
-        } else {
-            // Mostrar todos os pedidos normalmente
-            this.pedidos.forEach((pedido, index) => {
-                const status = pedido.status === 'pendente' ? '⏳' : '✅';
-                const data = new Date(pedido.data).toLocaleDateString('pt-BR');
-                const prioridade = pedido.isAssinante ? '🔥 ASSINANTE' : '👤 Usuário';
-                
-                mensagem += `${status} *${index + 1}.* ${pedido.nome}\n`;
-                mensagem += `${prioridade} - ${pedido.username}\n`;
-                mensagem += `📅 ${data}\n`;
-                if (pedido.descricao) {
-                    mensagem += `📝 ${pedido.descricao}\n`;
-                }
-                mensagem += `🆔 ID: ${pedido.id}\n\n`;
-            });
-        }
+            mensagem += `${status} *${index + 1}.* ${pedido.nome}\n`;
+            mensagem += `${prioridade} - ${pedido.username}\n`;
+            mensagem += `📅 ${data} | 🆔 \`${pedido.id}\`\n\n`;
+        });
 
         return mensagem;
     }
 }
 
-module.exports = PedidosManager; 
+module.exports = PedidosManager;

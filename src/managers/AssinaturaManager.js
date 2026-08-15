@@ -1,82 +1,74 @@
 const fs = require('fs-extra');
 const config = require('../../config');
 const mercadopago = require('mercadopago');
+const db = require('../database/db');
 
 class AssinaturaManager {
     constructor() {
-        this.assinaturasFile = config.ASSINATURAS_FILE;
+        this.assinaturas = [];
+        this.acessosVitalicios = [];
         this.ensureDataDirectory();
         this.loadAssinaturas();
         this.setupMercadoPago();
     }
 
     setupMercadoPago() {
-        mercadopago.configure({
-            access_token: config.MercadoPago_TOKEN
-        });
+        if (config.mercadopago?.access_token) {
+            mercadopago.configure({
+                access_token: config.mercadopago.access_token
+            });
+        }
     }
 
     ensureDataDirectory() {
         fs.ensureDirSync(config.DATA_DIR);
     }
 
-    loadAssinaturas() {
+    async loadAssinaturas() {
         try {
-            if (fs.existsSync(this.assinaturasFile)) {
-                const data = fs.readJsonSync(this.assinaturasFile);
-                if (Array.isArray(data)) {
-                    this.assinaturas = data;
-                    this.acessosVitalicios = [];
-                } else {
-                    this.assinaturas = data.assinaturas || [];
-                    this.acessosVitalicios = data.acessosVitalicios || [];
-                }
-            } else {
-                this.assinaturas = [];
-                this.acessosVitalicios = [];
-                this.saveAssinaturas();
-            }
+            const assRes = await db.query(`SELECT * FROM assinaturas ORDER BY data_inicio ASC`);
+            const tokRes = await db.query(`SELECT * FROM stremio_tokens ORDER BY created_at ASC`);
+
+            this.assinaturas = assRes.rows.map(a => ({
+                id: a.user_id,
+                userId: a.user_id ? Number(a.user_id) : 0,
+                username: a.username || 'Usuário',
+                plano: a.plano || 'mensal',
+                dataInicio: a.data_inicio,
+                dataVencimento: a.data_fim || this.calcularVencimento(a.plano),
+                status: a.status || 'ativa',
+                pagamentoId: a.pagamento_id
+            }));
+
+            this.acessosVitalicios = tokRes.rows.map(t => ({
+                token: t.token,
+                nome: t.username || 'VIP',
+                criadoPor: 'admin',
+                dataCriacao: t.created_at,
+                status: t.ativo ? 'ativo' : 'revogado'
+            }));
+
+            console.log(`📋 Carregadas ${this.assinaturas.length} assinaturas e ${this.acessosVitalicios.length} tokens do PostgreSQL`);
         } catch (error) {
-            console.error('❌ Erro ao carregar assinaturas:', error);
-            this.assinaturas = [];
-            this.acessosVitalicios = [];
+            console.error('❌ Erro ao carregar assinaturas do PostgreSQL:', error.message);
+            if (fs.existsSync(config.ASSINATURAS_FILE)) {
+                try {
+                    const data = fs.readJsonSync(config.ASSINATURAS_FILE);
+                    this.assinaturas = Array.isArray(data) ? data : (data.assinaturas || []);
+                    this.acessosVitalicios = data.acessosVitalicios || [];
+                } catch (e) {}
+            }
         }
     }
 
-    saveAssinaturas() {
+    async saveAssinaturas() {
         try {
             const dataToSave = {
                 assinaturas: this.assinaturas,
                 acessosVitalicios: this.acessosVitalicios || []
             };
-            fs.writeJsonSync(this.assinaturasFile, dataToSave, { spaces: 2 });
-        } catch (error) {
-            console.error('❌ Erro ao salvar assinaturas:', error);
-        }
-    }
-
-    async criarAssinatura(userId, username, plano = 'mensal') {
-        const assinatura = {
-            id: Date.now(),
-            userId,
-            username: (username || 'Usuário').replace(/^@/, ''),
-            plano,
-            dataInicio: new Date().toISOString(),
-            dataVencimento: this.calcularVencimento(plano),
-            status: 'ativa',
-            pagamentos: []
-        };
-
-        const index = this.assinaturas.findIndex(a => a.userId === userId || (username && a.username?.toLowerCase() === username.toLowerCase()));
-        if (index >= 0) {
-            this.assinaturas[index] = assinatura;
-        } else {
-            this.assinaturas.push(assinatura);
-        }
-
-        this.saveAssinaturas();
-        console.log(`✅ Nova assinatura criada: ${username} - Plano: ${plano}`);
-        return assinatura;
+            fs.writeJsonSync(config.ASSINATURAS_FILE, dataToSave, { spaces: 2 });
+        } catch (e) {}
     }
 
     calcularVencimento(plano) {
@@ -95,7 +87,49 @@ class AssinaturaManager {
         return data.toISOString();
     }
 
-    gerarTokenVitalicio(nomeIdentificador = 'Parente / Convidado', criadoPor = 'admin') {
+    async criarAssinatura(userId, username, plano = 'mensal', pagamentoId = null) {
+        const cleanUser = (username || 'Usuário').replace(/^@/, '');
+        const dataVencimento = this.calcularVencimento(plano);
+
+        const assinatura = {
+            id: userId,
+            userId,
+            username: cleanUser,
+            plano,
+            dataInicio: new Date().toISOString(),
+            dataVencimento,
+            status: 'ativa',
+            pagamentoId
+        };
+
+        try {
+            await db.query(`
+                INSERT INTO assinaturas (user_id, username, plano, data_inicio, data_fim, status, pagamento_id, created_at)
+                VALUES ($1, $2, $3, NOW(), $4, $5, $6, NOW())
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    plano = EXCLUDED.plano,
+                    data_fim = EXCLUDED.data_fim,
+                    status = EXCLUDED.status,
+                    pagamento_id = EXCLUDED.pagamento_id
+            `, [userId, cleanUser, plano, new Date(dataVencimento), 'ativa', pagamentoId || '']);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir assinatura no PostgreSQL:', e.message);
+        }
+
+        const index = this.assinaturas.findIndex(a => a.userId === userId || (username && a.username?.toLowerCase() === cleanUser.toLowerCase()));
+        if (index >= 0) {
+            this.assinaturas[index] = assinatura;
+        } else {
+            this.assinaturas.push(assinatura);
+        }
+
+        this.saveAssinaturas();
+        console.log(`✅ Nova assinatura criada: ${cleanUser} - Plano: ${plano}`);
+        return assinatura;
+    }
+
+    async gerarTokenVitalicio(nomeIdentificador = 'Parente / Convidado', criadoPor = 'admin') {
         const randomPart = Math.random().toString(36).substring(2, 8);
         const timePart = Date.now().toString(36);
         const token = `bf_vit_${randomPart}${timePart}`;
@@ -110,6 +144,16 @@ class AssinaturaManager {
             status: 'ativo'
         };
 
+        try {
+            await db.query(`
+                INSERT INTO stremio_tokens (token, username, tipo, ativo, created_at)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (token) DO NOTHING
+            `, [token, nomeIdentificador.trim(), 'vitalicio', true]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir token no PostgreSQL:', e.message);
+        }
+
         this.acessosVitalicios.push(novoAcesso);
         this.saveAssinaturas();
 
@@ -117,22 +161,35 @@ class AssinaturaManager {
         return novoAcesso;
     }
 
-    autorizarUsernameVitalicio(usernameInput, criadoPor = 'admin') {
+    async autorizarUsernameVitalicio(usernameInput, criadoPor = 'admin') {
         const cleanUser = usernameInput.toString().replace(/^@/, '').trim();
         if (!cleanUser) return null;
 
-        const dummyId = `vit_${Date.now()}`;
+        const dummyId = Date.now();
         const assinatura = {
-            id: Date.now(),
+            id: dummyId,
             userId: dummyId,
             username: cleanUser,
             plano: 'vitalicio',
             dataInicio: new Date().toISOString(),
             dataVencimento: '2099-12-31T23:59:59.999Z',
             status: 'ativa',
-            criadoPor,
-            pagamentos: []
+            criadoPor
         };
+
+        try {
+            await db.query(`
+                INSERT INTO assinaturas (user_id, username, plano, data_inicio, data_fim, status, created_at)
+                VALUES ($1, $2, $3, NOW(), $4, $5, NOW())
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    plano = EXCLUDED.plano,
+                    data_fim = EXCLUDED.data_fim,
+                    status = EXCLUDED.status
+            `, [dummyId, cleanUser, 'vitalicio', new Date('2099-12-31T23:59:59.999Z'), 'ativa']);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir assinatura vitalícia no PostgreSQL:', e.message);
+        }
 
         const index = this.assinaturas.findIndex(a => a.username?.toLowerCase() === cleanUser.toLowerCase());
         if (index >= 0) {
@@ -193,15 +250,18 @@ class AssinaturaManager {
         return { tokens, usernames };
     }
 
-    revogarAcessoVitalicio(identificador) {
+    async revogarAcessoVitalicio(identificador) {
         const str = identificador.toString().trim().replace(/^@/, '');
         let revogado = false;
 
         if (this.acessosVitalicios) {
-            const t = this.acessosVitalicios.find(item => item.token === str || item.nome.toLowerCase() === str.toLowerCase());
+            const t = this.acessosVitalicios.find(item => item.token === str || item.nome?.toLowerCase() === str.toLowerCase());
             if (t) {
                 t.status = 'revogado';
                 revogado = true;
+                try {
+                    await db.query(`UPDATE stremio_tokens SET ativo = false WHERE token = $1`, [t.token]);
+                } catch (e) {}
             }
         }
 
@@ -209,6 +269,9 @@ class AssinaturaManager {
         if (a && a.plano === 'vitalicio') {
             a.status = 'cancelada';
             revogado = true;
+            try {
+                await db.query(`UPDATE assinaturas SET status = 'cancelada' WHERE user_id = $1`, [a.userId]);
+            } catch (e) {}
         }
 
         if (revogado) this.saveAssinaturas();
@@ -218,28 +281,25 @@ class AssinaturaManager {
     async criarPagamento(userId, username, plano) {
         try {
             const preco = this.getPrecoPlano(plano);
-            const dataVencimento = this.calcularVencimento(plano);
+            const dataVencimento = new Date(Date.now() + 30 * 60 * 1000).toISOString();
             
-            console.log(`🔧 Criando pagamento para usuário ${userId} - Plano: ${plano} - Valor: R$ ${preco}`);
-            
-            // Criar pagamento PIX diretamente
-            const payment = {
+            const paymentData = {
                 transaction_amount: preco,
-                description: `BrasilFlix VIP - Plano ${plano.toUpperCase()}`,
+                description: `BrasilFlix - Plano ${plano.toUpperCase()} (${username || 'Usuário'})`,
                 payment_method_id: 'pix',
                 payer: {
-                    email: `user${userId}@brasilflix.com`,
-                    first_name: username,
+                    email: `user_${userId}@brasilflix.com.br`,
+                    first_name: username || 'Cliente',
                     last_name: 'BrasilFlix'
                 },
-                external_reference: `assinatura_${userId}_${plano}_${Date.now()}`
+                notification_url: `https://brasilflix.kapsu.com.br/webhook`,
+                external_reference: `assinatura_${userId}_${plano}`
             };
 
-            console.log('📤 Enviando pagamento PIX para Mercado Pago...');
-            const response = await mercadopago.payment.save(payment);
+            const response = await mercadopago.payment.create(paymentData);
             console.log('✅ Pagamento PIX criado com sucesso:', response.body.id);
             
-            const result = {
+            return {
                 id: response.body.id,
                 init_point: `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${response.body.id}`,
                 qr_code: response.body.point_of_interaction?.transaction_data?.qr_code || null,
@@ -250,8 +310,6 @@ class AssinaturaManager {
                 paymentId: response.body.id,
                 status: response.body.status
             };
-            
-            return result;
         } catch (error) {
             console.error('❌ Erro ao criar pagamento:', error);
             throw error;
@@ -261,16 +319,17 @@ class AssinaturaManager {
     getPrecoPlano(plano) {
         const precos = {
             'mensal': 15.00,
-            'trimestral': 38.00, // R$ 12,66/mês (15% OFF)
-            'semestral': 69.00,  // R$ 11,50/mês (23% OFF)
-            'anual': 120.00      // R$ 10,00/mês (33% OFF)
+            'trimestral': 38.00,
+            'semestral': 69.00,
+            'anual': 120.00
         };
         return precos[plano] || 15.00;
     }
 
     verificarAssinatura(userId) {
+        const numId = Number(userId);
         const assinatura = this.assinaturas.find(a => 
-            a.userId === userId && a.status === 'ativa'
+            (Number(a.userId) === numId || a.id === numId) && a.status === 'ativa'
         );
 
         if (!assinatura) return false;
@@ -288,25 +347,17 @@ class AssinaturaManager {
     }
 
     getAssinatura(userId) {
-        return this.assinaturas.find(a => a.userId === userId);
+        const numId = Number(userId);
+        return this.assinaturas.find(a => Number(a.userId) === numId || a.id === numId);
     }
 
-    renovarAssinatura(userId, plano = 'mensal') {
-        const assinatura = this.getAssinatura(userId);
-        if (assinatura) {
-            assinatura.plano = plano;
-            assinatura.dataVencimento = this.calcularVencimento(plano);
-            assinatura.status = 'ativa';
-            this.saveAssinaturas();
-            return assinatura;
-        }
-        return null;
-    }
-
-    cancelarAssinatura(userId) {
+    async cancelarAssinatura(userId) {
         const assinatura = this.getAssinatura(userId);
         if (assinatura) {
             assinatura.status = 'cancelada';
+            try {
+                await db.query(`UPDATE assinaturas SET status = 'cancelada' WHERE user_id = $1`, [userId]);
+            } catch (e) {}
             this.saveAssinaturas();
             return true;
         }
@@ -320,7 +371,6 @@ class AssinaturaManager {
 
         return this.assinaturas.filter(assinatura => {
             if (assinatura.status !== 'ativa') return false;
-            
             const vencimento = new Date(assinatura.dataVencimento);
             return vencimento <= limite && vencimento >= agora;
         });
@@ -330,7 +380,6 @@ class AssinaturaManager {
         const agora = new Date();
         return this.assinaturas.filter(assinatura => {
             if (assinatura.status !== 'ativa') return false;
-            
             const vencimento = new Date(assinatura.dataVencimento);
             return vencimento < agora;
         });
@@ -367,27 +416,19 @@ class AssinaturaManager {
                 const [tipo, userId, plano] = externalRef.split('_');
                 
                 if (tipo === 'assinatura') {
-                    // Criar assinatura diretamente quando o pagamento for aprovado
                     const assinatura = await this.criarAssinatura(
                         parseInt(userId), 
                         `Usuário_${userId}`, 
-                        plano
+                        plano,
+                        paymentId
                     );
                     
                     console.log(`✅ Assinatura ativada após pagamento: ${assinatura.username} - Plano: ${assinatura.plano}`);
-
-                    return {
-                        success: true,
-                        assinatura,
-                        payment: payment.body
-                    };
+                    return { success: true, assinatura, payment: payment.body };
                 }
             }
 
-            return {
-                success: false,
-                payment: payment.body
-            };
+            return { success: false, payment: payment.body };
         } catch (error) {
             console.error('❌ Erro ao processar pagamento:', error);
             return { success: false, error };
@@ -395,4 +436,4 @@ class AssinaturaManager {
     }
 }
 
-module.exports = AssinaturaManager; 
+module.exports = AssinaturaManager;

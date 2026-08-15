@@ -26,9 +26,23 @@ class BrasilFlixBot {
         
         this.setupEventHandlers();
         this.setupCronJobs();
+    }
+
+    async init() {
+        await Promise.all([
+            this.catalogoManager.loadCatalogo(),
+            this.pedidosManager.loadPedidos(),
+            this.assinaturaManager.loadAssinaturas(),
+            this.favoritosManager.loadData()
+        ]);
         this.autoFeeder.start();
         this.stremioServer.start();
         console.log('🤖 BrasilFlix Bot + Auto-Feeder + Servidor Stremio iniciado com sucesso!');
+    }
+
+    start() {
+        // Inicialização dos comandos do bot no menu oficial do Telegram
+        this.setupBotCommands();
     }
 
     setupEventHandlers() {
@@ -39,6 +53,7 @@ class BrasilFlixBot {
         this.bot.onText(/\/favoritos/, (msg) => this.commandHandler.handleMeusFavoritos(msg.chat.id, msg.from.id, 1));
         this.bot.onText(/\/ajuda/, (msg) => this.commandHandler.handleHelp(msg));
         this.bot.onText(/\/pedido (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
+        this.bot.onText(/\/pedir (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
         this.bot.onText(/\/buscar (.+)/, (msg, match) => this.commandHandler.handleBuscar(msg, match));
         this.bot.onText(/\/catalogo/, (msg) => this.commandHandler.handleCatalogo(msg));
         this.bot.onText(/\/fila/, (msg) => this.commandHandler.handleFila(msg));
@@ -52,6 +67,7 @@ class BrasilFlixBot {
         this.bot.onText(/\/assinar_trimestral/, (msg) => this.commandHandler.handleAssinarPlano(msg, 'trimestral'));
         this.bot.onText(/\/assinar_anual/, (msg) => this.commandHandler.handleAssinarPlano(msg, 'anual'));
         this.bot.onText(/\/minhaassinatura/, (msg) => this.commandHandler.handleMinhaAssinatura(msg));
+        this.bot.onText(/\/meuplano/, (msg) => this.commandHandler.handleMinhaAssinatura(msg));
 
         // Handler para comandos de admin
         this.bot.onText(/\/pedidos/, (msg) => this.commandHandler.handleAdminPedidos(msg));
@@ -75,7 +91,6 @@ class BrasilFlixBot {
 
         this.bot.on('polling_error', (error) => {
             if (error.code === 'ETELEGRAM' && error.response && error.response.statusCode === 502) {
-                // Instabilidade temporária da API do Telegram (502 Bad Gateway) - o bot reconecta sozinho
                 return;
             }
             if (error.code === 'EFATAL' || error.code === 'ETIMEDOUT') {
@@ -86,12 +101,10 @@ class BrasilFlixBot {
     }
 
     setupCronJobs() {
-        // Verificar assinaturas vencendo diariamente às 9h
         cron.schedule('0 9 * * *', async () => {
             await this.verificarAssinaturasVencendo();
         });
 
-        // Verificar assinaturas vencidas a cada 6 horas
         cron.schedule('0 */6 * * *', async () => {
             await this.verificarAssinaturasVencidas();
         });
@@ -99,57 +112,56 @@ class BrasilFlixBot {
 
     async verificarAssinaturasVencendo() {
         try {
-            const vencendo = this.assinaturaManager.getAssinaturasVencendo(3); // 3 dias
-            
-            if (vencendo.length > 0) {
-                let mensagem = `⚠️ *Assinaturas Vencendo em Breve*\n\n`;
+            const vencendo = this.assinaturaManager.getAssinaturasVencendo(3);
+            for (const assinatura of vencendo) {
+                const info = this.assinaturaManager.formatarAssinatura(assinatura);
+                const mensagem = `⚠️ *Sua assinatura BrasilFlix está vencendo!*\n\n` +
+                                `📅 *Vencimento:* ${info.vencimento}\n` +
+                                `⏳ *Dias restantes:* ${info.diasRestantes}\n\n` +
+                                `Para renovar e continuar aproveitando todos os lançamentos 1080p, use o comando /assinar.`;
                 
-                vencendo.forEach(assinatura => {
-                    const info = this.assinaturaManager.formatarAssinatura(assinatura);
-                    mensagem += `👤 ${assinatura.username}\n`;
-                    mensagem += `📅 Vence em: ${info.diasRestantes} dias\n`;
-                    mensagem += `💳 Plano: ${info.plano}\n\n`;
-                });
-
-                // Enviar para o grupo de notificações
-                await this.bot.sendMessage(config.NOTIFICATION_GROUP_ID, mensagem, { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(assinatura.userId, mensagem, { parse_mode: 'Markdown' }).catch(() => {});
             }
-        } catch (error) {
-            console.error('❌ Erro ao verificar assinaturas vencendo:', error);
+        } catch (e) {
+            console.error('Erro na verificação de assinaturas vencendo:', e);
         }
     }
 
     async verificarAssinaturasVencidas() {
         try {
             const vencidas = this.assinaturaManager.getAssinaturasVencidas();
-            
-            if (vencidas.length > 0) {
-                let mensagem = `❌ *Assinaturas Vencidas*\n\n`;
+            for (const assinatura of vencidas) {
+                assinatura.status = 'vencida';
+                const mensagem = `❌ *Sua assinatura BrasilFlix expirou!*\n\n` +
+                                `Seu acesso VIP foi pausado temporariamente.\n` +
+                                `Renove agora com o comando /assinar e continue assistindo! 🍿`;
                 
-                vencidas.forEach(assinatura => {
-                    mensagem += `👤 ${assinatura.username}\n`;
-                    mensagem += `📅 Venceu em: ${new Date(assinatura.dataVencimento).toLocaleDateString('pt-BR')}\n`;
-                    mensagem += `💳 Plano: ${assinatura.plano}\n\n`;
-                });
-
-                // Enviar para o grupo de notificações
-                await this.bot.sendMessage(config.NOTIFICATION_GROUP_ID, mensagem, { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(assinatura.userId, mensagem, { parse_mode: 'Markdown' }).catch(() => {});
             }
-        } catch (error) {
-            console.error('❌ Erro ao verificar assinaturas vencidas:', error);
+            this.assinaturaManager.saveAssinaturas();
+        } catch (e) {
+            console.error('Erro na verificação de assinaturas vencidas:', e);
         }
     }
 
-    start() {
-        // Bot já está rodando com polling
+    async setupBotCommands() {
+        try {
+            await this.bot.setMyCommands([
+                { command: 'start', description: 'Abrir menu principal do BrasilFlix' },
+                { command: 'catalogo', description: 'Navegar por filmes, séries e doramas' },
+                { command: 'stremio', description: 'Instalar Addon no app Stremio VIP' },
+                { command: 'pedir', description: 'Fazer pedido de filme ou série' },
+                { command: 'fila', description: 'Ver status da fila de downloads' },
+                { command: 'favoritos', description: 'Meus títulos favoritos salvos' },
+                { command: 'assinar', description: 'Planos e assinaturas VIP' },
+                { command: 'meuplano', description: 'Consultar status do meu plano' },
+                { command: 'ajuda', description: 'Suporte e como usar o robô' }
+            ]);
+            console.log('✅ Comandos do bot configurados com sucesso!');
+        } catch (e) {
+            console.warn('Aviso ao registrar comandos do bot:', e.message);
+        }
     }
 }
 
-// Iniciar o bot (apenas se executado diretamente)
-if (require.main === module) {
-    const bot = new BrasilFlixBot();
-    bot.start();
-}
-
-// Exportar a classe para uso externo
 module.exports = { BrasilFlixBot };

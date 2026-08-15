@@ -1,56 +1,33 @@
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../config');
+const db = require('../database/db');
 
 class FavoritosManager {
     constructor() {
-        this.favoritosFile = path.join(config.DATA_DIR, 'favoritos.json');
-        this.userVisitsFile = path.join(config.DATA_DIR, 'user_visits.json');
-        this.favoritos = {};
+        this.favoritos = {}; // cache: userId -> Array de itens favoritados
         this.userVisits = {};
         this.loadData();
     }
 
-    loadData() {
+    async loadData() {
         try {
-            fs.ensureDirSync(config.DATA_DIR);
-            if (fs.existsSync(this.favoritosFile)) {
-                this.favoritos = fs.readJsonSync(this.favoritosFile);
-            } else {
-                this.favoritos = {};
-                this.saveFavoritos();
-            }
-
-            if (fs.existsSync(this.userVisitsFile)) {
-                this.userVisits = fs.readJsonSync(this.userVisitsFile);
-            } else {
-                this.userVisits = {};
-                this.saveVisits();
-            }
-        } catch (error) {
-            console.error('❌ Erro ao carregar favoritos:', error);
+            const res = await db.query(`SELECT * FROM favoritos ORDER BY created_at DESC`);
             this.favoritos = {};
-            this.userVisits = {};
+            for (const f of res.rows) {
+                const uId = f.user_id.toString();
+                if (!this.favoritos[uId]) this.favoritos[uId] = [];
+                this.favoritos[uId].push({
+                    id: f.item_id,
+                    tipo: f.tipo,
+                    dataFavoritado: f.created_at
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao carregar favoritos do PostgreSQL:', e.message);
         }
     }
 
-    saveFavoritos() {
-        try {
-            fs.writeJsonSync(this.favoritosFile, this.favoritos, { spaces: 2 });
-        } catch (error) {
-            console.error('❌ Erro ao salvar favoritos:', error);
-        }
-    }
-
-    saveVisits() {
-        try {
-            fs.writeJsonSync(this.userVisitsFile, this.userVisits, { spaces: 2 });
-        } catch (error) {
-            console.error('❌ Erro ao salvar visitas:', error);
-        }
-    }
-
-    // Registra a visita do usuário e calcula quantos títulos novos foram adicionados desde a última visita
     registrarVisitaECalcularNovidades(userId, totalCatalogoAtual) {
         const strId = userId.toString();
         const agora = new Date().toISOString();
@@ -65,7 +42,6 @@ class FavoritosManager {
             ultimaVisita: agora,
             totalAoVisitar: totalCatalogoAtual
         };
-        this.saveVisits();
 
         return novidades;
     }
@@ -76,7 +52,7 @@ class FavoritosManager {
         return userFavs.some(f => f.id === itemId && f.tipo === tipo);
     }
 
-    toggleFavorito(userId, item) {
+    async toggleFavorito(userId, item) {
         const strId = userId.toString();
         if (!this.favoritos[strId]) {
             this.favoritos[strId] = [];
@@ -85,7 +61,13 @@ class FavoritosManager {
         const index = this.favoritos[strId].findIndex(f => f.id === item.id && f.tipo === item.tipo);
         if (index >= 0) {
             this.favoritos[strId].splice(index, 1);
-            this.saveFavoritos();
+            try {
+                await db.query(`DELETE FROM favoritos WHERE user_id = $1 AND item_id = $2 AND tipo = $3`, [
+                    userId, item.id, item.tipo
+                ]);
+            } catch (e) {
+                console.warn('⚠️ Erro ao remover favorito no PostgreSQL:', e.message);
+            }
             return { action: 'removido', item };
         } else {
             this.favoritos[strId].push({
@@ -96,7 +78,17 @@ class FavoritosManager {
                 posterUrl: item.posterUrl || '',
                 dataFavoritado: new Date().toISOString()
             });
-            this.saveFavoritos();
+
+            try {
+                await db.query(`
+                    INSERT INTO favoritos (user_id, item_id, tipo, created_at)
+                    VALUES ($1, $2, $3, NOW())
+                    ON CONFLICT (user_id, item_id, tipo) DO NOTHING
+                `, [userId, item.id, item.tipo]);
+            } catch (e) {
+                console.warn('⚠️ Erro ao salvar favorito no PostgreSQL:', e.message);
+            }
+
             return { action: 'adicionado', item };
         }
     }
@@ -106,7 +98,6 @@ class FavoritosManager {
         return this.favoritos[strId] || [];
     }
 
-    // Retorna a lista de usuários que favoritaram determinada série para notificar quando sair novo episódio
     getUsuariosQueFavoritaram(itemId, tipo = 'serie') {
         const userIds = [];
         for (const [userId, favs] of Object.entries(this.favoritos)) {

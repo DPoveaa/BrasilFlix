@@ -1,10 +1,14 @@
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../config');
+const db = require('../database/db');
 
 class CatalogoManager {
     constructor() {
-        this.catalogoFile = config.CATALOGO_FILE;
+        this.catalogo = {
+            filmes: [],
+            series: []
+        };
         this.backupDir = config.BACKUP_DIR || './data/backups';
         this.ensureDataDirectory();
         this.loadCatalogo();
@@ -15,53 +19,122 @@ class CatalogoManager {
         fs.ensureDirSync(this.backupDir);
     }
 
-    loadCatalogo() {
+    async loadCatalogo() {
         try {
-            if (fs.existsSync(this.catalogoFile)) {
-                this.catalogo = fs.readJsonSync(this.catalogoFile);
-            } else {
-                this.catalogo = {
-                    filmes: [],
-                    series: []
-                };
-                this.saveCatalogo();
+            // Carrega Filmes do PostgreSQL
+            const filmesRes = await db.query(`SELECT * FROM filmes ORDER BY id ASC`);
+            const seriesRes = await db.query(`SELECT * FROM series ORDER BY id ASC`);
+            const epsRes = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
+
+            // Mapeia episódios por série e temporada
+            const epsPorSerie = {};
+            for (const ep of epsRes.rows) {
+                if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
+                if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
+
+                epsPorSerie[ep.serie_id][ep.temporada_numero].push({
+                    numero: ep.numero,
+                    nome: ep.nome || `Episódio ${ep.numero}`,
+                    sinopse: ep.sinopse || '',
+                    messageId: ep.message_id ? Number(ep.message_id) : null,
+                    fileId: ep.file_id,
+                    qualidade: ep.qualidade || '1080p',
+                    audio: ep.audio || (ep.is_dublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+                    isDublado: ep.is_dublado,
+                    isLegendado: ep.is_legendado,
+                    versoes: {
+                        dublado: ep.is_dublado ? { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' } : null,
+                        legendado: ep.is_legendado ? { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' } : null
+                    },
+                    dataAdicionado: ep.created_at
+                });
             }
 
-            // Garante integridade das coleções
-            if (!Array.isArray(this.catalogo.filmes)) this.catalogo.filmes = [];
-            if (!Array.isArray(this.catalogo.series)) this.catalogo.series = [];
+            // Mapeia Séries com suas Temporadas
+            const series = seriesRes.rows.map(s => {
+                const temporadasObj = epsPorSerie[s.id] || {};
+                const temporadas = Object.keys(temporadasObj).map(tNum => ({
+                    numero: parseInt(tNum, 10),
+                    nome: `Temporada ${tNum}`,
+                    episodios: temporadasObj[tNum]
+                })).sort((a, b) => a.numero - b.numero);
+
+                return {
+                    id: s.id,
+                    tmdbId: s.tmdb_id,
+                    imdbId: s.imdb_id,
+                    nome: s.nome,
+                    nomeOriginal: s.nome_original,
+                    descricao: s.sinopse || '',
+                    sinopse: s.sinopse || '',
+                    posterUrl: s.poster_url,
+                    backdropUrl: s.backdrop_url,
+                    ano: s.ano || '',
+                    nota: parseFloat(s.nota || 8.0),
+                    generos: Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos) : []),
+                    isDorama: s.is_dorama,
+                    isDublado: s.is_dublado,
+                    isLegendado: s.is_legendado,
+                    isCam: s.is_cam,
+                    totalTemporadas: s.total_temporadas || temporadas.length || 1,
+                    totalEpisodios: s.total_episodios || temporadas.reduce((acc, t) => acc + t.episodios.length, 0),
+                    tipo: 'serie',
+                    temporadas: temporadas,
+                    dataAdicionado: s.created_at,
+                    tags: this.extrairTags(s.nome + ' ' + (s.sinopse || '') + ' ' + (s.generos || []).toString())
+                };
+            });
+
+            // Mapeia Filmes
+            const filmes = filmesRes.rows.map(f => ({
+                id: f.id,
+                tmdbId: f.tmdb_id,
+                imdbId: f.imdb_id,
+                nome: f.nome,
+                nomeOriginal: f.nome_original,
+                descricao: f.sinopse || '',
+                sinopse: f.sinopse || '',
+                posterUrl: f.poster_url,
+                backdropUrl: f.backdrop_url,
+                ano: f.ano || '',
+                nota: parseFloat(f.nota || 8.0),
+                generos: Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []),
+                qualidade: f.qualidade || '1080p',
+                isCam: f.is_cam,
+                isDublado: f.is_dublado,
+                isLegendado: f.is_legendado,
+                audio: f.audio || (f.is_dublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+                versoes: {
+                    dublado: f.is_dublado ? { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam } : null,
+                    legendado: f.is_legendado ? { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam } : null
+                },
+                messageId: f.message_id ? Number(f.message_id) : null,
+                fileId: f.file_id,
+                tipo: 'filme',
+                dataAdicionado: f.created_at,
+                tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
+            }));
+
+            this.catalogo = { filmes, series };
+            console.log(`📚 Catálogo carregado do PostgreSQL: ${filmes.length} filmes, ${series.length} séries.`);
         } catch (error) {
-            console.error('❌ Erro ao carregar catálogo:', error);
-            this.catalogo = {
-                filmes: [],
-                series: []
-            };
+            console.error('❌ Erro ao carregar catálogo do PostgreSQL:', error.message);
+            // Fallback para arquivo JSON caso BD esteja temporariamente offline
+            if (fs.existsSync(config.CATALOGO_FILE)) {
+                try {
+                    this.catalogo = fs.readJsonSync(config.CATALOGO_FILE);
+                } catch (e) {}
+            }
         }
     }
 
-    saveCatalogo() {
+    async saveCatalogo() {
         try {
-            // Escrita Atômica: salva primeiro em temp e renomeia
-            const tempFile = `${this.catalogoFile}.tmp`;
+            // Salva espelho de backup em disco JSON
+            const tempFile = `${config.CATALOGO_FILE}.tmp`;
             fs.writeJsonSync(tempFile, this.catalogo, { spaces: 2 });
-            fs.moveSync(tempFile, this.catalogoFile, { overwrite: true });
-
-            // Criar backup rotativo
-            this.createBackup();
-        } catch (error) {
-            console.error('❌ Erro ao salvar catálogo:', error);
-        }
-    }
-
-    createBackup() {
-        try {
-            const today = new Date().toISOString().split('T')[0];
-            const backupFile = path.join(this.backupDir, `catalogo_backup_${today}.json`);
-            // Cria backup diário se ainda não existir hoje ou a cada salvamento crítico
-            fs.writeJsonSync(backupFile, this.catalogo, { spaces: 2 });
-        } catch (e) {
-            // Silencioso para não interromper fluxo principal
-        }
+            fs.moveSync(tempFile, config.CATALOGO_FILE, { overwrite: true });
+        } catch (e) {}
     }
 
     getAudioBadge(item) {
@@ -88,7 +161,7 @@ class CatalogoManager {
 
         if (existente && !forcarAdicao) {
             console.log(`⚠️ ${tipo} já existe no catálogo: ${nome}. Atualizando versões de áudio...`);
-            this.atualizarMidiaFilme(existente.id, {
+            await this.atualizarMidiaFilme(existente.id, {
                 messageId,
                 fileId: metadadosExtras.fileId,
                 qualidade: metadadosExtras.qualidade || '1080p',
@@ -100,9 +173,42 @@ class CatalogoManager {
             return { success: true, message: 'Versão atualizada no catálogo', item: existente };
         }
 
+        // Persistência no PostgreSQL
+        let dbId = metadadosExtras.id;
+        try {
+            const res = await db.query(`
+                INSERT INTO filmes (
+                    nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
+                    nota, tmdb_id, imdb_id, message_id, file_id, qualidade, audio,
+                    is_dublado, is_legendado, is_cam, created_at, updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW()
+                ) RETURNING id
+            `, [
+                nome.trim(), metadadosExtras.nomeOriginal || nome.trim(),
+                metadadosExtras.ano || this.extrairAno(descricao),
+                JSON.stringify(metadadosExtras.generos || []),
+                metadadosExtras.sinopse || descricao || '',
+                metadadosExtras.posterUrl || null,
+                metadadosExtras.backdropUrl || null,
+                metadadosExtras.nota || 8.0,
+                metadadosExtras.tmdbId || null,
+                metadadosExtras.imdbId || null,
+                messageId || null,
+                metadadosExtras.fileId || null,
+                metadadosExtras.qualidade || '1080p',
+                metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+                isDublado, isLegendado, metadadosExtras.isCam || false
+            ]);
+            dbId = res.rows[0]?.id;
+        } catch (e) {
+            console.error('❌ Erro ao inserir filme no PostgreSQL:', e.message);
+        }
+
         const item = {
-            id: metadadosExtras.id || Date.now(),
+            id: dbId || Date.now(),
             tmdbId: metadadosExtras.tmdbId || null,
+            imdbId: metadadosExtras.imdbId || null,
             nome: nome.trim(),
             nomeOriginal: metadadosExtras.nomeOriginal || '',
             descricao: descricao ? descricao.trim() : '',
@@ -110,7 +216,7 @@ class CatalogoManager {
             posterUrl: metadadosExtras.posterUrl || null,
             backdropUrl: metadadosExtras.backdropUrl || null,
             ano: metadadosExtras.ano || this.extrairAno(descricao),
-            nota: metadadosExtras.nota || 0,
+            nota: metadadosExtras.nota || 8.0,
             generos: metadadosExtras.generos || [],
             qualidade: metadadosExtras.qualidade || '1080p',
             isCam: metadadosExtras.isCam || false,
@@ -130,62 +236,11 @@ class CatalogoManager {
 
         this.catalogo.filmes.push(item);
         this.saveCatalogo();
-        console.log(`✅ Filme adicionado ao catálogo: ${nome} [Qualidade: ${item.qualidade}, Áudio: ${item.audio}] (MessageId: ${messageId})`);
+        console.log(`✅ Filme adicionado ao catálogo: ${nome} [ID: ${item.id}, Qualidade: ${item.qualidade}] (MessageId: ${messageId})`);
         return { success: true, item: item };
     }
 
-    buscarFilmesCam() {
-        return (this.catalogo.filmes || []).filter(f => f.isCam === true);
-    }
-
-    buscarFilmesApenasLegendados() {
-        return (this.catalogo.filmes || []).filter(f => {
-            const temDub = f.isDublado === true || !!f.versoes?.dublado;
-            const temLeg = f.isLegendado === true || !!f.versoes?.legendado || (f.audio && f.audio.toLowerCase().includes('legendado'));
-            return temLeg && !temDub;
-        });
-    }
-
-    buscarFilmesApenasDublados() {
-        return (this.catalogo.filmes || []).filter(f => {
-            const temDub = f.isDublado === true || !!f.versoes?.dublado || (f.audio && f.audio.toLowerCase().includes('dublado'));
-            const temLeg = f.isLegendado === true || !!f.versoes?.legendado;
-            return temDub && !temLeg;
-        });
-    }
-
-    getGenerosDisponiveis() {
-        const generoCounts = {};
-        const todosItens = [...(this.catalogo.filmes || []), ...(this.catalogo.series || [])];
-
-        todosItens.forEach(item => {
-            if (item.generos && Array.isArray(item.generos)) {
-                item.generos.forEach(g => {
-                    const gFormatado = g.trim();
-                    if (gFormatado && gFormatado.toLowerCase() !== 'geral') {
-                        generoCounts[gFormatado] = (generoCounts[gFormatado] || 0) + 1;
-                    }
-                });
-            }
-        });
-
-        return Object.entries(generoCounts)
-            .map(([nome, count]) => ({ nome, count }))
-            .sort((a, b) => b.count - a.count);
-    }
-
-    getItemsPorGenero(generoNome) {
-        const gBusca = generoNome.toLowerCase().trim();
-        const filmes = (this.catalogo.filmes || []).filter(f => 
-            (f.generos || []).some(g => g.toLowerCase().trim() === gBusca)
-        );
-        const series = (this.catalogo.series || []).filter(s => 
-            (s.generos || []).some(g => g.toLowerCase().trim() === gBusca)
-        );
-        return [...filmes, ...series];
-    }
-
-    atualizarMidiaFilme(idOuNome, novaMidia = {}) {
+    async atualizarMidiaFilme(idOuNome, novaMidia = {}) {
         const filme = (this.catalogo.filmes || []).find(f => 
             f.id === idOuNome || 
             f.nome.toLowerCase() === idOuNome.toString().toLowerCase() ||
@@ -194,23 +249,10 @@ class CatalogoManager {
 
         if (!filme) return false;
 
-        if (!filme.versoes) {
-            filme.versoes = {
-                dublado: filme.isDublado ? { messageId: filme.messageId, fileId: filme.fileId, qualidade: filme.qualidade, isCam: filme.isCam } : null,
-                legendado: filme.isLegendado ? { messageId: filme.messageId, fileId: filme.fileId, qualidade: filme.qualidade, isCam: filme.isCam } : null
-            };
-        }
-
         const isNovaDub = novaMidia.isDublado ?? (novaMidia.audio ? !novaMidia.audio.toLowerCase().includes('legendado') : false);
         const isNovaLeg = novaMidia.isLegendado ?? (novaMidia.audio ? novaMidia.audio.toLowerCase().includes('legendado') : false);
 
         if (isNovaDub) {
-            filme.versoes.dublado = {
-                messageId: novaMidia.messageId || filme.messageId,
-                fileId: novaMidia.fileId || filme.fileId,
-                qualidade: novaMidia.qualidade || filme.qualidade,
-                isCam: novaMidia.isCam ?? filme.isCam
-            };
             filme.isDublado = true;
             filme.messageId = novaMidia.messageId || filme.messageId;
             filme.fileId = novaMidia.fileId || filme.fileId;
@@ -219,17 +261,25 @@ class CatalogoManager {
         }
 
         if (isNovaLeg) {
-            filme.versoes.legendado = {
-                messageId: novaMidia.messageId || filme.versoes.legendado?.messageId || filme.messageId,
-                fileId: novaMidia.fileId || filme.versoes.legendado?.fileId || filme.fileId,
-                qualidade: novaMidia.qualidade || filme.qualidade,
-                isCam: novaMidia.isCam ?? false
-            };
             filme.isLegendado = true;
             if (!filme.isDublado) {
                 filme.messageId = novaMidia.messageId || filme.messageId;
                 filme.fileId = novaMidia.fileId || filme.fileId;
             }
+        }
+
+        try {
+            await db.query(`
+                UPDATE filmes SET 
+                    message_id = $1, file_id = $2, qualidade = $3, audio = $4,
+                    is_dublado = $5, is_legendado = $6, is_cam = $7, updated_at = NOW()
+                WHERE id = $8
+            `, [
+                filme.messageId, filme.fileId, filme.qualidade, filme.audio,
+                filme.isDublado, filme.isLegendado, filme.isCam, filme.id
+            ]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao atualizar filme no PostgreSQL:', e.message);
         }
 
         filme.dataAtualizado = new Date().toISOString();
@@ -248,9 +298,32 @@ class CatalogoManager {
         const isLeg = metadados.isLegendado ?? (metadados.audio ? metadados.audio.toLowerCase().includes('legendado') : false);
 
         if (!serie) {
+            let sId = null;
+            try {
+                const res = await db.query(`
+                    INSERT INTO series (
+                        nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
+                        nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
+                        is_dublado, is_legendado, is_cam, created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW()
+                    ) RETURNING id
+                `, [
+                    serieNome.trim(), metadados.nomeOriginal || serieNome.trim(), metadados.ano || '',
+                    JSON.stringify(metadados.generos || []), metadados.sinopse || '',
+                    metadados.posterUrl || null, metadados.backdropUrl || null,
+                    metadados.nota || 8.0, metadados.tmdbId || null, metadados.imdbId || null,
+                    1, 1, metadados.isDorama || false, isDub, isLeg, metadados.isCam || false
+                ]);
+                sId = res.rows[0]?.id;
+            } catch (e) {
+                console.warn('⚠️ Erro ao inserir série no PostgreSQL:', e.message);
+            }
+
             serie = {
-                id: Date.now(),
+                id: sId || Date.now(),
                 tmdbId: metadados.tmdbId || null,
+                imdbId: metadados.imdbId || null,
                 nome: serieNome.trim(),
                 nomeOriginal: metadados.nomeOriginal || '',
                 descricao: metadados.sinopse || metadados.descricao || '',
@@ -258,7 +331,7 @@ class CatalogoManager {
                 posterUrl: metadados.posterUrl || null,
                 backdropUrl: metadados.backdropUrl || null,
                 ano: metadados.ano || '',
-                nota: metadados.nota || 0,
+                nota: metadados.nota || 8.0,
                 generos: metadados.generos || [],
                 isDorama: metadados.isDorama || false,
                 isDublado: isDub,
@@ -274,7 +347,43 @@ class CatalogoManager {
             if (isLeg) serie.isLegendado = true;
         }
 
-        // Encontrar ou criar temporada
+        // Persistência do Episódio no PostgreSQL
+        try {
+            await db.query(`
+                INSERT INTO episodios (
+                    serie_id, temporada_numero, numero, nome, sinopse,
+                    message_id, file_id, qualidade, audio, is_dublado, is_legendado, created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
+                ) ON CONFLICT (serie_id, temporada_numero, numero) DO UPDATE SET
+                    message_id = EXCLUDED.message_id,
+                    file_id = EXCLUDED.file_id,
+                    qualidade = EXCLUDED.qualidade,
+                    audio = EXCLUDED.audio,
+                    is_dublado = EXCLUDED.is_dublado,
+                    is_legendado = EXCLUDED.is_legendado
+            `, [
+                serie.id, temporadaNum, episodioNum,
+                metadados.episodioNome || `Episódio ${episodioNum}`,
+                metadados.episodioSinopse || '',
+                messageId || null, fileId || null,
+                metadados.qualidade || '1080p',
+                metadados.audio || (isDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+                isDub, isLeg
+            ]);
+
+            await db.query(`
+                UPDATE series SET 
+                    total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                    total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                    updated_at = NOW()
+                WHERE id = $1
+            `, [serie.id]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir episódio no PostgreSQL:', e.message);
+        }
+
+        // Encontrar ou criar temporada no cache
         let temporada = serie.temporadas.find(t => t.numero === temporadaNum);
         if (!temporada) {
             temporada = {
@@ -286,7 +395,6 @@ class CatalogoManager {
             serie.temporadas.sort((a, b) => a.numero - b.numero);
         }
 
-        // Verificar se episódio já existe
         const epIndex = temporada.episodios.findIndex(e => e.numero === episodioNum);
         const epData = {
             numero: episodioNum,
@@ -304,21 +412,7 @@ class CatalogoManager {
         };
 
         if (epIndex >= 0) {
-            const epExistente = temporada.episodios[epIndex];
-            if (!epExistente.versoes) {
-                epExistente.versoes = {
-                    dublado: epExistente.audio?.toLowerCase().includes('legendado') ? null : { messageId: epExistente.messageId, fileId: epExistente.fileId },
-                    legendado: epExistente.audio?.toLowerCase().includes('legendado') ? { messageId: epExistente.messageId, fileId: epExistente.fileId } : null
-                };
-            }
-            if (isDub) {
-                epExistente.versoes.dublado = { messageId, fileId, qualidade: metadados.qualidade || '1080p' };
-                epExistente.messageId = messageId;
-                epExistente.fileId = fileId;
-            }
-            if (isLeg) {
-                epExistente.versoes.legendado = { messageId, fileId, qualidade: metadados.qualidade || '1080p' };
-            }
+            temporada.episodios[epIndex] = epData;
         } else {
             temporada.episodios.push(epData);
             temporada.episodios.sort((a, b) => a.numero - b.numero);
@@ -329,12 +423,131 @@ class CatalogoManager {
         return { success: true, serie, temporada, episodio: epData };
     }
 
+    async removerItem(id) {
+        const numId = Number(id);
+        
+        try {
+            await db.query(`DELETE FROM filmes WHERE id = $1`, [numId]);
+            await db.query(`DELETE FROM series WHERE id = $1`, [numId]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao remover do PostgreSQL:', e.message);
+        }
+
+        let index = this.catalogo.filmes.findIndex(f => f.id === numId);
+        if (index !== -1) {
+            this.catalogo.filmes.splice(index, 1);
+            this.saveCatalogo();
+            return true;
+        }
+
+        index = this.catalogo.series.findIndex(s => s.id === numId);
+        if (index !== -1) {
+            this.catalogo.series.splice(index, 1);
+            this.saveCatalogo();
+            return true;
+        }
+
+        return false;
+    }
+
     buscarItemExato(nome, tipo) {
+        if (!nome) return null;
         const nomeLower = nome.toLowerCase().trim();
         if (tipo === 'filme') {
             return this.catalogo.filmes.find(f => f.nome.toLowerCase() === nomeLower);
         }
         return this.catalogo.series.find(s => s.nome.toLowerCase() === nomeLower);
+    }
+
+    getItemPorId(id) {
+        const numId = Number(id);
+        const filme = this.catalogo.filmes.find(f => f.id === numId);
+        if (filme) return { ...filme, tipo: 'filme' };
+
+        const serie = this.catalogo.series.find(s => s.id === numId);
+        if (serie) return { ...serie, tipo: 'serie' };
+
+        return null;
+    }
+
+    getItemPorMessageId(messageId) {
+        const numMsg = Number(messageId);
+        const filme = this.catalogo.filmes.find(f => f.messageId === numMsg || f.versoes?.dublado?.messageId === numMsg || f.versoes?.legendado?.messageId === numMsg);
+        if (filme) return { ...filme, tipo: 'filme' };
+
+        for (const serie of this.catalogo.series) {
+            for (const temp of (serie.temporadas || [])) {
+                const ep = (temp.episodios || []).find(e => e.messageId === numMsg || e.versoes?.dublado?.messageId === numMsg || e.versoes?.legendado?.messageId === numMsg);
+                if (ep) {
+                    return { ...serie, temporada: temp.numero, episodio: ep, tipo: 'serie' };
+                }
+            }
+        }
+        return null;
+    }
+
+    buscarItem(termo) {
+        if (!termo || termo.trim().length === 0) return [];
+        const termoBruto = termo.toLowerCase().trim();
+        const termoFonetico = this.normalizarTexto(termo);
+        const palavrasTermo = termoFonetico.split(' ').filter(p => p.length > 1);
+
+        const todosItens = [
+            ...(this.catalogo.filmes || []).map(f => ({ ...f, tipo: 'filme' })),
+            ...(this.catalogo.series || []).map(s => ({ ...s, tipo: 'serie' }))
+        ];
+
+        const pontuados = [];
+
+        for (const item of todosItens) {
+            const nomeBruto = (item.nome || '').toLowerCase();
+            const nomeFonetico = this.normalizarTexto(item.nome || '');
+            const nomeOriginalFonetico = this.normalizarTexto(item.nomeOriginal || '');
+            const sinopseFonetica = this.normalizarTexto(item.sinopse || item.descricao || '');
+
+            let score = 0;
+
+            if (nomeBruto.includes(termoBruto)) {
+                score += 100;
+            } else if (nomeFonetico.includes(termoFonetico)) {
+                score += 90;
+            } else if (nomeOriginalFonetico.includes(termoFonetico)) {
+                score += 80;
+            }
+
+            const simFonetica = this.calcularSimilaridade(termoFonetico, nomeFonetico);
+            if (simFonetica >= 0.70) {
+                score += Math.round(simFonetica * 70);
+            }
+
+            const palavrasItem = nomeFonetico.split(' ').filter(p => p.length > 1);
+            let palavrasCorrespondidas = 0;
+
+            for (const pTermo of palavrasTermo) {
+                for (const pItem of palavrasItem) {
+                    if (pTermo === pItem) {
+                        score += 30;
+                        palavrasCorrespondidas++;
+                        break;
+                    } else if (pItem.includes(pTermo) || pTermo.includes(pItem)) {
+                        score += 20;
+                        palavrasCorrespondidas++;
+                        break;
+                    }
+                }
+            }
+
+            if (sinopseFonetica.includes(termoFonetico)) {
+                score += 15;
+            }
+
+            if (score >= 20 || (palavrasTermo.length > 0 && palavrasCorrespondidas === palavrasTermo.length)) {
+                pontuados.push({ item, score });
+            }
+        }
+
+        pontuados.sort((a, b) => b.score - a.score);
+        return pontuados.map(p => p.item);
     }
 
     normalizarTexto(texto) {
@@ -378,132 +591,6 @@ class CatalogoManager {
         return (longer.length - this.calcularDistanciaLevenshtein(longer, shorter)) / longer.length;
     }
 
-    buscarItem(termo) {
-        if (!termo || termo.trim().length === 0) return [];
-        const termoBruto = termo.toLowerCase().trim();
-        const termoFonetico = this.normalizarTexto(termo);
-        const palavrasTermo = termoFonetico.split(' ').filter(p => p.length > 1);
-
-        const todosItens = [
-            ...(this.catalogo.filmes || []).map(f => ({ ...f, tipo: 'filme' })),
-            ...(this.catalogo.series || []).map(s => ({ ...s, tipo: 'serie' }))
-        ];
-
-        const pontuados = [];
-
-        for (const item of todosItens) {
-            const nomeBruto = (item.nome || '').toLowerCase();
-            const nomeFonetico = this.normalizarTexto(item.nome || '');
-            const nomeOriginalFonetico = this.normalizarTexto(item.nomeOriginal || '');
-            const sinopseFonetica = this.normalizarTexto(item.sinopse || item.descricao || '');
-
-            let score = 0;
-
-            // 1. Match direto exato / substring
-            if (nomeBruto.includes(termoBruto)) {
-                score += 100;
-            } else if (nomeFonetico.includes(termoFonetico)) {
-                score += 90;
-            } else if (nomeOriginalFonetico.includes(termoFonetico)) {
-                score += 80;
-            }
-
-            // 2. Similaridade fonética global
-            const simFonetica = this.calcularSimilaridade(termoFonetico, nomeFonetico);
-            if (simFonetica >= 0.70) {
-                score += Math.round(simFonetica * 70);
-            }
-
-            // 3. Similaridade palavra por palavra (ex: "homem aranja" -> "homem aranha")
-            const palavrasItem = nomeFonetico.split(' ').filter(p => p.length > 1);
-            let palavrasCorrespondidas = 0;
-
-            for (const pTermo of palavrasTermo) {
-                for (const pItem of palavrasItem) {
-                    if (pTermo === pItem) {
-                        score += 30;
-                        palavrasCorrespondidas++;
-                        break;
-                    } else if (pItem.includes(pTermo) || pTermo.includes(pItem)) {
-                        score += 20;
-                        palavrasCorrespondidas++;
-                        break;
-                    } else {
-                        const simPalavra = this.calcularSimilaridade(pTermo, pItem);
-                        if (simPalavra >= 0.70) {
-                            score += Math.round(simPalavra * 25);
-                            palavrasCorrespondidas++;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 4. Busca nas tags e sinopse
-            if (sinopseFonetica.includes(termoFonetico)) {
-                score += 15;
-            }
-
-            if (score >= 20 || (palavrasTermo.length > 0 && palavrasCorrespondidas === palavrasTermo.length)) {
-                pontuados.push({ item, score });
-            }
-        }
-
-        // Ordenar por relevância (score decrescente)
-        pontuados.sort((a, b) => b.score - a.score);
-        return pontuados.map(p => p.item);
-    }
-
-    itemCorresponde(item, termo) {
-        const resultados = this.buscarItem(termo);
-        return resultados.some(r => r.id === item.id);
-    }
-
-    getItemPorId(id) {
-        const numId = Number(id);
-        const filme = this.catalogo.filmes.find(f => f.id === numId);
-        if (filme) return { ...filme, tipo: 'filme' };
-
-        const serie = this.catalogo.series.find(s => s.id === numId);
-        if (serie) return { ...serie, tipo: 'serie' };
-
-        return null;
-    }
-
-    getItemPorMessageId(messageId) {
-        const filme = this.catalogo.filmes.find(f => f.messageId === messageId);
-        if (filme) return { ...filme, tipo: 'filme' };
-
-        for (const serie of this.catalogo.series) {
-            for (const temp of (serie.temporadas || [])) {
-                const ep = (temp.episodios || []).find(e => e.messageId === messageId);
-                if (ep) {
-                    return { ...serie, temporada: temp.numero, episodio: ep, tipo: 'serie' };
-                }
-            }
-        }
-        return null;
-    }
-
-    removerItem(id) {
-        const numId = Number(id);
-        let index = this.catalogo.filmes.findIndex(f => f.id === numId);
-        if (index !== -1) {
-            this.catalogo.filmes.splice(index, 1);
-            this.saveCatalogo();
-            return true;
-        }
-
-        index = this.catalogo.series.findIndex(s => s.id === numId);
-        if (index !== -1) {
-            this.catalogo.series.splice(index, 1);
-            this.saveCatalogo();
-            return true;
-        }
-
-        return false;
-    }
-
     extrairAno(texto) {
         if (!texto) return '';
         const match = texto.match(/\b(19\d\d|20\d\d)\b/);
@@ -516,7 +603,6 @@ class CatalogoManager {
             .replace(/[^\w\s\u00C0-\u00FF]/g, '')
             .split(/\s+/)
             .filter(palavra => palavra.length > 2);
-        
         return [...new Set(palavras)];
     }
 
@@ -549,87 +635,80 @@ class CatalogoManager {
     }
 
     getSeriesDubladas() {
-        return this.catalogo.series.filter(s => !s.audio || s.audio.toLowerCase().includes('dublado') || s.isDublado);
+        return this.catalogo.series.filter(s => s.isDublado);
     }
 
     getSeriesLegendadas() {
-        return this.catalogo.series.filter(s => s.audio && s.audio.toLowerCase().includes('legendado'));
-    }
-
-    formatarCatalogo() {
-        const stats = this.getEstatisticas();
-        let mensagem = `📚 *Catálogo BrasilFlix*\n\n`;
-        mensagem += `🎬 *Filmes:* ${stats.totalFilmes}\n`;
-        mensagem += `📺 *Séries e Doramas:* ${stats.totalSeries} (${stats.totalEpisodios} episódios)\n`;
-        mensagem += `📊 *Total de Títulos:* ${stats.total}\n\n`;
-        mensagem += `Use /buscar <nome> para encontrar qualquer filme ou dorama.`;
-
-        return mensagem;
-    }
-
-    formatarResultadosBusca(resultados) {
-        if (resultados.length === 0) {
-            return '🔍 Nenhum resultado encontrado para sua busca.';
-        }
-
-        let mensagem = `🔍 *Resultados da busca:*\n\n`;
-        
-        resultados.slice(0, 10).forEach((item, index) => {
-            const icone = item.tipo === 'filme' ? '🎬' : (item.isDorama ? '🎎' : '📺');
-            const ano = item.ano ? ` (${item.ano})` : '';
-            const nota = item.nota ? ` ⭐ ${item.nota}` : '';
-            
-            mensagem += `${icone} *${index + 1}.* ${item.nome}${ano}${nota}\n`;
-        });
-
-        mensagem += `\n💡 *Clique ou digite o número do item que deseja assistir!*`;
-        return mensagem;
+        return this.catalogo.series.filter(s => s.isLegendado);
     }
 
     getPublicCatalogo() {
-        const filmes = (this.catalogo.filmes || []).map(f => ({
-            id: f.id,
-            nome: f.nome,
-            nomeOriginal: f.nomeOriginal || '',
-            sinopse: f.sinopse || f.descricao || '',
-            posterUrl: f.posterUrl || null,
-            backdropUrl: f.backdropUrl || null,
-            ano: f.ano || null,
-            nota: f.nota || null,
-            generos: f.generos || [],
-            qualidade: f.qualidade || '1080p',
-            isCam: !!f.isCam,
-            isDublado: !!f.isDublado || !!f.versoes?.dublado,
-            isLegendado: !!f.isLegendado || !!f.versoes?.legendado,
-            audioBadge: this.getAudioBadge(f),
-            dataAdicionado: f.dataAdicionado || null
-        }));
-
-        const series = (this.catalogo.series || []).map(s => {
-            const totalEps = (s.temporadas || []).reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
-            return {
+        return {
+            filmes: (this.catalogo.filmes || []).map(f => ({
+                id: f.id,
+                nome: f.nome,
+                nomeOriginal: f.nomeOriginal,
+                ano: f.ano,
+                generos: f.generos,
+                sinopse: f.sinopse,
+                posterUrl: f.posterUrl,
+                backdropUrl: f.backdropUrl,
+                nota: f.nota,
+                qualidade: f.qualidade,
+                isDublado: f.isDublado,
+                isLegendado: f.isLegendado,
+                isCam: f.isCam,
+                audioBadge: this.getAudioBadge(f)
+            })),
+            series: (this.catalogo.series || []).map(s => ({
                 id: s.id,
                 nome: s.nome,
-                nomeOriginal: s.nomeOriginal || '',
-                sinopse: s.sinopse || s.descricao || '',
-                posterUrl: s.posterUrl || null,
-                backdropUrl: s.backdropUrl || null,
-                ano: s.ano || null,
-                nota: s.nota || null,
-                generos: s.generos || [],
-                qualidade: s.qualidade || '1080p',
-                isCam: !!s.isCam,
-                isDublado: !!s.isDublado,
-                isLegendado: !!s.isLegendado,
-                isDorama: !!s.isDorama,
-                audioBadge: this.getAudioBadge(s),
-                totalTemporadas: (s.temporadas || []).length,
-                totalEpisodios: totalEps,
-                dataAdicionado: s.dataAdicionado || null
-            };
+                nomeOriginal: s.nomeOriginal,
+                ano: s.ano,
+                generos: s.generos,
+                sinopse: s.sinopse,
+                posterUrl: s.posterUrl,
+                backdropUrl: s.backdropUrl,
+                nota: s.nota,
+                isDublado: s.isDublado,
+                isLegendado: s.isLegendado,
+                isDorama: s.isDorama,
+                totalTemporadas: s.totalTemporadas,
+                totalEpisodios: s.totalEpisodios,
+                audioBadge: this.getAudioBadge(s)
+            }))
+        };
+    }
+
+    getGenerosDisponiveis() {
+        const generoCounts = {};
+        const todosItens = [...(this.catalogo.filmes || []), ...(this.catalogo.series || [])];
+
+        todosItens.forEach(item => {
+            if (item.generos && Array.isArray(item.generos)) {
+                item.generos.forEach(g => {
+                    const gFormatado = g.trim();
+                    if (gFormatado && gFormatado.toLowerCase() !== 'geral') {
+                        generoCounts[gFormatado] = (generoCounts[gFormatado] || 0) + 1;
+                    }
+                });
+            }
         });
 
-        return { filmes, series };
+        return Object.entries(generoCounts)
+            .map(([nome, count]) => ({ nome, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    getItemsPorGenero(generoNome) {
+        const gBusca = generoNome.toLowerCase().trim();
+        const filmes = (this.catalogo.filmes || []).filter(f => 
+            (f.generos || []).some(g => g.toLowerCase().trim() === gBusca)
+        );
+        const series = (this.catalogo.series || []).filter(s => 
+            (s.generos || []).some(g => g.toLowerCase().trim() === gBusca)
+        );
+        return [...filmes, ...series];
     }
 }
 
