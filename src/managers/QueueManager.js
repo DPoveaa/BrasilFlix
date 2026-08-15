@@ -367,19 +367,43 @@ class QueueManager extends EventEmitter {
             }).catch(() => {});
         }
 
-        // 9. Se for Série/Dorama, enfileira o próximo episódio com prioridade de série!
+        // 9. Se for Série/Dorama, enfileira o próximo episódio e próxima temporada automaticamente até completar 100%!
         if (job.type === 'serie') {
-            const nextEp = (job.episode || 1) + 1;
-            const maxEpisodes = metadata.totalEpisodios || 16; // Padrão doramas: 16 eps
+            const currentSeasonNum = job.season || 1;
+            const currentEpNum = job.episode || 1;
 
-            if (nextEp <= maxEpisodes) {
-                console.log(`📺 Enfileirando próximo episódio: ${job.title} T${job.season}E${nextEp}`);
-                this.addJob(job.title, 'serie', PRIORITIES.SERIES, {
+            // Obter informações exatas de temporadas do TMDB
+            const temporadaAtual = (metadata.temporadas || []).find(t => t.numero === currentSeasonNum);
+            const totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || (metadata.totalEpisodios ? Math.ceil(metadata.totalEpisodios / (metadata.totalTemporadas || 1)) : 10);
+            const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+
+            const nextEp = currentEpNum + 1;
+
+            if (nextEp <= totalEpsNestaTemporada) {
+                // Próximo episódio da mesma temporada
+                console.log(`📺 [SÉRIE/DORAMA] Enfileirando próximo episódio: "${metadata.nome || job.title}" - T${currentSeasonNum}E${nextEp} (de ${totalEpsNestaTemporada} eps)`);
+                this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.SERIES, {
                     tmdbId: metadata.tmdbId,
-                    season: job.season,
+                    season: currentSeasonNum,
                     episode: nextEp,
-                    userId: job.userId
+                    userId: job.userId,
+                    username: job.username
                 });
+            } else {
+                // Temporada atual concluída! Avança para a próxima temporada
+                const nextSeasonNum = currentSeasonNum + 1;
+                if (nextSeasonNum <= totalTemporadas) {
+                    console.log(`📺 [SÉRIE/DORAMA] Temporada ${currentSeasonNum} concluída! Avançando para Temporada ${nextSeasonNum} (Episódio 1) de "${metadata.nome || job.title}"`);
+                    this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.SERIES, {
+                        tmdbId: metadata.tmdbId,
+                        season: nextSeasonNum,
+                        episode: 1,
+                        userId: job.userId,
+                        username: job.username
+                    });
+                } else {
+                    console.log(`🎉 [SÉRIE/DORAMA] SÉRIE COMPLETA! Todas as ${totalTemporadas} temporada(s) de "${metadata.nome || job.title}" foram catalogadas com sucesso!`);
+                }
             }
         }
     }
