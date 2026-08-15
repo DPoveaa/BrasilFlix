@@ -464,40 +464,241 @@
             font-size: 16px;
         }
 
-        .filter-row {
+        /* CATALOG SIDEBAR & LAYOUT ESTILO MERCADO LIVRE */
+        .catalog-layout {
             display: flex;
-            align-items: center;
-            gap: 8px;
-            overflow-x: auto;
-            padding-bottom: 4px;
+            gap: 24px;
+            align-items: flex-start;
+            margin-top: 10px;
         }
 
-        .filter-row::-webkit-scrollbar { height: 3px; }
-        .filter-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
-
-        .filter-chip {
-            background: rgba(255, 255, 255, 0.05);
+        .catalog-sidebar {
+            width: 260px;
+            min-width: 260px;
+            background: #11141e;
             border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            padding: 7px 14px;
-            border-radius: 999px;
-            font-size: 12px;
+            border-radius: 16px;
+            padding: 20px;
+            position: sticky;
+            top: 80px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            transition: left 0.3s ease;
+            z-index: 50;
+        }
+
+        .catalog-sidebar::-webkit-scrollbar { width: 4px; }
+        .catalog-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .btn-clear-filters {
+            background: none;
+            border: none;
+            color: #f87171;
+            font-size: 11px;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s ease;
+            text-decoration: underline;
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+
+        .btn-clear-filters:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .filter-section {
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .filter-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .filter-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-weight: 800;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .filter-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 0;
+            margin: 0;
+        }
+
+        .filter-link {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #cbd5e1;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.15s ease;
+        }
+
+        .filter-link:hover {
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            transform: translateX(2px);
+        }
+
+        .filter-link.active {
+            background: rgba(229, 9, 20, 0.12);
+            border-color: rgba(229, 9, 20, 0.25);
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .filter-link.active .filter-name {
+            color: #f87171;
+        }
+
+        .filter-count {
+            font-size: 10px;
+            background: rgba(255,255,255,0.08);
+            padding: 2px 7px;
+            border-radius: 999px;
+            color: #94a3b8;
+            font-weight: 700;
+        }
+
+        .filter-link.active .filter-count {
+            background: rgba(229, 9, 20, 0.3);
+            color: #fff;
+        }
+
+        .catalog-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .catalog-header-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn-mobile-filters {
+            display: none;
+            background: #1e2330;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
             white-space: nowrap;
         }
 
-        .filter-chip:hover {
-            color: #fff;
-            background: rgba(255, 255, 255, 0.1);
+        .catalog-status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 4px 2px;
         }
 
-        .filter-chip.active {
-            background: var(--accent-gradient);
+        .active-chips-box {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .active-chip-tag {
+            background: rgba(229, 9, 20, 0.15);
+            border: 1px solid rgba(229, 9, 20, 0.35);
             color: #fff;
-            border-color: transparent;
-            box-shadow: 0 3px 10px rgba(239, 68, 68, 0.3);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .active-chip-tag:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        @media (max-width: 860px) {
+            .catalog-layout {
+                flex-direction: column;
+            }
+
+            .btn-mobile-filters {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .catalog-sidebar {
+                position: fixed;
+                top: 0;
+                left: -320px;
+                width: 290px;
+                min-width: 290px;
+                height: 100vh;
+                max-height: 100vh;
+                z-index: 2000;
+                background: #0d0f17;
+                box-shadow: 10px 0 30px rgba(0,0,0,0.8);
+                border-radius: 0 16px 16px 0;
+            }
+
+            .catalog-sidebar.mobile-open {
+                left: 0;
+            }
+
+            .sidebar-backdrop {
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.7);
+                backdrop-filter: blur(4px);
+                z-index: 1999;
+                display: none;
+            }
+
+            .sidebar-backdrop.active {
+                display: block;
+            }
         }
 
         /* CATALOG GRID */
@@ -1309,49 +1510,213 @@
 
         </div>
 
-        <!-- TAB 2: CATÁLOGO INTERATIVO (PÚBLICO) -->
+        <!-- TAB 2: CATÁLOGO INTERATIVO COM MENU LATERAL (ESTILO MERCADO LIVRE) -->
         <div id="tab-catalogo" class="tab-content">
-            
-            <div class="catalog-controls">
-                <div class="search-box">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" id="catalog-search" class="search-input" placeholder="Buscar por título, dorama, gênero..." oninput="filterCatalog()">
-                </div>
+            <!-- BACKDROP MOBILE -->
+            <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar()"></div>
 
-                <div class="filter-row">
-                    <button class="filter-chip active" onclick="setCategoryFilter('todos', this)">🌟 Todos</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('filme', this)">🎬 Filmes</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('serie', this)">📺 Séries</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('dorama', this)">🌸 Doramas</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('dublado', this)">🇧🇷 Dublados</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('legendado', this)">💬 Legendados</button>
-                    <button class="filter-chip" onclick="setCategoryFilter('cam', this)">📹 Cinema [CAM]</button>
-                </div>
+            <div class="catalog-layout">
+                <!-- MENU LATERAL DE FILTROS (MERCADO LIVRE STYLE) -->
+                <aside class="catalog-sidebar" id="catalog-sidebar">
+                    <div class="sidebar-header">
+                        <span style="font-weight: 800; font-size: 14px; color: #fff; display: flex; align-items: center; gap: 6px;">
+                            <span>🎛️</span> Filtros do Catálogo
+                        </span>
+                        <button class="btn-clear-filters" onclick="resetAllCatalogFilters()">Limpar Filtros</button>
+                    </div>
 
-                <!-- LINHA 2: FILTRO POR GÊNEROS E CATEGORIAS -->
-                <div class="genre-scroll-row" id="genre-filters-container">
-                    <button class="genre-filter-chip active" onclick="setGenreFilter('todos', this)">📁 Todas Categorias</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Ação', this)">💥 Ação</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Comédia', this)">😂 Comédia</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Drama', this)">🎭 Drama</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Ficção', this)">🚀 Ficção Científica</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Terror', this)">👻 Terror</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Romance', this)">💖 Romance</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Suspense', this)">🔍 Suspense</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Animação', this)">🎨 Animação</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Aventura', this)">🗺️ Aventura</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Crime', this)">🔪 Crime</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Fantasia', this)">🧙 Fantasia</button>
-                    <button class="genre-filter-chip" onclick="setGenreFilter('Documentário', this)">📜 Documentário</button>
-                </div>
+                    <!-- 1. TIPO DE MÍDIA -->
+                    <div class="filter-section">
+                        <h4 class="filter-title">🎬 Tipo de Mídia</h4>
+                        <ul class="filter-list">
+                            <li>
+                                <button class="filter-link active" data-filter="type" data-val="todos" onclick="setCatalogFilter('type', 'todos', this)">
+                                    <span class="filter-name">🌟 Todos os Tipos</span>
+                                    <span class="filter-count" id="count-type-all">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="type" data-val="filme" onclick="setCatalogFilter('type', 'filme', this)">
+                                    <span class="filter-name">🎥 Filmes</span>
+                                    <span class="filter-count" id="count-type-filme">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="type" data-val="serie" onclick="setCatalogFilter('type', 'serie', this)">
+                                    <span class="filter-name">📺 Séries</span>
+                                    <span class="filter-count" id="count-type-serie">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="type" data-val="dorama" onclick="setCatalogFilter('type', 'dorama', this)">
+                                    <span class="filter-name">🌸 Doramas (K-Drama)</span>
+                                    <span class="filter-count" id="count-type-dorama">0</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- 2. ÁUDIO & IDIOMA -->
+                    <div class="filter-section">
+                        <h4 class="filter-title">🔊 Áudio & Idioma</h4>
+                        <ul class="filter-list">
+                            <li>
+                                <button class="filter-link active" data-filter="audio" data-val="todos" onclick="setCatalogFilter('audio', 'todos', this)">
+                                    <span class="filter-name">🌐 Todos os Áudios</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="audio" data-val="dublado" onclick="setCatalogFilter('audio', 'dublado', this)">
+                                    <span class="filter-name">🇧🇷 Dublado (PT-BR)</span>
+                                    <span class="filter-count" id="count-audio-dub">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="audio" data-val="legendado" onclick="setCatalogFilter('audio', 'legendado', this)">
+                                    <span class="filter-name">💬 Legendado (PT-BR)</span>
+                                    <span class="filter-count" id="count-audio-leg">0</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- 3. QUALIDADE DE IMAGEM -->
+                    <div class="filter-section">
+                        <h4 class="filter-title">🎞️ Qualidade de Imagem</h4>
+                        <ul class="filter-list">
+                            <li>
+                                <button class="filter-link active" data-filter="quality" data-val="todos" onclick="setCatalogFilter('quality', 'todos', this)">
+                                    <span class="filter-name">✨ Todas as Qualidades</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="quality" data-val="1080p" onclick="setCatalogFilter('quality', '1080p', this)">
+                                    <span class="filter-name">💎 1080p Full HD (Oficial)</span>
+                                    <span class="filter-count" id="count-qual-1080">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="quality" data-val="cam" onclick="setCatalogFilter('quality', 'cam', this)">
+                                    <span class="filter-name">📹 Cinema [CAM]</span>
+                                    <span class="filter-count" id="count-qual-cam">0</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- 4. CATEGORIAS & GÊNEROS -->
+                    <div class="filter-section">
+                        <h4 class="filter-title">📁 Categorias & Gêneros</h4>
+                        <ul class="filter-list" id="sidebar-genre-list">
+                            <li>
+                                <button class="filter-link active" data-filter="genre" data-val="todos" onclick="setCatalogFilter('genre', 'todos', this)">
+                                    <span class="filter-name">🏷️ Todas Categorias</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Ação" onclick="setCatalogFilter('genre', 'Ação', this)">
+                                    <span class="filter-name">💥 Ação</span>
+                                    <span class="filter-count" id="count-genre-acao">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Comédia" onclick="setCatalogFilter('genre', 'Comédia', this)">
+                                    <span class="filter-name">😂 Comédia</span>
+                                    <span class="filter-count" id="count-genre-comedia">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Drama" onclick="setCatalogFilter('genre', 'Drama', this)">
+                                    <span class="filter-name">🎭 Drama</span>
+                                    <span class="filter-count" id="count-genre-drama">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Ficção" onclick="setCatalogFilter('genre', 'Ficção', this)">
+                                    <span class="filter-name">🚀 Ficção Científica</span>
+                                    <span class="filter-count" id="count-genre-ficcao">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Terror" onclick="setCatalogFilter('genre', 'Terror', this)">
+                                    <span class="filter-name">👻 Terror</span>
+                                    <span class="filter-count" id="count-genre-terror">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Romance" onclick="setCatalogFilter('genre', 'Romance', this)">
+                                    <span class="filter-name">💖 Romance</span>
+                                    <span class="filter-count" id="count-genre-romance">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Suspense" onclick="setCatalogFilter('genre', 'Suspense', this)">
+                                    <span class="filter-name">🔍 Suspense</span>
+                                    <span class="filter-count" id="count-genre-suspense">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Animação" onclick="setCatalogFilter('genre', 'Animação', this)">
+                                    <span class="filter-name">🎨 Animação</span>
+                                    <span class="filter-count" id="count-genre-animacao">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Aventura" onclick="setCatalogFilter('genre', 'Aventura', this)">
+                                    <span class="filter-name">🗺️ Aventura</span>
+                                    <span class="filter-count" id="count-genre-aventura">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Crime" onclick="setCatalogFilter('genre', 'Crime', this)">
+                                    <span class="filter-name">🔪 Crime</span>
+                                    <span class="filter-count" id="count-genre-crime">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Fantasia" onclick="setCatalogFilter('genre', 'Fantasia', this)">
+                                    <span class="filter-name">🧙 Fantasia</span>
+                                    <span class="filter-count" id="count-genre-fantasia">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="genre" data-val="Documentário" onclick="setCatalogFilter('genre', 'Documentário', this)">
+                                    <span class="filter-name">📜 Documentário</span>
+                                    <span class="filter-count" id="count-genre-doc">0</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </aside>
+
+                <!-- CONTEÚDO PRINCIPAL (BUSCA + STATUS + GRID) -->
+                <main class="catalog-main">
+                    <div class="catalog-header-bar">
+                        <div class="search-box" style="flex: 1; margin-bottom: 0;">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="catalog-search" class="search-input" placeholder="Buscar por título, categoria, sinopse..." oninput="filterCatalog()">
+                        </div>
+
+                        <button class="btn-mobile-filters" onclick="toggleMobileSidebar()">
+                            🎛️ Filtros (<span id="mobile-filter-badge">0</span>)
+                        </button>
+                    </div>
+
+                    <!-- BARRA DE STATUS / CHIPS ATIVOS -->
+                    <div class="catalog-status-bar" id="catalog-status-bar">
+                        <span id="catalog-count-text" style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                            Carregando catálogo...
+                        </span>
+                        <div class="active-chips-box" id="active-chips-box"></div>
+                    </div>
+
+                    <div class="catalog-grid" id="catalog-grid-container">
+                        <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
+                            Carregando catálogo...
+                        </div>
+                    </div>
+                </main>
             </div>
-
-            <div class="catalog-grid" id="catalog-grid-container">
-                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
-                    Carregando catálogo...
-                </div>
-            </div>
-
         </div>
 
         <!-- TAB 3: STREMIO ADDON VIP -->
@@ -2148,28 +2513,79 @@
             }
         }
 
-        function setCategoryFilter(category, btn) {
-            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-            if (btn) btn.classList.add('active');
-            activeCategory = category;
+        let catalogFilters = {
+            type: 'todos',
+            audio: 'todos',
+            quality: 'todos',
+            genre: 'todos'
+        };
+
+        function setCatalogFilter(key, val, btn) {
+            catalogFilters[key] = val;
+
+            // Atualiza botões ativos na seção correspondente
+            if (btn) {
+                const section = btn.closest('.filter-section');
+                if (section) {
+                    section.querySelectorAll('.filter-link').forEach(l => l.classList.remove('active'));
+                    btn.classList.add('active');
+                }
+            }
+
+            // Fecha sidebar no mobile se estiver aberta
+            const sidebar = document.getElementById('catalog-sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            if (sidebar && sidebar.classList.contains('mobile-open')) {
+                sidebar.classList.remove('mobile-open');
+                if (backdrop) backdrop.classList.remove('active');
+            }
+
             renderCatalog();
         }
 
-        function setGenreFilter(genre, btn) {
-            document.querySelectorAll('.genre-filter-chip').forEach(c => c.classList.remove('active'));
-            if (btn) btn.classList.add('active');
-            activeGenre = genre;
+        function resetAllCatalogFilters() {
+            catalogFilters = {
+                type: 'todos',
+                audio: 'todos',
+                quality: 'todos',
+                genre: 'todos'
+            };
+
+            const searchInput = document.getElementById('catalog-search');
+            if (searchInput) searchInput.value = '';
+
+            // Reseta visual dos botões no menu lateral
+            document.querySelectorAll('.catalog-sidebar .filter-link').forEach(link => {
+                const isDefault = link.getAttribute('data-val') === 'todos';
+                link.classList.toggle('active', isDefault);
+            });
+
             renderCatalog();
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('catalog-sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            if (sidebar) {
+                const isOpen = sidebar.classList.toggle('mobile-open');
+                if (backdrop) backdrop.classList.toggle('active', isOpen);
+            }
         }
 
         function filterByGenreDirect(genre) {
             closeModalDirect();
             switchTab('tab-catalogo');
-            activeGenre = genre;
-            document.querySelectorAll('.genre-filter-chip').forEach(c => {
-                c.classList.toggle('active', c.innerText.toLowerCase().includes(genre.toLowerCase()));
+            
+            catalogFilters.genre = genre;
+
+            // Destaca o link correspondente na barra lateral
+            document.querySelectorAll('#sidebar-genre-list .filter-link').forEach(link => {
+                const val = link.getAttribute('data-val') || '';
+                link.classList.toggle('active', val.toLowerCase() === genre.toLowerCase());
             });
+
             renderCatalog();
+
             const catElem = document.getElementById('tab-catalogo');
             if (catElem) {
                 window.scrollTo({ top: catElem.offsetTop - 80, behavior: 'smooth' });
@@ -2180,31 +2596,136 @@
             renderCatalog();
         }
 
+        function updateFilterCounts(allItems) {
+            // Contagem por Tipo
+            const countAll = allItems.length;
+            const countFilmes = allItems.filter(i => i.itemType === 'filme').length;
+            const countSeries = allItems.filter(i => i.itemType === 'serie').length;
+            const countDoramas = allItems.filter(i => i.isDorama).length;
+
+            const elAll = document.getElementById('count-type-all');
+            const elF = document.getElementById('count-type-filme');
+            const elS = document.getElementById('count-type-serie');
+            const elD = document.getElementById('count-type-dorama');
+            if (elAll) elAll.innerText = countAll;
+            if (elF) elF.innerText = countFilmes;
+            if (elS) elS.innerText = countSeries;
+            if (elD) elD.innerText = countDoramas;
+
+            // Contagem por Áudio
+            const countDub = allItems.filter(i => i.isDublado).length;
+            const countLeg = allItems.filter(i => i.isLegendado).length;
+            const elDub = document.getElementById('count-audio-dub');
+            const elLeg = document.getElementById('count-audio-leg');
+            if (elDub) elDub.innerText = countDub;
+            if (elLeg) elLeg.innerText = countLeg;
+
+            // Contagem por Qualidade
+            const countCam = allItems.filter(i => i.isCam).length;
+            const count1080 = allItems.filter(i => !i.isCam).length;
+            const el1080 = document.getElementById('count-qual-1080');
+            const elCam = document.getElementById('count-qual-cam');
+            if (el1080) el1080.innerText = count1080;
+            if (elCam) elCam.innerText = countCam;
+
+            // Contagem por Gêneros
+            const genreMap = {
+                'Ação': 'count-genre-acao',
+                'Comédia': 'count-genre-comedia',
+                'Drama': 'count-genre-drama',
+                'Ficção': 'count-genre-ficcao',
+                'Terror': 'count-genre-terror',
+                'Romance': 'count-genre-romance',
+                'Suspense': 'count-genre-suspense',
+                'Animação': 'count-genre-animacao',
+                'Aventura': 'count-genre-aventura',
+                'Crime': 'count-genre-crime',
+                'Fantasia': 'count-genre-fantasia',
+                'Documentário': 'count-genre-doc'
+            };
+
+            for (const [genreName, elemId] of Object.entries(genreMap)) {
+                const count = allItems.filter(i => (i.generos || []).some(g => g.toLowerCase().includes(genreName.toLowerCase()))).length;
+                const el = document.getElementById(elemId);
+                if (el) el.innerText = count;
+            }
+        }
+
+        function renderActiveChips(activeCount) {
+            const chipsBox = document.getElementById('active-chips-box');
+            if (!chipsBox) return;
+
+            let activeCountTotal = 0;
+            let chipsHtml = '';
+
+            if (catalogFilters.type !== 'todos') {
+                activeCountTotal++;
+                const labels = { filme: 'Filmes', serie: 'Séries', dorama: 'Doramas' };
+                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('type', 'todos')">🎬 ${labels[catalogFilters.type] || catalogFilters.type} ✕</span>`;
+            }
+
+            if (catalogFilters.audio !== 'todos') {
+                activeCountTotal++;
+                const labels = { dublado: 'Dublado (PT-BR)', legendado: 'Legendado' };
+                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('audio', 'todos')">🔊 ${labels[catalogFilters.audio] || catalogFilters.audio} ✕</span>`;
+            }
+
+            if (catalogFilters.quality !== 'todos') {
+                activeCountTotal++;
+                const labels = { '1080p': '1080p Full HD', cam: 'Cinema [CAM]' };
+                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('quality', 'todos')">🎞️ ${labels[catalogFilters.quality] || catalogFilters.quality} ✕</span>`;
+            }
+
+            if (catalogFilters.genre !== 'todos') {
+                activeCountTotal++;
+                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('genre', 'todos')">📁 ${catalogFilters.genre} ✕</span>`;
+            }
+
+            chipsBox.innerHTML = chipsHtml;
+
+            const badge = document.getElementById('mobile-filter-badge');
+            if (badge) badge.innerText = activeCountTotal;
+        }
+
         function renderCatalog() {
             const searchInput = document.getElementById('catalog-search');
             const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
             const grid = document.getElementById('catalog-grid-container');
+            const countText = document.getElementById('catalog-count-text');
             if (!grid) return;
 
-            let allItems = [
+            const baseList = [
                 ...(fullCatalog.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
                 ...(fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }))
             ];
 
-            if (activeCategory === 'filme') allItems = allItems.filter(i => i.itemType === 'filme');
-            else if (activeCategory === 'serie') allItems = allItems.filter(i => i.itemType === 'serie');
-            else if (activeCategory === 'dorama') allItems = allItems.filter(i => i.isDorama);
-            else if (activeCategory === 'dublado') allItems = allItems.filter(i => i.isDublado);
-            else if (activeCategory === 'legendado') allItems = allItems.filter(i => i.isLegendado);
-            else if (activeCategory === 'cam') allItems = allItems.filter(i => i.isCam);
+            // Atualiza contadores numéricos da barra lateral
+            updateFilterCounts(baseList);
 
-            if (activeGenre && activeGenre !== 'todos') {
+            let allItems = [...baseList];
+
+            // 1. Filtro de Tipo
+            if (catalogFilters.type === 'filme') allItems = allItems.filter(i => i.itemType === 'filme');
+            else if (catalogFilters.type === 'serie') allItems = allItems.filter(i => i.itemType === 'serie');
+            else if (catalogFilters.type === 'dorama') allItems = allItems.filter(i => i.isDorama);
+
+            // 2. Filtro de Áudio
+            if (catalogFilters.audio === 'dublado') allItems = allItems.filter(i => i.isDublado);
+            else if (catalogFilters.audio === 'legendado') allItems = allItems.filter(i => i.isLegendado);
+
+            // 3. Filtro de Qualidade
+            if (catalogFilters.quality === '1080p') allItems = allItems.filter(i => !i.isCam);
+            else if (catalogFilters.quality === 'cam') allItems = allItems.filter(i => i.isCam);
+
+            // 4. Filtro de Gênero
+            if (catalogFilters.genre && catalogFilters.genre !== 'todos') {
                 allItems = allItems.filter(i => {
                     const generos = i.generos || [];
-                    return generos.some(g => g.toLowerCase().includes(activeGenre.toLowerCase()));
+                    return generos.some(g => g.toLowerCase().includes(catalogFilters.genre.toLowerCase()));
                 });
             }
 
+            // 5. Filtro de Busca por Texto
             if (query) {
                 allItems = allItems.filter(i => 
                     (i.nome && i.nome.toLowerCase().includes(query)) || 
@@ -2214,8 +2735,22 @@
                 );
             }
 
+            // Renderiza chips ativos
+            renderActiveChips(allItems.length);
+
+            if (countText) {
+                countText.innerHTML = `Mostrando <strong>${allItems.length}</strong> de ${baseList.length} título(s) no catálogo`;
+            }
+
             if (allItems.length === 0) {
-                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">Nenhum título encontrado com os filtros selecionados.</div>';
+                grid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 50px 20px; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px dashed var(--border-color);">
+                        <div style="font-size: 38px; margin-bottom: 12px;">🔍</div>
+                        <h3 style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">Nenhum título encontrado</h3>
+                        <p style="font-size: 13px; max-width: 400px; margin: 0 auto 16px auto;">Não encontramos nenhum título com os filtros aplicados. Tente ajustar os filtros ou pesquisar outro termo.</p>
+                        <button class="btn-primary" style="padding: 8px 18px; font-size: 13px;" onclick="resetAllCatalogFilters()">Limpar Todos os Filtros</button>
+                    </div>
+                `;
                 return;
             }
 
