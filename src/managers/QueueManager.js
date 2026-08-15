@@ -375,6 +375,11 @@ class QueueManager extends EventEmitter {
             await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent) => {
                 job.progress = percent;
                 job.progressDetails = `Codificando 1080p: ${percent}%`;
+            }, {
+                nome: job.title,
+                tipo: job.type,
+                season: job.season,
+                episode: job.episode
             });
         }
 

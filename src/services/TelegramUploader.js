@@ -175,9 +175,11 @@ class TelegramUploader {
                 const barLength = 25;
                 const filled = Math.min(barLength, Math.round((fraction) * barLength));
                 const empty = Math.max(0, barLength - filled);
-                const bar = '█'.repeat(filled) + '░'.repeat(empty);
+                const uploadTitle = (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode)
+                    ? `${nome} (T${metadata.season || 1}E${metadata.episode || 1})`
+                    : nome;
 
-                const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${nome}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}\x1b[0m`;
+                const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${uploadTitle}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}\x1b[0m`;
 
                 if (process.stdout.isTTY) {
                     process.stdout.write(`\r${logLine} `);

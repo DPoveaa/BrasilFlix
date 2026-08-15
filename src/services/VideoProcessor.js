@@ -182,9 +182,13 @@ class VideoProcessor {
         });
     }
 
-    async optimizeForTelegram(inputPath, outputPath, onProgress = null) {
+    async optimizeForTelegram(inputPath, outputPath, onProgress = null, metadata = {}) {
         await fs.ensureDir(path.dirname(outputPath));
         const info = await this.getVideoInfo(inputPath);
+
+        const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
+            ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
+            : (metadata.nome || metadata.title || path.basename(inputPath));
 
         // Se o arquivo for menor que 3.95 GB e o codec já for H.264 (seja MP4 ou MKV):
         // Faz Remux Ultrarrápido em ~5 segundos sem perder qualidade nem gastar CPU!
@@ -210,7 +214,7 @@ class VideoProcessor {
         let finalPath;
 
         if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
-            console.log(`⚡ Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido para Streaming (5s)...`);
+            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Ultrarrápido (5s)...`);
             if (portugueseAudioIndex !== null) {
                 console.log(`🔊 Faixa de áudio em Português identificada (Stream 0:a:${portugueseAudioIndex}). Configurada como ÁUDIO PADRÃO!`);
             }
@@ -245,21 +249,21 @@ class VideoProcessor {
 
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
-                        console.log(`✅ Remux concluído com sucesso com 100% da qualidade original preservada!`);
+                        console.log(`✅ [${optTitle}] Remux concluído com sucesso com 100% da qualidade original preservada!`);
                         if (onProgress) onProgress(100);
                         resolve(outputPath);
                     } else {
                         console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
                         // Se falhar o remux por alguma inconsistência do container, cai para a codificação normal
-                        this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress).then(resolve).catch(reject);
+                        this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                     }
                 });
                 ffmpeg.on('error', () => {
-                    this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress).then(resolve).catch(reject);
+                    this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
             });
         } else {
-            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress);
+            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata);
         }
 
         // Validação Estrita Pós-Conversão: Duração do arquivo de saída DEVE bater com a do arquivo original
@@ -275,12 +279,16 @@ class VideoProcessor {
         return finalPath;
     }
 
-    async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null) {
+    async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null, metadata = {}) {
         const os = require('os');
         const cpuCount = os.cpus()?.length || 4;
         const safeThreads = Math.max(2, Math.min(8, cpuCount - 1)); // Deixa 1 núcleo livre para o bot responder liso
 
-        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p] Iniciando codificação ultrarrápida (Preset: faster, Threads: ${safeThreads}, CRF: 20, Áudio: 256k)...\x1b[0m`);
+        const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
+            ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
+            : (metadata.nome || metadata.title || path.basename(inputPath));
+
+        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação ultrarrápida (Preset: faster, Threads: ${safeThreads}, CRF: 20, Áudio: 256k)...\x1b[0m`);
         
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
@@ -334,7 +342,7 @@ class VideoProcessor {
                         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
                         // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        process.stdout.write(`\r\x1b[33m⚙️ [OTIMIZAÇÃO 1080p] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}\x1b[0m `);
+                        process.stdout.write(`\r\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}\x1b[0m `);
                     }
 
                     if (onProgress) onProgress(percent);

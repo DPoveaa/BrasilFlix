@@ -93,8 +93,12 @@ class DownloaderManager extends EventEmitter {
             'udp://opentor.net:6969/announce'
         ];
 
+        const displayTitle = (options.season || options.episode) 
+            ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})` 
+            : mediaTitle;
+
         return new Promise((resolve, reject) => {
-            console.log(`📥 Iniciando download via Torrent: "${mediaTitle}" [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
+            console.log(`📥 Iniciando download via Torrent: "${displayTitle}" [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
             // Instância isolada por download com alto limite de conexões simultâneas
             const client = new WT({
@@ -292,7 +296,7 @@ class DownloaderManager extends EventEmitter {
                     const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
 
-                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${mediaTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}\x1b[0m`;
+                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${displayTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}\x1b[0m`;
 
                     if (process.stdout.isTTY) {
                         process.stdout.write(`\r${logLine} `);
