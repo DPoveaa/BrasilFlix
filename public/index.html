@@ -1888,24 +1888,36 @@
                             : (task.progressDetails && task.progressDetails.includes('x') ? task.progressDetails.split('|')[1]?.trim() || 'Ativo' : 'Ativo');
 
                         // Público
-                        document.getElementById('live-task-title')?.innerText = `${task.title}${epStr}`;
-                        document.getElementById('live-task-type')?.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        document.getElementById('live-task-priority')?.innerText = task.priority === 1 ? '🔥 VIP' : 'Normal';
+                        const elTitle = document.getElementById('live-task-title');
+                        if (elTitle) elTitle.innerText = `${task.title}${epStr}`;
+                        const elType = document.getElementById('live-task-type');
+                        if (elType) elType.innerText = (task.status || 'PROCESSANDO').toUpperCase();
+                        const elPrio = document.getElementById('live-task-priority');
+                        if (elPrio) elPrio.innerText = task.priority === 1 ? '🔥 VIP' : 'Normal';
                         const barEl = document.getElementById('live-progress-bar');
                         if (barEl) barEl.style.width = `${progVal}%`;
-                        document.getElementById('live-percent')?.innerText = `${progVal}%`;
-                        document.getElementById('live-stage')?.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
-                        document.getElementById('live-speed')?.innerText = speedStr;
+                        const elPct = document.getElementById('live-percent');
+                        if (elPct) elPct.innerText = `${progVal}%`;
+                        const elStage = document.getElementById('live-stage');
+                        if (elStage) elStage.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
+                        const elSpeed = document.getElementById('live-speed');
+                        if (elSpeed) elSpeed.innerText = speedStr;
 
                         // Admin
-                        document.getElementById('adm-live-title')?.innerText = `${task.title}${epStr}`;
-                        document.getElementById('adm-live-status-tag')?.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        document.getElementById('adm-live-priority')?.innerText = task.priority === 1 ? '🔥 1 - VIP' : `Prioridade ${task.priority}`;
+                        const admTitle = document.getElementById('adm-live-title');
+                        if (admTitle) admTitle.innerText = `${task.title}${epStr}`;
+                        const admStatus = document.getElementById('adm-live-status-tag');
+                        if (admStatus) admStatus.innerText = (task.status || 'PROCESSANDO').toUpperCase();
+                        const admPrio = document.getElementById('adm-live-priority');
+                        if (admPrio) admPrio.innerText = task.priority === 1 ? '🔥 1 - VIP' : `Prioridade ${task.priority}`;
                         const admBarEl = document.getElementById('adm-live-bar');
                         if (admBarEl) admBarEl.style.width = `${progVal}%`;
-                        document.getElementById('adm-live-pct')?.innerText = `${progVal}%`;
-                        document.getElementById('adm-live-stage')?.innerText = task.progressDetails || 'Processando...';
-                        document.getElementById('adm-live-speed')?.innerText = `⚡ ${speedStr}`;
+                        const admPct = document.getElementById('adm-live-pct');
+                        if (admPct) admPct.innerText = `${progVal}%`;
+                        const admStage = document.getElementById('adm-live-stage');
+                        if (admStage) admStage.innerText = task.progressDetails || 'Processando...';
+                        const admSpeed = document.getElementById('adm-live-speed');
+                        if (admSpeed) admSpeed.innerText = `⚡ ${speedStr}`;
                     } else {
                         if (idleMessage) idleMessage.style.display = 'block';
                         if (activeContainer) activeContainer.style.display = 'none';
