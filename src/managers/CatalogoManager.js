@@ -64,12 +64,35 @@ class CatalogoManager {
         }
     }
 
+    getAudioBadge(item) {
+        if (!item) return '';
+        const temDub = item.isDublado || !!item.versoes?.dublado || (item.audio && !item.audio.toLowerCase().includes('legendado'));
+        const temLeg = item.isLegendado || !!item.versoes?.legendado || (item.audio && item.audio.toLowerCase().includes('legendado'));
+
+        if (temDub && temLeg) return '[D/L]';
+        if (temDub) return '[D]';
+        if (temLeg) return '[L]';
+        return '';
+    }
+
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
         const existente = this.buscarItemExato(nome, tipo);
 
+        const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? !metadadosExtras.audio.toLowerCase().includes('legendado') : true);
+        const isLegendado = metadadosExtras.isLegendado ?? (metadadosExtras.audio ? metadadosExtras.audio.toLowerCase().includes('legendado') : false);
+
         if (existente && !forcarAdicao) {
-            console.log(`⚠️ ${tipo} já existe no catálogo: ${nome}`);
-            return { success: false, message: 'Já existe no catálogo', item: existente };
+            console.log(`⚠️ ${tipo} já existe no catálogo: ${nome}. Atualizando versões de áudio...`);
+            this.atualizarMidiaFilme(existente.id, {
+                messageId,
+                fileId: metadadosExtras.fileId,
+                qualidade: metadadosExtras.qualidade || '1080p',
+                isCam: metadadosExtras.isCam || false,
+                isDublado,
+                isLegendado,
+                audio: metadadosExtras.audio
+            });
+            return { success: true, message: 'Versão atualizada no catálogo', item: existente };
         }
 
         const item = {
@@ -86,9 +109,13 @@ class CatalogoManager {
             generos: metadadosExtras.generos || [],
             qualidade: metadadosExtras.qualidade || '1080p',
             isCam: metadadosExtras.isCam || false,
-            isDublado: metadadosExtras.isDublado ?? (metadadosExtras.audio ? !metadadosExtras.audio.toLowerCase().includes('legendado') : true),
-            isLegendado: metadadosExtras.isLegendado ?? (metadadosExtras.audio ? metadadosExtras.audio.toLowerCase().includes('legendado') : false),
-            audio: metadadosExtras.audio || 'Dublado',
+            isDublado: isDublado,
+            isLegendado: isLegendado,
+            audio: metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+            versoes: {
+                dublado: isDublado ? { messageId, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null,
+                legendado: isLegendado ? { messageId, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null
+            },
             messageId,
             fileId: metadadosExtras.fileId || null,
             tipo: 'filme',
@@ -150,17 +177,47 @@ class CatalogoManager {
 
         if (!filme) return false;
 
-        if (novaMidia.messageId) filme.messageId = novaMidia.messageId;
-        if (novaMidia.fileId) filme.fileId = novaMidia.fileId;
-        if (novaMidia.qualidade) filme.qualidade = novaMidia.qualidade;
-        if (typeof novaMidia.isCam === 'boolean') filme.isCam = novaMidia.isCam;
-        if (typeof novaMidia.isDublado === 'boolean') filme.isDublado = novaMidia.isDublado;
-        if (typeof novaMidia.isLegendado === 'boolean') filme.isLegendado = novaMidia.isLegendado;
-        if (novaMidia.audio) filme.audio = novaMidia.audio;
-        filme.dataAtualizado = new Date().toISOString();
+        if (!filme.versoes) {
+            filme.versoes = {
+                dublado: filme.isDublado ? { messageId: filme.messageId, fileId: filme.fileId, qualidade: filme.qualidade, isCam: filme.isCam } : null,
+                legendado: filme.isLegendado ? { messageId: filme.messageId, fileId: filme.fileId, qualidade: filme.qualidade, isCam: filme.isCam } : null
+            };
+        }
 
+        const isNovaDub = novaMidia.isDublado ?? (novaMidia.audio ? !novaMidia.audio.toLowerCase().includes('legendado') : false);
+        const isNovaLeg = novaMidia.isLegendado ?? (novaMidia.audio ? novaMidia.audio.toLowerCase().includes('legendado') : false);
+
+        if (isNovaDub) {
+            filme.versoes.dublado = {
+                messageId: novaMidia.messageId || filme.messageId,
+                fileId: novaMidia.fileId || filme.fileId,
+                qualidade: novaMidia.qualidade || filme.qualidade,
+                isCam: novaMidia.isCam ?? filme.isCam
+            };
+            filme.isDublado = true;
+            filme.messageId = novaMidia.messageId || filme.messageId;
+            filme.fileId = novaMidia.fileId || filme.fileId;
+            filme.qualidade = novaMidia.qualidade || filme.qualidade;
+            if (typeof novaMidia.isCam === 'boolean') filme.isCam = novaMidia.isCam;
+        }
+
+        if (isNovaLeg) {
+            filme.versoes.legendado = {
+                messageId: novaMidia.messageId || filme.versoes.legendado?.messageId || filme.messageId,
+                fileId: novaMidia.fileId || filme.versoes.legendado?.fileId || filme.fileId,
+                qualidade: novaMidia.qualidade || filme.qualidade,
+                isCam: novaMidia.isCam ?? false
+            };
+            filme.isLegendado = true;
+            if (!filme.isDublado) {
+                filme.messageId = novaMidia.messageId || filme.messageId;
+                filme.fileId = novaMidia.fileId || filme.fileId;
+            }
+        }
+
+        filme.dataAtualizado = new Date().toISOString();
         this.saveCatalogo();
-        console.log(`🔄 Filme atualizado com sucesso no catálogo: "${filme.nome}" [Nova Qualidade: ${filme.qualidade}, Áudio: ${filme.audio}]`);
+        console.log(`🔄 Filme atualizado com sucesso no catálogo: "${filme.nome}" [Dublado: ${filme.isDublado}, Legendado: ${filme.isLegendado}]`);
         return true;
     }
 
@@ -169,6 +226,9 @@ class CatalogoManager {
             s.nome.toLowerCase() === serieNome.toLowerCase() || 
             (s.tmdbId && metadados.tmdbId && s.tmdbId === metadados.tmdbId)
         );
+
+        const isDub = metadados.isDublado ?? (metadados.audio ? !metadados.audio.toLowerCase().includes('legendado') : true);
+        const isLeg = metadados.isLegendado ?? (metadados.audio ? metadados.audio.toLowerCase().includes('legendado') : false);
 
         if (!serie) {
             serie = {
@@ -184,12 +244,17 @@ class CatalogoManager {
                 nota: metadados.nota || 0,
                 generos: metadados.generos || [],
                 isDorama: metadados.isDorama || false,
+                isDublado: isDub,
+                isLegendado: isLeg,
                 tipo: 'serie',
                 temporadas: [],
                 dataAdicionado: new Date().toISOString(),
                 tags: this.extrairTags(serieNome + ' ' + (metadados.generos ? metadados.generos.join(' ') : ''))
             };
             this.catalogo.series.push(serie);
+        } else {
+            if (isDub) serie.isDublado = true;
+            if (isLeg) serie.isLegendado = true;
         }
 
         // Encontrar ou criar temporada
@@ -213,12 +278,30 @@ class CatalogoManager {
             messageId: messageId,
             fileId: fileId,
             qualidade: metadados.qualidade || '1080p',
-            audio: metadados.audio || 'Dublado',
+            audio: metadados.audio || (isDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+            versoes: {
+                dublado: isDub ? { messageId, fileId, qualidade: metadados.qualidade || '1080p' } : null,
+                legendado: isLeg ? { messageId, fileId, qualidade: metadados.qualidade || '1080p' } : null
+            },
             dataAdicionado: new Date().toISOString()
         };
 
         if (epIndex >= 0) {
-            temporada.episodios[epIndex] = epData;
+            const epExistente = temporada.episodios[epIndex];
+            if (!epExistente.versoes) {
+                epExistente.versoes = {
+                    dublado: epExistente.audio?.toLowerCase().includes('legendado') ? null : { messageId: epExistente.messageId, fileId: epExistente.fileId },
+                    legendado: epExistente.audio?.toLowerCase().includes('legendado') ? { messageId: epExistente.messageId, fileId: epExistente.fileId } : null
+                };
+            }
+            if (isDub) {
+                epExistente.versoes.dublado = { messageId, fileId, qualidade: metadados.qualidade || '1080p' };
+                epExistente.messageId = messageId;
+                epExistente.fileId = fileId;
+            }
+            if (isLeg) {
+                epExistente.versoes.legendado = { messageId, fileId, qualidade: metadados.qualidade || '1080p' };
+            }
         } else {
             temporada.episodios.push(epData);
             temporada.episodios.sort((a, b) => a.numero - b.numero);

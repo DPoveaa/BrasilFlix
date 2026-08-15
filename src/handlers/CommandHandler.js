@@ -602,8 +602,8 @@ class CommandHandler {
         await this.mostrarMenuCatalogo(chatId, userId, null);
     }
 
-    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'dublado', pagina = 0) {
-        let filmes = this.catalogoManager.catalogo.filmes;
+    async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
+        let filmes = this.catalogoManager.catalogo.filmes || [];
         let tituloCategoria = '🎬 *Filmes Disponíveis*';
 
         if (audioFiltro === 'dublado') {
@@ -616,7 +616,7 @@ class CommandHandler {
         
         if (filmes.length === 0) {
             await this.sendOrEdit(chatId, 
-                `📭 Nenhum título encontrado em ${tituloCategoria} no momento.`,
+                `📭 Nenhum filme encontrado no catálogo no momento.`,
                 { 
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -641,7 +641,7 @@ class CommandHandler {
 
         const mensagem = `${tituloCategoria}\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
-                        `Selecione um filme para ver detalhes e assistir:`;
+                        `Selecione um filme para ver a sinopse e assistir:`;
 
         const keyboard = {
             inline_keyboard: []
@@ -650,20 +650,22 @@ class CommandHandler {
         filmesPagina.forEach(filme => {
             const ano = filme.ano ? ` (${filme.ano})` : '';
             const nota = filme.nota ? ` ⭐ ${filme.nota}` : '';
-            const nomeExibicao = `${filme.nome}${ano}${nota}`;
+            const badge = this.catalogoManager.getAudioBadge(filme);
+            const badgeStr = badge ? ` ${badge}` : '';
+            const nomeExibicao = `${filme.nome}${ano}${badgeStr}${nota}`;
             
             keyboard.inline_keyboard.push([
-                { text: `🎬 ${nomeExibicao.length > 32 ? nomeExibicao.substring(0, 29) + '...' : nomeExibicao}`, callback_data: `info_filme_${filme.id}` }
+                { text: `🎬 ${nomeExibicao.length > 34 ? nomeExibicao.substring(0, 31) + '...' : nomeExibicao}`, callback_data: `info_filme_${filme.id}` }
             ]);
         });
 
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
-                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `filmes_${audioFiltro}_pagina_${paginaAtual - 1}` });
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `filmes_pagina_${paginaAtual - 1}` });
             }
             if (paginaAtual < paginas - 1) {
-                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `filmes_${audioFiltro}_pagina_${paginaAtual + 1}` });
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `filmes_pagina_${paginaAtual + 1}` });
             }
         }
         
@@ -682,9 +684,9 @@ class CommandHandler {
         }, callbackQuery);
     }
 
-    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'dublado', pagina = 0) {
-        let series = this.catalogoManager.catalogo.series;
-        let tituloCategoria = '📺 *Séries Disponíveis*';
+    async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
+        let series = this.catalogoManager.catalogo.series || [];
+        let tituloCategoria = '📺 *Séries & Doramas Disponíveis*';
 
         if (audioFiltro === 'dublado') {
             series = this.catalogoManager.getSeriesDubladas();
@@ -696,7 +698,7 @@ class CommandHandler {
         
         if (series.length === 0) {
             await this.sendOrEdit(chatId, 
-                `📭 Nenhuma série encontrada em ${tituloCategoria} no momento.`,
+                `📭 Nenhuma série encontrada no catálogo no momento.`,
                 { 
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -721,7 +723,7 @@ class CommandHandler {
 
         const mensagem = `${tituloCategoria}\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${series.length} séries\n\n` +
-                        `Selecione uma série para ver detalhes e episódios:`;
+                        `Selecione uma série para ver episódios e assistir:`;
 
         const keyboard = {
             inline_keyboard: []
@@ -730,20 +732,22 @@ class CommandHandler {
         seriesPagina.forEach(serie => {
             const ano = serie.ano ? ` (${serie.ano})` : '';
             const nota = serie.nota ? ` ⭐ ${serie.nota}` : '';
-            const nomeExibicao = `${serie.nome}${ano}${nota}`;
+            const badge = this.catalogoManager.getAudioBadge(serie);
+            const badgeStr = badge ? ` ${badge}` : '';
+            const nomeExibicao = `${serie.nome}${ano}${badgeStr}${nota}`;
             
             keyboard.inline_keyboard.push([
-                { text: `📺 ${nomeExibicao.length > 32 ? nomeExibicao.substring(0, 29) + '...' : nomeExibicao}`, callback_data: `info_serie_${serie.id}` }
+                { text: `📺 ${nomeExibicao.length > 34 ? nomeExibicao.substring(0, 31) + '...' : nomeExibicao}`, callback_data: `info_serie_${serie.id}` }
             ]);
         });
 
         const botoesNavegacao = [];
         if (paginas > 1) {
             if (paginaAtual > 0) {
-                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `series_${audioFiltro}_pagina_${paginaAtual - 1}` });
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `series_pagina_${paginaAtual - 1}` });
             }
             if (paginaAtual < paginas - 1) {
-                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `series_${audioFiltro}_pagina_${paginaAtual + 1}` });
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `series_pagina_${paginaAtual + 1}` });
             }
         }
         
@@ -773,27 +777,46 @@ class CommandHandler {
         const nota = filme.nota ? `⭐ *Avaliação:* ${filme.nota}/10\n` : '';
         const generos = (filme.generos && filme.generos.length > 0) ? `🎭 *Gêneros:* ${filme.generos.join(', ')}\n` : '';
         const qualidade = filme.isCam ? '📹 Versão Cinema (Provisória)' : (filme.qualidade || '1080p Full HD');
-        const audio = filme.isLegendado || (filme.audio && filme.audio.toLowerCase().includes('legendado')) ? 'Legendado' : 'Dublado (Áudio PT-BR)';
+        
+        const temDub = filme.isDublado || !!filme.versoes?.dublado;
+        const temLeg = filme.isLegendado || !!filme.versoes?.legendado;
+
+        let audioTexto = 'Dublado (Áudio PT-BR)';
+        if (temDub && temLeg) {
+            audioTexto = '🇧🇷 Dublado & 💬 Legendado (PT-BR)';
+        } else if (temLeg) {
+            audioTexto = '💬 Legendado (PT-BR)';
+        }
+
         const sinopse = (filme.sinopse || filme.descricao || 'Disponível no catálogo com máxima qualidade.').trim();
 
         const mensagem = `🎬 *${filme.nome}*${ano}\n\n` +
                         `${nota}` +
                         `${generos}` +
-                        `✨ *Qualidade:* ${qualidade} | 🔊 *Áudio:* ${audio}\n\n` +
+                        `✨ *Qualidade:* ${qualidade} | 🔊 *Áudio:* ${audioTexto}\n\n` +
                         `📝 *Sinopse:*\n_${sinopse}_`;
 
-        const voltarDestino = filme.isLegendado ? 'catalogo_filmes_legendados' : 'catalogo_filmes_dublados';
-        const keyboard = {
-            inline_keyboard: [
-                [
-                    { text: '▶️ Assistir Filme', callback_data: `assistir_filme_${filme.id}` }
-                ],
-                [
-                    { text: '🔍 Fazer Busca', callback_data: 'buscar' },
-                    { text: '🔙 Voltar à Lista', callback_data: voltarDestino }
-                ]
-            ]
-        };
+        const keyboard = { inline_keyboard: [] };
+
+        if (temDub && temLeg) {
+            keyboard.inline_keyboard.push([
+                { text: '🎬 Assistir Dublado', callback_data: `assistir_filme_${filme.id}_dublado` },
+                { text: '💬 Assistir Legendado', callback_data: `assistir_filme_${filme.id}_legendado` }
+            ]);
+        } else if (temLeg) {
+            keyboard.inline_keyboard.push([
+                { text: '💬 Assistir Legendado (PT-BR)', callback_data: `assistir_filme_${filme.id}_legendado` }
+            ]);
+        } else {
+            keyboard.inline_keyboard.push([
+                { text: '🎬 Assistir Dublado (PT-BR)', callback_data: `assistir_filme_${filme.id}_dublado` }
+            ]);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Fazer Busca', callback_data: 'buscar' },
+            { text: '🔙 Voltar à Lista', callback_data: 'catalogo_filmes' }
+        ]);
 
         await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
     }
@@ -812,10 +835,14 @@ class CommandHandler {
         const generos = (serie.generos && serie.generos.length > 0) ? `🎭 *Gêneros:* ${serie.generos.join(', ')}\n` : '';
         const sinopse = (serie.sinopse || serie.descricao || 'Disponível no catálogo BrasilFlix.').trim();
 
+        const badge = this.catalogoManager.getAudioBadge(serie);
+        const badgeTexto = badge === '[D/L]' ? '🇧🇷 Dublado & 💬 Legendado' : (badge === '[L]' ? '💬 Legendado' : '🇧🇷 Dublado');
+
         const mensagem = `📺 *${serie.nome}*${ano}\n\n` +
                         `${nota}` +
                         `${generos}` +
-                        `📊 *Temporadas:* ${temporadas.length} | *Episódios:* ${totalEpisodios}\n\n` +
+                        `📊 *Temporadas:* ${temporadas.length} | *Episódios:* ${totalEpisodios}\n` +
+                        `🔊 *Áudios:* ${badgeTexto}\n\n` +
                         `📝 *Sinopse:*\n_${sinopse}_\n\n` +
                         `🍿 *Selecione a temporada:*`;
 
@@ -830,10 +857,9 @@ class CommandHandler {
         });
         if (row.length > 0) keyboard.inline_keyboard.push(row);
 
-        const voltarDestino = serie.isLegendado ? 'catalogo_series_legendadas' : 'catalogo_series_dubladas';
         keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
-            { text: '🔙 Voltar à Lista', callback_data: voltarDestino }
+            { text: '🔙 Voltar à Lista', callback_data: 'catalogo_series' }
         ]);
 
         await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
@@ -876,7 +902,7 @@ class CommandHandler {
         return false;
     }
 
-    async handleAssistirFilme(chatId, userId, filmeId, callbackQuery) {
+    async handleAssistirFilme(chatId, userId, filmeId, callbackQuery, versaoAudio = 'dublado') {
         const username = callbackQuery?.from?.username || callbackQuery?.from?.first_name || 'Usuário';
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
         const cota = this.getCotaGratuita(userId);
@@ -887,13 +913,29 @@ class CommandHandler {
         }
 
         const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
-        if (!filme || (!filme.messageId && !filme.fileId)) {
+        if (!filme) {
+            await this.bot.sendMessage(chatId, '❌ Arquivo de vídeo indisponível no momento.');
+            return;
+        }
+
+        let targetMessageId = filme.messageId;
+        let targetFileId = filme.fileId;
+
+        if (versaoAudio === 'legendado' && filme.versoes?.legendado) {
+            targetMessageId = filme.versoes.legendado.messageId || targetMessageId;
+            targetFileId = filme.versoes.legendado.fileId || targetFileId;
+        } else if (versaoAudio === 'dublado' && filme.versoes?.dublado) {
+            targetMessageId = filme.versoes.dublado.messageId || targetMessageId;
+            targetFileId = filme.versoes.dublado.fileId || targetFileId;
+        }
+
+        if (!targetMessageId && !targetFileId) {
             await this.bot.sendMessage(chatId, '❌ Arquivo de vídeo indisponível no momento.');
             return;
         }
 
         try {
-            const entregue = await this.entregarVideoAoUsuario(chatId, filme.messageId, filme.fileId, `🎬 *${filme.nome}* 🍿 BrasilFlix`);
+            const entregue = await this.entregarVideoAoUsuario(chatId, targetMessageId, targetFileId, `🎬 *${filme.nome}* (${versaoAudio === 'legendado' ? 'Legendado' : 'Dublado'}) 🍿 BrasilFlix`);
 
             if (!entregue) {
                 await this.bot.sendMessage(chatId, '❌ Não foi possível entregar o vídeo neste momento. O suporte já foi notificado.');
@@ -1368,22 +1410,36 @@ class CommandHandler {
                     break;
                 // Callbacks de navegação do catálogo
                 case 'catalogo_filmes':
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'todos', 0);
+                    break;
                 case 'catalogo_filmes_dublados':
-                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'dublado');
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'dublado', 0);
                     break;
                 case 'catalogo_filmes_legendados':
-                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'legendado');
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'legendado', 0);
                     break;
                 case 'catalogo_series':
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'todos', 0);
+                    break;
                 case 'catalogo_series_dubladas':
-                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'dublado');
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'dublado', 0);
                     break;
                 case 'catalogo_series_legendadas':
-                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'legendado');
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'legendado', 0);
                     break;
                 case 'catalogo_categorias':
                     await this.handleCatalogoCategorias(chatId, userId, callbackQuery);
                     break;
+                case data.match(/^filmes_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^filmes_pagina_(\d+)$/)?.[1] || 0, 10);
+                    await this.handleCatalogoFilmes(chatId, userId, callbackQuery, 'todos', pag);
+                    break;
+                }
+                case data.match(/^series_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^series_pagina_(\d+)$/)?.[1] || 0, 10);
+                    await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'todos', pag);
+                    break;
+                }
                 case data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/)?.input: {
                     const match = data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/);
                     if (match) {
@@ -1428,9 +1484,18 @@ class CommandHandler {
                     if (id) await this.handleInfoSerie(chatId, userId, id, callbackQuery);
                     break;
                 }
+                case data.match(/^assistir_filme_(\d+)_(dublado|legendado)$/)?.input: {
+                    const match = data.match(/^assistir_filme_(\d+)_(dublado|legendado)$/);
+                    if (match) {
+                        const id = match[1];
+                        const audio = match[2];
+                        await this.handleAssistirFilme(chatId, userId, id, callbackQuery, audio);
+                    }
+                    break;
+                }
                 case data.match(/^assistir_filme_(\d+)$/)?.input: {
                     const id = data.match(/^assistir_filme_(\d+)$/)?.[1];
-                    if (id) await this.handleAssistirFilme(chatId, userId, id, callbackQuery);
+                    if (id) await this.handleAssistirFilme(chatId, userId, id, callbackQuery, 'dublado');
                     break;
                 }
                 case data.match(/^assistir_serie_(\d+)$/)?.input: {
@@ -1714,26 +1779,22 @@ class CommandHandler {
         const stats = this.catalogoManager.getEstatisticas();
         
         const mensagem = `📚 *Catálogo BrasilFlix*\n\n` +
-                        `🎬 *Filmes:* ${stats.totalFilmes} (${stats.totalFilmesDublados} Dublados | ${stats.totalFilmesLegendados} Legendados)\n` +
-                        `📺 *Séries:* ${stats.totalSeries} (${stats.totalSeriesDubladas} Dubladas | ${stats.totalSeriesLegendadas} Legendadas)\n` +
+                        `🎬 *Filmes:* ${stats.totalFilmes}\n` +
+                        `📺 *Séries & Doramas:* ${stats.totalSeries}\n` +
                         `📊 *Total de Títulos:* ${stats.total}\n\n` +
-                        `Escolha uma categoria para navegar:`;
+                        `Escolha uma opção para navegar:`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: `🎬 Filmes Dublados (${stats.totalFilmesDublados})`, callback_data: 'catalogo_filmes_dublados' },
-                    { text: `💬 Filmes Legendados (${stats.totalFilmesLegendados})`, callback_data: 'catalogo_filmes_legendados' }
-                ],
-                [
-                    { text: `📺 Séries Dubladas (${stats.totalSeriesDubladas})`, callback_data: 'catalogo_series_dubladas' },
-                    { text: `💬 Séries Legendadas (${stats.totalSeriesLegendadas})`, callback_data: 'catalogo_series_legendadas' }
-                ],
-                [
-                    { text: '🔍 Buscar no Catálogo', callback_data: 'buscar' }
+                    { text: `🎬 Filmes (${stats.totalFilmes})`, callback_data: 'catalogo_filmes' },
+                    { text: `📺 Séries (${stats.totalSeries})`, callback_data: 'catalogo_series' }
                 ],
                 [
                     { text: '🎭 Explorar por Categorias', callback_data: 'catalogo_categorias' }
+                ],
+                [
+                    { text: '🔍 Buscar no Catálogo', callback_data: 'buscar' }
                 ],
                 [
                     { text: '🔙 Voltar ao Menu', callback_data: 'voltar_menu' }

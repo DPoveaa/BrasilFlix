@@ -421,13 +421,23 @@ class MediaSearchService {
 
         const withSeeds = results.filter(r => (r.seeders || 0) > 0);
         const candidates = withSeeds.length > 0 ? withSeeds : results;
+        const pref = options.audioPreference || 'dublado';
 
         return candidates.sort((a, b) => {
             let scoreA = 0;
             let scoreB = 0;
 
-            if (a.isDublado) scoreA += 1200;
-            if (b.isDublado) scoreB += 1200;
+            if (pref === 'legendado') {
+                if (a.isLegendado) scoreA += 1500;
+                if (b.isLegendado) scoreB += 1500;
+                if (a.isDublado) scoreA += 300;
+                if (b.isDublado) scoreB += 300;
+            } else {
+                if (a.isDublado) scoreA += 1500;
+                if (b.isDublado) scoreB += 1500;
+                if (a.isLegendado) scoreA += 400;
+                if (b.isLegendado) scoreB += 400;
+            }
 
             if (a.isWebDl) scoreA += 500;
             if (b.isWebDl) scoreB += 500;

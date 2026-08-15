@@ -77,6 +77,7 @@ class QueueManager extends EventEmitter {
             title: title.trim(),
             type: type, // 'filme' ou 'serie'
             priority: priority,
+            audioPreference: extraData.audioPreference || 'dublado',
             userId: extraData.userId || null,
             username: extraData.username || null,
             season: extraData.season || 1,
@@ -89,11 +90,12 @@ class QueueManager extends EventEmitter {
             error: null
         };
 
-        // Verifica se já existe um trabalho igual na fila
+        // Verifica se já existe um trabalho igual na fila com a mesma preferência de áudio
         const existing = this.queue.find(j => 
             j.title.toLowerCase() === title.toLowerCase() && 
             j.season === job.season && 
             j.episode === job.episode &&
+            (j.audioPreference || 'dublado') === job.audioPreference &&
             j.status !== 'failed'
         );
 
@@ -109,12 +111,26 @@ class QueueManager extends EventEmitter {
             return existing;
         }
 
-        // Se for filme e já existir no catálogo em qualidade oficial (não-CAM), ignora download duplicado
+        // Se for filme e já existir no catálogo em qualidade oficial (não-CAM), valida por áudio
         if (type === 'filme' && !extraData.isUpgrade) {
             const existente = this.catalogoManager.buscarItemExato(title, 'filme');
             if (existente && !existente.isCam) {
-                console.log(`ℹ️ [Fila] "${title}" já existe no catálogo em qualidade oficial. Ignorando adição duplicada.`);
-                return null;
+                const pref = job.audioPreference;
+                const temDublado = existente.isDublado || !!existente.versoes?.dublado;
+                const temLegendado = existente.isLegendado || !!existente.versoes?.legendado;
+
+                if (pref === 'dublado' && temDublado) {
+                    console.log(`ℹ️ [Fila] "${title}" já possui versão Dublada no catálogo. Ignorando adição duplicada.`);
+                    return null;
+                }
+                if (pref === 'legendado' && temLegendado) {
+                    console.log(`ℹ️ [Fila] "${title}" já possui versão Legendada no catálogo. Ignorando adição duplicada.`);
+                    return null;
+                }
+                if (!extraData.audioPreference && temDublado && temLegendado) {
+                    console.log(`ℹ️ [Fila] "${title}" já possui ambas as versões (Dub/Leg) no catálogo.`);
+                    return null;
+                }
             }
         }
 
@@ -122,7 +138,7 @@ class QueueManager extends EventEmitter {
         this.sortQueue();
         this.saveQueue();
 
-        console.log(`📌 Novo trabalho na fila: "${job.title}" [Prioridade: ${job.priority}] (Total na fila: ${this.queue.length})`);
+        console.log(`📌 Novo trabalho na fila: "${job.title}" [Áudio: ${job.audioPreference}, Prioridade: ${job.priority}] (Total na fila: ${this.queue.length})`);
         
         // Inicia processamento se ocioso
         this.processNext();
@@ -212,7 +228,8 @@ class QueueManager extends EventEmitter {
             tmdbId: metadata.tmdbId,
             imdbId: metadata.imdbId,
             season: job.season || 1,
-            episode: job.episode || 1
+            episode: job.episode || 1,
+            audioPreference: job.audioPreference || 'dublado'
         });
         if (sources.length === 0) {
             if (job.userId && this.bot) {
@@ -390,7 +407,28 @@ class QueueManager extends EventEmitter {
             }).catch(() => {});
         }
 
-        // 9. Se for Série/Dorama, enfileira o próximo episódio e próxima temporada automaticamente até completar 100%!
+        // 9.5 Esteira Contínua para Filmes: Se faltar a versão complementar (Dublado ou Legendado), enfileira automaticamente!
+        if (job.type === 'filme') {
+            const itemAtualizado = this.catalogoManager.buscarItemExato(metadata.nome, 'filme');
+            const temDublado = itemAtualizado?.isDublado || !!itemAtualizado?.versoes?.dublado;
+            const temLegendado = itemAtualizado?.isLegendado || !!itemAtualizado?.versoes?.legendado;
+
+            if (metadata.isDublado && !temLegendado) {
+                console.log(`💬 [ESTEIRA DUAL] "${metadata.nome}" cadastrado dublado. Enfileirando versão Legendada em background...`);
+                this.addJob(metadata.nome, 'filme', PRIORITIES.FEEDER, {
+                    tmdbId: metadata.tmdbId,
+                    audioPreference: 'legendado'
+                });
+            } else if (metadata.isLegendado && !temDublado) {
+                console.log(`🇧🇷 [ESTEIRA DUAL] "${metadata.nome}" cadastrado legendado. Enfileirando busca por versão Dublada em background...`);
+                this.addJob(metadata.nome, 'filme', PRIORITIES.FEEDER, {
+                    tmdbId: metadata.tmdbId,
+                    audioPreference: 'dublado'
+                });
+            }
+        }
+
+        // 10. Se for Série/Dorama, enfileira o próximo episódio e próxima temporada automaticamente até completar 100%!
         if (job.type === 'serie') {
             const currentSeasonNum = job.season || 1;
             const currentEpNum = job.episode || 1;
