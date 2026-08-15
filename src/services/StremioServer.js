@@ -4,17 +4,21 @@ const fs = require('fs-extra');
 const config = require('../../config');
 const StremioService = require('./StremioService');
 const telegramUploader = require('./TelegramUploader');
+const authService = require('./AuthService');
+const db = require('../database/db');
 
 class StremioServer {
-    constructor(catalogoManager, assinaturaManager, queueManager = null, port = config.STREMIO_PORT || 7000) {
+    constructor(catalogoManager, assinaturaManager, queueManager = null, pedidosManager = null, port = config.STREMIO_PORT || 7000) {
         this.catalogoManager = catalogoManager;
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
+        this.pedidosManager = pedidosManager;
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
         this.port = port;
         this.app = express();
         this.setupMiddlewares();
         this.setupRoutes();
+        authService.initAdminUser().catch(() => {});
     }
 
     setupMiddlewares() {
@@ -65,13 +69,318 @@ class StremioServer {
             res.json(queueStatus);
         });
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🔒 ROTAS DE ADMINISTRAÇÃO PROTEGIDAS POR JWT
+        // ═══════════════════════════════════════════════════════════════════════
+
+        const auth = authService.authMiddleware();
+
+        // 1. Autenticação
+        this.app.post('/api/admin/login', async (req, res) => {
+            const { username, password } = req.body;
+            const result = await authService.login(username, password);
+            if (!result.success) {
+                return res.status(401).json(result);
+            }
+            res.json(result);
+        });
+
+        this.app.get('/api/admin/me', auth, (req, res) => {
+            res.json({
+                authenticated: true,
+                user: req.adminUser
+            });
+        });
+
+        this.app.post('/api/admin/change-password', auth, async (req, res) => {
+            const { currentPassword, newPassword } = req.body;
+            if (!newPassword || newPassword.length < 6) {
+                return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+            }
+
+            try {
+                const userRes = await db.query(`SELECT password_hash FROM admin_users WHERE username = $1`, [req.adminUser.username]);
+                if (userRes.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+                const isValid = authService.verifyPassword(currentPassword, userRes.rows[0].password_hash);
+                if (!isValid) return res.status(400).json({ error: 'Senha atual incorreta.' });
+
+                const newHash = authService.hashPassword(newPassword);
+                await db.query(`UPDATE admin_users SET password_hash = $1, updated_at = NOW() WHERE username = $2`, [newHash, req.adminUser.username]);
+                res.json({ success: true, message: 'Senha atualizada com sucesso!' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 2. Visão Geral / Estatísticas do Sistema
+        this.app.get('/api/admin/stats', auth, async (req, res) => {
+            try {
+                const catStats = this.catalogoManager ? this.catalogoManager.getEstatisticas() : { totalFilmes: 0, totalSeries: 0, totalEpisodios: 0 };
+                const queueStats = this.queueManager ? this.queueManager.getStatus() : { total: 0, queued: 0, completed: 0, failed: 0 };
+                const assinaturasAtivas = (this.assinaturaManager?.assinaturas || []).filter(a => a.status === 'ativa').length;
+                const pedidosPendentes = (this.pedidosManager?.getPedidosPendentes() || []).length;
+                const totalTokens = (this.assinaturaManager?.acessosVitalicios || []).length;
+
+                res.json({
+                    catalogo: catStats,
+                    fila: queueStats,
+                    assinaturasAtivas,
+                    pedidosPendentes,
+                    totalTokens,
+                    uptime: process.uptime(),
+                    memory: process.memoryUsage(),
+                    database: 'PostgreSQL Ativo',
+                    botOnline: true
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 3. Gerenciamento de Fila & Downloads
+        this.app.get('/api/admin/queue', auth, async (req, res) => {
+            try {
+                if (!this.queueManager) return res.json({ activeTask: null, jobs: [] });
+                const jobs = await this.queueManager.getAllAdminJobs(150);
+                res.json({
+                    isProcessing: this.queueManager.isProcessing,
+                    activeTask: this.queueManager.activeTask,
+                    jobs: jobs
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/queue/add', auth, async (req, res) => {
+            try {
+                const { title, type, priority, audioPreference, season, episode } = req.body;
+                if (!title) return res.status(400).json({ error: 'Título é obrigatório.' });
+
+                const job = this.queueManager.addJob(title, type || 'filme', parseInt(priority || 2, 10), {
+                    audioPreference: audioPreference || 'dublado',
+                    season: type === 'serie' ? parseInt(season || 1, 10) : null,
+                    episode: type === 'serie' ? parseInt(episode || 1, 10) : null,
+                    username: 'Admin (Painel Web)'
+                });
+
+                res.json({ success: true, job });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.put('/api/admin/queue/:id/priority', auth, async (req, res) => {
+            try {
+                const { priority } = req.body;
+                const result = await this.queueManager.updatePriority(req.params.id, priority);
+                res.json({ success: true, result });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/queue/:id/retry', auth, async (req, res) => {
+            try {
+                const job = await this.queueManager.retryJob(req.params.id);
+                res.json({ success: true, job });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/queue/:id', auth, async (req, res) => {
+            try {
+                const result = await this.queueManager.cancelJob(req.params.id);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/queue/clear-failed', auth, async (req, res) => {
+            try {
+                const result = await this.queueManager.clearFailed();
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 4. Gerenciamento de Assinaturas & Tokens VIP
+        this.app.get('/api/admin/assinaturas', auth, (req, res) => {
+            try {
+                res.json({
+                    assinaturas: this.assinaturaManager?.assinaturas || [],
+                    tokensVitalicios: this.assinaturaManager?.acessosVitalicios || []
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/assinaturas/grant', auth, async (req, res) => {
+            try {
+                const { userId, username, plano, dias } = req.body;
+                if (!userId && !username) return res.status(400).json({ error: 'UserId ou Username é obrigatório.' });
+
+                const targetUserId = userId ? parseInt(userId, 10) : 0;
+                const cleanUser = (username || '').replace(/^@/, '');
+
+                if (plano === 'vitalicio') {
+                    const ass = await this.assinaturaManager.concederAcessoVitalicio(cleanUser || targetUserId);
+                    return res.json({ success: true, assinatura: ass });
+                }
+
+                // Cria/estende assinatura regular
+                const dataInicio = new Date();
+                const dataFim = new Date(Date.now() + (parseInt(dias || 30, 10) * 24 * 3600 * 1000));
+
+                await db.query(`
+                    INSERT INTO assinaturas (user_id, username, plano, data_inicio, data_fim, status)
+                    VALUES ($1, $2, $3, $4, $5, 'ativa')
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        plano = $3,
+                        data_fim = $5,
+                        status = 'ativa'
+                `, [targetUserId, cleanUser || 'VIP', plano || 'mensal', dataInicio, dataFim]);
+
+                await this.assinaturaManager.loadAssinaturas();
+                res.json({ success: true, message: `Assinatura de ${cleanUser || targetUserId} ativada até ${dataFim.toLocaleDateString('pt-BR')}!` });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/assinaturas/revoke', auth, async (req, res) => {
+            try {
+                const { identifier } = req.body;
+                if (!identifier) return res.status(400).json({ error: 'Identificador obrigatório.' });
+
+                await this.assinaturaManager.revogarAcessoVitalicio(identifier);
+                await db.query(`UPDATE assinaturas SET status = 'cancelada' WHERE user_id = $1 OR username = $2`, [
+                    parseInt(identifier, 10) || 0,
+                    String(identifier).replace(/^@/, '')
+                ]);
+                await this.assinaturaManager.loadAssinaturas();
+                res.json({ success: true, message: 'Acesso revogado com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/stremio-tokens/generate', auth, async (req, res) => {
+            try {
+                const { username } = req.body;
+                const token = `bf_${require('crypto').randomBytes(12).toString('hex')}`;
+                const name = (username || 'VIP').replace(/^@/, '');
+
+                await db.query(`
+                    INSERT INTO stremio_tokens (token, username, tipo, ativo)
+                    VALUES ($1, $2, 'vitalicio', true)
+                `, [token, name]);
+
+                await this.assinaturaManager.loadAssinaturas();
+                res.json({ success: true, token, username: name });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 5. Gerenciamento de Pedidos de Clientes
+        this.app.get('/api/admin/pedidos', auth, (req, res) => {
+            try {
+                res.json({
+                    pedidos: this.pedidosManager ? this.pedidosManager.getPedidos() : []
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/pedidos/:id/enfileirar', auth, async (req, res) => {
+            try {
+                const pedido = this.pedidosManager?.getPedidoPorId(req.params.id);
+                if (!pedido) return res.status(404).json({ error: 'Pedido não encontrado.' });
+
+                const priority = req.body.priority || (pedido.isAssinante ? 1 : 2);
+                this.queueManager.addJob(pedido.nome, pedido.tipo || 'filme', parseInt(priority, 10), {
+                    userId: pedido.userId,
+                    username: pedido.username
+                });
+
+                await this.pedidosManager.marcarComoProcessado(pedido.id);
+                res.json({ success: true, message: `Pedido "${pedido.nome}" enviado para a fila!` });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/pedidos/:id', auth, async (req, res) => {
+            try {
+                await this.pedidosManager?.removerPedido(req.params.id);
+                res.json({ success: true, message: 'Pedido removido com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 6. Gerenciamento do Catálogo
+        this.app.get('/api/admin/catalogo', auth, (req, res) => {
+            try {
+                res.json(this.catalogoManager?.catalogo || { filmes: [], series: [] });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/catalogo/filme/:id', auth, async (req, res) => {
+            try {
+                await this.catalogoManager?.removerItem(req.params.id);
+                res.json({ success: true, message: 'Filme removido do catálogo.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/catalogo/serie/:id', auth, async (req, res) => {
+            try {
+                await this.catalogoManager?.removerItem(req.params.id);
+                res.json({ success: true, message: 'Série removida do catálogo.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/catalogo/episodio/:id', auth, async (req, res) => {
+            try {
+                await db.query(`DELETE FROM episodios WHERE id = $1`, [req.params.id]);
+                await this.catalogoManager?.loadCatalogo();
+                res.json({ success: true, message: 'Episódio removido do catálogo.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/catalogo/resync', auth, async (req, res) => {
+            try {
+                await this.catalogoManager?.loadCatalogo();
+                res.json({ success: true, stats: this.catalogoManager?.getEstatisticas() });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+
         // 2. Dashboard Web e Rotas de Navegacao
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
-        this.app.get(['/status', '/fila', '/catalogo'], (req, res) => this.renderLandingPage(req, res, 'public'));
+        this.app.get(['/status', '/fila', '/catalogo', '/admin'], (req, res) => this.renderLandingPage(req, res, 'public'));
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api') {
+            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin') {
                 return next();
             }
             this.renderLandingPage(req, res, token);

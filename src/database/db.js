@@ -200,11 +200,21 @@ async function createTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(50) DEFAULT 'admin',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
         CREATE INDEX IF NOT EXISTS idx_filmes_nome ON filmes(nome);
         CREATE INDEX IF NOT EXISTS idx_series_nome ON series(nome);
         CREATE INDEX IF NOT EXISTS idx_episodios_serie_season ON episodios(serie_id, temporada_numero);
         CREATE INDEX IF NOT EXISTS idx_pedidos_user ON pedidos(user_id);
         CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_jobs(status, priority);
+        CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
     `);
 
     console.log('✅ Esquemas e tabelas PostgreSQL prontos com chaves BIGINT!');

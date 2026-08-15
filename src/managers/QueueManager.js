@@ -840,6 +840,92 @@ class QueueManager extends EventEmitter {
             totalQueued: pending.length
         };
     }
+
+    async updatePriority(jobId, newPriority) {
+        const priorityInt = parseInt(newPriority, 10);
+        if (isNaN(priorityInt) || priorityInt < 1 || priorityInt > 4) {
+            throw new Error('Prioridade inválida (deve ser entre 1 e 4).');
+        }
+
+        const job = this.queue.find(j => j.id === jobId);
+        if (job) {
+            job.priority = priorityInt;
+            this.sortQueue();
+            await this.saveJob(job);
+            return job;
+        }
+
+        // Se não estiver na memória, atualiza no PostgreSQL
+        await db.query(`UPDATE queue_jobs SET priority = $1, updated_at = NOW() WHERE id = $2`, [priorityInt, jobId]);
+        return { id: jobId, priority: priorityInt };
+    }
+
+    async cancelJob(jobId) {
+        const job = this.queue.find(j => j.id === jobId);
+        if (job) {
+            job.status = 'failed';
+            job.error = 'Cancelado pelo Administrador';
+            await this.saveJob(job);
+            this.queue = this.queue.filter(j => j.id !== jobId);
+        } else {
+            await db.query(`DELETE FROM queue_jobs WHERE id = $1`, [jobId]);
+        }
+        return { success: true, id: jobId };
+    }
+
+    async retryJob(jobId) {
+        const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
+        if (res.rows.length === 0) {
+            throw new Error('Job não encontrado no banco de dados.');
+        }
+
+        const row = res.rows[0];
+        const job = this._rowToJob(row);
+        job.status = 'queued';
+        job.progress = 0;
+        job.progressDetails = 'Reenfileirado pelo Administrador';
+        job.error = null;
+
+        // Se já estava na fila em memória, atualiza
+        const existingIdx = this.queue.findIndex(j => j.id === jobId);
+        if (existingIdx >= 0) {
+            this.queue[existingIdx] = job;
+        } else {
+            this.queue.push(job);
+        }
+
+        this.sortQueue();
+        await this.saveJob(job);
+
+        // Dispara processador caso ocioso
+        this.processNext();
+        return job;
+    }
+
+    async clearFailed() {
+        await db.query(`DELETE FROM queue_jobs WHERE status = 'failed'`);
+        this.queue = this.queue.filter(j => j.status !== 'failed');
+        return { success: true };
+    }
+
+    async getAllAdminJobs(limit = 100) {
+        const res = await db.query(
+            `SELECT * FROM queue_jobs ORDER BY 
+                CASE 
+                    WHEN status = 'processing' THEN 1 
+                    WHEN status = 'downloading' THEN 2 
+                    WHEN status = 'uploading' THEN 3 
+                    WHEN status = 'queued' THEN 4 
+                    WHEN status = 'failed' THEN 5 
+                    ELSE 6 
+                END, 
+                priority ASC, 
+                created_at DESC 
+            LIMIT $1`,
+            [limit]
+        );
+        return res.rows.map(row => this._rowToJob(row));
+    }
 }
 
 module.exports = { QueueManager, PRIORITIES };

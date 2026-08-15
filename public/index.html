@@ -19,6 +19,8 @@
             --accent-orange: #f97316;
             --accent-gradient: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
             --vip-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            --blue-gradient: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+            --green-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
             --text-main: #f9fafb;
             --text-muted: #9ca3af;
         }
@@ -136,6 +138,11 @@
             box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
         }
 
+        .nav-tab.admin-tab.active {
+            background: var(--blue-gradient);
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+        }
+
         .btn-header {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid var(--border-color);
@@ -161,7 +168,7 @@
         @media (max-width: 768px) {
             header { padding: 10px 12px; }
             .header-container { justify-content: space-between; }
-            .nav-tabs { width: 100%; order: 3; justify-content: space-between; margin-top: 4px; }
+            .nav-tabs { width: 100%; order: 3; justify-content: space-between; margin-top: 4px; overflow-x: auto; }
             .nav-tab { flex: 1; text-align: center; padding: 8px 6px; font-size: 12px; }
             .btn-header { font-size: 12px; padding: 6px 10px; }
         }
@@ -399,28 +406,25 @@
         .badge-priority {
             background: rgba(239, 68, 68, 0.2);
             color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 10px;
-            font-weight: 700;
+            font-weight: 800;
         }
 
         .badge-completed {
-            background: rgba(16, 185, 129, 0.2);
+            background: rgba(16, 185, 129, 0.15);
             color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 10px;
-            font-weight: 700;
+            font-weight: 800;
         }
 
-        /* CATALOGO INTERATIVO */
+        /* CATALOG FILTERS & SEARCH */
         .catalog-controls {
-            background: var(--bg-card);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 16px;
             margin-bottom: 20px;
             display: flex;
             flex-direction: column;
@@ -434,24 +438,25 @@
 
         .search-input {
             width: 100%;
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 12px 16px 12px 42px;
+            border-radius: 14px;
+            padding: 14px 18px 14px 44px;
             color: #fff;
             font-size: 14px;
+            font-weight: 600;
             outline: none;
-            transition: all 0.2s ease;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .search-input:focus {
             border-color: var(--accent-red);
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.25);
         }
 
         .search-icon {
             position: absolute;
-            left: 14px;
+            left: 16px;
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-muted);
@@ -461,42 +466,47 @@
         .filter-row {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             overflow-x: auto;
             padding-bottom: 4px;
-            -webkit-overflow-scrolling: touch;
         }
 
         .filter-row::-webkit-scrollbar { height: 3px; }
-        .filter-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+        .filter-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
 
         .filter-chip {
-            background: rgba(31, 41, 55, 0.6);
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--border-color);
             color: var(--text-muted);
-            padding: 6px 12px;
-            border-radius: 8px;
+            padding: 7px 14px;
+            border-radius: 999px;
             font-size: 12px;
             font-weight: 700;
             cursor: pointer;
-            white-space: nowrap;
             transition: all 0.2s ease;
+            white-space: nowrap;
         }
 
-        .filter-chip:hover { color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+        .filter-chip:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
         .filter-chip.active {
-            background: rgba(239, 68, 68, 0.25);
-            color: #f87171;
-            border-color: rgba(239, 68, 68, 0.5);
+            background: var(--accent-gradient);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 3px 10px rgba(239, 68, 68, 0.3);
         }
 
+        /* CATALOG GRID */
         .catalog-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 16px;
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 640px) {
             .catalog-grid { grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 10px; }
         }
 
@@ -663,6 +673,252 @@
         .step-title { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 4px; }
         .step-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
 
+        /* ═══════════════════════════════════════════════════════════════════════
+           🛡️ ADMIN PANEL STYLES
+           ═══════════════════════════════════════════════════════════════════════ */
+        .admin-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 6px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+
+        .admin-nav::-webkit-scrollbar { height: 3px; }
+        .admin-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+        .admin-sub-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .admin-sub-btn:hover { color: #fff; background: rgba(255,255,255,0.06); }
+        .admin-sub-btn.active {
+            background: var(--blue-gradient);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+        }
+
+        .admin-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .admin-user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .admin-avatar {
+            width: 38px;
+            height: 38px;
+            background: var(--blue-gradient);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+        }
+
+        .admin-actions-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-action {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-action:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn-action-primary {
+            background: var(--blue-gradient);
+            border-color: transparent;
+            color: #fff;
+        }
+
+        .btn-action-primary:hover {
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-action-danger {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .btn-action-danger:hover {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        .btn-action-success {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: #34d399;
+        }
+
+        .btn-action-success:hover {
+            background: #10b981;
+            color: #fff;
+        }
+
+        /* ADMIN TABLES */
+        .admin-table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        .admin-table th {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px 16px;
+            color: var(--text-muted);
+            font-weight: 700;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        .admin-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            color: #e5e7eb;
+            vertical-align: middle;
+        }
+
+        .admin-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .admin-select {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .admin-select:focus {
+            border-color: #3b82f6;
+        }
+
+        .admin-input {
+            width: 100%;
+            background: #111827;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            outline: none;
+            margin-bottom: 12px;
+        }
+
+        .admin-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .admin-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        /* TOAST NOTIFICATIONS */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .toast-success { border-color: rgba(16, 185, 129, 0.4); border-left: 4px solid #10b981; }
+        .toast-error { border-color: rgba(239, 68, 68, 0.4); border-left: 4px solid #ef4444; }
+        .toast-info { border-color: rgba(59, 130, 246, 0.4); border-left: 4px solid #3b82f6; }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
         /* MODAL */
         .modal-backdrop {
             position: fixed;
@@ -793,6 +1049,8 @@
 </head>
 <body>
 
+    <div class="toast-container" id="toast-container"></div>
+
     <!-- HEADER -->
     <header>
         <div class="header-container">
@@ -813,6 +1071,9 @@
                 </button>
                 <button class="nav-tab" id="tab-btn-stremio" onclick="switchTab('tab-stremio')">
                     📺 Stremio VIP
+                </button>
+                <button class="nav-tab admin-tab" id="tab-btn-admin" onclick="switchTab('tab-admin')">
+                    🛡️ Admin
                 </button>
             </div>
 
@@ -986,9 +1247,416 @@
             </div>
         </div>
 
+        <!-- ═══════════════════════════════════════════════════════════════════════
+             🛡️ TAB 4: PAINEL ADMINISTRATIVO (PROTEGIDO POR JWT)
+             ═══════════════════════════════════════════════════════════════════════ -->
+        <div id="tab-admin" class="tab-content">
+            
+            <!-- VIEW DE LOGIN -->
+            <div id="admin-login-view" style="display: block;">
+                <div style="max-width: 420px; margin: 40px auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 20px; padding: 28px; backdrop-filter: blur(20px); box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <div style="font-size: 40px; margin-bottom: 8px;">🔐</div>
+                        <h2 style="font-size: 20px; font-weight: 800; color: #fff;">Acesso Administrativo</h2>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Painel de Controle BrasilFlix</p>
+                    </div>
+
+                    <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+                        <label class="admin-label">Usuário</label>
+                        <input type="text" id="login-username" class="admin-input" placeholder="admin" required autocomplete="username">
+                        
+                        <label class="admin-label">Senha</label>
+                        <input type="password" id="login-password" class="admin-input" placeholder="••••••••••••" required autocomplete="current-password">
+
+                        <button type="submit" class="btn-modal btn-modal-primary" style="width: 100%; padding: 12px; margin-top: 8px; font-size: 14px;">
+                            🚀 Entrar no Painel
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- VIEW DO DASHBOARD (AUTENTICADO) -->
+            <div id="admin-dashboard-view" style="display: none;">
+                
+                <!-- TOP HEADER -->
+                <div class="admin-header-bar">
+                    <div class="admin-user-info">
+                        <div class="admin-avatar">🛡️</div>
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 800; color: #fff;" id="admin-user-display">Administrador</h3>
+                            <span style="font-size: 11px; color: #34d399; font-weight: 700;">● Sessão JWT Autenticada</span>
+                        </div>
+                    </div>
+
+                    <div class="admin-actions-bar">
+                        <button class="btn-action" onclick="openAdminModal('admin-modal-password')">
+                            🔑 Alterar Senha
+                        </button>
+                        <button class="btn-action btn-action-danger" onclick="handleAdminLogout()">
+                            🚪 Sair
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SUB-NAVBAR -->
+                <div class="admin-nav">
+                    <button class="admin-sub-btn active" id="admin-sub-btn-overview" onclick="switchAdminSubTab('overview')">
+                        📊 Visão Geral
+                    </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-queue" onclick="switchAdminSubTab('queue')">
+                        📥 Fila de Downloads
+                    </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
+                        💎 Assinaturas & VIPs
+                    </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-requests" onclick="switchAdminSubTab('requests')">
+                        🍿 Pedidos de Clientes
+                    </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-catalog" onclick="switchAdminSubTab('catalog')">
+                        🎬 Gerenciar Catálogo
+                    </button>
+                </div>
+
+                <!-- SUB-TAB 1: VISÃO GERAL -->
+                <div id="admin-subtab-overview" class="admin-subtab-content" style="display: block;">
+                    <div class="stats-grid" id="admin-stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">📥</div>
+                            <div class="stat-info">
+                                <h3 id="adm-stat-queue">0</h3>
+                                <p>Itens na Fila</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">💎</div>
+                            <div class="stat-info">
+                                <h3 id="adm-stat-subs">0</h3>
+                                <p>Assinantes VIP</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">🍿</div>
+                            <div class="stat-info">
+                                <h3 id="adm-stat-pedidos">0</h3>
+                                <p>Pedidos Pendentes</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">🗄️</div>
+                            <div class="stat-info">
+                                <h3 id="adm-stat-catalogo">0</h3>
+                                <p>Total no Catálogo</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-box" style="margin-bottom: 20px;">
+                        <div class="panel-header">
+                            <h3>⚙️ Informações do Servidor & Conexões</h3>
+                            <button class="btn-action" onclick="loadAdminStats()">🔄 Atualizar</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px;">
+                                <div style="color: var(--text-muted); font-size: 11px;">BANCO DE DADOS</div>
+                                <div style="color: #34d399; font-weight: 800; margin-top: 4px;">PostgreSQL Conectado</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px;">
+                                <div style="color: var(--text-muted); font-size: 11px;">TELEGRAM BOT</div>
+                                <div style="color: #34d399; font-weight: 800; margin-top: 4px;">Polling Ativo (@BrasilFlix_bot)</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px;">
+                                <div style="color: var(--text-muted); font-size: 11px;">MTPROTO UPLOADER</div>
+                                <div style="color: #34d399; font-weight: 800; margin-top: 4px;">Sessão Premium 4GB Ativa</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px;">
+                                <div style="color: var(--text-muted); font-size: 11px;">UPTIME SERVIDOR</div>
+                                <div style="color: #fff; font-weight: 800; margin-top: 4px;" id="adm-server-uptime">Carregando...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-TAB 2: FILA & DOWNLOADS -->
+                <div id="admin-subtab-queue" class="admin-subtab-content" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">📋 Gerenciamento da Esteira de Downloads</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn-action btn-action-primary" onclick="openAdminModal('admin-modal-add-job')">
+                                ➕ Adicionar Trabalho Manual
+                            </button>
+                            <button class="btn-action btn-action-danger" onclick="handleClearFailedJobs()">
+                                🧹 Limpar Falhas
+                            </button>
+                            <button class="btn-action" onclick="loadAdminQueue()">
+                                🔄 Atualizar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Título</th>
+                                        <th>Tipo</th>
+                                        <th>Prioridade</th>
+                                        <th>Áudio</th>
+                                        <th>Status</th>
+                                        <th>Progresso</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-queue-tbody">
+                                    <tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando fila...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-TAB 3: ASSINATURAS & VIPS -->
+                <div id="admin-subtab-subs" class="admin-subtab-content" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">💎 Assinaturas e Acessos Stremio VIP</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn-action btn-action-primary" onclick="openAdminModal('admin-modal-grant-sub')">
+                                ➕ Conceder / Renovar VIP
+                            </button>
+                            <button class="btn-action" onclick="openAdminModal('admin-modal-token')">
+                                🔑 Gerar Token Stremio
+                            </button>
+                            <button class="btn-action" onclick="loadAdminSubs()">
+                                🔄 Atualizar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Usuário / Telegram ID</th>
+                                        <th>Plano</th>
+                                        <th>Início</th>
+                                        <th>Vencimento</th>
+                                        <th>Status</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-subs-tbody">
+                                    <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando assinaturas...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-TAB 4: PEDIDOS DE CLIENTES -->
+                <div id="admin-subtab-requests" class="admin-subtab-content" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🍿 Pedidos Solicitados pelos Usuários</h3>
+                        <button class="btn-action" onclick="loadAdminRequests()">
+                            🔄 Atualizar
+                        </button>
+                    </div>
+
+                    <div class="admin-table-container">
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Título Pedido</th>
+                                        <th>Solicitante</th>
+                                        <th>Status</th>
+                                        <th>Data</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-requests-tbody">
+                                    <tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando pedidos...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-TAB 5: GERENCIAR CATÁLOGO -->
+                <div id="admin-subtab-catalog" class="admin-subtab-content" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🎬 Catálogo no Banco de Dados</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn-action" onclick="handleResyncCatalog()">
+                                🔄 Re-sincronizar Banco
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="search-box" style="margin-bottom: 14px;">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="admin-catalog-search" class="search-input" placeholder="Filtrar catálogo por nome..." oninput="renderAdminCatalog()">
+                    </div>
+
+                    <div class="admin-table-container">
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Título</th>
+                                        <th>Tipo</th>
+                                        <th>Qualidade / Áudio</th>
+                                        <th>Message ID</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-catalog-tbody">
+                                    <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando catálogo...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
     </div>
 
-    <!-- MODAL DE DETALHES -->
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         MODAIS ADMINISTRATIVOS
+         ═══════════════════════════════════════════════════════════════════════ -->
+
+    <!-- MODAL 1: ADICIONAR TRABALHO MANUAL -->
+    <div class="modal-backdrop" id="admin-modal-add-job" onclick="closeAdminModalOnClick(event, 'admin-modal-add-job')">
+        <div class="modal-card" style="max-width: 480px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-add-job')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">➕ Adicionar Trabalho na Fila</h2>
+                <form onsubmit="handleAdminAddJob(event)">
+                    <label class="admin-label">Título da Mídia</label>
+                    <input type="text" id="add-job-title" class="admin-input" placeholder="Ex: Ted Lasso ou Interestelar" required>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Tipo</label>
+                            <select id="add-job-type" class="admin-input" onchange="toggleJobSeasonFields()">
+                                <option value="filme">🎬 Filme</option>
+                                <option value="serie">📺 Série / Dorama</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="admin-label">Preferência de Áudio</label>
+                            <select id="add-job-audio" class="admin-input">
+                                <option value="dublado">🇧🇷 Dublado (PT-BR)</option>
+                                <option value="legendado">💬 Legendado (PT-BR)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="job-season-fields" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Temporada</label>
+                            <input type="number" id="add-job-season" class="admin-input" value="1" min="1">
+                        </div>
+                        <div>
+                            <label class="admin-label">Episódio</label>
+                            <input type="number" id="add-job-episode" class="admin-input" value="1" min="1">
+                        </div>
+                    </div>
+
+                    <label class="admin-label">Prioridade</label>
+                    <select id="add-job-priority" class="admin-input">
+                        <option value="1">🔥 VIP (Prioridade 1 - Máxima)</option>
+                        <option value="2">🍿 Pedido de Usuário (Prioridade 2)</option>
+                        <option value="3">📺 Série / Próximo Episódio (Prioridade 3)</option>
+                        <option value="4">🤖 Auto-Feeder (Prioridade 4)</option>
+                    </select>
+
+                    <button type="submit" class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 10px;">
+                        🚀 Enfileirar Agora
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: CONCEDER / RENOVAR ASSINATURA VIP -->
+    <div class="modal-backdrop" id="admin-modal-grant-sub" onclick="closeAdminModalOnClick(event, 'admin-modal-grant-sub')">
+        <div class="modal-card" style="max-width: 480px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-grant-sub')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">💎 Conceder / Renovar Assinatura VIP</h2>
+                <form onsubmit="handleAdminGrantSub(event)">
+                    <label class="admin-label">Username Telegram ou Telegram User ID</label>
+                    <input type="text" id="grant-user" class="admin-input" placeholder="@usuario ou 1689537480" required>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Plano</label>
+                            <select id="grant-plan" class="admin-input">
+                                <option value="mensal">Mensal (30 dias)</option>
+                                <option value="trimestral">Trimestral (90 dias)</option>
+                                <option value="anual">Anual (365 dias)</option>
+                                <option value="vitalicio">👑 Vitalício</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="admin-label">Duração Extra (Dias)</label>
+                            <input type="number" id="grant-days" class="admin-input" value="30" min="1">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-modal btn-modal-vip" style="width: 100%; margin-top: 10px;">
+                        ✨ Ativar Assinatura VIP
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: GERAR TOKEN STREMIO VIP -->
+    <div class="modal-backdrop" id="admin-modal-token" onclick="closeAdminModalOnClick(event, 'admin-modal-token')">
+        <div class="modal-card" style="max-width: 480px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-token')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">🔑 Gerar Token Stremio VIP</h2>
+                <form onsubmit="handleAdminGenerateToken(event)">
+                    <label class="admin-label">Identificador do Usuário / Nome</label>
+                    <input type="text" id="token-username" class="admin-input" placeholder="Ex: daniel_smarttv" required>
+
+                    <button type="submit" class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 10px;">
+                        ⚡ Criar Token Seguro
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 4: ALTERAR SENHA ADMIN -->
+    <div class="modal-backdrop" id="admin-modal-password" onclick="closeAdminModalOnClick(event, 'admin-modal-password')">
+        <div class="modal-card" style="max-width: 420px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-password')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">🔐 Alterar Senha de Admin</h2>
+                <form onsubmit="handleAdminChangePassword(event)">
+                    <label class="admin-label">Senha Atual</label>
+                    <input type="password" id="pass-current" class="admin-input" required autocomplete="current-password">
+
+                    <label class="admin-label">Nova Senha</label>
+                    <input type="password" id="pass-new" class="admin-input" minlength="6" required autocomplete="new-password">
+
+                    <button type="submit" class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 10px;">
+                        Salvar Nova Senha
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PÚBLICO DE DETALHES DE MÍDIA -->
     <div class="modal-backdrop" id="media-modal" onclick="closeModal(event)">
         <div class="modal-card" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeModalDirect()">✕</button>
@@ -1015,12 +1683,23 @@
 
     <script>
         let fullCatalog = { filmes: [], series: [] };
+        let adminCatalogData = { filmes: [], series: [] };
         let activeCategory = 'todos';
+        let adminToken = localStorage.getItem('bf_admin_token') || null;
 
         function initApp() {
             fetchStatus();
             loadCatalog();
-            setInterval(fetchStatus, 2500);
+            setInterval(fetchStatus, 3000);
+
+            // Verifica rota na URL (ex: /admin ou #admin)
+            if (window.location.pathname === '/admin' || window.location.hash === '#admin') {
+                switchTab('tab-admin');
+            }
+
+            if (adminToken) {
+                checkAdminAuth();
+            }
         }
 
         if (document.readyState === 'loading') {
@@ -1042,7 +1721,30 @@
 
             if (tabId === 'tab-catalogo') {
                 renderCatalog();
+            } else if (tabId === 'tab-admin') {
+                if (adminToken) {
+                    checkAdminAuth();
+                } else {
+                    document.getElementById('admin-login-view').style.display = 'block';
+                    document.getElementById('admin-dashboard-view').style.display = 'none';
+                }
             }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const icon = type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️');
+            toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
         }
 
         async function fetchStatus() {
@@ -1290,6 +1992,593 @@
 
         function closeModalDirect() {
             document.getElementById('media-modal')?.classList.remove('active');
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           🛡️ CONTROLADORES JAVASCRIPT DO PAINEL ADMIN
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        function getAuthHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${adminToken}`
+            };
+        }
+
+        async function handleAdminLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-username').value;
+            const p = document.getElementById('login-password').value;
+
+            try {
+                const res = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    showToast(data.message || 'Credenciais inválidas.', 'error');
+                    return;
+                }
+
+                adminToken = data.token;
+                localStorage.setItem('bf_admin_token', adminToken);
+                showToast('Login de Administrador realizado com sucesso!', 'success');
+                checkAdminAuth();
+            } catch (err) {
+                showToast('Erro de conexão com o servidor.', 'error');
+            }
+        }
+
+        function handleAdminLogout() {
+            adminToken = null;
+            localStorage.removeItem('bf_admin_token');
+            document.getElementById('admin-login-view').style.display = 'block';
+            document.getElementById('admin-dashboard-view').style.display = 'none';
+            showToast('Sessão de admin encerrada.', 'info');
+        }
+
+        async function checkAdminAuth() {
+            if (!adminToken) return;
+
+            try {
+                const res = await fetch('/api/admin/me', { headers: getAuthHeaders() });
+                if (!res.ok) {
+                    handleAdminLogout();
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('admin-login-view').style.display = 'none';
+                document.getElementById('admin-dashboard-view').style.display = 'block';
+                document.getElementById('admin-user-display').innerText = `@${data.user?.username || 'admin'}`;
+                
+                loadAdminStats();
+                loadAdminQueue();
+                loadAdminSubs();
+                loadAdminRequests();
+                loadAdminCatalog();
+            } catch (e) {
+                console.warn('Erro auth admin:', e);
+            }
+        }
+
+        function switchAdminSubTab(subTabId) {
+            document.querySelectorAll('.admin-sub-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.admin-subtab-content').forEach(c => c.style.display = 'none');
+
+            const btn = document.getElementById('admin-sub-btn-' + subTabId);
+            const content = document.getElementById('admin-subtab-' + subTabId);
+
+            if (btn) btn.classList.add('active');
+            if (content) content.style.display = 'block';
+
+            if (subTabId === 'overview') loadAdminStats();
+            else if (subTabId === 'queue') loadAdminQueue();
+            else if (subTabId === 'subs') loadAdminSubs();
+            else if (subTabId === 'requests') loadAdminRequests();
+            else if (subTabId === 'catalog') loadAdminCatalog();
+        }
+
+        async function loadAdminStats() {
+            if (!adminToken) return;
+            try {
+                const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+
+                document.getElementById('adm-stat-queue').innerText = data.fila?.queued || 0;
+                document.getElementById('adm-stat-subs').innerText = data.assinaturasAtivas || 0;
+                document.getElementById('adm-stat-pedidos').innerText = data.pedidosPendentes || 0;
+                const totCat = (data.catalogo?.totalFilmes || 0) + (data.catalogo?.totalSeries || 0);
+                document.getElementById('adm-stat-catalogo').innerText = totCat;
+
+                const uptimeMin = Math.floor((data.uptime || 0) / 60);
+                const uptimeHoras = Math.floor(uptimeMin / 60);
+                document.getElementById('adm-server-uptime').innerText = `${uptimeHoras}h ${uptimeMin % 60}m online`;
+            } catch (e) {}
+        }
+
+        async function loadAdminQueue() {
+            if (!adminToken) return;
+            const tbody = document.getElementById('admin-queue-tbody');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch('/api/admin/queue', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const jobs = data.jobs || [];
+
+                if (jobs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum trabalho na fila no momento.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = jobs.map(j => {
+                    const epStr = (j.type === 'serie' && (j.season || j.episode)) ? ` (T${j.season || 1}E${j.episode || 1})` : '';
+                    const statusColors = {
+                        'downloading': '#3b82f6',
+                        'processing': '#f59e0b',
+                        'uploading': '#a855f7',
+                        'queued': '#9ca3af',
+                        'completed': '#10b981',
+                        'failed': '#ef4444'
+                    };
+                    const statusColor = statusColors[j.status] || '#9ca3af';
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>${j.title}${epStr}</strong>
+                                <div style="font-size: 10px; color: var(--text-muted);">${j.id}</div>
+                            </td>
+                            <td>${j.type === 'filme' ? '🎬 Filme' : '📺 Série'}</td>
+                            <td>
+                                <select class="admin-select" onchange="handleChangeJobPriority('${j.id}', this.value)">
+                                    <option value="1" ${j.priority === 1 ? 'selected' : ''}>🔥 1 - VIP</option>
+                                    <option value="2" ${j.priority === 2 ? 'selected' : ''}>🍿 2 - Pedido</option>
+                                    <option value="3" ${j.priority === 3 ? 'selected' : ''}>📺 3 - Série</option>
+                                    <option value="4" ${j.priority === 4 ? 'selected' : ''}>🤖 4 - Feeder</option>
+                                </select>
+                            </td>
+                            <td>${j.audioPreference === 'dublado' ? '🇧🇷 Dublado' : '💬 Legendado'}</td>
+                            <td>
+                                <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; background: rgba(255,255,255,0.06); color: ${statusColor}; border: 1px solid ${statusColor}44;">
+                                    ${(j.status || 'queued').toUpperCase()}
+                                </span>
+                            </td>
+                            <td>
+                                <div style="font-size: 11px; font-weight: 700; color: #fff;">${j.progress || 0}%</div>
+                                <div style="font-size: 10px; color: var(--text-muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${j.progressDetails || j.error || ''}</div>
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                ${j.status === 'failed' ? `<button class="btn-action btn-action-success" onclick="handleRetryJob('${j.id}')" title="Tentar Novamente">🔄 Reprocessar</button>` : ''}
+                                <button class="btn-action btn-action-danger" onclick="handleCancelJob('${j.id}')" title="Excluir da Fila">✕</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar fila.</td></tr>';
+            }
+        }
+
+        async function handleChangeJobPriority(jobId, newPriority) {
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}/priority`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ priority: newPriority })
+                });
+                if (!res.ok) throw new Error();
+                showToast(`Prioridade do trabalho atualizada para ${newPriority}!`, 'success');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao atualizar prioridade.', 'error');
+            }
+        }
+
+        async function handleRetryJob(jobId) {
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}/retry`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Trabalho reenfileirado para download com sucesso!', 'success');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao reprocessar trabalho.', 'error');
+            }
+        }
+
+        async function handleCancelJob(jobId) {
+            if (!confirm('Deseja realmente remover/cancelar este item da fila?')) return;
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Trabalho removido da fila.', 'info');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao remover trabalho.', 'error');
+            }
+        }
+
+        async function handleClearFailedJobs() {
+            if (!confirm('Deseja limpar todos os trabalhos com status Falhou?')) return;
+            try {
+                const res = await fetch('/api/admin/queue/clear-failed', {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Trabalhos com falha removidos com sucesso!', 'success');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao limpar falhas.', 'error');
+            }
+        }
+
+        async function handleAdminAddJob(e) {
+            e.preventDefault();
+            const title = document.getElementById('add-job-title').value;
+            const type = document.getElementById('add-job-type').value;
+            const audio = document.getElementById('add-job-audio').value;
+            const priority = document.getElementById('add-job-priority').value;
+            const season = document.getElementById('add-job-season').value;
+            const episode = document.getElementById('add-job-episode').value;
+
+            try {
+                const res = await fetch('/api/admin/queue/add', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ title, type, priority, audioPreference: audio, season, episode })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                showToast(`"${title}" enfileirado com sucesso!`, 'success');
+                closeAdminModal('admin-modal-add-job');
+                loadAdminQueue();
+            } catch (err) {
+                showToast(err.message || 'Erro ao adicionar trabalho.', 'error');
+            }
+        }
+
+        function toggleJobSeasonFields() {
+            const type = document.getElementById('add-job-type').value;
+            const fields = document.getElementById('job-season-fields');
+            if (fields) {
+                fields.style.display = type === 'serie' ? 'grid' : 'none';
+            }
+        }
+
+        async function loadAdminSubs() {
+            if (!adminToken) return;
+            const tbody = document.getElementById('admin-subs-tbody');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch('/api/admin/assinaturas', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const list = data.assinaturas || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhuma assinatura cadastrada.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(a => {
+                    const isAtiva = a.status === 'ativa';
+                    const venc = a.dataVencimento ? new Date(a.dataVencimento).toLocaleDateString('pt-BR') : 'Vitalício';
+                    const ini = a.dataInicio ? new Date(a.dataInicio).toLocaleDateString('pt-BR') : '-';
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>@${a.username || 'Usuário'}</strong>
+                                <div style="font-size: 11px; color: var(--text-muted);">ID: ${a.userId || a.id}</div>
+                            </td>
+                            <td><span class="badge-priority" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4);">${(a.plano || 'mensal').toUpperCase()}</span></td>
+                            <td>${ini}</td>
+                            <td>${venc}</td>
+                            <td>
+                                <span style="color: ${isAtiva ? '#34d399' : '#ef4444'}; font-weight: 800; font-size: 11px;">
+                                    ${isAtiva ? '✓ ATIVA' : '✕ EXPIRADA'}
+                                </span>
+                            </td>
+                            <td style="text-align: right;">
+                                <button class="btn-action btn-action-danger" onclick="handleRevokeSub('${a.userId || a.username}')">
+                                    Revogar
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar assinaturas.</td></tr>';
+            }
+        }
+
+        async function handleAdminGrantSub(e) {
+            e.preventDefault();
+            const user = document.getElementById('grant-user').value;
+            const plano = document.getElementById('grant-plan').value;
+            const dias = document.getElementById('grant-days').value;
+
+            try {
+                const isId = /^\d+$/.test(user.trim());
+                const res = await fetch('/api/admin/assinaturas/grant', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        userId: isId ? user.trim() : null,
+                        username: !isId ? user.trim() : null,
+                        plano,
+                        dias
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                showToast(data.message || 'Assinatura concedida com sucesso!', 'success');
+                closeAdminModal('admin-modal-grant-sub');
+                loadAdminSubs();
+            } catch (err) {
+                showToast(err.message || 'Erro ao conceder assinatura.', 'error');
+            }
+        }
+
+        async function handleRevokeSub(identificador) {
+            if (!confirm(`Revogar acesso VIP de "${identificador}"?`)) return;
+            try {
+                const res = await fetch('/api/admin/assinaturas/revoke', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ identifier: identificador })
+                });
+                if (!res.ok) throw new Error();
+                showToast('Acesso revogado.', 'info');
+                loadAdminSubs();
+            } catch (e) {
+                showToast('Erro ao revogar acesso.', 'error');
+            }
+        }
+
+        async function handleAdminGenerateToken(e) {
+            e.preventDefault();
+            const username = document.getElementById('token-username').value;
+
+            try {
+                const res = await fetch('/api/admin/stremio-tokens/generate', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                prompt('✅ Token Stremio VIP gerado com sucesso! Copie o link do Addon:', `https://brasilflix.kapsu.com.br/${data.token}/manifest.json`);
+                closeAdminModal('admin-modal-token');
+            } catch (err) {
+                showToast('Erro ao gerar token.', 'error');
+            }
+        }
+
+        async function loadAdminRequests() {
+            if (!adminToken) return;
+            const tbody = document.getElementById('admin-requests-tbody');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch('/api/admin/pedidos', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const list = data.pedidos || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum pedido de usuário registrado.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.slice(-50).reverse().map(p => {
+                    const isProc = p.status === 'adicionado' || p.processado;
+                    const dataStr = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>${p.nome}</strong>
+                                <div style="font-size: 10px; color: var(--text-muted);">${p.tipo === 'serie' ? '📺 Série' : '🎬 Filme'}</div>
+                            </td>
+                            <td>
+                                <div>@${p.username || 'Usuário'}</div>
+                                <span style="font-size: 10px; color: ${p.isAssinante ? '#fbbf24' : '#9ca3af'}; font-weight: 700;">
+                                    ${p.isAssinante ? '👑 VIP Assinante' : '👤 Usuário Grátis'}
+                                </span>
+                            </td>
+                            <td>
+                                <span style="color: ${isProc ? '#34d399' : '#f59e0b'}; font-weight: 800; font-size: 11px;">
+                                    ${isProc ? '✓ ATENDIDO' : '⏳ PENDENTE'}
+                                </span>
+                            </td>
+                            <td>${dataStr}</td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                ${!isProc ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')">🚀 Baixar Agora</button>` : ''}
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteRequest('${p.id}')">✕</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar pedidos.</td></tr>';
+            }
+        }
+
+        async function handleEnqueueRequest(pedidoId) {
+            try {
+                const res = await fetch(`/api/admin/pedidos/${pedidoId}/enfileirar`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ priority: 1 })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                showToast(data.message || 'Pedido enviado para a fila!', 'success');
+                loadAdminRequests();
+                loadAdminQueue();
+            } catch (err) {
+                showToast('Erro ao enfileirar pedido.', 'error');
+            }
+        }
+
+        async function handleDeleteRequest(pedidoId) {
+            if (!confirm('Remover este pedido?')) return;
+            try {
+                const res = await fetch(`/api/admin/pedidos/${pedidoId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Pedido removido.', 'info');
+                loadAdminRequests();
+            } catch (e) {
+                showToast('Erro ao remover pedido.', 'error');
+            }
+        }
+
+        async function loadAdminCatalog() {
+            if (!adminToken) return;
+            try {
+                const res = await fetch('/api/admin/catalogo', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                adminCatalogData = await res.json();
+                renderAdminCatalog();
+            } catch (e) {}
+        }
+
+        function renderAdminCatalog() {
+            const tbody = document.getElementById('admin-catalog-tbody');
+            if (!tbody) return;
+
+            const q = (document.getElementById('admin-catalog-search')?.value || '').toLowerCase().trim();
+            const items = [
+                ...(adminCatalogData.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
+                ...(adminCatalogData.series || []).map(s => ({ ...s, itemType: 'serie' }))
+            ];
+
+            const filtered = q ? items.filter(i => (i.nome || '').toLowerCase().includes(q)) : items;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum título encontrado.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(i => {
+                const typeLabel = i.itemType === 'filme' ? '🎬 Filme' : `📺 Série (${(i.temporadas || []).length} temp)`;
+                const qual = i.qualidade || (i.isCam ? 'CAM' : '1080p');
+                const aud = i.audioBadge || (i.isDublado ? 'Dublado' : 'Legendado');
+
+                return `
+                    <tr>
+                        <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
+                        <td>
+                            <strong>${i.nome}</strong> (${i.ano || '2026'})
+                        </td>
+                        <td>${typeLabel}</td>
+                        <td>
+                            <span class="badge-completed">${qual}</span>
+                            <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
+                        </td>
+                        <td style="font-size: 11px; color: var(--text-muted);">${i.messageId || '-'}</td>
+                        <td style="text-align: right;">
+                            <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', '${i.itemType}')">
+                                🗑️ Excluir
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function handleDeleteCatalogItem(id, type) {
+            if (!confirm(`Tem certeza que deseja excluir permanentemente este ${type} do catálogo?`)) return;
+
+            try {
+                const endpoint = type === 'filme' ? `/api/admin/catalogo/filme/${id}` : `/api/admin/catalogo/serie/${id}`;
+                const res = await fetch(endpoint, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+
+                showToast('Item excluído do catálogo com sucesso!', 'success');
+                loadAdminCatalog();
+                loadCatalog(); // atualiza catálogo público
+            } catch (e) {
+                showToast('Erro ao excluir item do catálogo.', 'error');
+            }
+        }
+
+        async function handleResyncCatalog() {
+            try {
+                const res = await fetch('/api/admin/catalogo/resync', {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                showToast('Catálogo sincronizado com o banco de dados!', 'success');
+                loadAdminCatalog();
+                loadCatalog();
+            } catch (e) {
+                showToast('Erro ao sincronizar catálogo.', 'error');
+            }
+        }
+
+        async function handleAdminChangePassword(e) {
+            e.preventDefault();
+            const cur = document.getElementById('pass-current').value;
+            const nw = document.getElementById('pass-new').value;
+
+            try {
+                const res = await fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ currentPassword: cur, newPassword: nw })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao alterar senha.');
+
+                showToast('Senha de Administrador alterada com sucesso!', 'success');
+                closeAdminModal('admin-modal-password');
+                document.getElementById('pass-current').value = '';
+                document.getElementById('pass-new').value = '';
+            } catch (err) {
+                showToast(err.message || 'Erro ao alterar senha.', 'error');
+            }
+        }
+
+        function openAdminModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeAdminModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) modal.classList.remove('active');
+        }
+
+        function closeAdminModalOnClick(e, modalId) {
+            if (e.target.id === modalId) {
+                closeAdminModal(modalId);
+            }
         }
     </script>
 </body>
