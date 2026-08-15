@@ -925,30 +925,28 @@ class QueueManager extends EventEmitter {
     }
 
     async moveJobToTop(jobId) {
-        let minOrder = 1000;
-        if (this.queue.length > 0) {
-            minOrder = this.queue.reduce((min, j) => Math.min(min, Number(j.queueOrder) || Date.now()), Number(this.queue[0].queueOrder) || Date.now());
-        }
-        const newOrder = minOrder - 1000;
-
-        const job = this.queue.find(j => j.id === jobId);
-        if (job) {
-            job.queueOrder = newOrder;
-            this.sortQueue();
-            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [newOrder, jobId]);
-            return job;
+        const currentIdx = this.queue.findIndex(j => j.id === jobId);
+        if (currentIdx > -1) {
+            const [job] = this.queue.splice(currentIdx, 1);
+            this.queue.unshift(job);
+        } else {
+            const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
+            if (res.rows.length > 0) {
+                const j = this._rowToJob(res.rows[0]);
+                this.queue.unshift(j);
+            }
         }
 
-        const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
-        if (res.rows.length > 0) {
-            const j = this._rowToJob(res.rows[0]);
-            j.queueOrder = newOrder;
-            this.queue.unshift(j);
-            this.sortQueue();
-            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [newOrder, jobId]);
-            return j;
+        // Reindexa toda a fila com valores estritamente crescentes
+        const baseOrder = 1000;
+        for (let i = 0; i < this.queue.length; i++) {
+            this.queue[i].queueOrder = baseOrder + (i * 10);
+            await db.query(`UPDATE queue_jobs SET queue_order = $1 WHERE id = $2`, [this.queue[i].queueOrder, this.queue[i].id]);
         }
-        return null;
+
+        this.sortQueue();
+        const topJob = this.queue[0];
+        return topJob;
     }
 
     async moveJobStep(jobId, direction = 'up') {
