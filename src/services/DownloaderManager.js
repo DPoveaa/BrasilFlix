@@ -224,11 +224,13 @@ class DownloaderManager extends EventEmitter {
                     return;
                 }
 
-                // 2. Verificação estrita de tamanho do arquivo em disco (deve corresponder ao declarado no torrent)
+                // 2. Verificação de tamanho do arquivo em disco
                 const stat = fs.statSync(fullPath);
                 const expectedSize = selectedFile.length;
 
-                if (expectedSize > 0 && stat.size < expectedSize * 0.995) {
+                const isTargetDone = targetEpisodeFile ? (targetEpisodeFile.progress >= 0.999 || (targetEpisodeFile.downloaded >= targetEpisodeFile.length * 0.995)) : (torrent.progress >= 0.999);
+
+                if (expectedSize > 0 && stat.size < expectedSize * 0.98 && !isTargetDone) {
                     // Arquivo físico no disco ainda não recebeu todas as peças necessárias
                     return;
                 }
@@ -237,11 +239,12 @@ class DownloaderManager extends EventEmitter {
                 try {
                     const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
                     if (!videoInfo.duration || videoInfo.duration <= 0) {
-                        return;
+                        if (!isTargetDone) return;
                     }
                 } catch (e) {
-                    // Contêiner ainda não legível
-                    return;
+                    if (!isTargetDone && stat.size < expectedSize * 0.995) {
+                        return;
+                    }
                 }
 
                 finished = true;
@@ -269,7 +272,7 @@ class DownloaderManager extends EventEmitter {
                     : (torrent.downloaded || 0);
 
                 // Se o arquivo selecionado ou torrent atingiu 100%, verifica o disco e conclui
-                if (curTotal > 0 && curDownloaded >= curTotal * 0.999) {
+                if (curTotal > 0 && curDownloaded >= curTotal * 0.995) {
                     checkAndComplete();
                 }
 
@@ -330,10 +333,18 @@ class DownloaderManager extends EventEmitter {
 
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
-                elapsedSeconds += 5;
+
+                const curTotal = targetEpisodeFile ? targetEpisodeFile.length : torrent.length;
+                const curDownloaded = targetEpisodeFile ? (targetEpisodeFile.downloaded || 0) : (torrent.downloaded || 0);
+
+                if (curTotal > 0 && (curDownloaded >= curTotal * 0.99 || torrent.progress >= 0.99)) {
+                    checkAndComplete();
+                }
+
+                elapsedSeconds += 2;
                 const currentBytes = torrent.downloaded || 0;
                 if (currentBytes === lastBytes) {
-                    stalledSeconds += 5;
+                    stalledSeconds += 2;
                 } else {
                     stalledSeconds = 0;
                     lastBytes = currentBytes;

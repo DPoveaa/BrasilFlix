@@ -228,6 +228,32 @@ class QueueManager extends EventEmitter {
             this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade (1080p)...`, { parse_mode: 'Markdown' }).catch(() => {});
         }
 
+        // Validação de Ordem Cronológica de Episódios para Séries/Doramas
+        if (job.type === 'serie') {
+            const seasonNum = job.season || 1;
+            const requestedEp = job.episode || 1;
+
+            const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
+                                  this.catalogoManager.buscarItemExato(job.title, 'serie');
+            if (serieExistente) {
+                const temporada = (serieExistente.temporadas || []).find(t => t.numero === seasonNum);
+                const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
+
+                for (let ep = 1; ep < requestedEp; ep++) {
+                    if (!epsCadastrados.includes(ep)) {
+                        console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" solicitou o Ep ${requestedEp}, mas o Ep ${ep} ainda não existe no catálogo. Ajustando download para T${seasonNum}E${ep} primeiro!`);
+                        job.episode = ep;
+                        this.saveQueue();
+                        break;
+                    }
+                }
+            } else if (requestedEp > 1) {
+                console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Forçando início a partir do Episódio 1 (T${seasonNum}E1)!`);
+                job.episode = 1;
+                this.saveQueue();
+            }
+        }
+
         // 2. Buscar fontes (Torrents / Direct) se necessário
         let sources = [];
         let downloadedMedia = null;
