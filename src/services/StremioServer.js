@@ -190,6 +190,25 @@ class StremioServer {
             }
         });
 
+        this.app.post('/api/admin/queue/:id/move-top', auth, async (req, res) => {
+            try {
+                const job = await this.queueManager.moveJobToTop(req.params.id);
+                res.json({ success: true, message: `Trabalho "${job?.title || req.params.id}" movido para o topo da fila!`, job });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/queue/reorder', auth, async (req, res) => {
+            try {
+                const { jobIds } = req.body;
+                const result = await this.queueManager.reorderQueue(jobIds);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         this.app.delete('/api/admin/queue/:id', auth, async (req, res) => {
             try {
                 const result = await this.queueManager.cancelJob(req.params.id);
@@ -233,7 +252,6 @@ class StremioServer {
                     return res.json({ success: true, assinatura: ass });
                 }
 
-                // Cria/estende assinatura regular
                 const dataInicio = new Date();
                 const dataFim = new Date(Date.now() + (parseInt(dias || 30, 10) * 24 * 3600 * 1000));
 
@@ -337,8 +355,23 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/filme/:id', auth, async (req, res) => {
             try {
+                const filme = this.catalogoManager?.buscarFilmePorId(req.params.id);
                 await this.catalogoManager?.removerItem(req.params.id);
-                res.json({ success: true, message: 'Filme removido do catálogo.' });
+
+                const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
+                if (rebaixar && filme && this.queueManager) {
+                    this.queueManager.addJob(filme.nome, 'filme', 1, {
+                        audioPreference: filme.isDublado ? 'dublado' : 'legendado',
+                        isUpgrade: true
+                    });
+                }
+
+                res.json({ 
+                    success: true, 
+                    message: rebaixar 
+                        ? `Filme "${filme?.nome || req.params.id}" excluído do Armazém e reenfileirado para download com Prioridade 1!` 
+                        : 'Filme removido do catálogo e apagado do Armazém.' 
+                });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -346,8 +379,28 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/serie/:id', auth, async (req, res) => {
             try {
+                const serie = this.catalogoManager?.buscarSeriePorId(req.params.id);
                 await this.catalogoManager?.removerItem(req.params.id);
-                res.json({ success: true, message: 'Série removida do catálogo.' });
+
+                const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
+                if (rebaixar && serie && this.queueManager) {
+                    for (const temp of (serie.temporadas || [])) {
+                        for (const ep of (temp.episodios || [])) {
+                            this.queueManager.addJob(serie.nome, 'serie', 1, {
+                                season: temp.numero || 1,
+                                episode: ep.numero || 1,
+                                audioPreference: ep.isDublado ? 'dublado' : 'legendado'
+                            });
+                        }
+                    }
+                }
+
+                res.json({ 
+                    success: true, 
+                    message: rebaixar 
+                        ? `Série "${serie?.nome || req.params.id}" excluída do Armazém e episódios reenfileirados com Prioridade 1!` 
+                        : 'Série removida do catálogo e apagada do Armazém.' 
+                });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -355,8 +408,33 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/episodio/:id', auth, async (req, res) => {
             try {
-                await this.catalogoManager?.removerEpisodio(req.params.id);
-                res.json({ success: true, message: 'Episódio removido do catálogo e apagado do Armazém.' });
+                const epId = req.params.id;
+                const epQuery = await db.query(`
+                    SELECT e.*, s.nome as serie_nome 
+                    FROM episodios e 
+                    LEFT JOIN series s ON s.id = e.serie_id 
+                    WHERE e.id = $1 OR e.message_id = $1
+                `, [Number(epId) || 0]);
+
+                const epInfo = epQuery.rows[0] || null;
+
+                await this.catalogoManager?.removerEpisodio(epId);
+
+                const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
+                if (rebaixar && epInfo && this.queueManager) {
+                    this.queueManager.addJob(epInfo.serie_nome || 'Série', 'serie', 1, {
+                        season: epInfo.temporada_numero || 1,
+                        episode: epInfo.numero || 1,
+                        audioPreference: epInfo.is_dublado ? 'dublado' : 'legendado'
+                    });
+                }
+
+                res.json({ 
+                    success: true, 
+                    message: rebaixar 
+                        ? `Episódio ${epInfo ? `T${epInfo.temporada_numero}E${epInfo.numero}` : ''} excluído do Armazém e reenfileirado para download com Prioridade 1!` 
+                        : 'Episódio removido do catálogo e apagado do Armazém.' 
+                });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }

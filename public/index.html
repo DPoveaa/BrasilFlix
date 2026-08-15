@@ -21,6 +21,7 @@
             --vip-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
             --blue-gradient: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
             --green-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --purple-gradient: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
             --text-main: #f9fafb;
             --text-muted: #9ca3af;
         }
@@ -756,15 +757,16 @@
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--border-color);
             color: #fff;
-            padding: 8px 14px;
-            border-radius: 10px;
+            padding: 7px 12px;
+            border-radius: 8px;
             font-size: 12px;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s ease;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
+            white-space: nowrap;
         }
 
         .btn-action:hover {
@@ -805,6 +807,19 @@
             color: #fff;
         }
 
+        .btn-action-rebaixar {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #34d399;
+            font-weight: 800;
+        }
+
+        .btn-action-rebaixar:hover {
+            background: var(--green-gradient);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+
         /* ADMIN TABLES */
         .admin-table-container {
             background: var(--bg-card);
@@ -823,7 +838,7 @@
 
         .admin-table th {
             background: rgba(0, 0, 0, 0.3);
-            padding: 12px 16px;
+            padding: 12px 14px;
             color: var(--text-muted);
             font-weight: 700;
             border-bottom: 1px solid var(--border-color);
@@ -831,7 +846,7 @@
         }
 
         .admin-table td {
-            padding: 12px 16px;
+            padding: 11px 14px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             color: #e5e7eb;
             vertical-align: middle;
@@ -839,6 +854,38 @@
 
         .admin-table tr:hover td {
             background: rgba(255, 255, 255, 0.02);
+        }
+
+        .admin-table tr.draggable-row {
+            cursor: grab;
+            transition: background 0.15s ease, opacity 0.15s ease;
+        }
+
+        .admin-table tr.draggable-row:active {
+            cursor: grabbing;
+        }
+
+        .admin-table tr.drag-over td {
+            border-top: 2px solid #3b82f6 !important;
+            background: rgba(59, 130, 246, 0.1) !important;
+        }
+
+        .admin-table tr.dragging {
+            opacity: 0.4;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: var(--text-muted);
+            font-size: 15px;
+            padding: 4px 6px;
+            user-select: none;
+            display: inline-block;
+        }
+
+        .drag-handle:hover {
+            color: #fff;
         }
 
         .admin-select {
@@ -880,6 +927,15 @@
             color: var(--text-muted);
             margin-bottom: 4px;
             display: block;
+        }
+
+        /* NESTED EPISODES ACCORDION */
+        .episodes-nested-box {
+            background: rgba(0, 0, 0, 0.35);
+            border-left: 3px solid #3b82f6;
+            padding: 12px 16px;
+            margin: 6px 0;
+            border-radius: 0 10px 10px 0;
         }
 
         /* TOAST NOTIFICATIONS */
@@ -1088,7 +1144,7 @@
     <!-- MAIN CONTENT -->
     <div class="main-container">
 
-        <!-- TAB 1: MONITOR & FILA -->
+        <!-- TAB 1: MONITOR & FILA (PÚBLICO) -->
         <div id="tab-status" class="tab-content active">
             
             <!-- STATS CARDS -->
@@ -1181,7 +1237,7 @@
 
         </div>
 
-        <!-- TAB 2: CATÁLOGO INTERATIVO -->
+        <!-- TAB 2: CATÁLOGO INTERATIVO (PÚBLICO) -->
         <div id="tab-catalogo" class="tab-content">
             
             <div class="catalog-controls">
@@ -1304,7 +1360,7 @@
                         📊 Visão Geral
                     </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-queue" onclick="switchAdminSubTab('queue')">
-                        📥 Fila de Downloads
+                        📥 Fila & Processamento
                     </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
                         💎 Assinaturas & VIPs
@@ -1378,8 +1434,39 @@
 
                 <!-- SUB-TAB 2: FILA & DOWNLOADS -->
                 <div id="admin-subtab-queue" class="admin-subtab-content" style="display: none;">
+                    
+                    <!-- LIVE TASK CARD NO PAINEL ADMIN -->
+                    <div class="live-card" id="adm-live-card" style="margin-bottom: 20px;">
+                        <div id="adm-idle-message" style="display: block; text-align: center; padding: 10px; color: var(--text-muted);">
+                            <span style="font-size: 20px;">🛰️</span> Esteira ociosa. Nenhum download ativo no momento.
+                        </div>
+
+                        <div id="adm-active-container" style="display: none;">
+                            <div class="live-header">
+                                <div class="live-title-area">
+                                    <span class="live-tag" id="adm-live-status-tag" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4);">PROCESSANDO</span>
+                                    <h3 class="live-item-title" id="adm-live-title" style="font-size: 16px;">Carregando...</h3>
+                                </div>
+                                <span class="badge-priority" id="adm-live-priority">🔥 VIP</span>
+                            </div>
+
+                            <div class="live-progress-container" style="height: 12px;">
+                                <div class="live-progress-bar" id="adm-live-bar" style="width: 0%;"></div>
+                            </div>
+
+                            <div class="live-details-grid">
+                                <span id="adm-live-stage" style="color: #fff; font-weight: 700;">Iniciando esteira...</span>
+                                <span id="adm-live-speed" style="color: #34d399; font-weight: 800; font-size: 13px;">-</span>
+                                <span id="adm-live-pct" style="color: #fff; font-weight: 900; font-size: 14px;">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
-                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">📋 Gerenciamento da Esteira de Downloads</h3>
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 800; color: #fff;">📋 Fila de Espera</h3>
+                            <p style="font-size: 12px; color: var(--text-muted);">Arraste e solte as linhas para reordenar, ou clique em <strong>⬆️ Topo</strong> para colocar qualquer item como o próximo a baixar.</p>
+                        </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                             <button class="btn-action btn-action-primary" onclick="openAdminModal('admin-modal-add-job')">
                                 ➕ Adicionar Trabalho Manual
@@ -1395,9 +1482,10 @@
 
                     <div class="admin-table-container">
                         <div style="overflow-x: auto;">
-                            <table class="admin-table">
+                            <table class="admin-table" id="admin-queue-table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 32px;"></th>
                                         <th>Título</th>
                                         <th>Tipo</th>
                                         <th>Prioridade</th>
@@ -1408,7 +1496,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="admin-queue-tbody">
-                                    <tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando fila...</td></tr>
+                                    <tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando fila...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -1485,9 +1573,12 @@
                 <!-- SUB-TAB 5: GERENCIAR CATÁLOGO -->
                 <div id="admin-subtab-catalog" class="admin-subtab-content" style="display: none;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
-                        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🎬 Catálogo no Banco de Dados</h3>
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🎬 Catálogo & Gerenciamento de Episódios</h3>
+                            <p style="font-size: 12px; color: var(--text-muted);">Clique em <strong>▶ Episódios</strong> para gerenciar ou excluir episódios individuais. Clique em <strong>🔄 Rebaixar</strong> para apagar do Armazém e reenfileirar imediatamente para download.</p>
+                        </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button class="btn-action" onclick="handleResyncCatalog()">
+                            <button class="btn-action btn-action-primary" onclick="handleResyncCatalog()">
                                 🔄 Re-sincronizar Banco
                             </button>
                         </div>
@@ -1505,8 +1596,8 @@
                                     <tr>
                                         <th>ID</th>
                                         <th>Título</th>
-                                        <th>Tipo</th>
-                                        <th>Qualidade / Áudio</th>
+                                        <th>Tipo / Estrutura</th>
+                                        <th>Qualidade & Áudio</th>
                                         <th>Message ID</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
@@ -1684,15 +1775,16 @@
     <script>
         let fullCatalog = { filmes: [], series: [] };
         let adminCatalogData = { filmes: [], series: [] };
+        let currentAdminJobs = [];
         let activeCategory = 'todos';
         let adminToken = localStorage.getItem('bf_admin_token') || null;
+        let dragSrcEl = null;
 
         function initApp() {
             fetchStatus();
             loadCatalog();
-            setInterval(fetchStatus, 3000);
+            setInterval(fetchStatus, 2500);
 
-            // Verifica rota na URL (ex: /admin ou #admin)
             if (window.location.pathname === '/admin' || window.location.hash === '#admin') {
                 switchTab('tab-admin');
             }
@@ -1777,37 +1869,48 @@
                     const activeContainer = document.getElementById('active-task-container');
                     const idleMessage = document.getElementById('idle-message');
 
+                    // Atualiza Card de Live Task público e do painel admin
+                    const admActiveContainer = document.getElementById('adm-active-container');
+                    const admIdleMsg = document.getElementById('adm-idle-message');
+
                     if (data.queue.activeTask) {
                         const task = data.queue.activeTask;
                         if (idleMessage) idleMessage.style.display = 'none';
                         if (activeContainer) activeContainer.style.display = 'block';
 
-                        const epStr = (task.type === 'serie' && (task.season || task.episode)) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
-                        const titleEl = document.getElementById('live-task-title');
-                        const typeEl = document.getElementById('live-task-type');
-                        const prioEl = document.getElementById('live-task-priority');
-                        const barEl = document.getElementById('live-progress-bar');
-                        const pctEl = document.getElementById('live-percent');
-                        const stageEl = document.getElementById('live-stage');
-                        const speedEl = document.getElementById('live-speed');
+                        if (admIdleMsg) admIdleMsg.style.display = 'none';
+                        if (admActiveContainer) admActiveContainer.style.display = 'block';
 
-                        if (titleEl) titleEl.innerText = `${task.title}${epStr}`;
-                        if (typeEl) typeEl.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        if (prioEl) prioEl.innerText = task.priority || 'VIP';
-                        
+                        const epStr = (task.type === 'serie' && (task.season || task.episode)) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
                         const progVal = typeof task.progress === 'number' ? Math.round(task.progress) : 0;
+                        const speedStr = task.progressDetails && task.progressDetails.includes('MB/s') 
+                            ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' 
+                            : (task.progressDetails && task.progressDetails.includes('x') ? task.progressDetails.split('|')[1]?.trim() || 'Ativo' : 'Ativo');
+
+                        // Público
+                        document.getElementById('live-task-title')?.innerText = `${task.title}${epStr}`;
+                        document.getElementById('live-task-type')?.innerText = (task.status || 'PROCESSANDO').toUpperCase();
+                        document.getElementById('live-task-priority')?.innerText = task.priority === 1 ? '🔥 VIP' : 'Normal';
+                        const barEl = document.getElementById('live-progress-bar');
                         if (barEl) barEl.style.width = `${progVal}%`;
-                        if (pctEl) pctEl.innerText = `${progVal}%`;
-                        
-                        if (stageEl) stageEl.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
-                        if (speedEl) {
-                            speedEl.innerText = task.progressDetails && task.progressDetails.includes('MB/s') 
-                                ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' 
-                                : 'Ativo';
-                        }
+                        document.getElementById('live-percent')?.innerText = `${progVal}%`;
+                        document.getElementById('live-stage')?.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
+                        document.getElementById('live-speed')?.innerText = speedStr;
+
+                        // Admin
+                        document.getElementById('adm-live-title')?.innerText = `${task.title}${epStr}`;
+                        document.getElementById('adm-live-status-tag')?.innerText = (task.status || 'PROCESSANDO').toUpperCase();
+                        document.getElementById('adm-live-priority')?.innerText = task.priority === 1 ? '🔥 1 - VIP' : `Prioridade ${task.priority}`;
+                        const admBarEl = document.getElementById('adm-live-bar');
+                        if (admBarEl) admBarEl.style.width = `${progVal}%`;
+                        document.getElementById('adm-live-pct')?.innerText = `${progVal}%`;
+                        document.getElementById('adm-live-stage')?.innerText = task.progressDetails || 'Processando...';
+                        document.getElementById('adm-live-speed')?.innerText = `⚡ ${speedStr}`;
                     } else {
                         if (idleMessage) idleMessage.style.display = 'block';
                         if (activeContainer) activeContainer.style.display = 'none';
+                        if (admIdleMsg) admIdleMsg.style.display = 'block';
+                        if (admActiveContainer) admActiveContainer.style.display = 'none';
                     }
 
                     const queueList = document.getElementById('queue-items-container');
@@ -1822,7 +1925,7 @@
                                         <div class="queue-item-info">
                                             <h4>${item.title}${epStr}</h4>
                                             <div class="queue-item-meta">
-                                                <span class="badge-priority">${item.priority || 'Normal'}</span>
+                                                <span class="badge-priority">${item.priority === 1 ? 'VIP' : 'Normal'}</span>
                                                 <span>${typeStr}</span>
                                                 <span>• ${audioStr}</span>
                                             </div>
@@ -1949,39 +2052,22 @@
             const item = (list || []).find(i => String(i.id) === String(id));
             if (!item) return;
 
-            const modalTitle = document.getElementById('modal-title');
-            const modalSynopsis = document.getElementById('modal-synopsis');
-            const modalBackdrop = document.getElementById('modal-backdrop-img');
-            const modalMeta = document.getElementById('modal-meta');
-            const modalBotLink = document.getElementById('modal-bot-link');
-
-            if (modalTitle) {
-                modalTitle.innerText = item.nome || 'Título Indisponível';
-            }
-            if (modalSynopsis) {
-                modalSynopsis.innerText = item.sinopse || item.descricao || 'Sinopse oficial disponível em breve.';
-            }
+            document.getElementById('modal-title').innerText = item.nome || 'Título Indisponível';
+            document.getElementById('modal-synopsis').innerText = item.sinopse || item.descricao || 'Sinopse oficial disponível em breve.';
             
             const backdrop = item.backdropUrl || item.posterUrl || '';
-            if (modalBackdrop) {
-                modalBackdrop.style.backgroundImage = backdrop ? `url("${backdrop}")` : 'none';
-            }
+            const modalBackdrop = document.getElementById('modal-backdrop-img');
+            if (modalBackdrop) modalBackdrop.style.backgroundImage = backdrop ? `url("${backdrop}")` : 'none';
 
             const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-            if (modalMeta) {
-                modalMeta.innerHTML = 
-                    '<span>📅 ' + (item.ano || '2026') + '</span> • ' +
-                    '<span>⭐ ' + rating + '</span> • ' +
-                    '<span>🔊 ' + (item.audioBadge || 'Dublado') + '</span> • ' +
-                    '<span>🎞️ ' + (item.qualidade || '1080p Full HD') + '</span>';
-            }
+            document.getElementById('modal-meta').innerHTML = 
+                '<span>📅 ' + (item.ano || '2026') + '</span> • ' +
+                '<span>⭐ ' + rating + '</span> • ' +
+                '<span>🔊 ' + (item.audioBadge || 'Dublado') + '</span> • ' +
+                '<span>🎞️ ' + (item.qualidade || '1080p Full HD') + '</span>';
 
-            if (modalBotLink) {
-                modalBotLink.href = 'https://t.me/BrasilFlix_bot?start=ver_' + item.id;
-            }
-
-            const modal = document.getElementById('media-modal');
-            if (modal) modal.classList.add('active');
+            document.getElementById('modal-bot-link').href = 'https://t.me/BrasilFlix_bot?start=ver_' + item.id;
+            document.getElementById('media-modal')?.classList.add('active');
         }
 
         function closeModal(e) {
@@ -2109,14 +2195,14 @@
                 const res = await fetch('/api/admin/queue', { headers: getAuthHeaders() });
                 if (!res.ok) return;
                 const data = await res.json();
-                const jobs = data.jobs || [];
+                currentAdminJobs = data.jobs || [];
 
-                if (jobs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum trabalho na fila no momento.</td></tr>';
+                if (currentAdminJobs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum trabalho na fila no momento.</td></tr>';
                     return;
                 }
 
-                tbody.innerHTML = jobs.map(j => {
+                tbody.innerHTML = currentAdminJobs.map((j, idx) => {
                     const epStr = (j.type === 'serie' && (j.season || j.episode)) ? ` (T${j.season || 1}E${j.episode || 1})` : '';
                     const statusColors = {
                         'downloading': '#3b82f6',
@@ -2129,7 +2215,13 @@
                     const statusColor = statusColors[j.status] || '#9ca3af';
 
                     return `
-                        <tr>
+                        <tr class="draggable-row" draggable="true" data-id="${j.id}" data-index="${idx}"
+                            ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)"
+                            ondragenter="handleDragEnter(event)" ondragleave="handleDragLeave(event)"
+                            ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+                            <td style="text-align: center; color: var(--text-muted); cursor: grab;">
+                                <span class="drag-handle" title="Arraste para reordenar">⠿</span>
+                            </td>
                             <td>
                                 <strong>${j.title}${epStr}</strong>
                                 <div style="font-size: 10px; color: var(--text-muted);">${j.id}</div>
@@ -2154,6 +2246,7 @@
                                 <div style="font-size: 10px; color: var(--text-muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${j.progressDetails || j.error || ''}</div>
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
+                                <button class="btn-action btn-action-primary" onclick="handleMoveJobTop('${j.id}')" title="Mover para o Topo (Próximo)">⬆️ Topo</button>
                                 ${j.status === 'failed' ? `<button class="btn-action btn-action-success" onclick="handleRetryJob('${j.id}')" title="Tentar Novamente">🔄 Reprocessar</button>` : ''}
                                 <button class="btn-action btn-action-danger" onclick="handleCancelJob('${j.id}')" title="Excluir da Fila">✕</button>
                             </td>
@@ -2161,7 +2254,94 @@
                     `;
                 }).join('');
             } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar fila.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar fila.</td></tr>';
+            }
+        }
+
+        /* DRAG AND DROP REORDERING */
+        function handleDragStart(e) {
+            dragSrcEl = e.currentTarget;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', e.currentTarget.getAttribute('data-id'));
+            e.currentTarget.classList.add('dragging');
+        }
+
+        function handleDragOver(e) {
+            if (e.preventDefault) e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDragEnter(e) {
+            const targetRow = e.currentTarget.closest('tr');
+            if (targetRow && targetRow !== dragSrcEl) {
+                targetRow.classList.add('drag-over');
+            }
+        }
+
+        function handleDragLeave(e) {
+            const targetRow = e.currentTarget.closest('tr');
+            if (targetRow) {
+                targetRow.classList.remove('drag-over');
+            }
+        }
+
+        async function handleDrop(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            const targetRow = e.currentTarget.closest('tr');
+            if (!targetRow || !dragSrcEl || dragSrcEl === targetRow) return false;
+
+            targetRow.classList.remove('drag-over');
+
+            const srcId = dragSrcEl.getAttribute('data-id');
+            const targetId = targetRow.getAttribute('data-id');
+
+            const srcIndex = currentAdminJobs.findIndex(j => j.id === srcId);
+            const targetIndex = currentAdminJobs.findIndex(j => j.id === targetId);
+
+            if (srcIndex < 0 || targetIndex < 0) return false;
+
+            // Reorganiza array local
+            const [movedItem] = currentAdminJobs.splice(srcIndex, 1);
+            currentAdminJobs.splice(targetIndex, 0, movedItem);
+
+            // Salva no backend
+            const orderedIds = currentAdminJobs.map(j => j.id);
+            try {
+                const res = await fetch('/api/admin/queue/reorder', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ jobIds: orderedIds })
+                });
+                if (!res.ok) throw new Error();
+                showToast('Ordem da fila atualizada com sucesso!', 'success');
+                loadAdminQueue();
+            } catch (err) {
+                showToast('Erro ao reordenar fila.', 'error');
+                loadAdminQueue();
+            }
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            document.querySelectorAll('.draggable-row').forEach(row => {
+                row.classList.remove('dragging');
+                row.classList.remove('drag-over');
+            });
+        }
+
+        async function handleMoveJobTop(jobId) {
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}/move-top`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                showToast(data.message || 'Trabalho movido para o topo da fila!', 'success');
+                loadAdminQueue();
+            } catch (e) {
+                showToast('Erro ao mover trabalho para o topo.', 'error');
             }
         }
 
@@ -2173,7 +2353,7 @@
                     body: JSON.stringify({ priority: newPriority })
                 });
                 if (!res.ok) throw new Error();
-                showToast(`Prioridade do trabalho atualizada para ${newPriority}!`, 'success');
+                showToast(`Prioridade atualizada para ${newPriority}!`, 'success');
                 loadAdminQueue();
             } catch (e) {
                 showToast('Erro ao atualizar prioridade.', 'error');
@@ -2482,48 +2662,158 @@
             }
 
             tbody.innerHTML = filtered.map(i => {
-                const typeLabel = i.itemType === 'filme' ? '🎬 Filme' : `📺 Série (${(i.temporadas || []).length} temp)`;
                 const qual = i.qualidade || (i.isCam ? 'CAM' : '1080p');
                 const aud = i.audioBadge || (i.isDublado ? 'Dublado' : 'Legendado');
 
-                return `
-                    <tr>
-                        <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
-                        <td>
-                            <strong>${i.nome}</strong> (${i.ano || '2026'})
-                        </td>
-                        <td>${typeLabel}</td>
-                        <td>
-                            <span class="badge-completed">${qual}</span>
-                            <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
-                        </td>
-                        <td style="font-size: 11px; color: var(--text-muted);">${i.messageId || '-'}</td>
-                        <td style="text-align: right;">
-                            <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', '${i.itemType}')">
-                                🗑️ Excluir
-                            </button>
-                        </td>
-                    </tr>
-                `;
+                if (i.itemType === 'filme') {
+                    return `
+                        <tr>
+                            <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
+                            <td>
+                                <strong>${i.nome}</strong> (${i.ano || '2026'})
+                            </td>
+                            <td>🎬 Filme</td>
+                            <td>
+                                <span class="badge-completed">${qual}</span>
+                                <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
+                            </td>
+                            <td style="font-size: 11px; color: var(--text-muted);">${i.messageId || '-'}</td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" title="Excluir do Armazém e Baixar Novamente">
+                                    🔄 Rebaixar
+                                </button>
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Definitivo">
+                                    🗑️ Excluir
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    // SÉRIE com acordeão de temporadas e episódios
+                    const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
+                    const accordionId = `serie-eps-${i.id}`;
+
+                    const epsListHtml = (i.temporadas || []).map(t => {
+                        return `
+                            <div style="margin-bottom: 8px;">
+                                <div style="font-weight: 800; font-size: 12px; color: #fbbf24; margin-bottom: 4px;">
+                                    Temporada ${t.numero}
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    ${(t.episodios || []).map(e => `
+                                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 10px; font-size: 12px;">
+                                            <div>
+                                                <strong>T${t.numero}E${e.numero}</strong> • ${e.nome || `Episódio ${e.numero}`}
+                                                <span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">(Msg: ${e.messageId || '-'})</span>
+                                            </div>
+                                            <div style="display: flex; gap: 6px;">
+                                                <button class="btn-action btn-action-rebaixar" style="padding: 3px 8px; font-size: 11px;" onclick="handleDeleteEpisode('${e.id || e.messageId}', true)" title="Excluir e Rebaixar Episódio">
+                                                    🔄 Rebaixar
+                                                </button>
+                                                <button class="btn-action btn-action-danger" style="padding: 3px 8px; font-size: 11px;" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+
+                    return `
+                        <tr>
+                            <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
+                            <td>
+                                <strong>${i.nome}</strong> (${i.ano || '2026'})
+                            </td>
+                            <td>
+                                📺 Série (${(i.temporadas || []).length} temp, ${totalEps} eps)
+                            </td>
+                            <td>
+                                <span class="badge-completed">${qual}</span>
+                                <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
+                            </td>
+                            <td style="font-size: 11px; color: var(--text-muted);">-</td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <button class="btn-action btn-action-primary" onclick="toggleSerieEpisodes('${accordionId}', this)">
+                                    ▶ Episódios (${totalEps})
+                                </button>
+                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true)" title="Excluir Todos os Episódios e Baixar Novamente">
+                                    🔄 Rebaixar Tudo
+                                </button>
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" title="Excluir Série Completa">
+                                    🗑️
+                                </button>
+                            </td>
+                        </tr>
+                        <tr id="${accordionId}" style="display: none;">
+                            <td colspan="6" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.2);">
+                                <div class="episodes-nested-box">
+                                    <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 10px;">
+                                        🎬 Episódios de "${i.nome}"
+                                    </div>
+                                    ${epsListHtml || '<div style="color: var(--text-muted);">Nenhum episódio cadastrado.</div>'}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
             }).join('');
         }
 
-        async function handleDeleteCatalogItem(id, type) {
-            if (!confirm(`Tem certeza que deseja excluir permanentemente este ${type} do catálogo?`)) return;
+        function toggleSerieEpisodes(accordionId, btn) {
+            const el = document.getElementById(accordionId);
+            if (!el) return;
+            if (el.style.display === 'none') {
+                el.style.display = 'table-row';
+                if (btn) btn.innerText = btn.innerText.replace('▶', '▼');
+            } else {
+                el.style.display = 'none';
+                if (btn) btn.innerText = btn.innerText.replace('▼', '▶');
+            }
+        }
+
+        async function handleDeleteCatalogItem(id, type, rebaixar = false) {
+            const actionText = rebaixar ? 'excluir do Armazém e REBAIXAR imediatamente' : 'excluir permanentemente';
+            if (!confirm(`Deseja ${actionText} este ${type}?`)) return;
 
             try {
                 const endpoint = type === 'filme' ? `/api/admin/catalogo/filme/${id}` : `/api/admin/catalogo/serie/${id}`;
-                const res = await fetch(endpoint, {
+                const res = await fetch(`${endpoint}?rebaixar=${rebaixar}`, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });
-                if (!res.ok) throw new Error();
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
 
-                showToast('Item excluído do catálogo com sucesso!', 'success');
+                showToast(data.message || 'Item processado com sucesso!', 'success');
                 loadAdminCatalog();
-                loadCatalog(); // atualiza catálogo público
+                loadAdminQueue();
+                loadCatalog();
             } catch (e) {
-                showToast('Erro ao excluir item do catálogo.', 'error');
+                showToast(e.message || 'Erro ao processar item do catálogo.', 'error');
+            }
+        }
+
+        async function handleDeleteEpisode(id, rebaixar = false) {
+            const actionText = rebaixar ? 'excluir do Armazém e REBAIXAR este episódio' : 'excluir permanentemente este episódio';
+            if (!confirm(`Deseja ${actionText}?`)) return;
+
+            try {
+                const res = await fetch(`/api/admin/catalogo/episodio/${id}?rebaixar=${rebaixar}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                showToast(data.message || 'Episódio processado com sucesso!', 'success');
+                loadAdminCatalog();
+                loadAdminQueue();
+                loadCatalog();
+            } catch (e) {
+                showToast(e.message || 'Erro ao processar episódio.', 'error');
             }
         }
 

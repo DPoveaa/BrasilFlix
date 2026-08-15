@@ -902,6 +902,50 @@ class QueueManager extends EventEmitter {
         return job;
     }
 
+    async moveJobToTop(jobId) {
+        const job = this.queue.find(j => j.id === jobId);
+        if (job) {
+            job.priority = 1;
+            const earliestTime = this.queue.reduce((min, j) => Math.min(min, new Date(j.createdAt || Date.now()).getTime()), Date.now());
+            job.createdAt = new Date(earliestTime - 1000).toISOString();
+            this.sortQueue();
+            await this.saveJob(job);
+            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [job.createdAt, jobId]);
+            return job;
+        }
+
+        const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
+        if (res.rows.length > 0) {
+            const j = this._rowToJob(res.rows[0]);
+            j.priority = 1;
+            j.createdAt = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
+            this.queue.unshift(j);
+            this.sortQueue();
+            await this.saveJob(j);
+            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [j.createdAt, jobId]);
+            return j;
+        }
+        return null;
+    }
+
+    async reorderQueue(orderedJobIds) {
+        if (!Array.isArray(orderedJobIds) || orderedJobIds.length === 0) return { success: false };
+
+        const baseTime = Date.now() - (orderedJobIds.length * 2000);
+        for (let i = 0; i < orderedJobIds.length; i++) {
+            const id = orderedJobIds[i];
+            const newCreatedAt = new Date(baseTime + (i * 2000)).toISOString();
+            const job = this.queue.find(j => j.id === id);
+            if (job) {
+                job.priority = 1;
+                job.createdAt = newCreatedAt;
+            }
+            await db.query(`UPDATE queue_jobs SET priority = 1, created_at = $1 WHERE id = $2`, [newCreatedAt, id]);
+        }
+        this.sortQueue();
+        return { success: true };
+    }
+
     async clearFailed() {
         await db.query(`DELETE FROM queue_jobs WHERE status = 'failed'`);
         this.queue = this.queue.filter(j => j.status !== 'failed');
@@ -920,7 +964,7 @@ class QueueManager extends EventEmitter {
                     ELSE 6 
                 END, 
                 priority ASC, 
-                created_at DESC 
+                created_at ASC 
             LIMIT $1`,
             [limit]
         );

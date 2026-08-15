@@ -14,6 +14,9 @@ module.exports = {
     ADMIN_ID: parseInt(process.env.ADMIN_ID || '1689537480', 10),
     NOTIFICATION_GROUP_ID: parseInt(process.env.NOTIFICATION_GROUP_ID || '-1002503446860', 10),
 
+    // Autenticação JWT Admin
+    JWT_SECRET: process.env.JWT_SECRET || 'bf_jwt_sec_8f93a02bc91e77d5421a980e_prod_safe',
+
     // Mercado Pago
     MERCADOPAGO_TOKEN: process.env.MERCADOPAGO_TOKEN || 'APP_USR-354078817982238-080818-1943e3838d85afaf2e144d30728d5030-215094442',
     MERCADOPAGO_PUBLIC_KEY: process.env.MERCADOPAGO_PUBLIC_KEY || 'APP_USR-898300be-472a-4d34-9287-bd7a340df20b',
