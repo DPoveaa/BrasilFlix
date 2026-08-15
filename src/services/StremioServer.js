@@ -496,6 +496,49 @@ class StremioServer {
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
         this.app.get(['/status', '/fila', '/catalogo', '/admin'], (req, res) => this.renderLandingPage(req, res, 'public'));
 
+        // Rota oficial de Checkout e Assinatura Web
+        this.app.get('/assinar', (req, res) => {
+            const assinarPath = path.resolve(__dirname, '../../public/assinar.html');
+            if (fs.existsSync(assinarPath)) {
+                return res.sendFile(assinarPath);
+            }
+            this.renderLandingPage(req, res, 'public');
+        });
+
+        // APIs de Pagamento Web e Consumo Gratuito
+        this.app.post('/api/pagamentos/pix', async (req, res) => {
+            try {
+                const { nome, email, plano, telegramUser } = req.body;
+                const payment = await this.assinaturaManager.criarPagamentoWeb({ nome, email, plano, telegramUser });
+                res.json(payment);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.get('/api/pagamentos/status/:id', async (req, res) => {
+            try {
+                const resultado = await this.assinaturaManager.processarPagamento(req.params.id);
+                res.json({
+                    success: true,
+                    approved: resultado.success && (resultado.payment?.status === 'approved'),
+                    status: resultado.payment?.status || resultado.status,
+                    token: resultado.token || null
+                });
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.get('/api/consumo/:token', async (req, res) => {
+            try {
+                const consumoFilme = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(req.params.token, 'filme');
+                res.json({ success: true, consumo: consumoFilme });
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
         // Rota oficial de configuração do Stremio (compatível com botão "Configure" do aplicativo Stremio)
         this.app.get(['/configure', '/:userToken/configure'], (req, res) => {
             const configPath = path.resolve(__dirname, '../../public/configure.html');
@@ -507,7 +550,7 @@ class StremioServer {
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure') {
+            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar') {
                 return next();
             }
             this.renderLandingPage(req, res, token);
@@ -612,7 +655,13 @@ class StremioServer {
         const { userToken, id, audio } = req.params;
         const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
         if (!auth.authorized) {
-            return res.status(403).send('Acesso não autorizado ou assinatura expirada.');
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme');
+            if (!consumo.permitido) {
+                return res.status(403).send('Limite gratuito de 1 filme por mês atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
+            }
+            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'filme');
+            }
         }
 
         const filme = this.catalogoManager.buscarFilmePorId(id);
@@ -640,7 +689,13 @@ class StremioServer {
         const { userToken, id, season, episode, audio } = req.params;
         const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
         if (!auth.authorized) {
-            return res.status(403).send('Acesso não autorizado ou assinatura expirada.');
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie');
+            if (!consumo.permitido) {
+                return res.status(403).send('Limite gratuito de 2 episódios por mês atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
+            }
+            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'serie');
+            }
         }
 
         const serie = this.catalogoManager.buscarSeriePorId(id);

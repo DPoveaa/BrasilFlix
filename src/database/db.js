@@ -203,6 +203,17 @@ async function createTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS consumo_gratis (
+            id SERIAL PRIMARY KEY,
+            identificador VARCHAR(150) NOT NULL,
+            mes_ano VARCHAR(10) NOT NULL,
+            filmes_assistidos INTEGER DEFAULT 0,
+            episodios_assistidos INTEGER DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(identificador, mes_ano)
+        );
+
         CREATE TABLE IF NOT EXISTS admin_users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(100) UNIQUE NOT NULL,

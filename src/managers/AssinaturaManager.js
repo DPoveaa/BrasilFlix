@@ -318,93 +318,53 @@ class AssinaturaManager {
 
     getPrecoPlano(plano) {
         const precos = {
-            'mensal': 15.00,
-            'trimestral': 38.00,
-            'semestral': 69.00,
-            'anual': 120.00
+            'mensal': 14.90,
+            'trimestral': 34.90,
+            'semestral': 59.90,
+            'vitalicio': 89.90,
+            'anual': 99.90
         };
-        return precos[plano] || 15.00;
+        return precos[plano] || 14.90;
     }
 
-    verificarAssinatura(userId) {
-        const numId = Number(userId);
-        const assinatura = this.assinaturas.find(a => 
-            (Number(a.userId) === numId || a.id === numId) && a.status === 'ativa'
-        );
+    async criarPagamentoWeb({ nome, email, plano = 'mensal', telegramUser = '' }) {
+        try {
+            const preco = this.getPrecoPlano(plano);
+            const cleanUser = (nome || telegramUser || 'Cliente').replace(/^@/, '').trim();
+            const cleanEmail = email || `cliente_${Date.now()}@brasilflix.com.br`;
+            const randomRef = Math.random().toString(36).substring(2, 7);
+            const externalRef = `web_${encodeURIComponent(cleanUser)}_${plano}_${randomRef}`;
 
-        if (!assinatura) return false;
+            const paymentData = {
+                transaction_amount: preco,
+                description: `BrasilFlix VIP - Plano ${plano.toUpperCase()} (${cleanUser})`,
+                payment_method_id: 'pix',
+                payer: {
+                    email: cleanEmail,
+                    first_name: cleanUser,
+                    last_name: 'BrasilFlix'
+                },
+                notification_url: `https://brasilflix.kapsu.com.br/webhook`,
+                external_reference: externalRef
+            };
 
-        const agora = new Date();
-        const vencimento = new Date(assinatura.dataVencimento);
+            const response = await mercadopago.payment.create(paymentData);
+            console.log('✅ Pagamento PIX Web criado com sucesso:', response.body.id);
 
-        if (agora > vencimento) {
-            assinatura.status = 'vencida';
-            this.saveAssinaturas();
-            return false;
+            return {
+                success: true,
+                paymentId: response.body.id,
+                qr_code: response.body.point_of_interaction?.transaction_data?.qr_code || null,
+                qr_code_base64: response.body.point_of_interaction?.transaction_data?.qr_code_base64 || null,
+                init_point: response.body.init_point || `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${response.body.id}`,
+                preco,
+                plano,
+                status: response.body.status
+            };
+        } catch (error) {
+            console.error('❌ Erro ao criar pagamento Web:', error);
+            throw error;
         }
-
-        return true;
-    }
-
-    getAssinatura(userId) {
-        const numId = Number(userId);
-        return this.assinaturas.find(a => Number(a.userId) === numId || a.id === numId);
-    }
-
-    async cancelarAssinatura(userId) {
-        const assinatura = this.getAssinatura(userId);
-        if (assinatura) {
-            assinatura.status = 'cancelada';
-            try {
-                await db.query(`UPDATE assinaturas SET status = 'cancelada' WHERE user_id = $1`, [userId]);
-            } catch (e) {}
-            this.saveAssinaturas();
-            return true;
-        }
-        return false;
-    }
-
-    getAssinaturasVencendo(dias = 7) {
-        const agora = new Date();
-        const limite = new Date();
-        limite.setDate(limite.getDate() + dias);
-
-        return this.assinaturas.filter(assinatura => {
-            if (assinatura.status !== 'ativa') return false;
-            const vencimento = new Date(assinatura.dataVencimento);
-            return vencimento <= limite && vencimento >= agora;
-        });
-    }
-
-    getAssinaturasVencidas() {
-        const agora = new Date();
-        return this.assinaturas.filter(assinatura => {
-            if (assinatura.status !== 'ativa') return false;
-            const vencimento = new Date(assinatura.dataVencimento);
-            return vencimento < agora;
-        });
-    }
-
-    formatarAssinatura(assinatura) {
-        const vencimento = new Date(assinatura.dataVencimento);
-        const agora = new Date();
-        const diasRestantes = Math.ceil((vencimento - agora) / (1000 * 60 * 60 * 24));
-
-        let status = '✅ Ativa';
-        if (assinatura.status === 'vencida') {
-            status = '❌ Vencida';
-        } else if (assinatura.status === 'cancelada') {
-            status = '🚫 Cancelada';
-        } else if (diasRestantes <= 3) {
-            status = '⚠️ Vencendo';
-        }
-
-        return {
-            status,
-            diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
-            vencimento: vencimento.toLocaleDateString('pt-BR'),
-            plano: assinatura.plano
-        };
     }
 
     async processarPagamento(paymentId) {
@@ -412,26 +372,155 @@ class AssinaturaManager {
             const payment = await mercadopago.payment.get(paymentId);
             
             if (payment.body.status === 'approved') {
-                const externalRef = payment.body.external_reference;
-                const [tipo, userId, plano] = externalRef.split('_');
-                
+                const externalRef = payment.body.external_reference || '';
+                const parts = externalRef.split('_');
+                const tipo = parts[0]; // 'assinatura' ou 'web'
+
+                let username = 'Cliente VIP';
+                let plano = 'mensal';
+                let userId = Date.now();
+
                 if (tipo === 'assinatura') {
-                    const assinatura = await this.criarAssinatura(
-                        parseInt(userId), 
-                        `Usuário_${userId}`, 
-                        plano,
-                        paymentId
-                    );
-                    
-                    console.log(`✅ Assinatura ativada após pagamento: ${assinatura.username} - Plano: ${assinatura.plano}`);
-                    return { success: true, assinatura, payment: payment.body };
+                    userId = parseInt(parts[1], 10) || Date.now();
+                    plano = parts[2] || 'mensal';
+                    username = `Usuário_${userId}`;
+                } else if (tipo === 'web') {
+                    username = decodeURIComponent(parts[1] || 'Cliente Web');
+                    plano = parts[2] || 'mensal';
                 }
+
+                // Cria ou renova assinatura
+                const assinatura = await this.criarAssinatura(
+                    userId, 
+                    username, 
+                    plano,
+                    paymentId
+                );
+
+                // Gera também um Token Stremio VIP automático para o cliente
+                const token = `bf_${require('crypto').randomBytes(12).toString('hex')}`;
+                await db.query(`
+                    INSERT INTO stremio_tokens (token, username, tipo, ativo)
+                    VALUES ($1, $2, $3, true)
+                    ON CONFLICT DO NOTHING
+                `, [token, username, plano]);
+
+                await this.loadAssinaturas();
+
+                console.log(`✅ Pagamento Aprovado e Token Stremio Gerado: ${username} [Plano: ${plano}, Token: ${token}]`);
+                return { success: true, token, assinatura, payment: payment.body };
             }
 
-            return { success: false, payment: payment.body };
+            return { success: false, status: payment.body.status, payment: payment.body };
         } catch (error) {
             console.error('❌ Erro ao processar pagamento:', error);
-            return { success: false, error };
+            return { success: false, error: error.message };
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONTROLE DE LIMITE GRÁTIS NO STREMIO E SITE (1 Filme + 2 Episódios / Mês)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async verificarOuRegistrarConsumoGratis(identificador, tipo = 'filme') {
+        const auth = this.verificarAcessoStremio(identificador);
+        if (auth.authorized) {
+            return { permitido: true, isVip: true, restanteFilmes: 999, restanteEpisodios: 999 };
+        }
+
+        const d = new Date();
+        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const cleanId = String(identificador || 'public').trim();
+
+        let registro = null;
+        try {
+            const res = await db.query(
+                `SELECT * FROM consumo_gratis WHERE identificador = $1 AND mes_ano = $2`,
+                [cleanId, mesAno]
+            );
+            if (res.rows.length > 0) {
+                registro = res.rows[0];
+            } else {
+                const insRes = await db.query(
+                    `INSERT INTO consumo_gratis (identificador, mes_ano, filmes_assistidos, episodios_assistidos, created_at, updated_at)
+                     VALUES ($1, $2, 0, 0, NOW(), NOW())
+                     RETURNING *`,
+                    [cleanId, mesAno]
+                );
+                registro = insRes.rows[0];
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao consultar consumo_gratis:', e.message);
+            return { permitido: true, isVip: false, restanteFilmes: 1, restanteEpisodios: 2 };
+        }
+
+        const limiteFilmes = 1;
+        const limiteEps = 2;
+        const filmesAssistidos = Number(registro?.filmes_assistidos || 0);
+        const epsAssistidos = Number(registro?.episodios_assistidos || 0);
+
+        if (tipo === 'filme') {
+            if (filmesAssistidos >= limiteFilmes) {
+                return {
+                    permitido: false,
+                    isVip: false,
+                    motivo: 'Você atingiu o limite gratuito mensal de 1 filme. Assine o VIP para acesso ilimitado!',
+                    filmesAssistidos,
+                    episodiosAssistidos: epsAssistidos,
+                    restanteFilmes: 0,
+                    restanteEpisodios: Math.max(0, limiteEps - epsAssistidos)
+                };
+            }
+        } else {
+            if (epsAssistidos >= limiteEps) {
+                return {
+                    permitido: false,
+                    isVip: false,
+                    motivo: 'Você atingiu o limite gratuito mensal de 2 episódios de séries. Assine o VIP para maratonar!',
+                    filmesAssistidos,
+                    episodiosAssistidos: epsAssistidos,
+                    restanteFilmes: Math.max(0, limiteFilmes - filmesAssistidos),
+                    restanteEpisodios: 0
+                };
+            }
+        }
+
+        return {
+            permitido: true,
+            isVip: false,
+            filmesAssistidos,
+            episodiosAssistidos: epsAssistidos,
+            restanteFilmes: Math.max(0, limiteFilmes - filmesAssistidos),
+            restanteEpisodios: Math.max(0, limiteEps - epsAssistidos)
+        };
+    }
+
+    async registrarStreamConsumido(identificador, tipo = 'filme') {
+        const auth = this.verificarAcessoStremio(identificador);
+        if (auth.authorized) return;
+
+        const d = new Date();
+        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const cleanId = String(identificador || 'public').trim();
+
+        try {
+            if (tipo === 'filme') {
+                await db.query(
+                    `UPDATE consumo_gratis 
+                     SET filmes_assistidos = filmes_assistidos + 1, updated_at = NOW() 
+                     WHERE identificador = $1 AND mes_ano = $2`,
+                    [cleanId, mesAno]
+                );
+            } else {
+                await db.query(
+                    `UPDATE consumo_gratis 
+                     SET episodios_assistidos = episodios_assistidos + 1, updated_at = NOW() 
+                     WHERE identificador = $1 AND mes_ano = $2`,
+                    [cleanId, mesAno]
+                );
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao registrar stream consumido:', e.message);
         }
     }
 }
