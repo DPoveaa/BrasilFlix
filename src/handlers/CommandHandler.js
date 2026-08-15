@@ -677,14 +677,17 @@ class CommandHandler {
         };
 
         filmesPagina.forEach(filme => {
+            const badge = filme.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(filme) || '[D]');
             const ano = filme.ano ? ` (${filme.ano})` : '';
-            const nota = filme.nota ? ` ⭐ ${filme.nota}` : '';
-            const badge = this.catalogoManager.getAudioBadge(filme);
-            const badgeStr = badge ? ` ${badge}` : '';
-            const nomeExibicao = `${filme.nome}${ano}${badgeStr}${nota}`;
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${filme.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
             
             keyboard.inline_keyboard.push([
-                { text: `🎬 ${nomeExibicao.length > 34 ? nomeExibicao.substring(0, 31) + '...' : nomeExibicao}`, callback_data: `info_filme_${filme.id}` }
+                { text: `${prefixo}${nomeFinal}`, callback_data: `info_filme_${filme.id}` }
             ]);
         });
 
@@ -760,14 +763,17 @@ class CommandHandler {
         };
 
         seriesPagina.forEach(serie => {
+            const badge = this.catalogoManager.getAudioBadge(serie) || '[D]';
             const ano = serie.ano ? ` (${serie.ano})` : '';
-            const nota = serie.nota ? ` ⭐ ${serie.nota}` : '';
-            const badge = this.catalogoManager.getAudioBadge(serie);
-            const badgeStr = badge ? ` ${badge}` : '';
-            const nomeExibicao = `${serie.nome}${ano}${badgeStr}${nota}`;
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${serie.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
             
             keyboard.inline_keyboard.push([
-                { text: `📺 ${nomeExibicao.length > 34 ? nomeExibicao.substring(0, 31) + '...' : nomeExibicao}`, callback_data: `info_serie_${serie.id}` }
+                { text: `${prefixo}${nomeFinal}`, callback_data: `info_serie_${serie.id}` }
             ]);
         });
 
@@ -2096,16 +2102,18 @@ class CommandHandler {
         const keyboard = { inline_keyboard: [] };
 
         itensPagina.forEach(item => {
-            const icone = item.tipo === 'filme' ? '🎬' : '📺';
+            const badge = item.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(item) || '[D]');
             const ano = item.ano ? ` (${item.ano})` : '';
-            const nota = item.nota ? ` ⭐ ${item.nota}` : '';
-            const badge = this.catalogoManager.getAudioBadge(item);
-            const badgeStr = badge ? ` ${badge}` : '';
-            const nomeExibicao = `${icone} ${item.nome}${ano}${badgeStr}${nota}`;
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${item.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
             const callbackData = item.tipo === 'filme' ? `info_filme_${item.id}` : `info_serie_${item.id}`;
 
             keyboard.inline_keyboard.push([
-                { text: nomeExibicao.length > 34 ? nomeExibicao.substring(0, 31) + '...' : nomeExibicao, callback_data: callbackData }
+                { text: `${prefixo}${nomeFinal}`, callback_data: callbackData }
             ]);
         });
 
@@ -3685,12 +3693,17 @@ class CommandHandler {
         };
 
         filmesPagina.forEach(filme => {
-            const camTag = filme.isCam ? '📹 [CAM] ' : '';
-            const audioTag = (filme.audio && filme.audio.toLowerCase().includes('legend')) ? '[L]' : '[D]';
-            const nomeCurto = filme.nome.length > 22 ? filme.nome.substring(0, 20) + '...' : filme.nome;
+            const badge = filme.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(filme) || '[D]');
+            const ano = filme.ano ? ` (${filme.ano})` : '';
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${filme.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
             
             keyboard.inline_keyboard.push([
-                { text: `🎬 ${camTag}${nomeCurto} ${audioTag}`, callback_data: `selecionar_filme_${filme.id}_${p}` }
+                { text: `${prefixo}${nomeFinal}`, callback_data: `selecionar_filme_${filme.id}_${p}` }
             ]);
         });
 
@@ -3883,11 +3896,19 @@ class CommandHandler {
         };
 
         seriesPagina.forEach(serie => {
+            const badge = this.catalogoManager.getAudioBadge(serie) || '[D]';
+            const ano = serie.ano ? ` (${serie.ano})` : '';
+            const prefixo = `${badge} `;
             const totalEps = (serie.temporadas || []).reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
-            const nomeCurto = serie.nome.length > 22 ? serie.nome.substring(0, 20) + '...' : serie.nome;
+            const epsStr = totalEps > 0 ? ` (${totalEps} eps)` : '';
+            const maxLen = 38;
+            const nomeCompleto = `${serie.nome}${ano}${epsStr}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
             
             keyboard.inline_keyboard.push([
-                { text: `📺 ${nomeCurto} (${totalEps} eps)`, callback_data: `selecionar_serie_${serie.id}_${p}` }
+                { text: `${prefixo}${nomeFinal}`, callback_data: `selecionar_serie_${serie.id}_${p}` }
             ]);
         });
 
