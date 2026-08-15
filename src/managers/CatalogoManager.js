@@ -439,19 +439,10 @@ class CatalogoManager {
 
     async deleteStorageMessages(messageIds) {
         if (!messageIds || messageIds.length === 0) return;
-        const validIds = messageIds.map(Number).filter(id => id && !isNaN(id) && id > 0);
-        if (validIds.length === 0) return;
-
-        const storageGroupId = config.STORAGE_GROUP_ID;
-
         try {
-            const client = await telegramUploader.getClient();
-            if (client) {
-                await client.deleteMessages(storageGroupId, validIds, { revoke: true });
-                console.log(`🗑️ [Armazém Telegram] ${validIds.length} mensagem(ns) apagada(s) com sucesso do grupo ${storageGroupId}:`, validIds);
-            }
+            await TelegramUploader.deleteStorageMessages(messageIds);
         } catch (e) {
-            console.warn('⚠️ Aviso ao deletar mensagens do Armazém via MTProto:', e.message);
+            console.warn('⚠️ Aviso ao deletar mensagens do Armazém:', e.message);
         }
     }
 

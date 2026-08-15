@@ -6,7 +6,18 @@ const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 
 class TelegramUploader {
-    constructor(bot) {
+    static getInstance() {
+        if (!TelegramUploader._instance) {
+            TelegramUploader._instance = new TelegramUploader();
+        }
+        return TelegramUploader._instance;
+    }
+
+    static async deleteStorageMessages(messageIds) {
+        return TelegramUploader.getInstance().deleteStorageMessages(messageIds);
+    }
+
+    constructor(bot = null) {
         this.bot = bot;
         this.storageGroupId = config.STORAGE_GROUP_ID;
         this.client = null;
