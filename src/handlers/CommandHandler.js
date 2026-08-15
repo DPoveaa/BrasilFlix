@@ -913,7 +913,10 @@ class CommandHandler {
         // 1. Tenta copyMessage (entrega direta limpa)
         if (messageId && config.STORAGE_GROUP_ID) {
             try {
-                await this.bot.copyMessage(chatId, config.STORAGE_GROUP_ID, messageId);
+                await this.bot.copyMessage(chatId, config.STORAGE_GROUP_ID, messageId, {
+                    caption: caption || undefined,
+                    parse_mode: 'Markdown'
+                });
                 return true;
             } catch (err1) {
                 console.warn(`⚠️ copyMessage falhou (MessageId ${messageId}): ${err1.message}. Tentando fallback...`);
@@ -924,12 +927,12 @@ class CommandHandler {
                 await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
                 return true;
             } catch (err2) {
-                console.warn(`⚠️ forwardMessage falhou: ${err2.message}. Tentando por file_id...`);
+                console.warn(`⚠️ forwardMessage falhou: ${err2.message}`);
             }
         }
 
-        // 3. Fallback com file_id direto
-        if (fileId) {
+        // 3. Fallback com file_id direto (apenas se for formato string válido do Bot API)
+        if (fileId && typeof fileId === 'string' && !/^\d+$/.test(fileId)) {
             try {
                 await this.bot.sendVideo(chatId, fileId, { caption, parse_mode: 'Markdown' });
                 return true;
