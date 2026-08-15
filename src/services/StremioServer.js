@@ -591,16 +591,18 @@ class StremioServer {
         });
 
         // 6. Streams Stremio
-        this.app.get('/stream/:type/:id.json', (req, res) => {
+        this.app.get('/stream/:type/:id.json', async (req, res) => {
             const { type, id } = req.params;
             const baseUrl = this.getBaseUrl(req);
-            res.json(this.stremioService.getStreams(type, id, 'public', baseUrl));
+            const data = await this.stremioService.getStreams(type, id, 'public', baseUrl);
+            res.json(data);
         });
 
-        this.app.get('/:userToken/stream/:type/:id.json', (req, res) => {
+        this.app.get('/:userToken/stream/:type/:id.json', async (req, res) => {
             const { userToken, type, id } = req.params;
             const baseUrl = this.getBaseUrl(req);
-            res.json(this.stremioService.getStreams(type, id, userToken, baseUrl));
+            const data = await this.stremioService.getStreams(type, id, userToken, baseUrl);
+            res.json(data);
         });
 
         // 7. Streaming de Video sob demanda (HTTP Range / 206 Partial Content)

@@ -156,9 +156,18 @@ class StremioService {
         return { meta };
     }
 
-    getStreams(type, id, userToken = 'public', baseUrl = '') {
-        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
-        if (!auth.authorized) {
+    async getStreams(type, id, userToken = 'public', baseUrl = 'https://brasilflix.kapsu.com.br') {
+        const streams = [];
+        const isMovie = type === 'movie' || (!id.includes(':') && !id.startsWith('bf_serie_'));
+        
+        // Verifica consumo gratuito mensal (1 Filme + 2 Episódios de Séries)
+        const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(
+            userToken, 
+            isMovie ? 'filme' : 'serie'
+        );
+
+        if (!consumo.permitido) {
+            const assinarUrl = `${baseUrl}/assinar?token=${encodeURIComponent(userToken)}`;
             return {
                 streams: [
                     {
