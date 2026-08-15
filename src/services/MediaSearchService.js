@@ -32,7 +32,9 @@ class MediaSearchService {
                     const det = await TMDBService.getTVDetails(options.tmdbId);
                     imdbId = det?.imdbId;
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('⚠️ Diagnóstico TMDB (busca por ID):', e.message);
+            }
         }
 
         // Se ainda não temos IMDb ID, faz busca rápida no TMDB
@@ -49,7 +51,9 @@ class MediaSearchService {
                         await TMDBService.getTVDetails(first.tmdbId);
                     imdbId = det?.imdbId;
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('⚠️ Diagnóstico TMDB (busca por título):', e.message);
+            }
         }
 
         // 2. BUSCA NO TORRENTIO / STREMIO MULTI-PROVIDER (ComandoTorrents, BluDV, CineGAVETA, TorrentGalaxy, etc.)
@@ -69,22 +73,45 @@ class MediaSearchService {
         }
 
         // 3. BUSCA COMPLEMENTAR NO THE PIRATE BAY / APIBAY
+        const sPadded = season.toString().padStart(2, '0');
+        const ePadded = episode.toString().padStart(2, '0');
         const variations = [];
+
         if (tipo === 'serie') {
-            variations.push(
-                `${cleanQuery} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')} dublado`,
-                `${cleanQuery} temporada completa dublado`,
-                `${cleanQuery} completa dublado`,
-                `${cleanQuery} 1080p dublado`,
-                `${cleanQuery} dublado`,
-                `${cleanQuery} s01 dublado`
-            );
-            if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+            if (pref === 'legendado') {
                 variations.push(
-                    `${originalName} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')} dublado`,
-                    `${originalName} season 1 dublado`,
-                    `${originalName} dublado`
+                    `${cleanQuery} S${sPadded}E${ePadded} legendado`,
+                    `${cleanQuery} S${sPadded} legendado`,
+                    `${cleanQuery} temporada ${season} legendado`,
+                    `${cleanQuery} season ${season} legendado`,
+                    `${cleanQuery} S${sPadded}E${ePadded}`,
+                    `${cleanQuery} 1080p legendado`
                 );
+                if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+                    variations.push(
+                        `${originalName} S${sPadded}E${ePadded}`,
+                        `${originalName} S${sPadded} legendado`,
+                        `${originalName} season ${season}`
+                    );
+                }
+            } else {
+                variations.push(
+                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
+                    `${cleanQuery} S${sPadded} dublado`,
+                    `${cleanQuery} temporada ${season} dublado`,
+                    `${cleanQuery} temporada ${season} completa`,
+                    `${cleanQuery} season ${season} dublado`,
+                    `${cleanQuery} 1080p dublado`,
+                    `${cleanQuery} dublado`
+                );
+                if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+                    variations.push(
+                        `${originalName} S${sPadded}E${ePadded} dublado`,
+                        `${originalName} season ${season} dublado`,
+                        `${originalName} S${sPadded} dublado`,
+                        `${originalName} dublado`
+                    );
+                }
             }
         } else {
             variations.push(
@@ -111,22 +138,24 @@ class MediaSearchService {
 
         for (const q of variations) {
             try {
-                const apiResults = await this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano });
+                const apiResults = await this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode });
                 for (const item of apiResults) {
                     if (item.isPtBr && !seenHashes.has(item.infoHash)) {
                         seenHashes.add(item.infoHash);
                         allResults.push(item);
                     }
                 }
-                // Para busca mais eficiente: só para cedo se já tiver fontes suficientes do tipo preferido
-                const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders > 5);
-                const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders > 5);
+                // Para busca mais eficiente: só para cedo se já tiver fontes saudáveis suficientes do tipo preferido
+                const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders >= 5);
+                const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 5);
                 const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
-                if (targetCount >= 3) break;
-            } catch (e) {}
+                if (targetCount >= 4) break;
+            } catch (e) {
+                console.warn(`⚠️ Diagnóstico busca Torrent API ("${q}"):`, e.message);
+            }
         }
 
-        // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p e arquivos > 5.5GB
+        // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p e arquivos incompatíveis
         let ptBrResults = allResults.filter(r => {
             if (!r.isPtBr) return false;
 
@@ -134,7 +163,7 @@ class MediaSearchService {
             const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(r.title);
             if (is4k) return false;
 
-            // 2. Se for filme, limita o tamanho a no máximo 5.5 GB (padrão 1080p leve e nítido)
+            // 2. Se for filme, limita o tamanho a no máximo 5.5 GB (padrão 1080p leve e nítido). Para séries, aceita season packs até 80 GB
             if (tipo === 'filme') {
                 const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
                 if (sizeMB > 5500) return false;
@@ -157,20 +186,8 @@ class MediaSearchService {
         const legendados = ptBrResults.filter(r => r.isLegendado);
         console.log(`✅ Encontradas ${ptBrResults.length} opções 1080p/720p em Português (${dublados.length} Dublado(s), ${legendados.length} Legendado(s))!`);
 
-        // Se a preferência for explícita e tiver fontes suficientes do tipo preferido, prioriza só esse tipo
-        if (pref === 'legendado' && legendados.length > 0) {
-            // Usa só legendados quando há disponíveis, mas mantém dublados como fallback
-            const rankedLeg = this.rankResults(legendados, cleanQuery, options);
-            const rankedDub = this.rankResults(dublados, cleanQuery, options);
-            return [...rankedLeg, ...rankedDub];
-        }
-        if (pref === 'dublado' && dublados.length > 0) {
-            const rankedDub = this.rankResults(dublados, cleanQuery, options);
-            const rankedLeg = this.rankResults(legendados, cleanQuery, options);
-            return [...rankedDub, ...rankedLeg];
-        }
-
-        return this.rankResults(ptBrResults, cleanQuery, options);
+        // Ranking inteligente unificado: avalia saúde, preferência de áudio, qualidade e resolução
+        return this.rankResults(ptBrResults, cleanQuery, { ...options, tipo });
     }
 
     async searchTorrentio(imdbId, tipo = 'filme', opts = {}) {
@@ -190,15 +207,19 @@ class MediaSearchService {
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
 
+                // Distinção explícita de PT-BR vs PT-PT
+                const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
+                const isPtPtExplicit = /(🇵🇹|\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b)/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title);
                 const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer/i.test(title);
-                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle) || isBrazilianGroup);
+
+                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
                 const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
-                const isDublado = isExplicitPtDubInTitle || (isBrazilianGroup && (/\b(dual|dublado|dub)\b/i.test(title) || hasPtAudioFlag)) || hasPtAudioFlag || isDualPtInTitle;
+                const isDublado = (isExplicitPtDubInTitle || (isBrazilianGroup && (/\b(dual|dublado|dub)\b/i.test(title) || hasPtAudioFlag)) || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit;
 
-                const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt|subs?\.por|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
-                const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (/(🇧🇷|🇵🇹|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
+                const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt[-_ ]?br|subs?\.pob|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
+                const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (isPtBrExplicit || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle)) && !isPtPtExplicit;
 
                 const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag || (isBrazilianGroup && /\b(leg|legendado)\b/i.test(title)));
 
@@ -216,8 +237,9 @@ class MediaSearchService {
                     sizeMB = sizeMatch[2].toUpperCase() === 'GB' ? (val * 1024).toFixed(1) : val.toFixed(1);
                 }
 
-                // Descarta apenas arquivos absurdamente gigantes (> 9.5 GB)
-                if (parseFloat(sizeMB) > 9500) {
+                // Descarta apenas arquivos absurdamente gigantes (> 9.5 GB para filmes, > 80 GB para séries)
+                const maxAllowedMB = tipo === 'serie' ? 80000 : 9500;
+                if (parseFloat(sizeMB) > maxAllowedMB) {
                     continue;
                 }
 
@@ -254,11 +276,15 @@ class MediaSearchService {
                     quality: is4k ? '4K UHD (Otimizando 1080p)' : (/1080p/i.test(title) ? '1080p Full HD' : (/720p/i.test(title) ? '720p HD' : 'Qualidade Digital')),
                     audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
                     isPtBr: true,
+                    isPtBrExplicit: isPtBrExplicit || isBrazilianGroup,
+                    isPtPt: isPtPtExplicit,
                     isDublado: isDublado,
                     isLegendado: isLegendado
                 });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn('⚠️ Diagnóstico Torrentio stream fetch:', e.message);
+        }
         return results;
     }
 
@@ -393,24 +419,27 @@ class MediaSearchService {
                         continue;
                     }
 
+                    const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name);
+                    const isPtPtExplicit = /\b(pt[-_]?pt|pt_pt|ptpt|dobrado)\b/i.test(name);
                     const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
                     const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
                     const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
 
-                    const isDublado = isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle;
+                    const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
 
                     const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
                     const isExplicitPtBr = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
 
-                    const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr);
+                    const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr) && !isPtPtExplicit;
 
                     // Descarta categoricamente qualquer release 4K / 2160p / UHD
                     if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(name)) {
                         continue;
                     }
 
-                    // Se for filme, descarta arquivos gigantes (> 5.5 GB)
-                    if (sizeBytes > 5.5 * 1024 * 1024 * 1024) {
+                    // Se for filme, descarta arquivos gigantes (> 5.5 GB). Para séries, permite season packs até 60 GB
+                    const maxAllowedBytes = opts.tipo === 'serie' ? (60 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
+                    if (sizeBytes > maxAllowedBytes) {
                         continue;
                     }
 
@@ -435,12 +464,16 @@ class MediaSearchService {
                         quality: isCam ? 'CAM (Cinema)' : (is1080p ? '1080p Full HD' : '720p HD'),
                         audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
                         isPtBr: true,
+                        isPtBrExplicit: isPtBrExplicit || isBrazilianGroup,
+                        isPtPt: isPtPtExplicit,
                         isDublado: isDublado,
                         isLegendado: isLegendado
                     });
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn('⚠️ Diagnóstico busca TPB/ApiBay:', e.message);
+        }
         return results;
     }
 
@@ -450,27 +483,35 @@ class MediaSearchService {
         const withSeeds = results.filter(r => (r.seeders || 0) > 0);
         const candidates = withSeeds.length > 0 ? withSeeds : results;
         const pref = options.audioPreference || 'dublado';
+        const tipo = options.tipo || 'filme';
 
         return candidates.sort((a, b) => {
             let scoreA = 0;
             let scoreB = 0;
 
+            // 1. Preferência de Áudio
             if (pref === 'legendado') {
-                if (a.isLegendado) scoreA += 1500;
-                if (b.isLegendado) scoreB += 1500;
-                if (a.isDublado) scoreA += 300;
-                if (b.isDublado) scoreB += 300;
+                if (a.isLegendado) scoreA += 900;
+                if (b.isLegendado) scoreB += 900;
+                if (a.isDublado) scoreA += 250;
+                if (b.isDublado) scoreB += 250;
             } else {
-                if (a.isDublado) scoreA += 1500;
-                if (b.isDublado) scoreB += 1500;
-                if (a.isLegendado) scoreA += 400;
-                if (b.isLegendado) scoreB += 400;
+                if (a.isDublado) scoreA += 900;
+                if (b.isDublado) scoreB += 900;
+                if (a.isLegendado) scoreA += 300;
+                if (b.isLegendado) scoreB += 300;
             }
 
-            if (a.isWebDl) scoreA += 500;
-            if (b.isWebDl) scoreB += 500;
+            // 2. Fidelidade PT-BR vs PT-PT
+            if (a.isPtBrExplicit) scoreA += 400;
+            if (b.isPtBrExplicit) scoreB += 400;
+            if (a.isPtPt) scoreA -= 800;
+            if (b.isPtPt) scoreB -= 800;
 
-            // Prioridade máxima para 1080p Full HD e 720p HD
+            // 3. Formato e Qualidade
+            if (a.isWebDl) scoreA += 450;
+            if (b.isWebDl) scoreB += 450;
+
             const is1080pA = /\b(1080p|1080|fhd|fullhd)\b/i.test(a.title);
             const is1080pB = /\b(1080p|1080|fhd|fullhd)\b/i.test(b.title);
             if (is1080pA) scoreA += 600;
@@ -481,40 +522,47 @@ class MediaSearchService {
             if (is720pA) scoreA += 300;
             if (is720pB) scoreB += 300;
 
-            // 4K/2160p aceito como fallback inteligente (FFmpeg converterá para 1080p FHD)
-            const is4kA = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(a.title);
-            const is4kB = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(b.title);
-            if (is4kA) scoreA += 100;
-            if (is4kB) scoreB += 100;
-
-            // PRIORIDADE DE SEEDERS (Evita fontes lentas/travadas)
+            // 4. SAÚDE DA FONTE (Seeders / Disponibilidade com peso superior a torrents mortos)
             const seedsA = a.seeders || 0;
             const seedsB = b.seeders || 0;
 
-            if (seedsA >= 15) scoreA += 1000;
-            else if (seedsA >= 8) scoreA += 600;
-            else if (seedsA >= 4) scoreA += 250;
-            else if (seedsA <= 2) scoreA -= 1000; // Penalidade para torrents quase sem seeder
+            if (seedsA >= 25) scoreA += 1400;
+            else if (seedsA >= 10) scoreA += 900;
+            else if (seedsA >= 4) scoreA += 400;
+            else if (seedsA >= 2) scoreA += 100;
+            else if (seedsA === 1) scoreA -= 1200; // Penalidade forte para torrent quase sem seeder
+            else if (seedsA === 0) scoreA -= 2500; // Penalidade severa para torrent morto
 
-            if (seedsB >= 15) scoreB += 1000;
-            else if (seedsB >= 8) scoreB += 600;
-            else if (seedsB >= 4) scoreB += 250;
-            else if (seedsB <= 2) scoreB -= 1000;
+            if (seedsB >= 25) scoreB += 1400;
+            else if (seedsB >= 10) scoreB += 900;
+            else if (seedsB >= 4) scoreB += 400;
+            else if (seedsB >= 2) scoreB += 100;
+            else if (seedsB === 1) scoreB -= 1200;
+            else if (seedsB === 0) scoreB -= 2500;
 
-            scoreA += Math.min(400, seedsA * 15);
-            scoreB += Math.min(400, seedsB * 15);
+            scoreA += Math.min(400, seedsA * 10);
+            scoreB += Math.min(400, seedsB * 10);
 
-            // Tamanho ideal (Sweet Spot) entre 1.4 GB e 4.2 GB para 1080p nítido e leve
+            // 5. Ajuste por Tamanho
             const sizeA = (a.sizeBytes || 0) / (1024 * 1024);
             const sizeB = (b.sizeBytes || 0) / (1024 * 1024);
 
-            if (sizeA > 10000) scoreA -= 4000; // > 10GB (arquivo gigante desnecessário)
-            else if (sizeA > 5500) scoreA -= 2000; // > 5.5GB
-            else if (sizeA >= 1300 && sizeA <= 4500) scoreA += 1000; // Ponto ideal 1080p
+            if (tipo === 'filme') {
+                if (sizeA > 10000) scoreA -= 4000;
+                else if (sizeA > 5500) scoreA -= 2000;
+                else if (sizeA >= 1300 && sizeA <= 4500) scoreA += 800; // Ponto ideal 1080p filme
 
-            if (sizeB > 10000) scoreB -= 4000;
-            else if (sizeB > 5500) scoreB -= 2000;
-            else if (sizeB >= 1300 && sizeB <= 4500) scoreB += 1000;
+                if (sizeB > 10000) scoreB -= 4000;
+                else if (sizeB > 5500) scoreB -= 2000;
+                else if (sizeB >= 1300 && sizeB <= 4500) scoreB += 800;
+            } else {
+                // Séries: pacotes de temporada não são penalizados por tamanho total
+                if (sizeA >= 350 && sizeA <= 2500) scoreA += 500; // Episódio avulso ideal
+                else if (sizeA > 70000) scoreA -= 1500;
+
+                if (sizeB >= 350 && sizeB <= 2500) scoreB += 500;
+                else if (sizeB > 70000) scoreB -= 1500;
+            }
 
             return scoreB - scoreA;
         });

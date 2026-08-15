@@ -114,12 +114,18 @@ class DownloaderManager extends EventEmitter {
             let finished = false;
 
             const safeCleanup = () => {
-                if (finished) return;
-                finished = true;
-                if (watchdogInterval) clearInterval(watchdogInterval);
+                if (watchdogInterval) {
+                    clearInterval(watchdogInterval);
+                    watchdogInterval = null;
+                }
                 try {
+                    if (torrent) {
+                        torrent.removeAllListeners();
+                    }
                     client.destroy(() => {});
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('⚠️ Aviso ao finalizar cliente WebTorrent:', e.message);
+                }
             };
 
             client.on('error', (err) => {
@@ -144,6 +150,7 @@ class DownloaderManager extends EventEmitter {
                 // Proteção contra arquivos gigantes (4K / 20GB): aborta na hora para filmes
                 if (!options.episode && torrent.length > 5.8 * 1024 * 1024 * 1024) {
                     console.log(`⚠️ Arquivo de filme muito pesado (${this.formatBytes(torrent.length)} > 5.5 GB). Abortando para priorizar 1080p leve...`);
+                    finished = true;
                     safeCleanup();
                     return reject(new Error(`Arquivo excede o limite de tamanho para filmes 1080p (${this.formatBytes(torrent.length)}).`));
                 }
@@ -153,28 +160,73 @@ class DownloaderManager extends EventEmitter {
                     const epNum = parseInt(options.episode, 10);
                     const epPadded2 = String(epNum).padStart(2, '0');
                     const epPadded3 = String(epNum).padStart(3, '0');
-                    const sPadded = String(seasonNum).padStart(2, '0');
+                    const sPadded2 = String(seasonNum).padStart(2, '0');
 
-                    // Padrões ordenados por especificidade
-                    const patterns = [
-                        new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}\\b`, 'i'),
-                        new RegExp(`s${sPadded}[._ -]*e${epPadded2}\\b`, 'i'),
+                    // Filtra apenas arquivos com extensão de vídeo
+                    const videoFiles = torrent.files.filter(f => {
+                        const ext = path.extname(f.name).toLowerCase();
+                        return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext);
+                    });
+
+                    // 1. Padrões estritos de Temporada + Episódio (S01E02, S1E2, S01.E02, S01 - E02, T01E02, 1x02, 01x02, Season 1 Episode 2)
+                    const strictPatterns = [
+                        new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}(?:v\\d+)?\\b`, 'i'),
+                        new RegExp(`s${sPadded2}[._ -]*e${epPadded2}\\b`, 'i'),
                         new RegExp(`\\b${seasonNum}x0*${epNum}\\b`, 'i'),
-                        new RegExp(`\\be0*${epNum}\\b`, 'i'),
-                        new RegExp(`\\bep0*${epNum}\\b`, 'i'),
-                        new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
-                        new RegExp(`[._ -]${epPadded2}[._ -]`, 'i'),
-                        new RegExp(`[._ -]${epPadded3}[._ -]`, 'i'),
-                        new RegExp(`episodio[._ -]*0*${epNum}\\b`, 'i')
+                        new RegExp(`\\bt0*${seasonNum}[._ -]*e0*${epNum}\\b`, 'i'),
+                        new RegExp(`(?:season|temporada)[._ -]*0*${seasonNum}[._ -]+(?:episode|episodio|ep|e)[._ -]*0*${epNum}\\b`, 'i')
                     ];
 
                     let found = null;
-                    for (const regex of patterns) {
-                        found = torrent.files.find(f => {
-                            const ext = path.extname(f.name).toLowerCase();
-                            return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext) && regex.test(f.name);
-                        });
+                    for (const regex of strictPatterns) {
+                        found = videoFiles.find(f => regex.test(f.name) || regex.test(f.path));
                         if (found) break;
+                    }
+
+                    // 2. Padrão de Faixa/Multi-episódio (ex: S01E01-E05, S01E01-04 onde epNum está dentro do intervalo)
+                    if (!found) {
+                        found = videoFiles.find(f => {
+                            const str = `${f.path} ${f.name}`;
+                            const rangeMatch = str.match(new RegExp(`s0*${seasonNum}[._ -]*e0*(\\d+)[._ -]*(?:-|~|a|e|to)[._ -]*e?0*(\\d+)`, 'i'));
+                            if (rangeMatch) {
+                                const start = parseInt(rangeMatch[1], 10);
+                                const end = parseInt(rangeMatch[2], 10);
+                                if (epNum >= start && epNum <= end) return true;
+                            }
+                            return false;
+                        });
+                    }
+
+                    // 3. Padrão por pasta da temporada (ex: pasta "Season 1/" ou "S01/" contendo arquivos "01.mkv" ou "Ep.1.mp4")
+                    if (!found) {
+                        const seasonFolderRegex = new RegExp(`(?:season|temporada|s)[._ -]*0*${seasonNum}(?:[\\\\/]|$)`, 'i');
+                        const seasonFolderFiles = videoFiles.filter(f => seasonFolderRegex.test(f.path));
+
+                        if (seasonFolderFiles.length > 0) {
+                            const epInFolderPatterns = [
+                                new RegExp(`\\b(?:ep|e|episodio|episode)[._ -]*0*${epNum}\\b`, 'i'),
+                                new RegExp(`\\b${epPadded2}\\b`),
+                                new RegExp(`\\b0*${epNum}\\b`)
+                            ];
+                            for (const regex of epInFolderPatterns) {
+                                found = seasonFolderFiles.find(f => regex.test(f.name));
+                                if (found) break;
+                            }
+                        }
+                    }
+
+                    // 4. Padrões avulsos de Episódio com proteção contra números de resolução/ano/codec
+                    if (!found) {
+                        const epPatterns = [
+                            new RegExp(`\\b(?:ep|episodio|episode)[._ -]*0*${epNum}\\b`, 'i'),
+                            new RegExp(`\\be0*${epNum}\\b`, 'i'),
+                            new RegExp(`[._ -]e0*${epNum}[._ -]`, 'i'),
+                            new RegExp(`[._ -]ep0*${epNum}[._ -]`, 'i')
+                        ];
+                        for (const regex of epPatterns) {
+                            found = videoFiles.find(f => regex.test(f.name));
+                            if (found) break;
+                        }
                     }
 
                     if (found) {
@@ -186,7 +238,11 @@ class DownloaderManager extends EventEmitter {
                             found.select();
                             found.on('done', () => checkAndComplete());
                             console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
-                        } catch (e) {}
+                        } catch (e) {
+                            console.warn('⚠️ Erro ao selecionar arquivo alvo no pack:', e.message);
+                        }
+                    } else {
+                        console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${sPadded2}E${epPadded2}. Mantendo seleção completa.`);
                     }
                 }
             });
@@ -248,7 +304,6 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 finished = true;
-                if (watchdogInterval) clearInterval(watchdogInterval);
                 process.stdout.write('\n');
                 console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
 
@@ -323,13 +378,14 @@ class DownloaderManager extends EventEmitter {
             torrent.on('done', () => checkAndComplete());
 
             torrent.on('error', (err) => {
+                finished = true;
                 safeCleanup();
                 reject(new Error(`Falha no download do torrent: ${err.message}`));
             });
 
             let lastBytes = 0;
-            let stalledSeconds = 0;
-            let elapsedSeconds = 0;
+            let lastBytesChangeTime = Date.now();
+            const downloadStartTime = Date.now();
 
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
@@ -339,32 +395,36 @@ class DownloaderManager extends EventEmitter {
 
                 if (curTotal > 0 && (curDownloaded >= curTotal * 0.99 || torrent.progress >= 0.99)) {
                     checkAndComplete();
+                    return;
                 }
 
-                elapsedSeconds += 2;
+                const now = Date.now();
                 const currentBytes = torrent.downloaded || 0;
-                if (currentBytes === lastBytes) {
-                    stalledSeconds += 2;
-                } else {
-                    stalledSeconds = 0;
+                if (currentBytes !== lastBytes) {
                     lastBytes = currentBytes;
+                    lastBytesChangeTime = now;
                 }
 
-                // 1. Aborta se estiver completamente parado por 60s no início
-                if (stalledSeconds >= 60 && torrent.progress < 0.02) {
+                const stalledMs = now - lastBytesChangeTime;
+                const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
+
+                // 1. Aborta se estiver completamente estagnado por 60s no início (sem progresso significativo)
+                if (stalledMs >= 60000 && torrent.progress < 0.02) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s)). Abortando para tentar outra fonte...`);
+                    console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s), estagnado por ${Math.round(stalledMs / 1000)}s). Abortando para tentar outra fonte...`);
+                    finished = true;
                     safeCleanup();
                     return reject(new Error('Download estagnado sem dados/seeders ativos.'));
                 }
 
-                // 2. Aborta se for um torrent muito pesado com velocidade crítica (< 0.4 MB/s após 90 segundos com previsão > 45 min)
+                // 2. Aborta se for um torrent excessivamente lento (< 0.45 MB/s após 90 segundos com previsão > 45 min)
                 const speedMB = torrent.downloadSpeed / (1024 * 1024);
                 const remainingSec = speedMB > 0 ? (torrent.length - currentBytes) / (speedMB * 1024 * 1024) : 99999;
                 
-                if (elapsedSeconds >= 90 && speedMB < 0.45 && remainingSec > 2700 && torrent.progress < 0.08) {
+                if (elapsedSec >= 90 && speedMB < 0.45 && remainingSec > 2700 && torrent.progress < 0.08) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 45 min). Abortando para buscar fonte mais rápida...`);
+                    finished = true;
                     safeCleanup();
                     return reject(new Error('Torrent com poucos seeders/velocidade insuficiente.'));
                 }

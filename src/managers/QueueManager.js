@@ -394,13 +394,21 @@ class QueueManager extends EventEmitter {
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
-            // 3. Download com Fallback Automático entre as melhores opções
+            // 3. Download com Fallback Automático entre as melhores opções (tenta até 8 fontes com timeout global de 25 min)
             job.status = 'downloading';
             await this.saveJob(job);
 
             let lastError = null;
-            const maxAttempts = Math.min(3, sources.length);
+            const maxAttempts = Math.min(8, sources.length);
+            const maxDownloadBatchTimeMs = 25 * 60 * 1000; // 25 min de limite global para a esteira de tentativas
+            const downloadBatchStartTime = Date.now();
+
             for (let i = 0; i < maxAttempts; i++) {
+                if (Date.now() - downloadBatchStartTime > maxDownloadBatchTimeMs) {
+                    console.warn(`⏱️ Limite global de tempo de download (${Math.round(maxDownloadBatchTimeMs / 60000)} min) atingido após testar ${i} fontes.`);
+                    break;
+                }
+
                 const currentSource = sources[i];
                 console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio})`);
                 
