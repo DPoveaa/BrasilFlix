@@ -133,8 +133,20 @@ class CatalogoManager {
         return (this.catalogo.filmes || []).filter(f => f.isCam === true);
     }
 
-    buscarFilmesLegendados() {
-        return (this.catalogo.filmes || []).filter(f => f.isLegendado === true || (f.audio && f.audio.toLowerCase().includes('legendado')));
+    buscarFilmesApenasLegendados() {
+        return (this.catalogo.filmes || []).filter(f => {
+            const temDub = f.isDublado === true || !!f.versoes?.dublado;
+            const temLeg = f.isLegendado === true || !!f.versoes?.legendado || (f.audio && f.audio.toLowerCase().includes('legendado'));
+            return temLeg && !temDub;
+        });
+    }
+
+    buscarFilmesApenasDublados() {
+        return (this.catalogo.filmes || []).filter(f => {
+            const temDub = f.isDublado === true || !!f.versoes?.dublado || (f.audio && f.audio.toLowerCase().includes('dublado'));
+            const temLeg = f.isLegendado === true || !!f.versoes?.legendado;
+            return temDub && !temLeg;
+        });
     }
 
     getGenerosDisponiveis() {

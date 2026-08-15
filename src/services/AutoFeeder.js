@@ -102,15 +102,17 @@ class AutoFeeder {
 
     async checkLegendadoUpgrades() {
         try {
-            const legendadoMovies = this.catalogoManager.buscarFilmesLegendados();
-            if (legendadoMovies.length === 0) return;
+            // Verifica apenas filmes que TEM Legendado mas NÃO TEM Dublado ainda
+            const apenasLegendados = this.catalogoManager.buscarFilmesApenasLegendados();
+            if (apenasLegendados.length === 0) return;
 
-            console.log(`🎙️ AutoFeeder: Verificando se ${legendadoMovies.length} filme(s) legendado(s) já possuem versão DUBLADA...`);
+            console.log(`🎙️ AutoFeeder: Verificando se ${apenasLegendados.length} filme(s) apenas legendado(s) já ganharam versão DUBLADA...`);
 
-            for (const filme of legendadoMovies) {
+            for (const filme of apenasLegendados) {
                 const sources = await MediaSearchService.search(filme.nome, 'filme', {
                     nomeOriginal: filme.nomeOriginal,
-                    ano: filme.ano
+                    ano: filme.ano,
+                    audioPreference: 'dublado'
                 });
 
                 const dubladaSource = sources.find(s => s.isDublado && s.seeders > 0);
@@ -118,6 +120,7 @@ class AutoFeeder {
                     console.log(`🌟 VERSÃO DUBLADA ENCONTRADA para "${filme.nome}"! Fonte: ${dubladaSource.title}`);
                     this.queueManager.addJob(filme.nome, 'filme', 2, {
                         tmdbId: filme.tmdbId,
+                        audioPreference: 'dublado',
                         isUpgrade: true
                     });
                 }

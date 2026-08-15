@@ -13,10 +13,9 @@ class MediaSearchService {
         const ano = options.ano || '';
         const forcarNaoCam = options.onlyWebDl || false;
         let imdbId = options.imdbId || null;
-        const season = options.season || 1;
-        const episode = options.episode || 1;
-
-        console.log(`\n🔍 Buscando fontes em Português (Dublado > Legendado) para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''}...`);
+        const pref = options.audioPreference || 'geral';
+        const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
+        console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''}...`);
 
         const allResults = [];
         const seenHashes = new Set();
@@ -144,7 +143,8 @@ class MediaSearchService {
         }
 
         if (ptBrResults.length === 0) {
-            console.log(`⚠️ Nenhuma versão 1080p/720p em Português (Dublada ou Legendada) encontrada para "${cleanQuery}".`);
+            const descFalta = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublada ou Legendada)');
+            console.log(`⚠️ Nenhuma versão 1080p/720p ${descFalta} encontrada para "${cleanQuery}".`);
             return [];
         }
 
