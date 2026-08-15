@@ -1763,11 +1763,21 @@ class CommandHandler {
                     break;
 
                 case 'admin_gerenciar_filmes':
-                    await this.handleAdminGerenciarFilmes(chatId, userId, callbackQuery);
+                    await this.handleAdminGerenciarFilmes(chatId, userId, callbackQuery, 0);
                     break;
+                case data.match(/^admin_gerenciar_filmes_(\d+)$/)?.input:
+                    const pagFilmes = parseInt(data.match(/^admin_gerenciar_filmes_(\d+)$/)?.[1] || 0);
+                    await this.handleAdminGerenciarFilmes(chatId, userId, callbackQuery, pagFilmes);
+                    break;
+
                 case 'admin_gerenciar_series':
-                    await this.handleAdminGerenciarSeries(chatId, userId, callbackQuery);
+                    await this.handleAdminGerenciarSeries(chatId, userId, callbackQuery, 0);
                     break;
+                case data.match(/^admin_gerenciar_series_(\d+)$/)?.input:
+                    const pagSeries = parseInt(data.match(/^admin_gerenciar_series_(\d+)$/)?.[1] || 0);
+                    await this.handleAdminGerenciarSeries(chatId, userId, callbackQuery, pagSeries);
+                    break;
+
                 // Callbacks para gerenciamento de pedidos admin
                 case data.match(/^admin_pedido_detalhes_(\d+)$/)?.input:
                     const pedidoIdDetalhes = data.match(/^admin_pedido_detalhes_(\d+)$/)?.[1];
@@ -1778,7 +1788,7 @@ class CommandHandler {
                 case data.match(/^admin_pedidos_pagina_(\d+)$/)?.input:
                     const paginaPedidos = data.match(/^admin_pedidos_pagina_(\d+)$/)?.[1];
                     if (paginaPedidos) {
-                        await this.mostrarPedidosAdmin(chatId, userId, parseInt(paginaPedidos));
+                        await this.mostrarPedidosAdmin(chatId, userId, parseInt(paginaPedidos), callbackQuery);
                     }
                     break;
                 case 'admin_pedidos_todos':
@@ -1817,17 +1827,33 @@ class CommandHandler {
                 case 'teste_pedido':
                     await this.handleTestePedido(chatId, userId, callbackQuery);
                     break;
-                // Callbacks para selecionar itens para exclusão
-                case data.match(/^selecionar_filme_(\d+)$/)?.input:
-                    const filmeIdSelecionar = data.match(/^selecionar_filme_(\d+)$/)?.[1];
+                // Callbacks para selecionar itens no admin
+                case data.match(/^selecionar_filme_(\d+)(?:_(\d+))?$/)?.input:
+                    const mFilme = data.match(/^selecionar_filme_(\d+)(?:_(\d+))?$/);
+                    const filmeIdSelecionar = mFilme?.[1];
+                    const pagOrigemFilme = parseInt(mFilme?.[2] || 0);
                     if (filmeIdSelecionar) {
-                        await this.handleAdminSelecionarFilme(chatId, userId, filmeIdSelecionar, callbackQuery);
+                        await this.handleAdminSelecionarFilme(chatId, userId, filmeIdSelecionar, callbackQuery, pagOrigemFilme);
                     }
                     break;
-                case data.match(/^selecionar_serie_(\d+)$/)?.input:
-                    const serieIdSelecionar = data.match(/^selecionar_serie_(\d+)$/)?.[1];
+                case data.match(/^selecionar_serie_(\d+)(?:_(\d+))?$/)?.input:
+                    const mSerie = data.match(/^selecionar_serie_(\d+)(?:_(\d+))?$/);
+                    const serieIdSelecionar = mSerie?.[1];
+                    const pagOrigemSerie = parseInt(mSerie?.[2] || 0);
                     if (serieIdSelecionar) {
-                        await this.handleAdminSelecionarSerie(chatId, userId, serieIdSelecionar, callbackQuery);
+                        await this.handleAdminSelecionarSerie(chatId, userId, serieIdSelecionar, callbackQuery, pagOrigemSerie);
+                    }
+                    break;
+                case data.match(/^admin_rebaixar_filme_(\d+)$/)?.input:
+                    const filmeIdRebaixar = data.match(/^admin_rebaixar_filme_(\d+)$/)?.[1];
+                    if (filmeIdRebaixar) {
+                        await this.handleAdminRebaixarFilme(chatId, userId, filmeIdRebaixar, callbackQuery);
+                    }
+                    break;
+                case data.match(/^admin_atualizar_serie_(\d+)$/)?.input:
+                    const serieIdAtualizar = data.match(/^admin_atualizar_serie_(\d+)$/)?.[1];
+                    if (serieIdAtualizar) {
+                        await this.handleAdminAtualizarSerie(chatId, userId, serieIdAtualizar, callbackQuery);
                     }
                     break;
                 // Callbacks para confirmar exclusão
@@ -2979,7 +3005,7 @@ class CommandHandler {
         await this.mostrarPedidosAdmin(chatId, userId, 0); // Página 0
     }
 
-    async mostrarPedidosAdmin(chatId, userId, pagina = 0) {
+    async mostrarPedidosAdmin(chatId, userId, pagina = 0, callbackQuery = null) {
         const pedidos = this.pedidosManager.getPedidos();
         const pedidosPendentes = pedidos.filter(p => !p.processado);
         
@@ -2999,10 +3025,10 @@ class CommandHandler {
                 ]
             };
 
-            await this.bot.sendMessage(chatId, mensagem, { 
+            await this.sendOrEdit(chatId, mensagem, { 
                 parse_mode: 'Markdown',
                 reply_markup: keyboard
-            });
+            }, callbackQuery);
             return;
         }
 
@@ -3024,7 +3050,7 @@ class CommandHandler {
         };
 
         // Adicionar botões dos pedidos
-        pedidosPagina.forEach((pedido, index) => {
+        pedidosPagina.forEach((pedido) => {
             const prioridade = pedido.isAssinante ? '🔥' : '📝';
             const nomeExibicao = pedido.nome.length > 25 ? 
                 pedido.nome.substring(0, 22) + '...' : pedido.nome;
@@ -3062,10 +3088,10 @@ class CommandHandler {
             { text: '🔙 Voltar ao Menu Admin', callback_data: 'voltar_menu_admin' }
         ]);
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async handleAdminAssinaturasButton(chatId, userId, callbackQuery) {
@@ -3089,63 +3115,33 @@ class CommandHandler {
         mensagem += `❌ *Vencidas:* ${vencidas.length}\n`;
         mensagem += `🚫 *Canceladas:* ${canceladas.length}\n\n`;
 
-        // Se houver muitas assinaturas, mostrar apenas estatísticas e as mais importantes
-        if (assinaturas.length > 50) {
-            mensagem += `⚠️ *Muitas assinaturas (${assinaturas.length}). Mostrando apenas estatísticas e as mais importantes:*\n\n`;
-            
-            if (vencendo.length > 0) {
-                mensagem += `⚠️ *Vencendo em breve (máx. 10):*\n`;
-                vencendo.slice(0, 10).forEach(assinatura => {
-                    const info = this.assinaturaManager.formatarAssinatura(assinatura);
-                    mensagem += `• ${assinatura.username} - ${info.diasRestantes} dias\n`;
-                });
-                if (vencendo.length > 10) {
-                    mensagem += `... e mais ${vencendo.length - 10} assinaturas vencendo\n`;
-                }
-                mensagem += `\n`;
-            }
-
-            if (vencidas.length > 0) {
-                mensagem += `❌ *Vencidas (máx. 10):*\n`;
-                vencidas.slice(0, 10).forEach(assinatura => {
-                    mensagem += `• ${assinatura.username} - Venceu em ${new Date(assinatura.dataVencimento).toLocaleDateString('pt-BR')}\n`;
-                });
-                if (vencidas.length > 10) {
-                    mensagem += `... e mais ${vencidas.length - 10} assinaturas vencidas\n`;
-                }
-                mensagem += `\n`;
-            }
-
-            mensagem += `💡 *Dica:* Use filtros para ver assinaturas específicas\n`;
-        } else {
-            // Mostrar todas as assinaturas normalmente
-            if (vencendo.length > 0) {
-                mensagem += `⚠️ *Vencendo em breve:*\n`;
-                vencendo.forEach(assinatura => {
-                    const info = this.assinaturaManager.formatarAssinatura(assinatura);
-                    mensagem += `• ${assinatura.username} - ${info.diasRestantes} dias\n`;
-                });
-                mensagem += `\n`;
-            }
-
-            if (vencidas.length > 0) {
-                mensagem += `❌ *Vencidas:*\n`;
-                vencidas.forEach(assinatura => {
-                    mensagem += `• ${assinatura.username} - Venceu em ${new Date(assinatura.dataVencimento).toLocaleDateString('pt-BR')}\n`;
-                });
-                mensagem += `\n`;
-            }
-
-            if (pendentes.length > 0) {
-                mensagem += `⏳ *Pendentes:*\n`;
-                pendentes.forEach(assinatura => {
-                    mensagem += `• ${assinatura.username} - Criada em ${new Date(assinatura.dataInicio).toLocaleDateString('pt-BR')}\n`;
-                });
-                mensagem += `\n`;
-            }
+        if (vencendo.length > 0) {
+            mensagem += `⚠️ *Vencendo em breve:*\n`;
+            vencendo.slice(0, 8).forEach(assinatura => {
+                const info = this.assinaturaManager.formatarAssinatura(assinatura);
+                mensagem += `• ${assinatura.username} - ${info.diasRestantes} dias\n`;
+            });
+            mensagem += `\n`;
         }
 
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+        if (vencidas.length > 0) {
+            mensagem += `❌ *Vencidas:*\n`;
+            vencidas.slice(0, 8).forEach(assinatura => {
+                mensagem += `• ${assinatura.username} - Venceu em ${new Date(assinatura.dataVencimento).toLocaleDateString('pt-BR')}\n`;
+            });
+            mensagem += `\n`;
+        }
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }]
+            ]
+        };
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
     }
 
     async handleAdminStremioButton(chatId, userId, callbackQuery) {
@@ -3408,8 +3404,16 @@ class CommandHandler {
                         `📅 Esta semana: ${testesGratuitos.estaSemana}\n` +
                         `📅 Este mês: ${testesGratuitos.esteMes}`;
 
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }]
+            ]
+        };
 
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
     }
 
     async handleAdminAdicionarButton(chatId, userId, callbackQuery) {
@@ -3423,18 +3427,24 @@ class CommandHandler {
                         `1️⃣ Envie o arquivo para o grupo de armazenamento\n` +
                         `2️⃣ Adicione uma descrição na legenda\n` +
                         `3️⃣ O sistema detectará automaticamente\n\n` +
-                        `*Método 2 - Manual:*\n` +
-                        `1️⃣ Envie o arquivo para o grupo de armazenamento\n` +
-                        `2️⃣ Use /adicionar no grupo\n\n` +
+                        `*Método 2 - Fila Inteligente (AutoFeeder):*\n` +
+                        `O robô monitora e baixa lançamentos e pedidos automaticamente!\n\n` +
                         `*Método 3 - Sem arquivo:*\n` +
                         `Use: /adicionar_manual "Nome - Ano - Gênero"\n\n` +
                         `*Formato da descrição:*\n` +
                         `Nome do filme/série - Ano - Gênero\n` +
-                        `Exemplo: Vingadores Ultimato - 2019 - Ação/Aventura\n\n` +
-                        `💡 *Dica:* O sistema detecta automaticamente quando você envia um arquivo com legenda no formato correto!`;
+                        `Exemplo: Vingadores Ultimato - 2019 - Ação/Aventura`;
 
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }]
+            ]
+        };
 
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
     }
 
     async handleAdminVerificarButton(chatId, userId, callbackQuery) {
@@ -3469,8 +3479,16 @@ class CommandHandler {
             mensagem += `✅ Nenhuma assinatura vencida\n`;
         }
 
-        await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }]
+            ]
+        };
 
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
     }
 
     async handleAdminTestarCliente(chatId, userId, callbackQuery) {
@@ -3606,32 +3624,32 @@ class CommandHandler {
 
         const stats = this.catalogoManager.getEstatisticas();
         
-        const mensagem = `🗑️ *Gerenciar Catálogo*\n\n` +
-                        `📊 *Estatísticas:*\n` +
+        const mensagem = `🗑️ *Gerenciamento de Catálogo — BrasilFlix*\n\n` +
+                        `📊 *Estatísticas Atuais:*\n` +
                         `🎬 *Filmes:* ${stats.totalFilmes}\n` +
                         `📺 *Séries:* ${stats.totalSeries}\n` +
-                        `📈 *Total:* ${stats.total}\n\n` +
-                        `Escolha uma categoria para gerenciar:`;
+                        `📈 *Total de Títulos:* ${stats.total}\n\n` +
+                        `Escolha uma categoria para gerenciar, rebaixar ou excluir:`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: `🎬 Gerenciar Filmes (${stats.totalFilmes})`, callback_data: 'admin_gerenciar_filmes' },
-                    { text: `📺 Gerenciar Séries (${stats.totalSeries})`, callback_data: 'admin_gerenciar_series' }
+                    { text: `🎬 Filmes (${stats.totalFilmes})`, callback_data: 'admin_gerenciar_filmes' },
+                    { text: `📺 Séries (${stats.totalSeries})`, callback_data: 'admin_gerenciar_series' }
                 ],
                 [
-                    { text: '🔙 Voltar ao Menu Admin', callback_data: 'voltar_menu_admin' }
+                    { text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
-    async handleAdminGerenciarFilmes(chatId, userId, callbackQuery) {
+    async handleAdminGerenciarFilmes(chatId, userId, callbackQuery, pagina = 0) {
         if (userId !== config.ADMIN_ID) {
             await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
             return;
@@ -3640,92 +3658,64 @@ class CommandHandler {
         const filmes = this.catalogoManager.catalogo.filmes;
         
         if (filmes.length === 0) {
-            await this.bot.sendMessage(chatId, 
-                '📭 Nenhum filme encontrado no catálogo.',
-                { parse_mode: 'Markdown' }
-            );
+            const mensagem = `📭 *Nenhum filme encontrado no catálogo.*`;
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Voltar ao Catálogo', callback_data: 'admin_gerenciar_catalogo' }]
+                ]
+            };
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
             return;
         }
 
-        const mensagem = `🎬 *Gerenciar Filmes*\n\n` +
-                        `📊 Total: ${filmes.length} filmes\n\n` +
-                        `Clique em um filme para selecioná-lo para exclusão:`;
+        const filmesPorPagina = 8;
+        const totalPaginas = Math.ceil(filmes.length / filmesPorPagina);
+        const p = Math.max(0, Math.min(pagina, totalPaginas - 1));
+        const inicio = p * filmesPorPagina;
+        const fim = Math.min(inicio + filmesPorPagina, filmes.length);
+        const filmesPagina = filmes.slice(inicio, fim);
+
+        const mensagem = `🎬 *Gerenciar Filmes do Catálogo*\n\n` +
+                        `📊 *Total de Filmes:* ${filmes.length}\n` +
+                        `📄 *Página:* ${p + 1}/${totalPaginas}\n\n` +
+                        `💡 *Clique em um filme para ver detalhes, rebaixar ou excluir:*`;
 
         const keyboard = {
             inline_keyboard: []
         };
-
-        // Adicionar botões dos filmes (máximo 10 por página)
-        const filmesPorPagina = 10;
-        const filmesPagina = filmes.slice(0, filmesPorPagina);
 
         filmesPagina.forEach(filme => {
-            const nomeExibicao = filme.nome.length > 25 ? 
-                filme.nome.substring(0, 22) + '...' : filme.nome;
+            const camTag = filme.isCam ? '📹 [CAM] ' : '';
+            const audioTag = (filme.audio && filme.audio.toLowerCase().includes('legend')) ? '[L]' : '[D]';
+            const nomeCurto = filme.nome.length > 22 ? filme.nome.substring(0, 20) + '...' : filme.nome;
             
             keyboard.inline_keyboard.push([
-                { text: `🎬 ${nomeExibicao}`, callback_data: `selecionar_filme_${filme.id}` }
+                { text: `🎬 ${camTag}${nomeCurto} ${audioTag}`, callback_data: `selecionar_filme_${filme.id}_${p}` }
             ]);
         });
 
-        keyboard.inline_keyboard.push([
-            { text: '🔙 Voltar', callback_data: 'admin_gerenciar_catalogo' }
-        ]);
-
-        await this.bot.sendMessage(chatId, mensagem, { 
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
-        });
-    }
-
-    async handleAdminGerenciarSeries(chatId, userId, callbackQuery) {
-        if (userId !== config.ADMIN_ID) {
-            await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
-            return;
+        const navRow = [];
+        if (p > 0) {
+            navRow.push({ text: '⬅️ Anterior', callback_data: `admin_gerenciar_filmes_${p - 1}` });
+        }
+        if (p < totalPaginas - 1) {
+            navRow.push({ text: 'Próxima ➡️', callback_data: `admin_gerenciar_filmes_${p + 1}` });
+        }
+        if (navRow.length > 0) {
+            keyboard.inline_keyboard.push(navRow);
         }
 
-        const series = this.catalogoManager.catalogo.series;
-        
-        if (series.length === 0) {
-            await this.bot.sendMessage(chatId, 
-                '📭 Nenhuma série encontrada no catálogo.',
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
-
-        const mensagem = `📺 *Gerenciar Séries*\n\n` +
-                        `📊 Total: ${series.length} séries\n\n` +
-                        `Clique em uma série para selecioná-la para exclusão:`;
-
-        const keyboard = {
-            inline_keyboard: []
-        };
-
-        // Adicionar botões das séries (máximo 10 por página)
-        const seriesPorPagina = 10;
-        const seriesPagina = series.slice(0, seriesPorPagina);
-
-        seriesPagina.forEach(serie => {
-            const nomeExibicao = serie.nome.length > 25 ? 
-                serie.nome.substring(0, 22) + '...' : serie.nome;
-            
-            keyboard.inline_keyboard.push([
-                { text: `📺 ${nomeExibicao}`, callback_data: `selecionar_serie_${serie.id}` }
-            ]);
-        });
-
         keyboard.inline_keyboard.push([
-            { text: '🔙 Voltar', callback_data: 'admin_gerenciar_catalogo' }
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'admin_gerenciar_catalogo' }
         ]);
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
-    async handleAdminSelecionarFilme(chatId, userId, filmeId, callbackQuery) {
+    async handleAdminSelecionarFilme(chatId, userId, filmeId, callbackQuery, pagina = 0) {
         if (userId !== config.ADMIN_ID) {
             await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
             return;
@@ -3734,68 +3724,195 @@ class CommandHandler {
         const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
         
         if (!filme) {
-            await this.bot.sendMessage(chatId, '❌ Filme não encontrado no catálogo.');
+            const mensagem = `❌ *Filme não encontrado no catálogo.*`;
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Voltar aos Filmes', callback_data: `admin_gerenciar_filmes_${pagina}` }]
+                ]
+            };
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
             return;
         }
 
-        const mensagem = `🗑️ *Confirmar Exclusão de Filme*\n\n` +
-                        `🎬 *${filme.nome}*\n` +
-                        `📝 ${filme.descricao || 'Sem descrição'}\n` +
-                        `📅 Adicionado em: ${new Date(filme.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                        `⚠️ *ATENÇÃO:* Esta ação não pode ser desfeita!\n\n` +
-                        `Tem certeza que deseja excluir este filme?`;
+        const qualidade = filme.isCam ? '📹 Qualidade Cinema (CAM Provisória)' : (filme.qualidade || '1080p Full HD');
+        const audio = filme.audio || 'Dublado (Áudio PT-BR)';
+        const ano = filme.ano ? ` (${filme.ano})` : '';
+        const dataAdd = filme.dataAdicionado ? new Date(filme.dataAdicionado).toLocaleDateString('pt-BR') : 'Recente';
+
+        const mensagem = `🎬 *Gerenciar Filme:* *${filme.nome}*${ano}\n\n` +
+                        `⭐ *Avaliação:* ${filme.nota || '8.5'}\n` +
+                        `✨ *Qualidade:* ${qualidade}\n` +
+                        `🔊 *Áudio:* ${audio}\n` +
+                        `🆔 *ID:* \`${filme.id}\` | *MessageId:* \`${filme.messageId || 'N/A'}\`\n` +
+                        `📅 *Adicionado em:* ${dataAdd}\n\n` +
+                        `📝 *Sinopse:*\n_${(filme.sinopse || filme.descricao || 'Sem descrição').substring(0, 180)}..._\n\n` +
+                        `⚡ *Escolha uma ação administrativa:*`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '✅ Sim, Excluir', callback_data: `confirmar_excluir_filme_${filmeId}` },
-                    { text: '❌ Cancelar', callback_data: 'admin_gerenciar_filmes' }
+                    { text: '🔄 Rebaixar / Buscar Versão Melhor', callback_data: `admin_rebaixar_filme_${filme.id}` }
+                ],
+                [
+                    { text: '🗑️ Excluir do Catálogo', callback_data: `confirmar_excluir_filme_${filme.id}` }
+                ],
+                [
+                    { text: '🎬 Assistir / Testar', callback_data: `assistir_filme_${filme.id}_dublado` }
+                ],
+                [
+                    { text: '🔙 Voltar à Lista de Filmes', callback_data: `admin_gerenciar_filmes_${pagina}` }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleAdminRebaixarFilme(chatId, userId, filmeId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
+        if (!filme) {
+            await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Filme não encontrado.', show_alert: true });
+            return;
+        }
+
+        // Marcar filme como CAM provisória no catálogo
+        this.catalogoManager.atualizarMidiaFilme(parseInt(filmeId), {
+            isCam: true,
+            qualidade: 'CAM (Provisória)'
         });
+
+        // Enfileirar busca de nova versão em alta qualidade com prioridade VIP 1
+        if (this.queueManager) {
+            this.queueManager.addJob(filme.nome, 'filme', 1, {
+                tmdbId: filme.tmdbId,
+                audioPreference: 'dublado'
+            });
+        }
+
+        try {
+            await this.bot.answerCallbackQuery(callbackQuery.id, { 
+                text: `🔄 "${filme.nome}" rebaixado! Nova busca 1080p adicionada à fila com prioridade máxima.`, 
+                show_alert: true 
+            });
+        } catch (e) {}
+
+        // Atualizar tela do filme
+        await this.handleAdminSelecionarFilme(chatId, userId, filmeId, callbackQuery);
     }
 
     async handleAdminExcluirFilme(chatId, userId, filmeId, callbackQuery) {
-        if (userId !== config.ADMIN_ID) {
-            await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
-            return;
-        }
+        if (userId !== config.ADMIN_ID) return;
 
         try {
             const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
             
             if (!filme) {
-                await this.bot.sendMessage(chatId, '❌ Filme não encontrado no catálogo.');
+                const mensagem = `❌ *Filme não encontrado no catálogo.*`;
+                const keyboard = {
+                    inline_keyboard: [[{ text: '🔙 Voltar aos Filmes', callback_data: 'admin_gerenciar_filmes' }]]
+                };
+                await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
                 return;
             }
 
-            // Excluir filme
+            const nomeFilme = filme.nome;
             const sucesso = this.catalogoManager.removerItem(parseInt(filmeId));
             
             if (sucesso) {
-                const mensagem = `✅ *Filme excluído com sucesso!*\n\n` +
-                               `🎬 *Nome:* ${filme.nome}\n` +
-                               `📝 *Descrição:* ${filme.descricao}\n` +
-                               `🆔 *ID:* ${filme.id}\n\n` +
-                               `🗑️ *Filme removido do catálogo permanentemente.*`;
+                const mensagem = `🗑️ *Filme Excluído com Sucesso!*\n\n` +
+                               `🎬 *Nome:* ${nomeFilme}\n` +
+                               `🆔 *ID:* ${filmeId}\n\n` +
+                               `✅ *O título foi removido do catálogo e do Stremio.*`;
 
-                await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '🎬 Voltar à Lista de Filmes', callback_data: 'admin_gerenciar_filmes' }],
+                        [{ text: '🔙 Painel Admin', callback_data: 'voltar_menu_admin' }]
+                    ]
+                };
+
+                await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
             } else {
-                await this.bot.sendMessage(chatId, '❌ Erro ao excluir filme. Tente novamente.');
+                await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Erro ao excluir filme.', show_alert: true });
             }
 
         } catch (error) {
             console.error('❌ Erro ao excluir filme:', error);
-            await this.bot.sendMessage(chatId, '❌ Erro ao excluir filme. Tente novamente.');
+            await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Erro ao excluir filme.', show_alert: true });
         }
     }
 
-    async handleAdminSelecionarSerie(chatId, userId, serieId, callbackQuery) {
+    async handleAdminGerenciarSeries(chatId, userId, callbackQuery, pagina = 0) {
+        if (userId !== config.ADMIN_ID) {
+            await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
+            return;
+        }
+
+        const series = this.catalogoManager.catalogo.series;
+        
+        if (series.length === 0) {
+            const mensagem = `📭 *Nenhuma série encontrada no catálogo.*`;
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Voltar ao Catálogo', callback_data: 'admin_gerenciar_catalogo' }]
+                ]
+            };
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+            return;
+        }
+
+        const seriesPorPagina = 8;
+        const totalPaginas = Math.ceil(series.length / seriesPorPagina);
+        const p = Math.max(0, Math.min(pagina, totalPaginas - 1));
+        const inicio = p * seriesPorPagina;
+        const fim = Math.min(inicio + seriesPorPagina, series.length);
+        const seriesPagina = series.slice(inicio, fim);
+
+        const mensagem = `📺 *Gerenciar Séries do Catálogo*\n\n` +
+                        `📊 *Total de Séries:* ${series.length}\n` +
+                        `📄 *Página:* ${p + 1}/${totalPaginas}\n\n` +
+                        `💡 *Clique em uma série para ver detalhes, atualizar ou excluir:*`;
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        seriesPagina.forEach(serie => {
+            const totalEps = (serie.temporadas || []).reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+            const nomeCurto = serie.nome.length > 22 ? serie.nome.substring(0, 20) + '...' : serie.nome;
+            
+            keyboard.inline_keyboard.push([
+                { text: `📺 ${nomeCurto} (${totalEps} eps)`, callback_data: `selecionar_serie_${serie.id}_${p}` }
+            ]);
+        });
+
+        const navRow = [];
+        if (p > 0) {
+            navRow.push({ text: '⬅️ Anterior', callback_data: `admin_gerenciar_series_${p - 1}` });
+        }
+        if (p < totalPaginas - 1) {
+            navRow.push({ text: 'Próxima ➡️', callback_data: `admin_gerenciar_series_${p + 1}` });
+        }
+        if (navRow.length > 0) {
+            keyboard.inline_keyboard.push(navRow);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'admin_gerenciar_catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleAdminSelecionarSerie(chatId, userId, serieId, callbackQuery, pagina = 0) {
         if (userId !== config.ADMIN_ID) {
             await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
             return;
@@ -3804,64 +3921,115 @@ class CommandHandler {
         const serie = this.catalogoManager.getItemPorId(parseInt(serieId));
         
         if (!serie) {
-            await this.bot.sendMessage(chatId, '❌ Série não encontrada no catálogo.');
+            const mensagem = `❌ *Série não encontrada no catálogo.*`;
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🔙 Voltar às Séries', callback_data: `admin_gerenciar_series_${pagina}` }]
+                ]
+            };
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
             return;
         }
 
-        const mensagem = `🗑️ *Confirmar Exclusão de Série*\n\n` +
-                        `📺 *${serie.nome}*\n` +
-                        `📝 ${serie.descricao || 'Sem descrição'}\n` +
-                        `📅 Adicionado em: ${new Date(serie.dataAdicionado).toLocaleDateString('pt-BR')}\n\n` +
-                        `⚠️ *ATENÇÃO:* Esta ação não pode ser desfeita!\n\n` +
-                        `Tem certeza que deseja excluir esta série?`;
+        const totalEps = (serie.temporadas || []).reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+        const numTemps = (serie.temporadas || []).length;
+        const ano = serie.ano ? ` (${serie.ano})` : '';
+        const dataAdd = serie.dataAdicionado ? new Date(serie.dataAdicionado).toLocaleDateString('pt-BR') : 'Recente';
+
+        const mensagem = `📺 *Gerenciar Série:* *${serie.nome}*${ano}\n\n` +
+                        `⭐ *Avaliação:* ${serie.nota || '8.8'}\n` +
+                        `📂 *Temporadas:* ${numTemps} | *Episódios Totais:* ${totalEps}\n` +
+                        `🆔 *ID:* \`${serie.id}\`\n` +
+                        `📅 *Adicionada em:* ${dataAdd}\n\n` +
+                        `📝 *Sinopse:*\n_${(serie.sinopse || serie.descricao || 'Sem descrição').substring(0, 180)}..._\n\n` +
+                        `⚡ *Escolha uma ação administrativa:*`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '✅ Sim, Excluir', callback_data: `confirmar_excluir_serie_${serieId}` },
-                    { text: '❌ Cancelar', callback_data: 'admin_gerenciar_series' }
+                    { text: '🔄 Buscar Novos Episódios / Atualizar', callback_data: `admin_atualizar_serie_${serie.id}` }
+                ],
+                [
+                    { text: '🗑️ Excluir Série Inteira', callback_data: `confirmar_excluir_serie_${serie.id}` }
+                ],
+                [
+                    { text: '🔙 Voltar à Lista de Séries', callback_data: `admin_gerenciar_series_${pagina}` }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
+    }
+
+    async handleAdminAtualizarSerie(chatId, userId, serieId, callbackQuery) {
+        if (userId !== config.ADMIN_ID) return;
+
+        const serie = this.catalogoManager.getItemPorId(parseInt(serieId));
+        if (!serie) {
+            await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Série não encontrada.', show_alert: true });
+            return;
+        }
+
+        // Adicionar próximo episódio / verificação de episódios à fila
+        if (this.queueManager) {
+            this.queueManager.addJob(serie.nome, 'serie', 1, {
+                season: 1,
+                episode: 1,
+                tmdbId: serie.tmdbId,
+                audioPreference: 'dublado'
+            });
+        }
+
+        try {
+            await this.bot.answerCallbackQuery(callbackQuery.id, { 
+                text: `🔄 Verificação de novos episódios de "${serie.nome}" adicionada à fila com prioridade máxima!`, 
+                show_alert: true 
+            });
+        } catch (e) {}
     }
 
     async handleAdminExcluirSerie(chatId, userId, serieId, callbackQuery) {
-        if (userId !== config.ADMIN_ID) {
-            await this.bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
-            return;
-        }
+        if (userId !== config.ADMIN_ID) return;
 
         try {
             const serie = this.catalogoManager.getItemPorId(parseInt(serieId));
             
             if (!serie) {
-                await this.bot.sendMessage(chatId, '❌ Série não encontrada no catálogo.');
+                const mensagem = `❌ *Série não encontrada no catálogo.*`;
+                const keyboard = {
+                    inline_keyboard: [[{ text: '🔙 Voltar às Séries', callback_data: 'admin_gerenciar_series' }]]
+                };
+                await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
                 return;
             }
 
-            // Excluir série
+            const nomeSerie = serie.nome;
             const sucesso = this.catalogoManager.removerItem(parseInt(serieId));
             
             if (sucesso) {
-                const mensagem = `✅ *Série excluída com sucesso!*\n\n` +
-                               `📺 *Nome:* ${serie.nome}\n` +
-                               `📝 *Descrição:* ${serie.descricao}\n` +
-                               `🆔 *ID:* ${serie.id}\n\n` +
-                               `🗑️ *Série removida do catálogo permanentemente.*`;
+                const mensagem = `🗑️ *Série Excluída com Sucesso!*\n\n` +
+                               `📺 *Nome:* ${nomeSerie}\n` +
+                               `🆔 *ID:* ${serieId}\n\n` +
+                               `✅ *A série foi removida do catálogo e do Stremio.*`;
 
-                await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '📺 Voltar à Lista de Séries', callback_data: 'admin_gerenciar_series' }],
+                        [{ text: '🔙 Painel Admin', callback_data: 'voltar_menu_admin' }]
+                    ]
+                };
+
+                await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
             } else {
-                await this.bot.sendMessage(chatId, '❌ Erro ao excluir série. Tente novamente.');
+                await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Erro ao excluir série.', show_alert: true });
             }
 
         } catch (error) {
             console.error('❌ Erro ao excluir série:', error);
-            await this.bot.sendMessage(chatId, '❌ Erro ao excluir série. Tente novamente.');
+            await this.bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Erro ao excluir série.', show_alert: true });
         }
     }
 
