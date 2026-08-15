@@ -148,6 +148,13 @@ class DownloaderManager extends EventEmitter {
             let targetEpisodeFile = null;
 
             torrent.on('metadata', () => {
+                // Proteção contra arquivos gigantes (4K / 20GB): aborta na hora para filmes
+                if (!options.episode && torrent.length > 5.8 * 1024 * 1024 * 1024) {
+                    console.log(`⚠️ Arquivo de filme muito pesado (${this.formatBytes(torrent.length)} > 5.5 GB). Abortando para priorizar 1080p leve...`);
+                    safeCleanup();
+                    return reject(new Error(`Arquivo excede o limite de tamanho para filmes 1080p (${this.formatBytes(torrent.length)}).`));
+                }
+
                 if (options.episode && torrent.files && torrent.files.length > 1) {
                     const seasonNum = parseInt(options.season || 1, 10);
                     const epNum = parseInt(options.episode, 10);

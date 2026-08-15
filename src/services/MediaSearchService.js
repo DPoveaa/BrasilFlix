@@ -122,20 +122,35 @@ class MediaSearchService {
             } catch (e) {}
         }
 
-        let ptBrResults = allResults.filter(r => r.isPtBr);
+        // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p e arquivos > 5.5GB
+        let ptBrResults = allResults.filter(r => {
+            if (!r.isPtBr) return false;
+
+            // 1. Bloqueia 4K / 2160p / UHD
+            const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(r.title);
+            if (is4k) return false;
+
+            // 2. Se for filme, limita o tamanho a no máximo 5.5 GB (padrão 1080p leve e nítido)
+            if (tipo === 'filme') {
+                const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
+                if (sizeMB > 5500) return false;
+            }
+
+            return true;
+        });
 
         if (forcarNaoCam) {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
         }
 
         if (ptBrResults.length === 0) {
-            console.log(`⚠️ Nenhuma versão em Português (Dublada ou Legendada) encontrada para "${cleanQuery}".`);
+            console.log(`⚠️ Nenhuma versão 1080p/720p em Português (Dublada ou Legendada) encontrada para "${cleanQuery}".`);
             return [];
         }
 
         const dublados = ptBrResults.filter(r => r.isDublado);
         const legendados = ptBrResults.filter(r => r.isLegendado);
-        console.log(`✅ Encontradas ${ptBrResults.length} opções em Português (${dublados.length} Dublado(s), ${legendados.length} Legendado(s))!`);
+        console.log(`✅ Encontradas ${ptBrResults.length} opções 1080p/720p em Português (${dublados.length} Dublado(s), ${legendados.length} Legendado(s))!`);
         
         return this.rankResults(ptBrResults, cleanQuery, options);
     }
@@ -181,6 +196,16 @@ class MediaSearchService {
                 if (sizeMatch) {
                     const val = parseFloat(sizeMatch[1]);
                     sizeMB = sizeMatch[2].toUpperCase() === 'GB' ? (val * 1024).toFixed(1) : val.toFixed(1);
+                }
+
+                // Descarta categoricamente qualquer release 4K / 2160p / UHD
+                if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title)) {
+                    continue;
+                }
+
+                // Se for filme, descarta arquivos gigantes (> 5.5 GB)
+                if (tipo === 'filme' && parseFloat(sizeMB) > 5500) {
+                    continue;
                 }
 
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
@@ -351,7 +376,13 @@ class MediaSearchService {
 
                     const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr);
 
-                    if (!isDublado && !isLegendado) {
+                    // Descarta categoricamente qualquer release 4K / 2160p / UHD
+                    if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(name)) {
+                        continue;
+                    }
+
+                    // Se for filme, descarta arquivos gigantes (> 5.5 GB)
+                    if (sizeBytes > 5.5 * 1024 * 1024 * 1024) {
                         continue;
                     }
 
