@@ -398,24 +398,39 @@ class CommandHandler {
         // Adicionar pedido
         const pedido = this.pedidosManager.adicionarPedido(userId, username, nome, '', isAssinante);
         
+        // Detecção automática de Filme vs Série no TMDB
+        let detectedType = 'filme';
+        let tmdbId = null;
+        let originalName = '';
+        try {
+            const TMDBService = require('../services/TMDBService');
+            const searchResults = await TMDBService.searchMulti(nome);
+            if (searchResults && searchResults.length > 0) {
+                const top = searchResults[0];
+                detectedType = top.tipo === 'serie' ? 'serie' : 'filme';
+                tmdbId = top.tmdbId;
+                originalName = top.nomeOriginal || '';
+            }
+        } catch (e) {}
+
         // Se temos QueueManager, enfileira o download inteligente com prioridade alta para assinantes
         if (this.queueManager) {
             const { PRIORITIES } = require('../managers/QueueManager');
-            this.queueManager.addJob(nome, 'filme', isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
+            this.queueManager.addJob(nome, detectedType, isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
                 userId,
-                username
+                username,
+                tmdbId,
+                nomeOriginal: originalName,
+                season: 1,
+                episode: detectedType === 'serie' ? 1 : null
             });
         }
         
-        const prioridade = isAssinante ? '🔥 *PRIORIDADE MÁXIMA (Assinante VIP)*' : '📝 *Fila Normal (Plano Gratuito)*';
-        
-        const mensagemConfirmacao = `📝 *Pedido registrado com sucesso!*\n\n` +
-                                   `🎬 *Título:* ${pedido.nome}\n` +
-                                   `👤 *Solicitante:* ${pedido.username}\n` +
-                                   `📅 *Data:* ${new Date(pedido.data).toLocaleDateString('pt-BR')}\n` +
-                                   `🆔 *ID:* ${pedido.id}\n` +
-                                   `⭐ *Status:* ${prioridade}\n\n` +
-                                   `🚀 *O motor automatizado BrasilFlix já iniciou a busca e o download em 1080p Full HD!* Assim que for concluído, você receberá a notificação aqui. Use /fila para acompanhar.`;
+        const tipoStr = detectedType === 'serie' ? '📺 Série/Dorama' : '🎬 Filme';
+        const mensagemConfirmacao = `🍿 *Pedido registrado com sucesso!*\n\n` +
+                                   `${tipoStr}: *${pedido.nome}*\n` +
+                                   `⭐ Prioridade: ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
+                                   `🚀 Iniciamos a busca e o processamento em alta qualidade. Você receberá uma notificação assim que estiver pronto para assistir!`;
 
         await this.bot.sendMessage(chatId, mensagemConfirmacao, { parse_mode: 'Markdown' });
 
@@ -4237,24 +4252,39 @@ class CommandHandler {
         // Adicionar pedido
         const pedido = this.pedidosManager.adicionarPedido(userId, username, nome, '', isAssinante);
         
+        // Detecção automática de Filme vs Série no TMDB
+        let detectedType = 'filme';
+        let tmdbId = null;
+        let originalName = '';
+        try {
+            const TMDBService = require('../services/TMDBService');
+            const searchResults = await TMDBService.searchMulti(nome);
+            if (searchResults && searchResults.length > 0) {
+                const top = searchResults[0];
+                detectedType = top.tipo === 'serie' ? 'serie' : 'filme';
+                tmdbId = top.tmdbId;
+                originalName = top.nomeOriginal || '';
+            }
+        } catch (e) {}
+
         // Se temos QueueManager, enfileira o download com a prioridade adequada
         if (this.queueManager) {
             const { PRIORITIES } = require('../managers/QueueManager');
-            this.queueManager.addJob(nome, 'filme', isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
+            this.queueManager.addJob(nome, detectedType, isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.FREE_USER, {
                 userId,
-                username
+                username,
+                tmdbId,
+                nomeOriginal: originalName,
+                season: 1,
+                episode: detectedType === 'serie' ? 1 : null
             });
         }
         
-        const prioridade = isAssinante ? '🔥 *PRIORIDADE MÁXIMA (Assinante VIP)*' : '📝 *Fila Normal (Plano Gratuito)*';
-        
-        const mensagemConfirmacao = `📝 *Pedido registrado com sucesso!*\n\n` +
-                                   `🎬 *Título:* ${pedido.nome}\n` +
-                                   `👤 *Solicitante:* ${pedido.username}\n` +
-                                   `📅 *Data:* ${new Date(pedido.data).toLocaleDateString('pt-BR')}\n` +
-                                   `🆔 *ID:* ${pedido.id}\n` +
-                                   `⭐ *Prioridade:* ${prioridade}\n\n` +
-                                   `🚀 *O robô BrasilFlix já agendou o download em 1080p Full HD!* Você será notificado assim que o arquivo estiver no catálogo.`;
+        const tipoStr = detectedType === 'serie' ? '📺 Série/Dorama' : '🎬 Filme';
+        const mensagemConfirmacao = `🍿 *Pedido registrado com sucesso!*\n\n` +
+                                   `${tipoStr}: *${pedido.nome}*\n` +
+                                   `⭐ Prioridade: ${isAssinante ? 'VIP 🔥' : 'Normal'}\n\n` +
+                                   `🚀 Iniciamos a busca e o processamento em alta qualidade. Você receberá uma notificação assim que estiver pronto para assistir!`;
 
         await this.bot.sendMessage(chatId, mensagemConfirmacao, { parse_mode: 'Markdown' });
 

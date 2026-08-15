@@ -223,9 +223,9 @@ class QueueManager extends EventEmitter {
             console.warn('⚠️ Erro ao consultar TMDB, usando metadados básicos:', e.message);
         }
 
-        // Notifica usuário sobre início do download
-        if (job.userId && this.bot) {
-            this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade (1080p)...`, { parse_mode: 'Markdown' }).catch(() => {});
+        // Notifica usuário sobre início do processamento apenas se for filme ou primeiro episódio
+        if (job.userId && this.bot && (job.type === 'filme' || (job.season === 1 && job.episode === 1))) {
+            this.bot.sendMessage(job.userId, `🎬 Encontramos seu pedido *"${job.title}"*!\nIniciando download em alta qualidade...`, { parse_mode: 'Markdown' }).catch(() => {});
         }
 
         // Validação de Ordem Cronológica de Episódios para Séries/Doramas
@@ -497,15 +497,13 @@ class QueueManager extends EventEmitter {
             const itemId = itemSalvo?.id;
             const callbackAssistir = job.type === 'filme' ? `info_filme_${itemId}` : `info_serie_${itemId}`;
 
-            // Notifica quem disparou o job diretamente
-            if (job.userId && this.bot) {
-                const tipoIcon = job.type === 'serie' ? '📺' : '🎬';
-                const epLabel = job.type === 'serie' ? ` (T${job.season || 1}E${job.episode || 1})` : '';
+            // Notifica quem disparou o job apenas se for filme (para séries, notifica por temporada completa)
+            if (job.type === 'filme' && job.userId && this.bot) {
                 const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
-                                `${tipoIcon} *${metadata.nome}*${epLabel}\n` +
+                                `🎬 *${metadata.nome}*\n` +
                                 `✨ *Qualidade:* 1080p Full HD\n` +
                                 `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
-                                `Já está no catálogo e pronto para você assistir!`;
+                                `Já está no catálogo e pronto para você assistir! 🍿`;
 
                 const keyboard = {
                     inline_keyboard: [
@@ -519,8 +517,8 @@ class QueueManager extends EventEmitter {
                 }).catch(() => {});
             }
 
-            // Notifica todos os usuários com pedidos pendentes deste título
-            if (this.pedidosManager && this.bot) {
+            // Notifica outros usuários com pedidos pendentes deste título (se for filme)
+            if (job.type === 'filme' && this.pedidosManager && this.bot) {
                 const pedidos = this.pedidosManager.getPedidos() || [];
                 const pedidosCorrespondentes = pedidos.filter(p => 
                     !p.processado && p.nome && metadata.nome &&
@@ -532,10 +530,10 @@ class QueueManager extends EventEmitter {
                     this.pedidosManager.marcarComoProcessado(p.id);
                     if (p.userId && p.userId !== job.userId) {
                         const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
-                                         `${job.type === 'filme' ? '🎬' : '📺'} *${metadata.nome}*\n` +
+                                         `🎬 *${metadata.nome}*\n` +
                                          `✨ *Qualidade:* 1080p Full HD\n` +
                                          `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
-                                         `O título que você pediu já está disponível no catálogo!`;
+                                         `O título que você pediu já está disponível no catálogo! 🍿`;
 
                         this.bot.sendMessage(p.userId, msgPedido, {
                             parse_mode: 'Markdown',
@@ -616,7 +614,21 @@ class QueueManager extends EventEmitter {
                     username: job.username
                 });
             } else {
-                // Temporada atual concluída! Avança para a próxima temporada
+                // Temporada atual concluída! Notifica quem pediu sobre a temporada completa
+                if (job.userId && this.bot) {
+                    const msgTemporada = `🎉 *Temporada ${currentSeasonNum} Completa Disponível!*\n\n` +
+                                         `📺 *${metadata.nome || job.title}*\n` +
+                                         `✨ Todos os episódios da Temporada ${currentSeasonNum} já estão catalogados em alta qualidade!\n\n` +
+                                         `🍿 Aproveite e assista agora!`;
+                    this.bot.sendMessage(job.userId, msgTemporada, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '▶️ Assistir Série', callback_data: `info_serie_${itemId || ''}` }]]
+                        }
+                    }).catch(() => {});
+                }
+
+                // Avança para a próxima temporada
                 const nextSeasonNum = currentSeasonNum + 1;
                 if (nextSeasonNum <= totalTemporadas) {
                     console.log(`📺 [SÉRIE/DORAMA] Temporada ${currentSeasonNum} concluída! Avançando para Temporada ${nextSeasonNum} (Episódio 1) de "${metadata.nome || job.title}"`);
