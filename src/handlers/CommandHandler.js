@@ -2463,33 +2463,32 @@ class CommandHandler {
     }
 
     async handleSuporteButton(chatId, userId, callbackQuery) {
-        const mensagem = `📞 *Suporte BrasilFlix*\n\n` +
-                        `Precisa de ajuda? Estamos aqui para você!\n\n` +
-                        `💬 *Contato:* @DPovea\n` +
-                        `📧 *Email:* suporte@brasilflix.com\n` +
-                        `⏰ *Horário:* 24/7\n\n` +
-                        `🔧 *Como podemos ajudar:*\n` +
-                        `• Dúvidas sobre assinatura\n` +
-                        `• Problemas com pedidos\n` +
-                        `• Sugestões de conteúdo\n` +
-                        `• Suporte técnico\n\n` +
-                        `💡 *Dica:* Assinantes têm prioridade no suporte!`;
+        // Ativar modo de captura para receber a mensagem de suporte do usuário
+        this.estadosTemporarios[userId] = {
+            tipo: 'suporte',
+            ativo: true,
+            timestamp: Date.now(),
+            chatId: chatId
+        };
+
+        const mensagem = `📞 *Central de Atendimento BrasilFlix*\n\n` +
+                        `Olá! Como podemos ajudar você hoje?\n\n` +
+                        `💬 *Contato direto:* @DPovea\n\n` +
+                        `✍️ *Envie sua mensagem agora mesmo:*\n` +
+                        `Basta digitar sua dúvida, problema ou sugestão aqui abaixo no chat. Nossa equipe receberá sua solicitação e entrará em contato com você!`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '💎 ASSINAR AGORA', callback_data: 'assinatura' }
-                ],
-                [
-                    { text: '🔙 Voltar', callback_data: 'voltar_menu' }
+                    { text: '❌ Cancelar / Voltar ao Menu', callback_data: 'voltar_menu' }
                 ]
             ]
         };
 
-        await this.bot.sendMessage(chatId, mensagem, { 
+        await this.sendOrEdit(chatId, mensagem, { 
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async mostrarMenuNaoAssinante(chatId, userId, callbackQuery) {
@@ -3939,6 +3938,8 @@ class CommandHandler {
             await this.processarPedidoCapturado(msg, texto);
         } else if (estado.tipo === 'busca') {
             await this.processarBuscaCapturada(msg, texto);
+        } else if (estado.tipo === 'suporte') {
+            await this.processarSuporteCapturado(msg, texto);
         } else if (estado.tipo === 'teste_busca') {
             await this.processarTesteBuscaCapturada(msg, texto);
         } else if (estado.tipo === 'teste_pedido') {
@@ -3952,6 +3953,42 @@ class CommandHandler {
         // Limpar estado após processamento
         delete this.estadosTemporarios[userId];
         return true; // Mensagem foi processada
+    }
+
+    async processarSuporteCapturado(msg, texto) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const nome = msg.from.first_name || 'Usuário';
+        const username = msg.from.username ? `@${msg.from.username}` : 'Não informado';
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+        const statusVip = isAssinante ? '🟢 Assinante VIP' : '⚪ Visitante';
+
+        // 1. Notificar no privado do Admin (config.ADMIN_ID)
+        const msgAdmin = `📩 *NOVA MENSAGEM DE SUPORTE*\n\n` +
+                        `👤 *Cliente:* ${nome} (${username})\n` +
+                        `🆔 *ID:* \`${userId}\`\n` +
+                        `⭐ *Status:* ${statusVip}\n\n` +
+                        `📝 *Mensagem:*\n"${texto}"\n\n` +
+                        `💡 _Responda diretamente ao cliente via @ ou chat privado._`;
+
+        try {
+            await this.bot.sendMessage(config.ADMIN_ID, msgAdmin, { parse_mode: 'Markdown' });
+        } catch (e) {
+            console.error('❌ Erro ao repassar mensagem de suporte ao admin:', e.message);
+        }
+
+        // 2. Responder confirmação ao cliente
+        const respostaUser = `✅ *Mensagem enviada com sucesso ao Suporte!*\n\n` +
+                            `Nossa equipe já recebeu o seu chamado e entrará em contato com você em breve.\n\n` +
+                            `Obrigado pelo contato! 🍿`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
+            ]
+        };
+
+        await this.bot.sendMessage(chatId, respostaUser, { parse_mode: 'Markdown', reply_markup: keyboard });
     }
 
     async processarPedidoCapturado(msg, nome) {
