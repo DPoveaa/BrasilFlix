@@ -3,6 +3,7 @@ const config = require('../config');
 const PedidosManager = require('./managers/PedidosManager');
 const CatalogoManager = require('./managers/CatalogoManager');
 const AssinaturaManager = require('./managers/AssinaturaManager');
+const FavoritosManager = require('./managers/FavoritosManager');
 const { QueueManager } = require('./managers/QueueManager');
 const AutoFeeder = require('./services/AutoFeeder');
 const StremioServer = require('./services/StremioServer');
@@ -16,10 +17,11 @@ class BrasilFlixBot {
         this.pedidosManager = new PedidosManager();
         this.catalogoManager = new CatalogoManager();
         this.assinaturaManager = new AssinaturaManager();
-        this.queueManager = new QueueManager(this.bot, this.catalogoManager);
+        this.favoritosManager = new FavoritosManager();
+        this.queueManager = new QueueManager(this.bot, this.catalogoManager, this.pedidosManager, this.favoritosManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager);
         this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager);
-        this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager);
+        this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager, this.favoritosManager);
         this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
         this.setupEventHandlers();
@@ -34,6 +36,7 @@ class BrasilFlixBot {
         this.bot.onText(/\/start/, (msg) => this.commandHandler.handleStart(msg));
         this.bot.onText(/\/admin/, (msg) => this.commandHandler.handleAdminStart(msg));
         this.bot.onText(/\/stremio/, (msg) => this.commandHandler.handleStremioCommand(msg));
+        this.bot.onText(/\/favoritos/, (msg) => this.commandHandler.handleMeusFavoritos(msg.chat.id, msg.from.id, 1));
         this.bot.onText(/\/ajuda/, (msg) => this.commandHandler.handleHelp(msg));
         this.bot.onText(/\/pedido (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
         this.bot.onText(/\/buscar (.+)/, (msg, match) => this.commandHandler.handleBuscar(msg, match));

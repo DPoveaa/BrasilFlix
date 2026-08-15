@@ -1,12 +1,13 @@
 const config = require('../../config');
 
 class CommandHandler {
-    constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null) {
+    constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null, favoritosManager = null) {
         this.bot = bot;
         this.pedidosManager = pedidosManager;
         this.catalogoManager = catalogoManager;
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
+        this.favoritosManager = favoritosManager;
         this.pagamentosTemp = {}; // Inicializar o objeto de pagamentos temporários
         this.estadosTemporarios = {}; // Estados temporários para captura de mensagens
         this.testesGratuitos = {}; // Usuários que já usaram o teste gratuito
@@ -22,16 +23,21 @@ class CommandHandler {
         }, 5 * 60 * 1000);
     }
 
+    setFavoritosManager(favoritosManager) {
+        this.favoritosManager = favoritosManager;
+    }
+
     async setupBotCommands() {
         try {
             await this.bot.setMyCommands([
                 { command: 'start', description: '🍿 Início / Menu Principal' },
-                { command: 'pedido', description: '🎬 Pedir Filme ou Série' },
-                { command: 'buscar', description: '🔍 Buscar no Catálogo' },
+                { command: 'buscar', description: '🔍 Buscar Filme ou Série' },
                 { command: 'catalogo', description: '📚 Ver Catálogo' },
+                { command: 'favoritos', description: '⭐ Meus Favoritos' },
+                { command: 'pedido', description: '🎬 Pedir Filme ou Série' },
+                { command: 'stremio', description: '📺 Assistir na TV (Stremio)' },
                 { command: 'fila', description: '⚡ Status de Downloads' },
                 { command: 'assinar', description: '💎 Assinar VIP' },
-                { command: 'rebaixar', description: '🔄 Re-baixar / Atualizar Mídia' },
                 { command: 'ajuda', description: '❓ Dúvidas e Ajuda' }
             ]);
             console.log('✅ Comandos do bot configurados com sucesso!');
@@ -146,31 +152,50 @@ class CommandHandler {
 
     async handleAssinanteStart(msg, callbackQuery = null) {
         const chatId = msg.chat?.id || callbackQuery?.message?.chat?.id;
+        const userId = callbackQuery?.from?.id || msg?.from?.id;
         const nomeUsuario = this.getNomeUsuario(msg, callbackQuery);
         const stats = this.catalogoManager.getEstatisticas();
         
+        // Assinatura & Vencimento
+        const assinatura = this.assinaturaManager.getAssinatura(userId);
+        let vencimentoTexto = '👑 Acesso Vitalício Permanente';
+        if (assinatura && assinatura.plano !== 'vitalicio' && assinatura.dataVencimento) {
+            const dataVenc = new Date(assinatura.dataVencimento);
+            vencimentoTexto = `📅 Renovação: *${dataVenc.toLocaleDateString('pt-BR')}*`;
+        }
+
+        // Novidades desde a última visita
+        let novidadesTexto = '';
+        if (this.favoritosManager) {
+            const novidades = this.favoritosManager.registrarVisitaECalcularNovidades(userId, stats.total);
+            if (novidades > 0) {
+                novidadesTexto = `🔥 *Novidades:* +${novidades} novo(s) título(s) adicionado(s) desde sua última visita!\n\n`;
+            }
+        }
+
         const mensagem = `🍿 *BrasilFlix VIP*\n\n` +
-                        `Olá, *${nomeUsuario}*! Seu acesso está 100% ativo.\n\n` +
-                        `✨ *Qualidade:* 1080p Full HD & Áudio PT-BR\n` +
+                        `Olá, *${nomeUsuario}*!\n\n` +
                         `📚 *Catálogo:* ${stats.totalFilmes} Filmes | ${stats.totalSeries} Séries\n` +
-                        `⭐ *Status:* 🟢 Assinante VIP`;
+                        `⭐ *Status:* 🟢 VIP Ativo • ${vencimentoTexto}\n\n` +
+                        `${novidadesTexto}` +
+                        `O que você deseja assistir hoje?`;
 
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '🎬 Fazer Pedido', callback_data: 'pedido' },
-                    { text: '🔍 Buscar Título', callback_data: 'buscar' }
-                ],
-                [
                     { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
-                    { text: '📝 Meus Pedidos', callback_data: 'ver_pedidos' }
+                    { text: '🔍 Buscar', callback_data: 'buscar' }
                 ],
                 [
-                    { text: '⚡ Status da Fila', callback_data: 'menu_fila' },
-                    { text: '💳 Minha Assinatura', callback_data: 'minha_assinatura' }
+                    { text: '⭐ Meus Favoritos', callback_data: 'meus_favoritos' },
+                    { text: '🎬 Fazer Pedido', callback_data: 'pedido' }
                 ],
                 [
-                    { text: '❓ Como Funciona', callback_data: 'como_funciona' },
+                    { text: '📺 Assistir na TV (Stremio)', callback_data: 'stremio_info' },
+                    { text: '⚡ Fila de Download', callback_data: 'menu_fila' }
+                ],
+                [
+                    { text: '💳 Minha Assinatura', callback_data: 'minha_assinatura' },
                     { text: '💬 Suporte', callback_data: 'suporte' }
                 ]
             ]
@@ -818,6 +843,13 @@ class CommandHandler {
             ]);
         }
 
+        const isFav = this.favoritosManager ? this.favoritosManager.isFavorito(userId, filme.id, 'filme') : false;
+        const favBtn = { 
+            text: isFav ? '🌟 Em Favoritos (Remover)' : '⭐ Salvar nos Favoritos', 
+            callback_data: `toggle_fav_filme_${filme.id}` 
+        };
+
+        keyboard.inline_keyboard.push([favBtn]);
         keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
             { text: '🔙 Voltar à Lista', callback_data: 'catalogo_filmes' }
@@ -843,6 +875,12 @@ class CommandHandler {
         const badge = this.catalogoManager.getAudioBadge(serie);
         const badgeTexto = badge === '[D/L]' ? '🇧🇷 Dublado & 💬 Legendado' : (badge === '[L]' ? '💬 Legendado' : '🇧🇷 Dublado');
 
+        const isFav = this.favoritosManager ? this.favoritosManager.isFavorito(userId, serie.id, 'serie') : false;
+        const favBtn = { 
+            text: isFav ? '🌟 Em Favoritos (Remover)' : '⭐ Favoritar (Avisar novos eps)', 
+            callback_data: `toggle_fav_serie_${serie.id}` 
+        };
+
         const mensagem = `📺 *${serie.nome}*${ano}\n\n` +
                         `${nota}` +
                         `${generos}` +
@@ -862,6 +900,7 @@ class CommandHandler {
         });
         if (row.length > 0) keyboard.inline_keyboard.push(row);
 
+        keyboard.inline_keyboard.push([favBtn]);
         keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
             { text: '🔙 Voltar à Lista', callback_data: 'catalogo_series' }
@@ -968,6 +1007,89 @@ class CommandHandler {
             console.error('❌ Erro ao enviar filme:', error);
             await this.bot.sendMessage(chatId, '❌ Erro ao entregar o vídeo. Contate o suporte.');
         }
+    }
+
+    async handleToggleFavorito(chatId, userId, itemId, tipo, callbackQuery) {
+        if (!this.favoritosManager) return;
+
+        const item = this.catalogoManager.getItemPorId(parseInt(itemId));
+        if (!item) return;
+
+        const result = this.favoritosManager.toggleFavorito(userId, item);
+        const alertMsg = result.action === 'adicionado' 
+            ? '⭐ Adicionado aos seus Favoritos! Você será avisado quando sair novo episódio.' 
+            : '🗑️ Removido dos seus Favoritos.';
+
+        if (callbackQuery && callbackQuery.id) {
+            await this.bot.answerCallbackQuery(callbackQuery.id, { text: alertMsg, show_alert: true }).catch(() => {});
+        }
+
+        // Atualiza a ficha técnica
+        if (tipo === 'filme') {
+            await this.handleInfoFilme(chatId, userId, itemId, callbackQuery);
+        } else {
+            await this.handleInfoSerie(chatId, userId, itemId, callbackQuery);
+        }
+    }
+
+    async handleMeusFavoritos(chatId, userId, pagina = 1, callbackQuery = null) {
+        if (!this.favoritosManager) return;
+
+        const favs = this.favoritosManager.getFavoritos(userId) || [];
+
+        if (favs.length === 0) {
+            const mensagem = `⭐ *Seus Favoritos*\n\n` +
+                            `Você ainda não favoritou nenhum filme ou série.\n\n` +
+                            `💡 _Ao favoritar uma série, você receberá notificações automáticas quando novos episódios chegarem ao catálogo!_`;
+
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '📚 Explorar Catálogo', callback_data: 'catalogo' }],
+                    [{ text: '🔙 Menu Principal', callback_data: 'voltar_menu' }]
+                ]
+            };
+
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+            return;
+        }
+
+        const porPagina = 8;
+        const totalPaginas = Math.ceil(favs.length / porPagina);
+        pagina = Math.max(1, Math.min(pagina, totalPaginas));
+        const inicio = (pagina - 1) * porPagina;
+        const favsPagina = favs.slice(inicio, inicio + porPagina);
+
+        let mensagem = `⭐ *Meus Favoritos*\n\n` +
+                        `📊 *Total de Favoritos:* ${favs.length}\n` +
+                        `Mostrando página ${pagina} de ${totalPaginas}:\n\n` +
+                        `Selecione para abrir e assistir:`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        favsPagina.forEach(fav => {
+            const icone = fav.tipo === 'filme' ? '🎬' : '📺';
+            const callback = fav.tipo === 'filme' ? `info_filme_${fav.id}` : `info_serie_${fav.id}`;
+            keyboard.inline_keyboard.push([
+                { text: `${icone} ${fav.nome}${fav.ano ? ` (${fav.ano})` : ''}`, callback_data: callback }
+            ]);
+        });
+
+        // Paginação
+        const navRow = [];
+        if (pagina > 1) {
+            navRow.push({ text: '⬅️ Anterior', callback_data: `favs_pagina_${pagina - 1}` });
+        }
+        if (pagina < totalPaginas) {
+            navRow.push({ text: 'Próxima ➡️', callback_data: `favs_pagina_${pagina + 1}` });
+        }
+        if (navRow.length > 0) keyboard.inline_keyboard.push(navRow);
+
+        keyboard.inline_keyboard.push([
+            { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
+            { text: '🔙 Menu Principal', callback_data: 'voltar_menu' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
     }
 
     async handleAdicionar(msg) {
@@ -1478,6 +1600,27 @@ class CommandHandler {
                 case 'voltar_menu_admin':
                     await this.handleVoltarMenuAdmin(chatId, userId, callbackQuery);
                     break;
+                case 'meus_favoritos':
+                    await this.handleMeusFavoritos(chatId, userId, 1, callbackQuery);
+                    break;
+                case 'stremio_info':
+                    await this.handleStremioCommand({ chat: { id: chatId }, from: { id: userId, username: callbackQuery?.from?.username, first_name: callbackQuery?.from?.first_name } });
+                    break;
+                case data.match(/^favs_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^favs_pagina_(\d+)$/)?.[1] || 1, 10);
+                    await this.handleMeusFavoritos(chatId, userId, pag, callbackQuery);
+                    break;
+                }
+                case data.match(/^toggle_fav_filme_(\d+)$/)?.input: {
+                    const id = data.match(/^toggle_fav_filme_(\d+)$/)?.[1];
+                    if (id) await this.handleToggleFavorito(chatId, userId, id, 'filme', callbackQuery);
+                    break;
+                }
+                case data.match(/^toggle_fav_serie_(\d+)$/)?.input: {
+                    const id = data.match(/^toggle_fav_serie_(\d+)$/)?.[1];
+                    if (id) await this.handleToggleFavorito(chatId, userId, id, 'serie', callbackQuery);
+                    break;
+                }
                 // Callbacks para ficha técnica e assistir
                 case data.match(/^info_filme_(\d+)$/)?.input: {
                     const id = data.match(/^info_filme_(\d+)$/)?.[1];

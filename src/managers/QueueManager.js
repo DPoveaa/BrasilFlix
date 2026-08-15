@@ -17,10 +17,12 @@ const PRIORITIES = {
 };
 
 class QueueManager extends EventEmitter {
-    constructor(bot, catalogoManager) {
+    constructor(bot, catalogoManager, pedidosManager = null, favoritosManager = null) {
         super();
         this.bot = bot;
         this.catalogoManager = catalogoManager;
+        this.pedidosManager = pedidosManager;
+        this.favoritosManager = favoritosManager;
         this.uploader = new TelegramUploader(bot);
         this.queueFile = config.QUEUE_FILE || './data/queue.json';
         this.queue = [];
@@ -33,6 +35,11 @@ class QueueManager extends EventEmitter {
         setTimeout(() => {
             this.processNext();
         }, 2000);
+    }
+
+    setManagers(pedidosManager, favoritosManager) {
+        this.pedidosManager = pedidosManager;
+        this.favoritosManager = favoritosManager;
     }
 
     setBot(bot) {
@@ -387,24 +394,83 @@ class QueueManager extends EventEmitter {
         await DownloaderManager.cleanupFile(rawFilePath);
         await DownloaderManager.cleanupFile(optimizedPath);
 
-        // 9. Se for pedido de usuário, notifica com o botão de assistir
-        if (job.userId && this.bot) {
-            const mensagem = `🎉 *Seu pedido está pronto para assistir!*\n\n` +
-                            `🎬 *${metadata.nome}*\n` +
-                            `✨ *Qualidade:* 1080p Full HD\n` +
-                            `🔊 *Áudio:* ${metadata.audio}\n\n` +
-                            `Clique abaixo para assistir agora:`;
+        // 9. Notificação de Pedido Concluído (notifica quem fez o pedido)
+        try {
+            const itemSalvo = this.catalogoManager.buscarItemExato(metadata.nome, job.type);
+            const itemId = itemSalvo?.id;
+            const callbackAssistir = job.type === 'filme' ? `info_filme_${itemId}` : `info_serie_${itemId}`;
 
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '▶️ Assistir Agora', callback_data: `ver_${uploadResult.messageId}` }]
-                ]
-            };
+            // Notifica quem disparou o job diretamente
+            if (job.userId && this.bot) {
+                const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
+                                `${job.type === 'filme' ? '🎬' : '📺'} *${metadata.nome}*\n` +
+                                `✨ *Qualidade:* 1080p Full HD\n` +
+                                `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
+                                `Já está no catálogo e pronto para você assistir!`;
 
-            this.bot.sendMessage(job.userId, mensagem, {
-                parse_mode: 'Markdown',
-                reply_markup: keyboard
-            }).catch(() => {});
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]
+                    ]
+                };
+
+                this.bot.sendMessage(job.userId, mensagem, {
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                }).catch(() => {});
+            }
+
+            // Notifica todos os usuários com pedidos pendentes deste título
+            if (this.pedidosManager && this.bot) {
+                const pedidos = this.pedidosManager.getPedidos() || [];
+                const pedidosCorrespondentes = pedidos.filter(p => 
+                    !p.processado && p.nome && metadata.nome &&
+                    (p.nome.toLowerCase().trim() === metadata.nome.toLowerCase().trim() ||
+                     metadata.nome.toLowerCase().includes(p.nome.toLowerCase().trim()))
+                );
+
+                for (const p of pedidosCorrespondentes) {
+                    this.pedidosManager.marcarComoProcessado(p.id);
+                    if (p.userId && p.userId !== job.userId) {
+                        const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
+                                         `${job.type === 'filme' ? '🎬' : '📺'} *${metadata.nome}*\n` +
+                                         `✨ *Qualidade:* 1080p Full HD\n` +
+                                         `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
+                                         `O título que você pediu já está disponível no catálogo!`;
+
+                        this.bot.sendMessage(p.userId, msgPedido, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [[{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]]
+                            }
+                        }).catch(() => {});
+                    }
+                }
+            }
+
+            // Notificação para quem favoritou a série quando sai novo episódio
+            if (job.type === 'serie' && this.favoritosManager && itemId && this.bot) {
+                const usuariosFav = this.favoritosManager.getUsuariosQueFavoritaram(itemId, 'serie');
+                const epSeason = job.season || 1;
+                const epNum = job.episode || 1;
+
+                for (const uid of usuariosFav) {
+                    if (uid.toString() === job.userId?.toString()) continue;
+                    const msgFav = `🔔 *Novo Episódio Disponível!*\n\n` +
+                                  `📺 *${metadata.nome}* — Temporada ${epSeason}, Episódio ${epNum}\n` +
+                                  `🔊 *Áudio:* ${metadata.audio || 'Dublado (PT-BR)'}\n\n` +
+                                  `Novo episódio da sua série favorita acabou de chegar no catálogo!`;
+
+                    this.bot.sendMessage(uid, msgFav, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '📺 Assistir Episódio', callback_data: `serie_ep_${itemId}_${epSeason}_${epNum}` }]]
+                        }
+                    }).catch(() => {});
+                }
+            }
+        } catch (errNotif) {
+            console.warn('⚠️ Erro ao disparar notificações de conclusão:', errNotif.message);
         }
 
         // 9.5 Esteira Contínua para Filmes: Se faltar a versão complementar (Dublado ou Legendado), enfileira automaticamente!
