@@ -200,8 +200,8 @@ class MediaSearchService {
                     sizeMB = sizeMatch[2].toUpperCase() === 'GB' ? (val * 1024).toFixed(1) : val.toFixed(1);
                 }
 
-                // Descarta categoricamente qualquer release 4K / 2160p / UHD
-                if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title)) {
+                // Descarta apenas arquivos absurdamente gigantes (> 9.5 GB)
+                if (parseFloat(sizeMB) > 9500) {
                     continue;
                 }
 
@@ -218,15 +218,11 @@ class MediaSearchService {
                     continue;
                 }
 
-                // Se for filme, descarta arquivos gigantes (> 5.5 GB)
-                if (tipo === 'filme' && parseFloat(sizeMB) > 5500) {
-                    continue;
-                }
-
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(title);
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
+                const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title);
 
                 results.push({
                     title: title,
@@ -238,7 +234,8 @@ class MediaSearchService {
                     seeders: seeders,
                     isCam: isCam,
                     isWebDl: isWebDl,
-                    quality: /1080p/i.test(title) ? '1080p Full HD' : (/720p/i.test(title) ? '720p HD' : 'Qualidade Digital'),
+                    is4k: is4k,
+                    quality: is4k ? '4K UHD (Otimizando 1080p)' : (/1080p/i.test(title) ? '1080p Full HD' : (/720p/i.test(title) ? '720p HD' : 'Qualidade Digital')),
                     audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
                     isPtBr: true,
                     isDublado: isDublado,
@@ -468,11 +465,11 @@ class MediaSearchService {
             if (is720pA) scoreA += 300;
             if (is720pB) scoreB += 300;
 
-            // Penalidade pesada para 4K/2160p (desperdício de banda e tempo no Telegram)
+            // 4K/2160p aceito como fallback inteligente (FFmpeg converterá para 1080p FHD)
             const is4kA = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(a.title);
             const is4kB = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(b.title);
-            if (is4kA) scoreA -= 3500;
-            if (is4kB) scoreB -= 3500;
+            if (is4kA) scoreA += 100;
+            if (is4kB) scoreB += 100;
 
             // PRIORIDADE DE SEEDERS (Evita fontes lentas/travadas)
             const seedsA = a.seeders || 0;
