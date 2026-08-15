@@ -2641,10 +2641,29 @@ class CommandHandler {
                 if (err.message && err.message.includes('message is not modified')) {
                     return callbackQuery.message;
                 }
+                if (err.message && (err.message.includes("can't parse entities") || err.message.includes('Bad Request'))) {
+                    try {
+                        return await this.bot.editMessageText(text.replace(/[*_`\[\]]/g, ''), {
+                            chat_id: chatId,
+                            message_id: callbackQuery.message.message_id,
+                            reply_markup: options.reply_markup
+                        });
+                    } catch (e) {}
+                }
             }
         }
-        return await this.bot.sendMessage(chatId, text, options);
+        try {
+            return await this.bot.sendMessage(chatId, text, options);
+        } catch (err) {
+            if (err.message && (err.message.includes("can't parse entities") || err.message.includes('Bad Request'))) {
+                const plainOpts = { ...options };
+                delete plainOpts.parse_mode;
+                return await this.bot.sendMessage(chatId, text.replace(/[*_`\[\]]/g, ''), plainOpts);
+            }
+            throw err;
+        }
     }
+
 
     async handleEnviarFilme(chatId, userId, filmeId, callbackQuery) {
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId);
@@ -3447,22 +3466,23 @@ class CommandHandler {
             return;
         }
 
-        const mensagem = `➕ *Adicionar Novo Conteúdo*\n\n` +
-                        `*Método 1 - Automático (Recomendado):*\n` +
-                        `1️⃣ Envie o arquivo para o grupo de armazenamento\n` +
-                        `2️⃣ Adicione uma descrição na legenda\n` +
-                        `3️⃣ O sistema detectará automaticamente\n\n` +
-                        `*Método 2 - Fila Inteligente (AutoFeeder):*\n` +
-                        `O robô monitora e baixa lançamentos e pedidos automaticamente!\n\n` +
-                        `*Método 3 - Sem arquivo:*\n` +
-                        `Use: /adicionar_manual "Nome - Ano - Gênero"\n\n` +
-                        `*Formato da descrição:*\n` +
-                        `Nome do filme/série - Ano - Gênero\n` +
-                        `Exemplo: Vingadores Ultimato - 2019 - Ação/Aventura`;
+        const mensagem = `➕ *Adicionar Novo Conteúdo ao Catálogo*\n\n` +
+                        `*1️⃣ Encomendar Download via Robô (Recomendado):*\n` +
+                        `Escolha abaixo se deseja adicionar um Filme ou Série. O robô buscará em 1080p Full HD com áudio Dublado automaticamente!\n\n` +
+                        `*2️⃣ Envio Direto de Arquivo:*\n` +
+                        `Basta enviar ou encaminhar o arquivo de vídeo diretamente para o Grupo de Armazenamento do Telegram.\n\n` +
+                        `*3️⃣ Comando Rápido:*\n` +
+                        `Use: \`/pedir <nome do título>\``;
 
         const keyboard = {
             inline_keyboard: [
-                [{ text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }]
+                [
+                    { text: '🎬 Baixar Filme', callback_data: 'pedir_tipo_filme' },
+                    { text: '📺 Baixar Série / Dorama', callback_data: 'pedir_tipo_serie' }
+                ],
+                [
+                    { text: '🔙 Voltar ao Painel Admin', callback_data: 'voltar_menu_admin' }
+                ]
             ]
         };
 
