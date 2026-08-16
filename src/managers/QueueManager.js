@@ -379,16 +379,34 @@ class QueueManager extends EventEmitter {
         // Primeiro tenta retomar do arquivo otimizado (já codificado, pronto para upload)
         if (optimizedPath && fs.existsSync(optimizedPath)) {
             const optStat = fs.statSync(optimizedPath);
-            // Arquivo otimizado com mais de 100MB é considerado válido para retomada
             if (optStat.size > 100 * 1024 * 1024) {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
-                    const info = await VideoProcessor.getVideoInfo(optimizedPath);
-                    if (info && info.duration > 0) {
-                        console.log(`♻️ Retomando do arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(optimizedPath)}`);
+                    const optInfo = await VideoProcessor.getVideoInfo(optimizedPath);
+
+                    // Validação de Duração Completa para Retomada
+                    let isDurationValid = optInfo && optInfo.duration >= 300; // Mínimo 5 min
+
+                    if (rawFilePath && fs.existsSync(rawFilePath)) {
+                        const rawInfo = await VideoProcessor.getVideoInfo(rawFilePath);
+                        if (rawInfo && rawInfo.duration > 0) {
+                            const diff = Math.abs(optInfo.duration - rawInfo.duration);
+                            if (diff > 15 && optInfo.duration < rawInfo.duration * 0.95) {
+                                isDurationValid = false;
+                            }
+                        }
+                    }
+
+                    if (isDurationValid) {
+                        console.log(`♻️ Retomando do arquivo otimizado completo (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB, Duração: ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
                         downloadedMedia = { filePath: rawFilePath || optimizedPath, fileName: path.basename(rawFilePath || optimizedPath), sizeBytes: optStat.size };
                         bestSource = job.bestSource;
+                    } else {
+                        console.warn(`🧹 Arquivo otimizado incompleto/cortado (${optInfo?.durationFormatted || '0s'}), descartando para re-codificar do início...`);
+                        await DownloaderManager.cleanupFile(optimizedPath);
+                        optimizedPath = null;
+                        job.optimizedPath = null;
                     }
                 } catch (e) {
                     console.warn('⚠️ Arquivo otimizado inválido, descartando:', e.message);
