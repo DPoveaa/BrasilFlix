@@ -605,7 +605,12 @@ class QueueManager extends EventEmitter {
                 season: job.season,
                 episode: job.episode,
                 totalTemporadas: metadata.totalTemporadas,
-                totalEpisodios: metadata.totalEpisodios
+                totalEpisodios: metadata.totalEpisodios,
+                imdbId: metadata.imdbId,
+                tmdbId: metadata.tmdbId,
+                subtitleUrl: bestSource?.subtitleUrl,
+                isDublado: langInfo?.isDublado ?? true,
+                isLegendado: langInfo?.isLegendado ?? false
             });
         }
 

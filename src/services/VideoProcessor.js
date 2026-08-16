@@ -257,6 +257,76 @@ class VideoProcessor {
         });
     }
 
+    async getOrExtractPortugueseSubtitle(inputPath, info, metadata = {}) {
+        const axios = require('axios');
+        const https = require('https');
+        const agent = new https.Agent({ rejectUnauthorized: false });
+        const srtPath = path.join(path.dirname(inputPath), `sub_pt_${Date.now()}.srt`);
+
+        // 1. Tenta extrair legenda embutida em Português do arquivo original
+        const ptLanguages = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'];
+        const ptSubStream = (info.subtitleStreams || []).find(s => {
+            const lang = (s.language || '').toLowerCase();
+            const title = (s.title || '').toLowerCase();
+            return ptLanguages.includes(lang) || title.includes('portug') || title.includes('legenda') || title.includes('pt-br');
+        });
+
+        if (ptSubStream) {
+            try {
+                console.log(`📝 Extraindo legenda PT-BR embutida (Stream 0:s:${ptSubStream.index})...`);
+                await new Promise((resolve, reject) => {
+                    const extract = spawn('ffmpeg', ['-y', '-i', inputPath, '-map', `0:s:${ptSubStream.index}`, srtPath]);
+                    extract.on('close', code => (code === 0 && fs.existsSync(srtPath) ? resolve() : reject(new Error('Erro ao extrair srt'))));
+                    extract.on('error', reject);
+                });
+                if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
+                    console.log(`✅ Legenda PT-BR interna extraída com sucesso!`);
+                    return srtPath;
+                }
+            } catch (e) {
+                console.warn('⚠️ Falha ao extrair legenda interna:', e.message);
+            }
+        }
+
+        // 2. Se não tinha embutida, tenta baixar de metadata.subtitleUrl
+        let subUrl = metadata.subtitleUrl;
+
+        // 3. Se não veio subtitleUrl, busca no OpenSubtitles via IMDb ID
+        if (!subUrl && metadata.imdbId) {
+            try {
+                const season = metadata.season || 1;
+                const episode = metadata.episode || 1;
+                const streamPath = metadata.tipo === 'serie' ? `series/${metadata.imdbId}:${season}:${episode}.json` : `movie/${metadata.imdbId}.json`;
+                const osUrl = `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`;
+                const res = await axios.get(osUrl, { timeout: 8000, httpsAgent: agent });
+                const subs = res.data?.subtitles || [];
+                const ptSub = subs.find(s => {
+                    const lang = (s.lang || s.language || '').toLowerCase();
+                    return ['pob', 'por', 'pt', 'pt-br', 'ptbr'].includes(lang);
+                });
+                if (ptSub) subUrl = ptSub.url;
+            } catch (e) {
+                console.warn('⚠️ Falha ao consultar OpenSubtitles para legenda:', e.message);
+            }
+        }
+
+        if (subUrl) {
+            try {
+                console.log(`🌐 Baixando legenda oficial PT-BR de: ${subUrl}`);
+                const res = await axios.get(subUrl, { timeout: 10000, httpsAgent: agent, responseType: 'text' });
+                if (res.data && res.data.length > 500) {
+                    await fs.writeFile(srtPath, res.data, 'utf8');
+                    console.log(`✅ Legenda PT-BR baixada com sucesso (${(res.data.length / 1024).toFixed(1)} KB)!`);
+                    return srtPath;
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao baixar legenda:', e.message);
+            }
+        }
+
+        return null;
+    }
+
     async optimizeForTelegram(inputPath, outputPath, onProgress = null, metadata = {}) {
         await fs.ensureDir(path.dirname(outputPath));
         const info = await this.getVideoInfo(inputPath);
@@ -273,9 +343,23 @@ class VideoProcessor {
         const portugueseAudioIndex = this.detectPortugueseAudioIndex(info.audioStreams, path.basename(inputPath));
         const selectedAudioStream = portugueseAudioIndex !== null ? info.audioStreams[portugueseAudioIndex] : (info.audioStreams[0] || null);
 
+        // Se o conteúdo for Legendado (não dublado), DEVE queimar/embutir as legendas em Português
+        const isOnlyLegendado = metadata.isLegendado && !metadata.isDublado;
+        let srtPath = null;
+
+        if (isOnlyLegendado) {
+            srtPath = await this.getOrExtractPortugueseSubtitle(inputPath, info, metadata);
+            if (!srtPath) {
+                console.warn(`⚠️ [${optTitle}] Nenhuma legenda em Português encontrada para o release legendado.`);
+            } else {
+                metadata.srtPath = srtPath;
+            }
+        }
+
         let finalPath;
 
-        if (isUnderSizeLimit && isFastCodec && isResolutionFine) {
+        // Se for somente Dublado (sem necessidade de queimar legendas), faz Remux Rápido quando compatível
+        if (!isOnlyLegendado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
             console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Rápido com normalização universal de áudio AAC...`);
             if (portugueseAudioIndex !== null) {
                 console.log(`🔊 Faixa de áudio em Português selecionada: Stream 0:a:${portugueseAudioIndex} [${selectedAudioStream?.codec?.toUpperCase()} | ${selectedAudioStream?.channels} canais | lang: ${selectedAudioStream?.language}]`);
@@ -284,7 +368,7 @@ class VideoProcessor {
             finalPath = await new Promise((resolve, reject) => {
                 const remuxArgs = [
                     '-i', inputPath,
-                    '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento (100% de qualidade original preservada)
+                    '-c:v', 'copy' // Cópia direta do vídeo sem reprocessamento
                 ];
 
                 if (portugueseAudioIndex !== null) {
@@ -298,10 +382,6 @@ class VideoProcessor {
                     remuxArgs.push('-map', '0:s?', '-c:s', 'mov_text');
                 }
 
-                // REGRA UNIVERSAL DE ÁUDIO PARA TELEGRAM E WEB:
-                // Se o áudio JÁ FOR AAC e estéreo (<= 2 canais), faz copy ultrarrápido.
-                // Se for EAC3, AC3, DTS, 5.1 canais, 7.1 canais ou outro codec:
-                // Converte OBRIGATORIAMENTE para AAC Stereo (2.0) a 256kbps 48kHz para garantir que NUNCA fique mudo!
                 const isSimpleAacStereo = selectedAudioStream && 
                     selectedAudioStream.codec === 'aac' && 
                     selectedAudioStream.channels <= 2;
@@ -369,6 +449,11 @@ class VideoProcessor {
             finalPath = await this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata);
         }
 
+        // Limpa arquivo temporário de legenda .srt após a codificação
+        if (srtPath && fs.existsSync(srtPath)) {
+            await fs.remove(srtPath).catch(() => {});
+        }
+
         // Validação Estrita Pós-Conversão: Duração do arquivo de saída DEVE bater com a do arquivo original
         const outInfo = await this.getVideoInfo(finalPath);
         if (info.duration > 0 && outInfo.duration > 0) {
@@ -385,29 +470,38 @@ class VideoProcessor {
     async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null, metadata = {}) {
         const os = require('os');
         const cpuCount = os.cpus()?.length || 4;
-        const safeThreads = Math.max(2, Math.min(8, cpuCount - 1)); // Deixa 1 núcleo livre para o bot responder liso
+        const safeThreads = Math.max(2, Math.min(8, cpuCount - 1));
 
         const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
             ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
             : (metadata.nome || metadata.title || path.basename(inputPath));
 
-        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação ultrarrápida (Preset: faster, Threads: ${safeThreads}, CRF: 20, Áudio: 256k)...\x1b[0m`);
+        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
         
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
 
-            // Limite de segurança de 3950 MB para garantir upload no Telegram Premium MTProto (teto de 4GB)
             const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
             const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
-            const audioBitrateKbps = 256; // 256k é áudio estéreo/5.1 cristalino
+            const audioBitrateKbps = 256;
             const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
+
+            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub se houver)
+            let vfFilter = "scale='min(1920,iw)':-2";
+            if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                const escapedSrt = metadata.srtPath
+                    .replace(/\\/g, '/')
+                    .replace(/:/g, '\\:')
+                    .replace(/'/g, "\\'");
+                vfFilter += `,subtitles='${escapedSrt}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=25'`;
+            }
 
             const args = [
                 '-i', inputPath,
-                '-vf', "scale='min(1920,iw)':-2", // Mantém 1080p nativo nítido
+                '-vf', vfFilter,
                 '-c:v', 'libx264',
-                '-preset', 'faster', // 4x a 6x mais rápido que medium, com qualidade visual 1080p idêntica
-                '-crf', '20', // Padrão ouro da indústria de streaming para 1080p
+                '-preset', 'faster',
+                '-crf', '20',
                 '-maxrate', `${maxVideoKbps}k`,
                 '-bufsize', `${maxVideoKbps * 2}k`,
                 '-threads', `${safeThreads}`,
