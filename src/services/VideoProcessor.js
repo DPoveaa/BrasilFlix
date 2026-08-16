@@ -94,7 +94,20 @@ class VideoProcessor {
             }
         }
 
-        // 4. Se nenhum tiver metadados, em releases brasileiros Dual Audio o Track 0 é o principal
+        // 4. Regra específica para releases Dual Audio brasileiros com streams anônimos (sem tag de idioma):
+        // Grupos como YG, Lapumia, Starck, Vizer usam convenção onde:
+        // Track 0 = Espanhol ou Inglês, Track 1 (última) = Português (PT-BR)
+        const lowerName = (rawFileName || '').toLowerCase();
+        const isBrDualRelease = /yg[^a-z]|\byg$|dual.*yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|kyogo|lipeh|bludv|guanabara|mmfilmes|overdrive|p2p[-_ ]?br/i.test(lowerName);
+        const allUndefined = audioStreams.every(s => !s.language || s.language === 'und');
+
+        if (isBrDualRelease && allUndefined && audioStreams.length >= 2) {
+            // Em releases Dual YG/BR: a ÚLTIMA trilha é sempre o PT-BR
+            console.log(`🔊 [Dual YG BR] Selecionando trilha ${audioStreams.length - 1} (última) como PT-BR para release: ${rawFileName}`);
+            return audioStreams.length - 1;
+        }
+
+        // 5. Fallback: se nenhum metadado disponível, usa trilha 0
         return 0;
     }
 
