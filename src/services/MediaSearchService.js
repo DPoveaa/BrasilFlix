@@ -176,6 +176,28 @@ class MediaSearchService {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
         }
 
+        if (ptBrResults.length === 0 && imdbId) {
+            console.log(`🌐 Nenhuma versão dublada encontrada. Buscando legendas oficiais PT-BR no OpenSubtitles (${imdbId})...`);
+            try {
+                const ptSubs = await this.getOpenSubtitlesPT(imdbId, tipo, season, episode);
+                if (ptSubs.length > 0) {
+                    console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando melhor versão 1080p WEB-DL...`);
+                    const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { season, episode });
+                    for (const st of fallbackStreams) {
+                        st.isPtBr = true;
+                        st.isLegendado = true;
+                        st.isDublado = false;
+                        st.audio = 'Legendado (PT-BR)';
+                        st.hasPtSub = true;
+                        st.subtitleUrl = ptSubs[0].url;
+                        ptBrResults.push(st);
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Falha ao buscar fallback de legendas:', e.message);
+            }
+        }
+
         if (ptBrResults.length === 0) {
             const descFalta = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublada ou Legendada)');
             console.log(`⚠️ Nenhuma versão 1080p/720p ${descFalta} encontrada para "${cleanQuery}".`);
@@ -284,6 +306,96 @@ class MediaSearchService {
             }
         } catch (e) {
             console.warn('⚠️ Diagnóstico Torrentio stream fetch:', e.message);
+        }
+        return results;
+    }
+
+    async getOpenSubtitlesPT(imdbId, tipo = 'filme', season = 1, episode = 1) {
+        if (!imdbId) return [];
+        try {
+            const https = require('https');
+            const agent = new https.Agent({ rejectUnauthorized: false });
+            const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+            const url = `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`;
+            const res = await axios.get(url, { timeout: 8000, httpsAgent: agent });
+            const subs = res.data?.subtitles || [];
+            const ptSubs = subs.filter(s => {
+                const lang = (s.lang || s.language || '').toLowerCase();
+                return ['pob', 'por', 'pt', 'pt-br', 'ptbr'].includes(lang);
+            });
+            return ptSubs;
+        } catch (e) {
+            console.warn('⚠️ Erro ao consultar OpenSubtitles:', e.message);
+            return [];
+        }
+    }
+
+    async searchTorrentioAllStreams(imdbId, tipo = 'filme', opts = {}) {
+        if (!imdbId) return [];
+        const results = [];
+        try {
+            const https = require('https');
+            const agent = new https.Agent({ rejectUnauthorized: false });
+            const season = opts.season || 1;
+            const episode = opts.episode || 1;
+            const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+            const url = `https://torrentio.strem.fun/stream/${streamPath}`;
+            
+            const response = await axios.get(url, { timeout: this.timeout, httpsAgent: agent });
+            const streams = response.data?.streams || [];
+
+            for (const st of streams) {
+                const rawTitle = st.title || '';
+                const lines = rawTitle.split('\n');
+                const title = lines[0] || '';
+
+                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts)\b/i.test(title);
+                if (isCam) continue;
+
+                const is4k = /\b(2160p|4k|uhd)\b/i.test(title);
+                if (is4k) continue;
+
+                const is1080p = /\b(1080p|fhd)\b/i.test(title);
+                const isWebDl = /\b(web-dl|webrip|web|bluray|bdrip|brrip)\b/i.test(title);
+
+                const seedersMatch = rawTitle.match(/👤\s*(\d+)/);
+                const seeders = seedersMatch ? parseInt(seedersMatch[1], 10) : 0;
+
+                const sizeMatch = rawTitle.match(/💾\s*([\d\.]+)\s*(GB|MB)/i);
+                let sizeMB = 0;
+                if (sizeMatch) {
+                    const val = parseFloat(sizeMatch[1]);
+                    sizeMB = sizeMatch[2].toUpperCase() === 'GB' ? (val * 1024).toFixed(1) : val.toFixed(1);
+                }
+
+                if (tipo === 'filme' && parseFloat(sizeMB) > 5500) continue;
+                if (tipo === 'filme' && parseFloat(sizeMB) < 400) continue;
+
+                const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
+                const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio 1080p';
+
+                results.push({
+                    title: title,
+                    infoHash: st.infoHash,
+                    source: `Torrentio (${sourceGroup})`,
+                    magnet: magnet,
+                    sizeBytes: parseFloat(sizeMB) * 1024 * 1024,
+                    sizeMB: sizeMB,
+                    seeders: seeders,
+                    isCam: false,
+                    isWebDl: isWebDl,
+                    is4k: false,
+                    quality: is1080p ? '1080p Full HD' : '720p HD',
+                    audio: 'Legendado (PT-BR)',
+                    isPtBr: true,
+                    isPtBrExplicit: true,
+                    isPtPt: false,
+                    isDublado: false,
+                    isLegendado: true
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao consultar Torrentio para streams legendados:', e.message);
         }
         return results;
     }

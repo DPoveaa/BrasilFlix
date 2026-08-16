@@ -176,8 +176,12 @@ class VideoProcessor {
     validatePortugueseContent(info, rawFileName = '', source = {}) {
         const lowerName = (rawFileName || '').toLowerCase();
 
-        const isDublado = this.hasPortugueseAudio(info, rawFileName) || source.isDublado === true;
-        const isLegendado = this.hasPortugueseSubtitles(info, rawFileName) || source.isLegendado === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
+        // 1. Áudio Dublado REAL verificado estritamente via ffprobe e tags do arquivo
+        const isDublado = this.hasPortugueseAudio(info, rawFileName);
+
+        // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada
+        const hasPtSubsInFile = this.hasPortugueseSubtitles(info, rawFileName);
+        const isLegendado = !isDublado && (hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName));
 
         if (isDublado) {
             return {
@@ -201,7 +205,7 @@ class VideoProcessor {
             isValid: false,
             isDublado: false,
             isLegendado: false,
-            audioText: 'Desconhecido'
+            audioText: 'Desconhecido (Sem Português)'
         };
     }
 
