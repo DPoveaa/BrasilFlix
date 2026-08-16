@@ -515,18 +515,16 @@ class VideoProcessor {
             const audioBitrateKbps = 256;
             const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
 
-            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais estilo Netflix/Cinema)
+            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
             let vfFilter = "scale='min(1920,iw)':-2";
             if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                 const escapedSrt = metadata.srtPath
                     .replace(/\\/g, '/')
                     .replace(/:/g, '\\:')
                     .replace(/'/g, "\\'");
-                // Estilo profissional: SEM fundo/caixa, contorno preto duplo + sombra branca para legibilidade
-                // em qualquer fundo (claro ou escuro), igual Amazon Prime / Netflix / Apple TV+
-                // BorderStyle=1 = contorno puro (zero background), Outline=2.5 = borda bem visível
-                // BackColour=&H00000000 (transparente), PrimaryColour branco, SecondaryColour/OutlineColour preto
-                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=2.5,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
+                // Contorno ultra-fino (0.8) — apenas o suficiente para não sumir em fundos brancos,
+                // sem nenhum fundo/caixa, estilo Apple TV+ / Prime Video
+                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
             }
 
             const args = [
