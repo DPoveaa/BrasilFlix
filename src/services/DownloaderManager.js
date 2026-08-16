@@ -3,6 +3,7 @@ const fs = require('fs-extra');
 const axios = require('axios');
 const EventEmitter = require('events');
 const config = require('../../config');
+const VideoProcessor = require('./VideoProcessor');
 
 let WebTorrentClass = null;
 
