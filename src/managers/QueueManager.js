@@ -372,28 +372,66 @@ class QueueManager extends EventEmitter {
         let optimizedPath = job.optimizedPath || null;
         let langInfo = job.langInfo || { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
 
-        // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD com validação de integridade FFprobe
+        // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD — retomada inteligente após crash
         let resumeFromOptimized = false;
         let resumeFromRaw = false;
 
-        // Limpeza de arquivos temporários ao reiniciar se o job não estava 100% pronto para upload
-        if (job.status !== 'uploading') {
-            if (optimizedPath && fs.existsSync(optimizedPath)) {
+        // Primeiro tenta retomar do arquivo otimizado (já codificado, pronto para upload)
+        if (optimizedPath && fs.existsSync(optimizedPath)) {
+            const optStat = fs.statSync(optimizedPath);
+            // Arquivo otimizado com mais de 100MB é considerado válido para retomada
+            if (optStat.size > 100 * 1024 * 1024) {
+                try {
+                    const VideoProcessor = require('../services/VideoProcessor');
+                    const info = await VideoProcessor.getVideoInfo(optimizedPath);
+                    if (info && info.duration > 0) {
+                        console.log(`♻️ Retomando do arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(optimizedPath)}`);
+                        resumeFromOptimized = true;
+                        downloadedMedia = { filePath: rawFilePath || optimizedPath, fileName: path.basename(rawFilePath || optimizedPath), sizeBytes: optStat.size };
+                        bestSource = job.bestSource;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Arquivo otimizado inválido, descartando:', e.message);
+                    await DownloaderManager.cleanupFile(optimizedPath);
+                    optimizedPath = null;
+                    job.optimizedPath = null;
+                }
+            } else {
                 await DownloaderManager.cleanupFile(optimizedPath);
                 optimizedPath = null;
                 job.optimizedPath = null;
             }
-            if (rawFilePath && fs.existsSync(rawFilePath)) {
-                // Se o tamanho no disco não corresponder ao tamanho esperado completo do torrent, descarta para evitar arquivos cortados
-                const rawStat = fs.statSync(rawFilePath);
-                if (job.expectedSize && rawStat.size < job.expectedSize * 0.99) {
-                    console.log(`🧹 Arquivo temporário incompleto no disco (${rawStat.size} de ${job.expectedSize} bytes esperados) descartado para reiniciar limpo.`);
+        }
+
+        // Se não retomou do otimizado, tenta retomar do arquivo raw (já baixado, precisa codificar)
+        if (!resumeFromOptimized && rawFilePath && fs.existsSync(rawFilePath)) {
+            const rawStat = fs.statSync(rawFilePath);
+            const expectedOk = !job.expectedSize || rawStat.size >= job.expectedSize * 0.95;
+            if (rawStat.size > 100 * 1024 * 1024 && expectedOk) {
+                try {
+                    const VideoProcessor = require('../services/VideoProcessor');
+                    const info = await VideoProcessor.getVideoInfo(rawFilePath);
+                    if (info && info.duration > 0) {
+                        console.log(`♻️ Retomando do arquivo raw existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(rawFilePath)}`);
+                        resumeFromRaw = true;
+                        downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
+                        bestSource = job.bestSource;
+                        langInfo = job.langInfo || langInfo;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Arquivo raw inválido, descartando:', e.message);
                     await DownloaderManager.cleanupFile(rawFilePath);
                     rawFilePath = null;
                     job.rawFilePath = null;
                 }
+            } else if (!expectedOk) {
+                console.log(`🧹 Arquivo raw incompleto no disco (${rawStat.size} de ${job.expectedSize} bytes) descartado para reiniciar limpo.`);
+                await DownloaderManager.cleanupFile(rawFilePath);
+                rawFilePath = null;
+                job.rawFilePath = null;
             }
         }
+
 
         if (!resumeFromOptimized && !resumeFromRaw) {
             sources = await MediaSearchService.search(job.title, job.type, {
