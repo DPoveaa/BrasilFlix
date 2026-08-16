@@ -522,8 +522,11 @@ class VideoProcessor {
                     .replace(/\\/g, '/')
                     .replace(/:/g, '\\:')
                     .replace(/'/g, "\\'");
-                // Estilo Netflix/Cinema: Texto branco nítido com contorno preto suave e sombra leve, SEM caixa/fundo escuro pesado
-                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=19,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1.4,Shadow=0.8,MarginV=28,Alignment=2'`;
+                // Estilo profissional: SEM fundo/caixa, contorno preto duplo + sombra branca para legibilidade
+                // em qualquer fundo (claro ou escuro), igual Amazon Prime / Netflix / Apple TV+
+                // BorderStyle=1 = contorno puro (zero background), Outline=2.5 = borda bem visível
+                // BackColour=&H00000000 (transparente), PrimaryColour branco, SecondaryColour/OutlineColour preto
+                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=2.5,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
             }
 
             const args = [
