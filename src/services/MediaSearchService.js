@@ -210,7 +210,7 @@ class MediaSearchService {
                 // Distinção explícita de PT-BR vs PT-PT
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
                 const isPtPtExplicit = /(🇵🇹|\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b)/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title);
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|yg⭐|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer/i.test(title);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer/i.test(title);
 
                 const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
                 const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));

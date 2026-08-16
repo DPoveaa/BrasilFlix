@@ -128,19 +128,20 @@ class VideoProcessor {
         // 1. Se tem faixa comprovada em Português nas tags do áudio
         if (hasPtStream) return true;
 
-        // 2. Se as faixas têm tag de idioma e são declaradamente estrangeiras (ex: eng, spa, hin, fre)
-        const hasForeignTags = info.audioStreams.some(a => {
-            const lang = (a.language || '').toLowerCase();
-            return ['eng', 'hin', 'tam', 'tel', 'fra', 'fre', 'spa', 'deu', 'ger', 'ita', 'rus', 'jpn', 'kor', 'zho', 'chi'].includes(lang);
-        });
+        // 2. Se TODAS as faixas têm tag de idioma conhecida e NENHUMA é Português (ex: [spa, eng])
+        const allTaggedAndForeign = info.audioStreams.length > 0 && 
+            info.audioStreams.every(a => {
+                const lang = (a.language || '').toLowerCase();
+                return lang !== 'und' && lang !== '' && !ptLanguages.includes(lang);
+            });
 
-        if (hasForeignTags && info.audioStreams.length === 1) {
-            return false; // Áudio único estrangeiro
+        if (allTaggedAndForeign) {
+            return false; // Todas as faixas são declaradamente estrangeiras (ex: Espanhol + Inglês)
         }
 
         // 3. Se as faixas de áudio não possuem metadados de idioma (streams anônimos), verifica o selo brasileiro no nome do arquivo
-        const isBrGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|mostbet|1xbet|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(lowerName);
-        const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues|dual)\b/i.test(lowerName);
+        const isBrGroup = /lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|mostbet|1xbet|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(lowerName);
+        const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues)\b/i.test(lowerName);
 
         if (isExplicitDublado || isBrGroup) {
             return true;
