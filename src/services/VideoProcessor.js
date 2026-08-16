@@ -181,13 +181,25 @@ class VideoProcessor {
 
         // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada
         const hasPtSubsInFile = this.hasPortugueseSubtitles(info, rawFileName);
-        const isLegendado = !isDublado && (hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName));
+        const isLegendado = hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
+
+        // 3. Caso contenha AMBOS (Áudio Dublado + Legenda PT-BR no mesmo arquivo)
+        if (isDublado && isLegendado) {
+            return {
+                isValid: true,
+                isDublado: true,
+                isLegendado: true,
+                hasBoth: true,
+                audioText: 'Dual Áudio + Legendas (Dublado e Legendado PT-BR)'
+            };
+        }
 
         if (isDublado) {
             return {
                 isValid: true,
                 isDublado: true,
                 isLegendado: false,
+                hasBoth: false,
                 audioText: 'Dublado (Áudio PT-BR)'
             };
         }
@@ -197,6 +209,7 @@ class VideoProcessor {
                 isValid: true,
                 isDublado: false,
                 isLegendado: true,
+                hasBoth: false,
                 audioText: 'Legendado (PT-BR)'
             };
         }
@@ -205,6 +218,7 @@ class VideoProcessor {
             isValid: false,
             isDublado: false,
             isLegendado: false,
+            hasBoth: false,
             audioText: 'Desconhecido (Sem Português)'
         };
     }
@@ -277,6 +291,11 @@ class VideoProcessor {
                     remuxArgs.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
                 } else {
                     remuxArgs.push('-map', '0:v:0', '-map', '0:a:0?', '-disposition:a:0', 'default');
+                }
+
+                // Preserva legendas embutidas (PT-BR ou multi-subs) no container MP4
+                if (info.subtitleStreams && info.subtitleStreams.length > 0) {
+                    remuxArgs.push('-map', '0:s?', '-c:s', 'mov_text');
                 }
 
                 // REGRA UNIVERSAL DE ÁUDIO PARA TELEGRAM E WEB:

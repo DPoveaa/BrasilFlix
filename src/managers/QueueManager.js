@@ -655,6 +655,27 @@ class QueueManager extends EventEmitter {
             );
         }
 
+        // Se o arquivo possui AMBAS as versões (Dublado e Legendado) a partir do mesmo download,
+        // marca como concluídos quaisquer jobs pendentes na fila para a outra versão, evitando download duplicado!
+        if (metadata.isDublado && metadata.isLegendado) {
+            console.log(`✨ Conteúdo possui Áudio Dublado + Legenda PT-BR no mesmo arquivo! Auto-concluindo pedidos pendentes da versão alternativa...`);
+            try {
+                if (job.type === 'filme') {
+                    await db.query(
+                        `UPDATE queue_jobs SET status = 'completed', progress = 100, progress_details = 'Concluído via versão Dual + Sub' 
+                         WHERE title ILIKE $1 AND type = 'filme' AND id != $2 AND status = 'queued'`,
+                        [job.title, job.id]
+                    );
+                } else {
+                    await db.query(
+                        `UPDATE queue_jobs SET status = 'completed', progress = 100, progress_details = 'Concluído via versão Dual + Sub' 
+                         WHERE title ILIKE $1 AND type = 'serie' AND season = $2 AND episode = $3 AND id != $4 AND status = 'queued'`,
+                        [job.title, job.season || 1, job.episode || 1, job.id]
+                    );
+                }
+            } catch (e) {}
+        }
+
         // 7. Notificação formal no Grupo de Armazém e Grupo de Notificações
         try {
             const targetGroups = [config.STORAGE_GROUP_ID, config.NOTIFICATION_GROUP_ID].filter(Boolean);
