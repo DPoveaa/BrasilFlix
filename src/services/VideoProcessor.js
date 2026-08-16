@@ -257,6 +257,14 @@ class VideoProcessor {
         });
     }
 
+    isPortugueseSubtitleContent(content) {
+        if (!content || typeof content !== 'string' || content.length < 200) return false;
+        const ptKeywords = /\b(você|vocês|não|está|estão|então|também|muito|aqui|agora|isso|isto|aquilo|porque|por que|senhor|senhora|olha|vamos|fazer|coisa|onde|quando|quem|tudo|nada|estou|tenho|tinha|dele|dela|obrigado|obrigada|por favor)\b/gi;
+        const matches = content.match(ptKeywords) || [];
+        // Exige pelo menos 8 palavras legítimas em Português no arquivo para ser aceito
+        return matches.length >= 8;
+    }
+
     async getOrExtractPortugueseSubtitle(inputPath, info, metadata = {}) {
         const axios = require('axios');
         const https = require('https');
@@ -264,11 +272,11 @@ class VideoProcessor {
         const srtPath = path.join(path.dirname(inputPath), `sub_pt_${Date.now()}.srt`);
 
         // 1. Tenta extrair legenda embutida em Português do arquivo original
-        const ptLanguages = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'];
+        const ptLanguages = ['pob', 'pt-br', 'brazilian', 'portuguese', 'português', 'por', 'pt'];
         const ptSubStream = (info.subtitleStreams || []).find(s => {
             const lang = (s.language || '').toLowerCase();
             const title = (s.title || '').toLowerCase();
-            return ptLanguages.includes(lang) || title.includes('portug') || title.includes('legenda') || title.includes('pt-br');
+            return ptLanguages.includes(lang) || title.includes('portug') || title.includes('legenda') || title.includes('pt-br') || title.includes('pob');
         });
 
         if (ptSubStream) {
@@ -280,19 +288,22 @@ class VideoProcessor {
                     extract.on('error', reject);
                 });
                 if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
-                    console.log(`✅ Legenda PT-BR interna extraída com sucesso!`);
-                    return srtPath;
+                    const content = await fs.readFile(srtPath, 'utf8');
+                    if (this.isPortugueseSubtitleContent(content)) {
+                        console.log(`✅ Legenda PT-BR interna extraída e validada linguisticamente!`);
+                        return srtPath;
+                    } else {
+                        console.warn(`⚠️ Legenda interna extraída não continha texto em Português genuíno (possível idioma errado), descartando...`);
+                        await fs.remove(srtPath).catch(() => {});
+                    }
                 }
             } catch (e) {
                 console.warn('⚠️ Falha ao extrair legenda interna:', e.message);
             }
         }
 
-        // 2. Se não tinha embutida, tenta baixar de metadata.subtitleUrl
-        let subUrl = metadata.subtitleUrl;
-
-        // 3. Se não veio subtitleUrl, busca no OpenSubtitles via IMDb ID
-        if (!subUrl && metadata.imdbId) {
+        // 2. Busca e validação no OpenSubtitles via IMDb ID (priorizando pob / pt-br sobre por)
+        if (metadata.imdbId) {
             try {
                 const season = metadata.season || 1;
                 const episode = metadata.episode || 1;
@@ -300,28 +311,46 @@ class VideoProcessor {
                 const osUrl = `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`;
                 const res = await axios.get(osUrl, { timeout: 8000, httpsAgent: agent });
                 const subs = res.data?.subtitles || [];
-                const ptSub = subs.find(s => {
+
+                // Prioriza: pob (Português do Brasil) > pt-br > brazilian > por > pt
+                const ptSubs = subs.filter(s => {
                     const lang = (s.lang || s.language || '').toLowerCase();
-                    return ['pob', 'por', 'pt', 'pt-br', 'ptbr'].includes(lang);
+                    return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
+                }).sort((a, b) => {
+                    const langA = (a.lang || a.language || '').toLowerCase();
+                    const langB = (b.lang || b.language || '').toLowerCase();
+                    const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 2 : 1;
+                    const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 2 : 1;
+                    return scoreB - scoreA;
                 });
-                if (ptSub) subUrl = ptSub.url;
+
+                console.log(`🌐 Testando ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
+
+                for (const sub of ptSubs) {
+                    try {
+                        const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
+                        if (subRes.data && this.isPortugueseSubtitleContent(subRes.data)) {
+                            await fs.writeFile(srtPath, subRes.data, 'utf8');
+                            console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
+                            return srtPath;
+                        }
+                    } catch (errSub) {}
+                }
             } catch (e) {
-                console.warn('⚠️ Falha ao consultar OpenSubtitles para legenda:', e.message);
+                console.warn('⚠️ Falha ao consultar OpenSubtitles:', e.message);
             }
         }
 
-        if (subUrl) {
+        // 3. Fallback de URL direta caso fornecida
+        if (metadata.subtitleUrl) {
             try {
-                console.log(`🌐 Baixando legenda oficial PT-BR de: ${subUrl}`);
-                const res = await axios.get(subUrl, { timeout: 10000, httpsAgent: agent, responseType: 'text' });
-                if (res.data && res.data.length > 500) {
+                const res = await axios.get(metadata.subtitleUrl, { timeout: 10000, httpsAgent: agent, responseType: 'text' });
+                if (res.data && this.isPortugueseSubtitleContent(res.data)) {
                     await fs.writeFile(srtPath, res.data, 'utf8');
-                    console.log(`✅ Legenda PT-BR baixada com sucesso (${(res.data.length / 1024).toFixed(1)} KB)!`);
+                    console.log(`✅ Legenda PT-BR direta baixada e validada!`);
                     return srtPath;
                 }
-            } catch (e) {
-                console.warn('⚠️ Erro ao baixar legenda:', e.message);
-            }
+            } catch (e) {}
         }
 
         return null;

@@ -699,23 +699,29 @@ class QueueManager extends EventEmitter {
             } catch (e) {}
         }
 
-        // 7. Notificação formal no Grupo de Armazém e Grupo de Notificações
+        // 7. Notificação formal EXCLUSIVAMENTE no Grupo de Armazém
         try {
-            const targetGroups = [config.STORAGE_GROUP_ID, config.NOTIFICATION_GROUP_ID].filter(Boolean);
-            const uniqueGroups = [...new Set(targetGroups)];
-            if (this.bot && uniqueGroups.length > 0) {
+            const storageGroupId = config.STORAGE_GROUP_ID;
+            if (this.bot && storageGroupId) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
+
+                let audioBloco = '🔊 *Áudio:* Dublado (Áudio PT-BR)';
+                if (metadata.isDublado && metadata.isLegendado) {
+                    audioBloco = '🔊 *Áudio:* Dual Áudio (Dublado + Original)\n📝 *Legendas:* Português (PT-BR)';
+                } else if (metadata.isLegendado) {
+                    audioBloco = '🔊 *Áudio:* Original (Inglês)\n📝 *Legendas:* Português (PT-BR) [Embutida/Hardsub]';
+                }
+
                 const notifMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
                                  `${tipoTexto}\n` +
                                  `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
-                                 `🔊 *Áudio:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n` +
+                                 `${audioBloco}\n` +
                                  `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
                                  `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
                                  `🍿 *Disponível imediatamente para todos os usuários!*`;
-                for (const gId of uniqueGroups) {
-                    await this.bot.sendMessage(gId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
-                }
+
+                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
             }
         } catch (e) {}
 
