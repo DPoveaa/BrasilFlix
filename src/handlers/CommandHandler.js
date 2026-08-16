@@ -861,7 +861,17 @@ class CommandHandler {
     }
 
     async entregarVideoAoUsuario(chatId, messageId, fileId, caption = '') {
-        // 1. Envio nativo do Bot via copyMessage (aparece diretamente dentro da conversa com o bot)
+        // 1. MTProto Premium — forward direto do grupo de armazém (método principal e mais confiável)
+        if (messageId && this.uploader) {
+            try {
+                const mtprotoOk = await this.uploader.forwardStorageMessage(chatId, messageId, caption);
+                if (mtprotoOk) return true;
+            } catch (errMtproto) {
+                console.warn(`⚠️ MTProto forward falhou: ${errMtproto.message}`);
+            }
+        }
+
+        // 2. Tentativa via Bot API copyMessage (funciona se o bot for membro do grupo)
         if (messageId && config.STORAGE_GROUP_ID) {
             try {
                 await this.bot.copyMessage(chatId, config.STORAGE_GROUP_ID, messageId, {
@@ -870,40 +880,25 @@ class CommandHandler {
                 });
                 return true;
             } catch (err1) {
-                console.warn(`⚠️ copyMessage falhou (MessageId ${messageId}): ${err1.message}. Tentando forwardMessage...`);
-            }
-
-            // 2. Fallback via forwardMessage do Bot
-            try {
-                await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
-                return true;
-            } catch (err2) {
-                console.warn(`⚠️ forwardMessage falhou: ${err2.message}`);
+                console.warn(`⚠️ copyMessage falhou (MessageId ${messageId}): ${err1.message}.`);
             }
         }
 
-        // 3. Fallback com file_id direto
-        if (fileId && typeof fileId === 'string' && !/^\d+$/.test(fileId)) {
+        // 3. Fallback com file_id direto via Telegram Bot API
+        // Aceita qualquer file_id válido (string ou numérico longo do Telegram)
+        if (fileId && String(fileId).length > 8) {
             try {
                 await this.bot.sendVideo(chatId, fileId, { caption, parse_mode: 'Markdown' });
+                console.log(`✅ Vídeo entregue via file_id direto para ${chatId}`);
                 return true;
-            } catch (err3) {
+            } catch (err2) {
                 try {
                     await this.bot.sendDocument(chatId, fileId, { caption, parse_mode: 'Markdown' });
+                    console.log(`✅ Documento entregue via file_id direto para ${chatId}`);
                     return true;
-                } catch (err4) {
-                    console.error(`❌ Falha na entrega por file_id:`, err4.message);
+                } catch (err3) {
+                    console.warn(`⚠️ Falha na entrega por file_id: ${err3.message}`);
                 }
-            }
-        }
-
-        // 4. Fallback MTProto
-        if (messageId && this.uploader) {
-            try {
-                const mtprotoOk = await this.uploader.forwardStorageMessage(chatId, messageId, caption);
-                if (mtprotoOk) return true;
-            } catch (err0) {
-                console.warn(`⚠️ MTProto forward falhou: ${err0.message}`);
             }
         }
 

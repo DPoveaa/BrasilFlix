@@ -146,6 +146,11 @@ class CatalogoManager {
         } catch (e) {}
     }
 
+    // Recarrega o catálogo completo do PostgreSQL para a memória
+    async reloadCatalogo() {
+        await this.loadCatalogo();
+    }
+
     getAudioBadge(item) {
         if (!item) return '';
         const temDub = item.isDublado || !!item.versoes?.dublado || (item.audio && !item.audio.toLowerCase().includes('legendado'));
