@@ -515,14 +515,15 @@ class VideoProcessor {
             const audioBitrateKbps = 256;
             const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
 
-            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub se houver)
+            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais estilo Netflix/Cinema)
             let vfFilter = "scale='min(1920,iw)':-2";
             if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                 const escapedSrt = metadata.srtPath
                     .replace(/\\/g, '/')
                     .replace(/:/g, '\\:')
                     .replace(/'/g, "\\'");
-                vfFilter += `,subtitles='${escapedSrt}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=25'`;
+                // Estilo Netflix/Cinema: Texto branco nítido com contorno preto suave e sombra leve, SEM caixa/fundo escuro pesado
+                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=19,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1.4,Shadow=0.8,MarginV=28,Alignment=2'`;
             }
 
             const args = [
