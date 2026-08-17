@@ -128,8 +128,14 @@ class TelegramUploader {
         const genero = metadata.generos ? `\n🎭 *Gêneros:* ${metadata.generos.join(', ')}` : '';
         const nota = metadata.nota ? `\n⭐ *Avaliação:* ${metadata.nota}/10` : '';
         const isCam = metadata.isCam === true;
-        const qualidadeBadge = isCam ? '📹 Versão Cinema (Provisória)' : (metadata.qualidade || '1080p Full HD');
-        const audio = metadata.audio || 'Dublado';
+        const isDub = metadata.isDublado || (metadata.audio && metadata.audio.toLowerCase().includes('dublado'));
+        const isLeg = metadata.isLegendado || (metadata.audio && metadata.audio.toLowerCase().includes('legendado'));
+        let audioTexto = 'Dublado (Áudio PT-BR)';
+        if (isDub && isLeg) audioTexto = 'Dual Áudio (Dublado + Legendado)';
+        else if (isLeg) audioTexto = 'Legendado (PT-BR)';
+        else if (metadata.audio) audioTexto = metadata.audio;
+
+        const qualidadeBadge = isCam ? '📹 Cinema (CAM/Provisório)' : (metadata.qualidade || '1080p Full HD');
 
         let headerTitulo = '';
         if (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode) {
@@ -142,7 +148,7 @@ class TelegramUploader {
         }
 
         let caption = `${headerTitulo}\n` +
-                      `✨ *Qualidade:* ${qualidadeBadge} | 🔊 *Áudio:* ${audio}` +
+                      `✨ *Qualidade:* ${qualidadeBadge} | 🔊 *Áudio:* ${audioTexto}` +
                       `${nota}${genero}\n\n`;
 
         if (isCam) {

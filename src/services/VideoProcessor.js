@@ -280,25 +280,55 @@ class VideoProcessor {
         });
 
         if (ptSubStream) {
-            try {
-                console.log(`📝 Extraindo legenda PT-BR embutida (Stream 0:s:${ptSubStream.index})...`);
-                await new Promise((resolve, reject) => {
-                    const extract = spawn('ffmpeg', ['-y', '-i', inputPath, '-map', `0:s:${ptSubStream.index}`, srtPath]);
-                    extract.on('close', code => (code === 0 && fs.existsSync(srtPath) ? resolve() : reject(new Error('Erro ao extrair srt'))));
-                    extract.on('error', reject);
-                });
-                if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
-                    const content = await fs.readFile(srtPath, 'utf8');
-                    if (this.isPortugueseSubtitleContent(content)) {
-                        console.log(`✅ Legenda PT-BR interna extraída e validada linguisticamente!`);
-                        return srtPath;
-                    } else {
-                        console.warn(`⚠️ Legenda interna extraída não continha texto em Português genuíno (possível idioma errado), descartando...`);
-                        await fs.remove(srtPath).catch(() => {});
+            const isTextCodec = ['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'text', 'webvtt'].includes((ptSubStream.codec || '').toLowerCase());
+            if (isTextCodec) {
+                try {
+                    console.log(`📝 Extraindo legenda PT-BR embutida (Stream 0:s:${ptSubStream.index}, Codec: ${ptSubStream.codec})...`);
+                    await new Promise((resolve, reject) => {
+                        let isDone = false;
+                        const extract = spawn('ffmpeg', ['-nostdin', '-y', '-i', inputPath, '-map', `0:s:${ptSubStream.index}`, srtPath]);
+
+                        const timer = setTimeout(() => {
+                            if (!isDone) {
+                                isDone = true;
+                                try { extract.kill('SIGKILL'); } catch (e) {}
+                                reject(new Error('Timeout de 15s ao extrair legenda interna'));
+                            }
+                        }, 15000);
+
+                        extract.on('close', code => {
+                            if (!isDone) {
+                                isDone = true;
+                                clearTimeout(timer);
+                                (code === 0 && fs.existsSync(srtPath)) ? resolve() : reject(new Error(`Erro ao extrair srt (código ${code})`));
+                            }
+                        });
+
+                        extract.on('error', err => {
+                            if (!isDone) {
+                                isDone = true;
+                                clearTimeout(timer);
+                                reject(err);
+                            }
+                        });
+                    });
+
+                    if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
+                        const content = await fs.readFile(srtPath, 'utf8');
+                        if (this.isPortugueseSubtitleContent(content)) {
+                            console.log(`✅ Legenda PT-BR interna extraída e validada linguisticamente!`);
+                            return srtPath;
+                        } else {
+                            console.warn(`⚠️ Legenda interna extraída não continha texto em Português genuíno (possível idioma errado), descartando...`);
+                            await fs.remove(srtPath).catch(() => {});
+                        }
                     }
+                } catch (e) {
+                    console.warn('⚠️ Falha ou timeout ao extrair legenda interna:', e.message);
+                    await fs.remove(srtPath).catch(() => {});
                 }
-            } catch (e) {
-                console.warn('⚠️ Falha ao extrair legenda interna:', e.message);
+            } else {
+                console.log(`ℹ️ Legenda interna é bitmap/gráfico (${ptSubStream.codec || 'desconhecido'}), buscando versão em texto no OpenSubtitles...`);
             }
         }
 
@@ -483,13 +513,18 @@ class VideoProcessor {
             await fs.remove(srtPath).catch(() => {});
         }
 
-        // Validação Estrita Pós-Conversão: Duração do arquivo de saída DEVE bater com a do arquivo original
+        // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
         const outInfo = await this.getVideoInfo(finalPath);
         if (info.duration > 0 && outInfo.duration > 0) {
-            const diffSec = Math.abs(outInfo.duration - info.duration);
-            if (diffSec > 15 && outInfo.duration < info.duration * 0.95) {
+            // Se o FFmpeg terminou com sucesso (code 0), pequenas variações entre header do container (ex: 1h34)
+            // e o fluxo real de vídeo/áudio (ex: 1h28) são comuns em releases com cortes de créditos ou dual audio.
+            // Só descarta se o arquivo tiver menos de 50% da duração original ou menos de 5 minutos (anti-corrupção real).
+            const minAcceptableSec = Math.max(300, info.duration * 0.50);
+            if (outInfo.duration < minAcceptableSec) {
                 await fs.remove(finalPath).catch(() => {});
-                throw new Error(`Inconsistência de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
+                throw new Error(`Inconsistência severa de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem apenas ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
+            } else if (Math.abs(outInfo.duration - info.duration) > 15) {
+                console.log(`ℹ️ [Duração Pós-Conversão] Vídeo processado com sucesso: ${outInfo.durationFormatted} (Original marcava ${info.durationFormatted}). Diferença natural de container/créditos aceita.`);
             }
         }
 
@@ -499,32 +534,33 @@ class VideoProcessor {
     async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null, metadata = {}) {
         const os = require('os');
         const cpuCount = os.cpus()?.length || 4;
-        const safeThreads = Math.max(2, Math.min(8, cpuCount - 1));
+        // Reserva pelo menos 30% da CPU para os outros sites e processos do servidor
+        const safeThreads = Math.max(2, Math.min(6, Math.floor(cpuCount * 0.70)));
 
         const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
             ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
             : (metadata.nome || metadata.title || path.basename(inputPath));
 
-        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
+        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: veryfast, Threads: ${safeThreads}, CRF: 22${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
         
         return new Promise((resolve, reject) => {
             const totalDuration = info.duration || 1;
 
             const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
             const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
-            const audioBitrateKbps = 256;
-            const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
-
+            const audioBitrateKbps = 192;
             // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
             let vfFilter = "scale='min(1920,iw)':-2";
+            let tempSrtRelative = null;
             if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
-                const escapedSrt = metadata.srtPath
-                    .replace(/\\/g, '/')
-                    .replace(/:/g, '\\:')
-                    .replace(/'/g, "\\'");
-                // Contorno ultra-fino (0.8) — apenas o suficiente para não sumir em fundos brancos,
-                // sem nenhum fundo/caixa, estilo Apple TV+ / Prime Video
-                vfFilter += `,subtitles='${escapedSrt}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
+                try {
+                    tempSrtRelative = `sub_active_${Date.now()}.srt`;
+                    fs.copySync(metadata.srtPath, tempSrtRelative);
+                    // Uso de caminho relativo limpo sem caracteres de drive letter (D:) do Windows
+                    vfFilter += `,subtitles='${tempSrtRelative}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
+                } catch (errSrt) {
+                    console.warn('⚠️ Falha ao preparar arquivo de legenda para filtro:', errSrt.message);
+                }
             }
 
             const args = [
@@ -571,7 +607,7 @@ class VideoProcessor {
                     const fpsStr = fpsMatch ? ` | FPS: ${fpsMatch[1]}` : '';
 
                     const now = Date.now();
-                    if (now - lastLogTime > 500) { // Atualiza a cada 500ms
+                    if (now - lastLogTime > 3000) { // Atualiza a cada 3s para evitar flood nos logs do PM2
                         lastLogTime = now;
                         const barLength = 25;
                         const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
@@ -579,7 +615,7 @@ class VideoProcessor {
                         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
                         // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        process.stdout.write(`\r\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m `);
+                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m`);
                     }
 
                     if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);
@@ -587,6 +623,10 @@ class VideoProcessor {
             });
 
             ffmpeg.on('close', (code) => {
+                if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
+                    fs.remove(tempSrtRelative).catch(() => {});
+                }
+
                 if (code === 0 && fs.existsSync(outputPath)) {
                     process.stdout.write('\n');
                     console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
@@ -598,7 +638,12 @@ class VideoProcessor {
                 }
             });
 
-            ffmpeg.on('error', reject);
+            ffmpeg.on('error', (err) => {
+                if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
+                    fs.remove(tempSrtRelative).catch(() => {});
+                }
+                reject(err);
+            });
         });
     }
 

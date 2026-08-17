@@ -28,9 +28,72 @@ class QueueManager extends EventEmitter {
         this.queue = []; // cache em memória sincronizado com o banco
         this.activeTask = null;
         this.isProcessing = false;
+        this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
 
         // Inicializa banco e carrega fila de forma assíncrona
         this._init();
+    }
+
+    isEpisodeSkippedRecently(title, season, episode) {
+        const key = `${(title || '').toLowerCase()}_S${season}_E${episode}`;
+        const lastSkipped = this.skippedEpisodes.get(key);
+        if (!lastSkipped) return false;
+        // Expira após 3 horas para permitir nova tentativa futura
+        if (Date.now() - lastSkipped > 3 * 60 * 60 * 1000) {
+            this.skippedEpisodes.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    recordSkippedEpisode(title, season, episode) {
+        const key = `${(title || '').toLowerCase()}_S${season}_E${episode}`;
+        this.skippedEpisodes.set(key, Date.now());
+    }
+
+    async enqueueNextAvailableEpisode(metadata, job) {
+        try {
+            const currentSeason = job.season || 1;
+            const currentEp = job.episode || 1;
+            let totalEpsNestaTemporada = 10;
+            let totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+
+            try {
+                if (metadata.tmdbId) {
+                    const seasonInfo = await TMDBService.getSeasonDetails(metadata.tmdbId, currentSeason);
+                    if (seasonInfo?.episodios?.length > 0) {
+                        totalEpsNestaTemporada = seasonInfo.episodios.length;
+                    }
+                }
+            } catch (e) {}
+
+            const nextEp = currentEp + 1;
+            if (nextEp <= totalEpsNestaTemporada) {
+                console.log(`⏩ [PULO INTELIGENTE] Avançando esteira para: "${metadata.nome || job.title}" - T${currentSeason}E${nextEp}`);
+                this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                    tmdbId: metadata.tmdbId,
+                    season: currentSeason,
+                    episode: nextEp,
+                    userId: job.userId,
+                    username: job.username,
+                    audioPreference: job.audioPreference || 'dublado',
+                    queueOrder: -1
+                });
+            } else if (currentSeason + 1 <= totalTemporadas) {
+                console.log(`⏩ [PULO INTELIGENTE] Fim da Temporada ${currentSeason}. Avançando esteira para: "${metadata.nome || job.title}" - T${currentSeason + 1}E1`);
+                this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                    tmdbId: metadata.tmdbId,
+                    season: currentSeason + 1,
+                    episode: 1,
+                    userId: job.userId,
+                    username: job.username,
+                    audioPreference: job.audioPreference || 'dublado',
+                    queueOrder: -1
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao enfileirar próximo episódio no pulo inteligente:', e.message);
+        }
     }
 
     async _init() {
@@ -110,7 +173,10 @@ class QueueManager extends EventEmitter {
                         optimizedPath: job.optimizedPath,
                         expectedSize: job.expectedSize,
                         bestSource: job.bestSource,
-                        langInfo: job.langInfo
+                        langInfo: job.langInfo,
+                        customMagnet: job.customMagnet || null,
+                        isManualAdd: job.isManualAdd || false,
+                        metaDetails: job.metaDetails || null
                     }),
                     job.error || null,
                     job.queueOrder !== undefined ? job.queueOrder : 0,
@@ -150,6 +216,9 @@ class QueueManager extends EventEmitter {
             expectedSize: extra.expectedSize || null,
             bestSource: extra.bestSource || null,
             langInfo: extra.langInfo || null,
+            customMagnet: extra.customMagnet || null,
+            isManualAdd: extra.isManualAdd || false,
+            metaDetails: extra.metaDetails || null,
             createdAt: row.created_at
         };
     }
@@ -169,6 +238,10 @@ class QueueManager extends EventEmitter {
             season: type === 'serie' ? (extraData.season || 1) : null,
             episode: type === 'serie' ? (extraData.episode || 1) : null,
             tmdbId: extraData.tmdbId || null,
+            rawFilePath: extraData.rawFilePath || null,
+            customMagnet: extraData.customMagnet || extraData.magnet || null,
+            isManualAdd: extraData.isManualAdd || false,
+            metaDetails: extraData.metaDetails || null,
             status: 'queued', // 'queued', 'downloading', 'processing', 'uploading', 'completed', 'failed'
             progress: 0,
             progressDetails: '',
@@ -220,15 +293,47 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        // Se for série e o episódio já existir no catálogo, ignora adição duplicada
+        // Se for série e o episódio já existir no catálogo com o áudio desejado, busca o próximo episódio pendente
         if (type === 'serie') {
             const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
             if (serieExistente) {
                 const temporada = (serieExistente.temporadas || []).find(t => t.numero === job.season);
-                const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
-                if (epsCadastrados.includes(job.episode)) {
-                    console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} já está cadastrado no catálogo. Ignorando.`);
-                    return null;
+                const epExistente = (temporada?.episodios || []).find(e => e.numero === job.episode);
+                if (epExistente) {
+                    const pref = job.audioPreference || 'dublado';
+                    const epDub = epExistente.isDublado || epExistente.audio?.toLowerCase().includes('dublado');
+                    const epLeg = epExistente.isLegendado || epExistente.audio?.toLowerCase().includes('legendado');
+                    const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg);
+
+                    if (audioMatches) {
+                        if (!extraData.isManualAdd || (!extraData.episode && !extraData.season)) {
+                            const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
+                            let nextMissing = null;
+                            for (let ep = 1; ep <= 30; ep++) {
+                                const epObj = (temporada?.episodios || []).find(e => e.numero === ep);
+                                if (!epObj) {
+                                    nextMissing = ep;
+                                    break;
+                                }
+                                const isD = epObj.isDublado || epObj.audio?.toLowerCase().includes('dublado');
+                                const isL = epObj.isLegendado || epObj.audio?.toLowerCase().includes('legendado');
+                                if ((pref === 'dublado' && !isD) || (pref === 'legendado' && !isL)) {
+                                    nextMissing = ep;
+                                    break;
+                                }
+                            }
+                            if (nextMissing) {
+                                console.log(`📺 [Fila] "${title}" T${job.season}E${job.episode} já existe. Direcionando trabalho para o próximo episódio pendente: T${job.season}E${nextMissing}`);
+                                job.episode = nextMissing;
+                            } else {
+                                console.log(`ℹ️ [Fila] Todos os episódios da Temporada ${job.season} de "${title}" já estão no catálogo com áudio ${pref}.`);
+                                return null;
+                            }
+                        } else {
+                            console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} (${pref}) já está cadastrado no catálogo. Ignorando.`);
+                            return null;
+                        }
+                    }
                 }
             }
         }
@@ -244,8 +349,53 @@ class QueueManager extends EventEmitter {
         return job;
     }
 
+    async marcarPedidosAtendidos(titulo, userId = null, tipo = 'filme') {
+        if (!this.pedidosManager) return;
+        try {
+            const cleanTitle = (titulo || '').toLowerCase().trim();
+            if (!cleanTitle) return;
+
+            const pedidos = this.pedidosManager.getPedidos() || [];
+            const correspondentes = pedidos.filter(p => {
+                if (p.processado || p.status === 'adicionado') return false;
+                const pNome = (p.nome || '').toLowerCase().trim();
+                return pNome === cleanTitle || cleanTitle.includes(pNome) || pNome.includes(cleanTitle);
+            });
+
+            for (const p of correspondentes) {
+                console.log(`📝 [PEDIDOS] Marcando pedido de @${p.username || p.userId} ("${p.nome}") como ATENDIDO no histórico!`);
+                await this.pedidosManager.marcarComoProcessado(p.id);
+
+                if (this.bot && p.userId && p.userId !== config.ADMIN_ID) {
+                    const itemSalvo = this.catalogoManager.buscarItemExato(p.nome, p.tipo || tipo);
+                    const sId = itemSalvo?.id || '';
+                    const callbackAssistir = (p.tipo === 'serie' || tipo === 'serie') ? `info_serie_${sId}` : `info_filme_${sId}`;
+                    const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
+                                     `🎬 *${p.nome}*\n` +
+                                     `✨ *Qualidade:* 1080p Full HD\n` +
+                                     `🔊 *Versão:* Dublado / Legendado\n\n` +
+                                     `O título que você pediu já está disponível no catálogo para assistir! 🍿`;
+
+                    this.bot.sendMessage(p.userId, msgPedido, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]]
+                        }
+                    }).catch(() => {});
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao marcar pedidos como atendidos:', e.message);
+        }
+    }
+
     sortQueue() {
         this.queue.sort((a, b) => {
+            const pA = Number(a.priority || 4);
+            const pB = Number(b.priority || 4);
+            if (pA !== pB) {
+                return pA - pB; // Prioridade menor = executa primeiro (1 > 2 > 3 > 4)
+            }
             const orderA = a.queueOrder !== undefined && a.queueOrder !== null ? Number(a.queueOrder) : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
             const orderB = b.queueOrder !== undefined && b.queueOrder !== null ? Number(b.queueOrder) : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
             if (orderA !== orderB) {
@@ -328,6 +478,7 @@ class QueueManager extends EventEmitter {
 
                 if ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (temDublado && !job.userId)) {
                     console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : 'Legendado'}). Ignorando download duplicado.`);
+                    await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
                     return;
                 }
             }
@@ -337,30 +488,76 @@ class QueueManager extends EventEmitter {
         if (job.type === 'serie') {
             const seasonNum = job.season || 1;
             const requestedEp = job.episode || 1;
+            const pref = job.audioPreference || 'dublado';
 
             const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
                                   this.catalogoManager.buscarItemExato(job.title, 'serie');
             if (serieExistente) {
-                const temporada = (serieExistente.temporadas || []).find(t => t.numero === seasonNum);
-                const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
+                const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+                
+                // Busca de forma estritamente cronológica o PRIMEIRO episódio faltante desde a Temporada 1
+                let nextTargetSeason = null;
+                let nextTargetEp = null;
 
-                if (epsCadastrados.includes(requestedEp)) {
-                    console.log(`✅ [SÉRIE] "${job.title}" T${seasonNum}E${requestedEp} já está no catálogo! Avançando.`);
-                    return;
+                for (let s = 1; s <= totalTemporadas; s++) {
+                    const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
+                    
+                    let totalEpsInS = 10;
+                    try {
+                        if (metadata.tmdbId) {
+                            const tmdbSInfo = (metadata.temporadas || []).find(t => t.numero === s);
+                            if (tmdbSInfo && tmdbSInfo.episodiosContagem > 0) {
+                                totalEpsInS = tmdbSInfo.episodiosContagem;
+                            } else {
+                                const sDetails = await TMDBService.getSeasonDetails(metadata.tmdbId, s);
+                                if (sDetails?.episodios?.length > 0) {
+                                    totalEpsInS = sDetails.episodios.length;
+                                }
+                            }
+                        }
+                    } catch (e) {}
+
+                    for (let ep = 1; ep <= totalEpsInS; ep++) {
+                        const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
+                        if (!epItem) {
+                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
+                                continue;
+                            }
+                            nextTargetSeason = s;
+                            nextTargetEp = ep;
+                            break;
+                        }
+                        const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
+                        const epLeg = epItem.isLegendado || epItem.audio?.toLowerCase().includes('legendado');
+                        if ((pref === 'dublado' && !epDub) || (pref === 'legendado' && !epLeg)) {
+                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
+                                continue;
+                            }
+                            nextTargetSeason = s;
+                            nextTargetEp = ep;
+                            break;
+                        }
+                    }
+
+                    if (nextTargetSeason !== null) break;
                 }
 
-                for (let ep = 1; ep < requestedEp; ep++) {
-                    if (!epsCadastrados.includes(ep)) {
-                        console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" solicitou o Ep ${requestedEp}, mas o Ep ${ep} ainda não existe no catálogo. Ajustando download para T${seasonNum}E${ep} primeiro!`);
-                        job.episode = ep;
-                        this.saveJob(job).catch(() => {});
-                        break;
+                if (nextTargetSeason !== null && nextTargetEp !== null) {
+                    if (job.season !== nextTargetSeason || job.episode !== nextTargetEp) {
+                        console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
+                        job.season = nextTargetSeason;
+                        job.episode = nextTargetEp;
+                        await this.saveJob(job);
                     }
+                } else {
+                    console.log(`🎉 [SÉRIE COMPLETA] Todos os episódios de todas as ${totalTemporadas} temporadas de "${job.title}" já estão 100% catalogados com áudio ${pref.toUpperCase()}!`);
+                    await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
+                    return;
                 }
             } else if (requestedEp > 1) {
                 console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Forçando início a partir do Episódio 1 (T${seasonNum}E1)!`);
                 job.episode = 1;
-                this.saveJob(job).catch(() => {});
+                await this.saveJob(job);
             }
         }
 
@@ -421,19 +618,19 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        // Se não retomou do otimizado, tenta retomar do arquivo raw (já baixado, precisa codificar)
+        // Se não retomou do otimizado, tenta retomar do arquivo raw (já baixado ou enviado via upload)
         if (!resumeFromOptimized && rawFilePath && fs.existsSync(rawFilePath)) {
             const rawStat = fs.statSync(rawFilePath);
-            const expectedOk = !job.expectedSize || rawStat.size >= job.expectedSize * 0.95;
-            if (rawStat.size > 100 * 1024 * 1024 && expectedOk) {
+            const expectedOk = !job.expectedSize || rawStat.size >= job.expectedSize * 0.85;
+            if (rawStat.size > 5 * 1024 * 1024 && expectedOk) {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const info = await VideoProcessor.getVideoInfo(rawFilePath);
                     if (info && info.duration > 0) {
-                        console.log(`♻️ Retomando do arquivo raw existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(rawFilePath)}`);
+                        console.log(`📁 Utilizando arquivo de vídeo existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(rawFilePath)}`);
                         resumeFromRaw = true;
                         downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
-                        bestSource = job.bestSource;
+                        bestSource = job.bestSource || { title: job.title, source: 'Upload Manual', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
                         langInfo = job.langInfo || langInfo;
                     }
                 } catch (e) {
@@ -452,16 +649,37 @@ class QueueManager extends EventEmitter {
 
 
         if (!resumeFromOptimized && !resumeFromRaw) {
-            sources = await MediaSearchService.search(job.title, job.type, {
-                nomeOriginal: metadata.nomeOriginal,
-                ano: metadata.ano,
-                tmdbId: metadata.tmdbId,
-                imdbId: metadata.imdbId,
-                season: job.season || 1,
-                episode: job.episode || 1,
-                audioPreference: job.audioPreference || 'dublado'
-            });
+            if (job.customMagnet) {
+                console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
+                sources = [{
+                    title: job.title,
+                    magnet: job.customMagnet,
+                    sizeMB: 'Manual',
+                    seeders: 20,
+                    isPtBr: true,
+                    isDublado: job.audioPreference === 'dublado',
+                    isLegendado: job.audioPreference === 'legendado',
+                    audio: job.audioPreference === 'dublado' ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
+                    source: 'Manual (Admin Magnet)'
+                }];
+            } else {
+                sources = await MediaSearchService.search(job.title, job.type, {
+                    nomeOriginal: metadata.nomeOriginal,
+                    ano: metadata.ano,
+                    tmdbId: metadata.tmdbId,
+                    imdbId: metadata.imdbId,
+                    season: job.season || 1,
+                    episode: job.episode || 1,
+                    audioPreference: job.audioPreference || 'dublado'
+                });
+            }
+
             if (sources.length === 0) {
+                if (job.type === 'serie') {
+                    this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                    console.warn(`⚠️ [PULO INTELIGENTE] Nenhuma fonte em Português encontrada para "${job.title}" T${job.season || 1}E${job.episode || 1}. Registrado para retry posterior e avançando na esteira...`);
+                    await this.enqueueNextAvailableEpisode(metadata, job);
+                }
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
@@ -508,6 +726,11 @@ class QueueManager extends EventEmitter {
             }
 
             if (!downloadedMedia || !bestSource) {
+                if (job.type === 'serie') {
+                    this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                    console.warn(`⚠️ [PULO INTELIGENTE] Todas as fontes para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders ou falharam. Registrado para retry posterior e avançando na esteira...`);
+                    await this.enqueueNextAvailableEpisode(metadata, job);
+                }
                 throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
             }
 
@@ -517,10 +740,10 @@ class QueueManager extends EventEmitter {
             job.bestSource = bestSource;
             await this.saveJob(job);
 
-            // Validação estrita: tamanho físico do arquivo deve bater com o tamanho informado no torrent
+            // Validação de tamanho físico do arquivo
             if (fs.existsSync(rawFilePath)) {
                 const stat = fs.statSync(rawFilePath);
-                if (downloadedMedia.sizeBytes > 0 && stat.size < downloadedMedia.sizeBytes * 0.99) {
+                if (downloadedMedia.sizeBytes > 0 && stat.size < downloadedMedia.sizeBytes * 0.85) {
                     console.log(`❌ Arquivo bruto descartado: tamanho físico (${stat.size} B) menor que o esperado (${downloadedMedia.sizeBytes} B).`);
                     await DownloaderManager.cleanupFile(rawFilePath);
                     throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
@@ -558,10 +781,12 @@ class QueueManager extends EventEmitter {
                 }
 
                 // Verificação de Duração Oficial via TMDB API:
-                // Se o TMDB indicar que o episódio/filme tem X minutos, e o vídeo baixado tiver menos de 75% dessa duração (ex: episódio de 48min terminando em 25min sem créditos ou cortado), descarta na hora!
+                // Para séries: permite até 40% da duração teórica de slot (episódios de 40-45min de slots de 60min no TMDB).
+                // Para filmes: permite até 60% da duração oficial.
                 if (tmdbExpectedDurationMin > 0) {
                     const expectedSec = tmdbExpectedDurationMin * 60;
-                    const minAcceptableSec = Math.floor(expectedSec * 0.75); // Permite até 25% de margem, mas impede vídeos cortados/incompletos
+                    const minRatio = job.type === 'serie' ? 0.40 : 0.60;
+                    const minAcceptableSec = Math.floor(expectedSec * minRatio);
                     if (videoInfo.duration && videoInfo.duration < minAcceptableSec) {
                         const durAtualMin = (videoInfo.duration / 60).toFixed(1);
                         console.log(`⚠️ Arquivo descartado: Duração insuficiente detectada (${videoInfo.durationFormatted} / ~${durAtualMin} min). A duração oficial no TMDB é de ${tmdbExpectedDurationMin} min. Possível corte/arquivo incompleto em "${job.title}".`);
@@ -700,9 +925,12 @@ class QueueManager extends EventEmitter {
         }
 
         // 7. Notificação formal EXCLUSIVAMENTE no Grupo de Armazém
+        // 7. Notificação formal nos Grupos e Canais oficiais
         try {
             const storageGroupId = config.STORAGE_GROUP_ID;
-            if (this.bot && storageGroupId) {
+            const notifGroupId = config.NOTIFICATION_GROUP_ID;
+
+            if (this.bot) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
 
@@ -721,7 +949,12 @@ class QueueManager extends EventEmitter {
                                  `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
                                  `🍿 *Disponível imediatamente para todos os usuários!*`;
 
-                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                if (storageGroupId) {
+                    await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                }
+                if (notifGroupId && notifGroupId !== storageGroupId) {
+                    await this.bot.sendMessage(notifGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                }
             }
         } catch (e) {}
 
@@ -729,14 +962,14 @@ class QueueManager extends EventEmitter {
         await DownloaderManager.cleanupFile(rawFilePath);
         await DownloaderManager.cleanupFile(optimizedPath);
 
-        // 9. Notificação de Pedido Concluído (notifica quem fez o pedido)
+        // 9. Notificação de Pedido Concluído (notifica exclusivamente clientes que fizeram o pedido)
         try {
             const itemSalvo = this.catalogoManager.buscarItemExato(metadata.nome, job.type);
             const itemId = itemSalvo?.id;
             const callbackAssistir = job.type === 'filme' ? `info_filme_${itemId}` : `info_serie_${itemId}`;
 
-            // Notifica quem disparou o job apenas se for filme (para séries, notifica por temporada completa)
-            if (job.type === 'filme' && job.userId && this.bot) {
+            // Notifica usuário solicitante (somente se não for a conta de admin para evitar spam)
+            if (job.type === 'filme' && job.userId && job.userId !== config.ADMIN_ID && this.bot) {
                 const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
                                 `🎬 *${metadata.nome}*\n` +
                                 `✨ *Qualidade:* 1080p Full HD\n` +
@@ -755,33 +988,8 @@ class QueueManager extends EventEmitter {
                 }).catch(() => {});
             }
 
-            // Notifica outros usuários com pedidos pendentes deste título (se for filme)
-            if (job.type === 'filme' && this.pedidosManager && this.bot) {
-                const pedidos = this.pedidosManager.getPedidos() || [];
-                const pedidosCorrespondentes = pedidos.filter(p => 
-                    !p.processado && p.nome && metadata.nome &&
-                    (p.nome.toLowerCase().trim() === metadata.nome.toLowerCase().trim() ||
-                     metadata.nome.toLowerCase().includes(p.nome.toLowerCase().trim()))
-                );
-
-                for (const p of pedidosCorrespondentes) {
-                    this.pedidosManager.marcarComoProcessado(p.id);
-                    if (p.userId && p.userId !== job.userId) {
-                        const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
-                                         `🎬 *${metadata.nome}*\n` +
-                                         `✨ *Qualidade:* 1080p Full HD\n` +
-                                         `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
-                                         `O título que você pediu já está disponível no catálogo! 🍿`;
-
-                        this.bot.sendMessage(p.userId, msgPedido, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [[{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]]
-                            }
-                        }).catch(() => {});
-                    }
-                }
-            }
+            // Notifica e atualiza pedidos correspondentes deste título
+            await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, job.type);
 
             // Notificação para quem favoritou a série quando sai novo episódio
             if (job.type === 'serie' && this.favoritosManager && itemId && this.bot) {
@@ -834,26 +1042,44 @@ class QueueManager extends EventEmitter {
             const currentSeasonNum = job.season || 1;
             const currentEpNum = job.episode || 1;
 
-            // Obter informações exatas de temporadas do TMDB
-            const temporadaAtual = (metadata.temporadas || []).find(t => t.numero === currentSeasonNum);
-            const totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || (metadata.totalEpisodios ? Math.ceil(metadata.totalEpisodios / (metadata.totalTemporadas || 1)) : 10);
-            const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+            // Obter informações exatas de episódios e temporadas do TMDB
+            let totalEpsNestaTemporada = 10;
+            let totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+
+            try {
+                if (metadata.tmdbId) {
+                    const seasonInfo = await TMDBService.getSeasonDetails(metadata.tmdbId, currentSeasonNum);
+                    if (seasonInfo && seasonInfo.episodios && seasonInfo.episodios.length > 0) {
+                        totalEpsNestaTemporada = seasonInfo.episodios.length;
+                    } else {
+                        const temporadaAtual = (metadata.temporadas || []).find(t => t.numero === currentSeasonNum);
+                        if (temporadaAtual && temporadaAtual.episodiosContagem > 0) {
+                            totalEpsNestaTemporada = temporadaAtual.episodiosContagem;
+                        }
+                    }
+                }
+            } catch (e) {
+                const temporadaAtual = (metadata.temporadas || []).find(t => t.numero === currentSeasonNum);
+                totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || 10;
+            }
 
             const nextEp = currentEpNum + 1;
 
             if (nextEp <= totalEpsNestaTemporada) {
-                // Próximo episódio da mesma temporada
-                console.log(`📺 [SÉRIE/DORAMA] Enfileirando próximo episódio: "${metadata.nome || job.title}" - T${currentSeasonNum}E${nextEp} (de ${totalEpsNestaTemporada} eps)`);
-                this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.SERIES, {
+                // Próximo episódio da mesma temporada — Prioridade VIP_USER e queueOrder -1 para terminar a série antes de ir para outra!
+                console.log(`📺 [SÉRIE/DORAMA] Enfileirando próximo episódio COM PRIORIDADE MÁXIMA (continuidade): "${metadata.nome || job.title}" - T${currentSeasonNum}E${nextEp} (de ${totalEpsNestaTemporada} eps)`);
+                this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
                     tmdbId: metadata.tmdbId,
                     season: currentSeasonNum,
                     episode: nextEp,
                     userId: job.userId,
-                    username: job.username
+                    username: job.username,
+                    audioPreference: job.audioPreference || 'dublado',
+                    queueOrder: -1
                 });
             } else {
-                // Temporada atual concluída! Notifica quem pediu sobre a temporada completa
-                if (job.userId && this.bot) {
+                // Temporada atual concluída! Notifica clientes sobre a temporada completa
+                if (job.userId && job.userId !== config.ADMIN_ID && this.bot) {
                     const itemSalvo = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
                     const sId = itemSalvo?.id || '';
                     const msgTemporada = `🎉 *Temporada ${currentSeasonNum} Completa Disponível!*\n\n` +
@@ -874,16 +1100,18 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
-                // Avança para a próxima temporada
+                // Avança para a próxima temporada com prioridade contínua
                 const nextSeasonNum = currentSeasonNum + 1;
                 if (nextSeasonNum <= totalTemporadas) {
                     console.log(`📺 [SÉRIE/DORAMA] Temporada ${currentSeasonNum} concluída! Avançando para Temporada ${nextSeasonNum} (Episódio 1) de "${metadata.nome || job.title}"`);
-                    this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.SERIES, {
+                    this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
                         tmdbId: metadata.tmdbId,
                         season: nextSeasonNum,
                         episode: 1,
                         userId: job.userId,
-                        username: job.username
+                        username: job.username,
+                        audioPreference: job.audioPreference || 'dublado',
+                        queueOrder: -1
                     });
                 } else {
                     console.log(`🎉 [SÉRIE/DORAMA] SÉRIE COMPLETA! Todas as ${totalTemporadas} temporada(s) de "${metadata.nome || job.title}" foram catalogadas com sucesso!`);

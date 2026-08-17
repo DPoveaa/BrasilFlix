@@ -1,10 +1,12 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs-extra');
+const multer = require('multer');
 const config = require('../../config');
 const StremioService = require('./StremioService');
 const telegramUploader = require('./TelegramUploader');
 const authService = require('./AuthService');
+const TMDBService = require('./TMDBService');
 const db = require('../database/db');
 
 class StremioServer {
@@ -486,6 +488,303 @@ class StremioServer {
                 await this.catalogoManager?.loadCatalogo();
                 res.json({ success: true, stats: this.catalogoManager?.getEstatisticas() });
             } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 7. TMDB Live Search & Detalhes
+        this.app.get('/api/admin/tmdb/search', auth, async (req, res) => {
+            try {
+                const query = req.query.query || req.query.q;
+                const tipo = req.query.tipo || 'multi';
+                if (!query || !query.trim()) return res.json({ success: true, results: [] });
+
+                let results = [];
+                if (tipo === 'filme') {
+                    results = await TMDBService.searchMovie(query.trim());
+                } else if (tipo === 'serie') {
+                    results = await TMDBService.searchTV(query.trim());
+                } else {
+                    results = await TMDBService.searchMulti(query.trim());
+                }
+                res.json({ success: true, results });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/tmdb/details/:id', auth, async (req, res) => {
+            try {
+                const tmdbId = parseInt(req.params.id, 10);
+                const tipo = req.query.tipo || 'filme';
+                let details = null;
+                if (tipo === 'serie') {
+                    details = await TMDBService.getTVDetails(tmdbId);
+                } else {
+                    details = await TMDBService.getMovieDetails(tmdbId);
+                }
+                res.json({ success: true, details });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/tmdb/season/:tmdbId/:seasonNumber', auth, async (req, res) => {
+            try {
+                const tmdbId = parseInt(req.params.tmdbId, 10);
+                const sNum = parseInt(req.params.seasonNumber, 10);
+                const seasonData = await TMDBService.getSeasonDetails(tmdbId, sNum);
+                res.json({ success: true, season: seasonData });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 8. Adição Manual de Mídias (Download Automático, Magnet Link ou Cadastro Direto)
+        this.app.post('/api/admin/catalogo/manual-add', auth, async (req, res) => {
+            try {
+                const {
+                    action, // 'queue', 'magnet', 'direct'
+                    title,
+                    type,
+                    tmdbId,
+                    imdbId,
+                    nomeOriginal,
+                    ano,
+                    sinopse,
+                    posterUrl,
+                    backdropUrl,
+                    generos,
+                    nota,
+                    audioPreference,
+                    priority,
+                    magnetUrl,
+                    season,
+                    episode,
+                    allEpisodes,
+                    messageId,
+                    fileId,
+                    qualidade,
+                    audio
+                } = req.body;
+
+                if (!title || !title.trim()) {
+                    return res.status(400).json({ error: 'Título é obrigatório.' });
+                }
+
+                const cleanTitle = title.trim();
+                const mediaType = type === 'serie' ? 'serie' : 'filme';
+                const mediaPriority = parseInt(priority || 1, 10);
+                const sNum = parseInt(season || 1, 10);
+                const epNum = parseInt(episode || 1, 10);
+
+                // Modo Cadastro Direto (sem download)
+                if (action === 'direct') {
+                    if (mediaType === 'filme') {
+                        const item = await this.catalogoManager.adicionarFilme(
+                            cleanTitle,
+                            sinopse || '',
+                            parseInt(messageId || 0, 10),
+                            'filme',
+                            true,
+                            {
+                                nomeOriginal: nomeOriginal || cleanTitle,
+                                ano: ano || new Date().getFullYear().toString(),
+                                posterUrl: posterUrl || '',
+                                backdropUrl: backdropUrl || '',
+                                generos: Array.isArray(generos) ? generos : (typeof generos === 'string' ? generos.split(',').map(s => s.trim()) : []),
+                                nota: parseFloat(nota || 8.0),
+                                tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                                imdbId: imdbId || null,
+                                fileId: fileId || null,
+                                qualidade: qualidade || '1080p Full HD',
+                                audio: audio || (audioPreference === 'legendado' ? 'Legendado (PT-BR)' : 'Dublado (PT-BR)'),
+                                isDublado: audioPreference !== 'legendado',
+                                isLegendado: audioPreference === 'legendado'
+                            }
+                        );
+                        return res.json({ success: true, message: `Filme "${cleanTitle}" cadastrado diretamente no catálogo!`, item });
+                    } else {
+                        const item = await this.catalogoManager.adicionarEpisodioSerie(
+                            cleanTitle,
+                            sNum,
+                            epNum,
+                            parseInt(messageId || 0, 10),
+                            fileId || null,
+                            {
+                                nomeOriginal: nomeOriginal || cleanTitle,
+                                ano: ano || new Date().getFullYear().toString(),
+                                sinopse: sinopse || '',
+                                posterUrl: posterUrl || '',
+                                backdropUrl: backdropUrl || '',
+                                generos: Array.isArray(generos) ? generos : (typeof generos === 'string' ? generos.split(',').map(s => s.trim()) : []),
+                                nota: parseFloat(nota || 8.0),
+                                tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                                imdbId: imdbId || null,
+                                episodioNome: `Episódio ${epNum}`,
+                                qualidade: qualidade || '1080p Full HD',
+                                audio: audio || (audioPreference === 'legendado' ? 'Legendado (PT-BR)' : 'Dublado (PT-BR)'),
+                                isDublado: audioPreference !== 'legendado',
+                                isLegendado: audioPreference === 'legendado'
+                            }
+                        );
+                        return res.json({ success: true, message: `Episódio T${sNum}E${epNum} de "${cleanTitle}" cadastrado diretamente!`, item });
+                    }
+                }
+
+                // Modo Enfileirar Temporada Completa
+                if (mediaType === 'serie' && allEpisodes && tmdbId) {
+                    const seasonDetails = await TMDBService.getSeasonDetails(parseInt(tmdbId, 10), sNum);
+                    const episodesList = seasonDetails?.episodios || [{ numero: 1 }];
+                    const jobsAdded = [];
+                    for (const ep of episodesList) {
+                        const job = this.queueManager.addJob(cleanTitle, 'serie', mediaPriority, {
+                            audioPreference: audioPreference || 'dublado',
+                            season: sNum,
+                            episode: ep.numero,
+                            tmdbId: parseInt(tmdbId, 10),
+                            nomeOriginal,
+                            customMagnet: magnetUrl || null,
+                            isManualAdd: true,
+                            metaDetails: {
+                                sinopse,
+                                posterUrl,
+                                backdropUrl,
+                                ano,
+                                generos,
+                                nota
+                            },
+                            username: 'Admin (Manual Add)'
+                        });
+                        if (job) jobsAdded.push(job);
+                    }
+                    return res.json({ 
+                        success: true, 
+                        message: `Temporada ${sNum} de "${cleanTitle}" (${jobsAdded.length} episódios) enviada para a fila de downloads com Prioridade ${mediaPriority}!`, 
+                        jobs: jobsAdded 
+                    });
+                }
+
+                // Modo Enfileirar Individual (Filme ou Episódio)
+                const job = this.queueManager.addJob(cleanTitle, mediaType, mediaPriority, {
+                    audioPreference: audioPreference || 'dublado',
+                    season: mediaType === 'serie' ? sNum : null,
+                    episode: mediaType === 'serie' ? epNum : null,
+                    tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                    nomeOriginal,
+                    customMagnet: magnetUrl || null,
+                    isManualAdd: true,
+                    metaDetails: {
+                        sinopse,
+                        posterUrl,
+                        backdropUrl,
+                        ano,
+                        generos,
+                        nota
+                    },
+                    username: 'Admin (Manual Add)'
+                });
+
+                res.json({
+                    success: true,
+                    message: `"${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} enfileirado com Prioridade ${mediaPriority}!`,
+                    job
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 9. Upload Direto de Arquivos de Vídeo (MP4, MKV, AVI, etc.) com TMDB
+        const rawStorageDir = path.resolve('./downloads/raw');
+        fs.ensureDirSync(rawStorageDir);
+
+        const videoUpload = multer({
+            storage: multer.diskStorage({
+                destination: (req, file, cb) => {
+                    fs.ensureDirSync(rawStorageDir);
+                    cb(null, rawStorageDir);
+                },
+                filename: (req, file, cb) => {
+                    const ext = path.extname(file.originalname) || '.mp4';
+                    const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+                    cb(null, `${Date.now()}_${safeName}${ext}`);
+                }
+            }),
+            limits: {
+                fileSize: 50 * 1024 * 1024 * 1024 // Limite até 50GB
+            }
+        });
+
+        this.app.post('/api/admin/catalogo/upload-media', auth, videoUpload.single('videoFile'), async (req, res) => {
+            try {
+                if (!req.file) {
+                    return res.status(400).json({ error: 'Nenhum arquivo de vídeo foi enviado.' });
+                }
+
+                const {
+                    title,
+                    type,
+                    tmdbId,
+                    imdbId,
+                    nomeOriginal,
+                    ano,
+                    sinopse,
+                    posterUrl,
+                    backdropUrl,
+                    generos,
+                    nota,
+                    audioPreference,
+                    priority,
+                    season,
+                    episode
+                } = req.body;
+
+                if (!title || !title.trim()) {
+                    await fs.remove(req.file.path).catch(() => {});
+                    return res.status(400).json({ error: 'Título é obrigatório.' });
+                }
+
+                const cleanTitle = title.trim();
+                const mediaType = type === 'serie' ? 'serie' : 'filme';
+                const mediaPriority = parseInt(priority || 1, 10);
+                const sNum = parseInt(season || 1, 10);
+                const epNum = parseInt(episode || 1, 10);
+
+                let parsedGeneros = [];
+                try {
+                    parsedGeneros = typeof generos === 'string' ? JSON.parse(generos) : (Array.isArray(generos) ? generos : []);
+                } catch (e) {
+                    parsedGeneros = typeof generos === 'string' ? generos.split(',').map(s => s.trim()) : [];
+                }
+
+                const job = this.queueManager.addJob(cleanTitle, mediaType, mediaPriority, {
+                    audioPreference: audioPreference || 'dublado',
+                    season: mediaType === 'serie' ? sNum : null,
+                    episode: mediaType === 'serie' ? epNum : null,
+                    tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                    imdbId: imdbId || null,
+                    nomeOriginal: nomeOriginal || cleanTitle,
+                    rawFilePath: req.file.path,
+                    isManualAdd: true,
+                    metaDetails: {
+                        sinopse: sinopse || '',
+                        posterUrl: posterUrl || '',
+                        backdropUrl: backdropUrl || '',
+                        ano: ano || new Date().getFullYear().toString(),
+                        generos: parsedGeneros,
+                        nota: parseFloat(nota || 8.0)
+                    },
+                    username: 'Admin (Upload de Arquivo)'
+                });
+
+                res.json({
+                    success: true,
+                    message: `Arquivo "${req.file.originalname}" enviado com sucesso! "${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} está na esteira para processamento e upload.`,
+                    job
+                });
+            } catch (e) {
+                if (req.file) await fs.remove(req.file.path).catch(() => {});
                 res.status(500).json({ error: e.message });
             }
         });

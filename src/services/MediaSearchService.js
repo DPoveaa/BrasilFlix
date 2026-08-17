@@ -80,15 +80,18 @@ class MediaSearchService {
         if (tipo === 'serie') {
             if (pref === 'legendado') {
                 variations.push(
-                    `${cleanQuery} S${sPadded}E${ePadded} legendado`,
+                    `${cleanQuery} S${sPadded} complete`,
                     `${cleanQuery} S${sPadded} legendado`,
-                    `${cleanQuery} temporada ${season} legendado`,
-                    `${cleanQuery} season ${season} legendado`,
+                    `${cleanQuery} temporada ${season} completa legendado`,
+                    `${cleanQuery} season ${season} complete`,
+                    `${cleanQuery} S${sPadded}E${ePadded} legendado`,
                     `${cleanQuery} S${sPadded}E${ePadded}`,
                     `${cleanQuery} 1080p legendado`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
+                        `${originalName} S${sPadded} complete`,
+                        `${originalName} S${sPadded} season ${season}`,
                         `${originalName} S${sPadded}E${ePadded}`,
                         `${originalName} S${sPadded} legendado`,
                         `${originalName} season ${season}`
@@ -96,26 +99,42 @@ class MediaSearchService {
                 }
             } else {
                 variations.push(
-                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
+                    `${cleanQuery} S${sPadded} complete`,
+                    `${cleanQuery} S${sPadded} dual`,
                     `${cleanQuery} S${sPadded} dublado`,
-                    `${cleanQuery} temporada ${season} dublado`,
                     `${cleanQuery} temporada ${season} completa`,
+                    `${cleanQuery} temporada ${season} dual`,
+                    `${cleanQuery} temporada ${season} dublado`,
+                    `${cleanQuery} season ${season} dual`,
                     `${cleanQuery} season ${season} dublado`,
+                    `${cleanQuery} S${sPadded} 1080p dual`,
+                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
+                    `${cleanQuery} S${sPadded}E${ePadded} dual`,
+                    `${cleanQuery} 1080p dual`,
                     `${cleanQuery} 1080p dublado`,
-                    `${cleanQuery} dublado`
+                    `${cleanQuery} dual audio`,
+                    `${cleanQuery} dublado`,
+                    `${cleanQuery} nacional`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
-                        `${originalName} S${sPadded}E${ePadded} dublado`,
-                        `${originalName} season ${season} dublado`,
+                        `${originalName} S${sPadded} complete`,
+                        `${originalName} S${sPadded} dual`,
                         `${originalName} S${sPadded} dublado`,
+                        `${originalName} season ${season} complete`,
+                        `${originalName} season ${season} dual`,
+                        `${originalName} S${sPadded}E${ePadded} dual`,
+                        `${originalName} S${sPadded}E${ePadded} dublado`,
+                        `${originalName} dual`,
                         `${originalName} dublado`
                     );
                 }
             }
         } else {
             variations.push(
+                `${cleanQuery} 1080p dual`,
                 `${cleanQuery} 1080p dublado`,
+                `${cleanQuery} dual audio`,
                 `${cleanQuery} dublado`,
                 `${cleanQuery} nacional`,
                 `${cleanQuery} 1080p legendado`,
@@ -123,12 +142,15 @@ class MediaSearchService {
             );
             if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                 variations.push(
+                    `${originalName} 1080p dual`,
                     `${originalName} 1080p dublado`,
+                    `${originalName} dual`,
                     `${originalName} dublado`,
                     `${originalName} 1080p legendado`
                 );
                 if (ano) {
                     variations.push(
+                        `${originalName} ${ano} dual`,
                         `${originalName} ${ano} dublado`,
                         `${originalName} ${ano} legendado`
                     );

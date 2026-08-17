@@ -89,9 +89,15 @@ class DownloaderManager extends EventEmitter {
             'http://tracker.opentrackr.org:1337/announce',
             'udp://p4p.arenabg.com:1337/announce',
             'udp://tracker.birkenwald.de:6969/announce',
-            'udp://tracker.coppersurfer.tk:6969/announce',
             'udp://tracker.dler.org:6969/announce',
-            'udp://opentor.net:6969/announce'
+            'udp://opentor.net:6969/announce',
+            'udp://open.demonii.com:1337/announce',
+            'udp://tracker.openbittorrent.com:80/announce',
+            'udp://tracker.cyberia.is:6969/announce',
+            'udp://9.rarbg.to:2920/announce',
+            'wss://tracker.openwebtorrent.com',
+            'wss://tracker.btorrent.xyz',
+            'wss://tracker.files.fm:7073/announce'
         ];
 
         const isSerie = options.type === 'serie' || (options.season && options.episode && options.type !== 'filme');
@@ -104,7 +110,7 @@ class DownloaderManager extends EventEmitter {
 
             // Instância isolada por download com alto limite de conexões simultâneas
             const client = new WT({
-                maxConns: 120,
+                maxConns: 150,
                 dht: true,
                 tracker: true,
                 downloadLimit: -1,
@@ -418,22 +424,22 @@ class DownloaderManager extends EventEmitter {
                 const stalledMs = now - lastBytesChangeTime;
                 const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
 
-                // 1. Aborta se estiver completamente estagnado por 60s no início (sem progresso significativo)
-                if (stalledMs >= 60000 && torrent.progress < 0.02) {
+                // 1. Aborta se estiver completamente estagnado por 150s no início (sem progresso significativo e sem peers)
+                if (stalledMs >= 150000 && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s), estagnado por ${Math.round(stalledMs / 1000)}s). Abortando para tentar outra fonte...`);
                     finished = true;
                     safeCleanup();
-                    return reject(new Error('Download estagnado sem dados/seeders ativos.'));
+                    return reject(new Error('Download estagnado sem dados/seeders ativos após 150s.'));
                 }
 
-                // 2. Aborta se for um torrent excessivamente lento (< 0.45 MB/s após 90 segundos com previsão > 45 min)
+                // 2. Aborta se for um torrent excessivamente lento (< 0.25 MB/s após 180 segundos com previsão > 75 min)
                 const speedMB = torrent.downloadSpeed / (1024 * 1024);
                 const remainingSec = speedMB > 0 ? (torrent.length - currentBytes) / (speedMB * 1024 * 1024) : 99999;
                 
-                if (elapsedSec >= 90 && speedMB < 0.45 && remainingSec > 2700 && torrent.progress < 0.08) {
+                if (elapsedSec >= 180 && speedMB < 0.25 && remainingSec > 4500 && torrent.progress < 0.05) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 45 min). Abortando para buscar fonte mais rápida...`);
+                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 75 min). Abortando para buscar fonte mais rápida...`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error('Torrent com poucos seeders/velocidade insuficiente.'));

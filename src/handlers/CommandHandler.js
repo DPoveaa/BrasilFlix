@@ -50,6 +50,35 @@ class CommandHandler {
 
     async handleStart(msg, callbackQuery = null) {
         const userId = msg.from.id;
+        const chatId = msg.chat.id;
+        const text = msg.text || '';
+        const parts = text.split(' ');
+        const param = parts.length > 1 ? parts[1].trim() : '';
+
+        // Deep links vindos do site oficial
+        if (param) {
+            if (param.startsWith('serie_')) {
+                // Formato: serie_{serieId}_{seasonNum}_{epNum}
+                const [_, serieId, sNum, epNum] = param.split('_');
+                if (serieId && sNum && epNum) {
+                    return this.handleAssistirEpisodio(chatId, userId, serieId, sNum, epNum, callbackQuery);
+                }
+            } else if (param.startsWith('ver_')) {
+                // Formato: ver_{id}
+                const id = param.replace('ver_', '');
+                const filme = this.catalogoManager.buscarFilmePorId(id);
+                if (filme) {
+                    return this.handleInfoFilme(chatId, userId, id, callbackQuery);
+                }
+                const serie = this.catalogoManager.buscarSeriePorId(id);
+                if (serie) {
+                    return this.handleInfoSerie(chatId, userId, id, callbackQuery);
+                }
+            } else if (param === 'stremio') {
+                return this.handleStremioCommand(msg);
+            }
+        }
+
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
         if (isAssinante) {
             await this.handleAssinanteStart(msg, callbackQuery);
@@ -611,8 +640,8 @@ class CommandHandler {
         const filmesPagina = filmes.slice(inicio, fim);
 
         const mensagem = `${tituloCategoria}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado\n` +
-                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n` +
+                        `📹 [CAM/D] Cinema Dublado  •  [CAM/L] Cinema Legendado (Provisório)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
                         `Selecione um filme para ver a sinopse e assistir:`;
 
@@ -621,7 +650,7 @@ class CommandHandler {
         };
 
         filmesPagina.forEach(filme => {
-            const badge = filme.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(filme) || '[D]');
+            const badge = this.catalogoManager.getAudioBadge(filme) || (filme.isCam ? '[CAM/D]' : '[D]');
             const ano = filme.ano ? ` (${filme.ano})` : '';
             const prefixo = `${badge} `;
             const maxLen = 38;
@@ -960,7 +989,9 @@ class CommandHandler {
                 };
                 await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: keyboard });
             } else {
-                await this.bot.sendMessage(chatId, `🍿 *Bom filme, assinante VIP! Aproveite!*`, { parse_mode: 'Markdown' });
+                const isSelfAdmin = String(userId) === String(config.ADMIN_ID);
+                const extraTip = isSelfAdmin ? '\n\n💡 _Dica: Como você é o titular da conta de envio Telegram Premium, o vídeo foi entregue nas suas 📁 [Mensagens Salvas]!_' : '';
+                await this.bot.sendMessage(chatId, `🍿 *Bom filme, assinante VIP! Aproveite!*${extraTip}`, { parse_mode: 'Markdown' });
             }
         } catch (error) {
             console.error('❌ Erro ao enviar filme:', error);
@@ -2245,15 +2276,15 @@ class CommandHandler {
         const itensPagina = itens.slice(inicio, fim);
 
         const mensagem = `🎭 *Categoria:* ${generoDecodificado}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado\n` +
-                        `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n` +
+                        `📹 [CAM/D] Cinema Dublado  •  [CAM/L] Cinema Legendado\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${itens.length} título(s)\n\n` +
                         `Selecione para ver a sinopse e assistir:`;
 
         const keyboard = { inline_keyboard: [] };
 
         itensPagina.forEach(item => {
-            const badge = item.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(item) || '[D]');
+            const badge = this.catalogoManager.getAudioBadge(item) || (item.isCam ? '[CAM/D]' : '[D]');
             const ano = item.ano ? ` (${item.ano})` : '';
             const prefixo = `${badge} `;
             const maxLen = 38;
@@ -3874,7 +3905,7 @@ class CommandHandler {
         };
 
         filmesPagina.forEach(filme => {
-            const badge = filme.isCam ? '[CAM]' : (this.catalogoManager.getAudioBadge(filme) || '[D]');
+            const badge = this.catalogoManager.getAudioBadge(filme) || (filme.isCam ? '[CAM/D]' : '[D]');
             const ano = filme.ano ? ` (${filme.ano})` : '';
             const prefixo = `${badge} `;
             const maxLen = 38;

@@ -926,6 +926,134 @@
             box-shadow: 0 4px 12px rgba(229, 9, 20, 0.4);
         }
 
+        /* SEASONS & EPISODES EXPLORER */
+        .seasons-selector-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            scrollbar-width: thin;
+        }
+
+        .season-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 7px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .season-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .season-btn.active {
+            background: var(--accent-gradient);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+        }
+
+        .episodes-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 260px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .episodes-grid::-webkit-scrollbar { width: 4px; }
+        .episodes-grid::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+
+        .episode-row {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+
+        .episode-row:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .episode-info-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .ep-number-tag {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .ep-title-box {
+            min-width: 0;
+        }
+
+        .ep-title-box h5 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ep-meta-tags {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 2px;
+        }
+
+        .btn-play-ep {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fff;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .btn-play-ep:hover {
+            background: var(--accent-gradient);
+            border-color: transparent;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+        }
+
         /* VIP STREMIO BANNER */
         .stremio-banner {
             background: linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.95) 100%);
@@ -1253,6 +1381,123 @@
             padding: 12px 16px;
             margin: 6px 0;
             border-radius: 0 10px 10px 0;
+        }
+
+        /* TMDB SEARCH & MANUAL ADD STYLES */
+        .tmdb-results-container {
+            max-height: 250px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 14px;
+            padding-right: 4px;
+        }
+
+        .tmdb-results-container::-webkit-scrollbar { width: 5px; }
+        .tmdb-results-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+        .tmdb-result-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tmdb-result-card:hover {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateX(3px);
+        }
+
+        .tmdb-result-thumb {
+            width: 44px;
+            height: 64px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #1e2330;
+            flex-shrink: 0;
+        }
+
+        .tmdb-result-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .tmdb-result-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tmdb-result-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 2px;
+        }
+
+        .tmdb-selected-box {
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 16px;
+            display: flex;
+            gap: 14px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .tmdb-selected-poster {
+            width: 75px;
+            height: 110px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #1f2937;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .action-mode-nav {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 4px;
+            margin-bottom: 14px;
+        }
+
+        .action-mode-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 8px 10px;
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .action-mode-btn:hover { color: #fff; }
+        .action-mode-btn.active {
+            background: var(--blue-gradient);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
         }
 
         /* TOAST NOTIFICATIONS */
@@ -2107,7 +2352,10 @@
                             <p style="font-size: 12px; color: var(--text-muted);">Clique em <strong>▶ Episódios</strong> para gerenciar ou excluir episódios individuais. Clique em <strong>🔄 Rebaixar</strong> para apagar do Armazém e reenfileirar imediatamente para download.</p>
                         </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button class="btn-action btn-action-primary" onclick="handleResyncCatalog()">
+                            <button class="btn-action btn-action-primary" onclick="openAdminModal('admin-modal-add-job')">
+                                ➕ Adicionar Filme / Série (TMDB)
+                            </button>
+                            <button class="btn-action" onclick="handleResyncCatalog()">
                                 🔄 Re-sincronizar Banco
                             </button>
                         </div>
@@ -2149,54 +2397,199 @@
          MODAIS ADMINISTRATIVOS
          ═══════════════════════════════════════════════════════════════════════ -->
 
-    <!-- MODAL 1: ADICIONAR TRABALHO MANUAL -->
+    <!-- MODAL 1: ADICIONAR FILME / SÉRIE COM TMDB INTELIGENTE -->
     <div class="modal-backdrop" id="admin-modal-add-job" onclick="closeAdminModalOnClick(event, 'admin-modal-add-job')">
-        <div class="modal-card" style="max-width: 480px;" onclick="event.stopPropagation()">
+        <div class="modal-card" style="max-width: 600px; max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeAdminModal('admin-modal-add-job')">✕</button>
             <div class="modal-body" style="padding: 24px;">
-                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;">➕ Adicionar Trabalho na Fila</h2>
-                <form onsubmit="handleAdminAddJob(event)">
-                    <label class="admin-label">Título da Mídia</label>
-                    <input type="text" id="add-job-title" class="admin-input" placeholder="Ex: Ted Lasso ou Interestelar" required>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                    <div style="font-size: 24px; width: 42px; height: 42px; background: rgba(59, 130, 246, 0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(59, 130, 246, 0.3);">🎬</div>
+                    <div>
+                        <h2 style="font-size: 18px; font-weight: 800; color: #fff; line-height: 1.2;">Adicionar Filme ou Série</h2>
+                        <p style="font-size: 12px; color: var(--text-muted);">Busque no TMDB para auto-preencher sinopse, poster, notas e gêneros com 1 clique.</p>
+                    </div>
+                </div>
+
+                <!-- 1. CAMPO DE BUSCA AO VIVO NO TMDB -->
+                <div style="margin-bottom: 14px;">
+                    <label class="admin-label">🔍 Buscar Título no TMDB (Filmes & Séries)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="manual-tmdb-query" class="admin-input" style="margin-bottom: 0; flex: 1;" placeholder="Ex: Interestelar, The Rookie, Moana 2, Ted Lasso..." oninput="handleTmdbInput(this.value)">
+                        <button type="button" class="btn-action btn-action-primary" onclick="triggerTmdbSearch()">Buscar</button>
+                    </div>
+                </div>
+
+                <!-- RESULTADOS DA BUSCA TMDB -->
+                <div id="tmdb-search-results" class="tmdb-results-container" style="display: none;"></div>
+
+                <!-- 2. CARD DO ITEM SELECIONADO NO TMDB -->
+                <div id="tmdb-selected-card" class="tmdb-selected-box" style="display: none;">
+                    <img id="sel-poster" class="tmdb-selected-poster" src="" alt="Capa">
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                            <div>
+                                <h3 id="sel-title" style="font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2;">Título</h3>
+                                <div id="sel-meta" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">2024 • ⭐ 8.5 • Filme</div>
+                            </div>
+                            <button type="button" class="btn-action" style="font-size: 11px; padding: 4px 8px;" onclick="resetTmdbSelection()">🔄 Trocar</button>
+                        </div>
+                        <p id="sel-overview" style="font-size: 11px; color: #cbd5e1; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">Sinopse...</p>
+                        <div id="sel-genres" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;"></div>
+                    </div>
+                </div>
+
+                <!-- 3. SELETOR DE MODO DE AÇÃO -->
+                <label class="admin-label">Escolha o Modo de Adição</label>
+                <div class="action-mode-nav">
+                    <button type="button" id="btn-mode-queue" class="action-mode-btn active" onclick="switchManualActionMode('queue')">
+                        🚀 1. Download Automático
+                    </button>
+                    <button type="button" id="btn-mode-magnet" class="action-mode-btn" onclick="switchManualActionMode('magnet')">
+                        🧲 2. Magnet Link
+                    </button>
+                    <button type="button" id="btn-mode-upload" class="action-mode-btn" onclick="switchManualActionMode('upload')">
+                        📁 3. Upload de Arquivo (PC)
+                    </button>
+                    <button type="button" id="btn-mode-direct" class="action-mode-btn" onclick="switchManualActionMode('direct')">
+                        📥 4. Cadastro Direto
+                    </button>
+                </div>
+
+                <form onsubmit="handleManualMediaFormSubmit(event)">
+                    <input type="hidden" id="manual-tmdb-id" value="">
+                    <input type="hidden" id="manual-imdb-id" value="">
+                    <input type="hidden" id="manual-poster-url" value="">
+                    <input type="hidden" id="manual-backdrop-url" value="">
+                    <input type="hidden" id="manual-genres-json" value="[]">
+                    <input type="hidden" id="manual-original-title" value="">
+                    <input type="hidden" id="manual-rating" value="8.0">
+
+                    <!-- CAMPOS PRINCIPAIS EDITÁVEIS -->
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Título da Mídia</label>
+                            <input type="text" id="manual-title" class="admin-input" placeholder="Título em Português" required>
+                        </div>
+                        <div>
+                            <label class="admin-label">Ano</label>
+                            <input type="text" id="manual-year" class="admin-input" placeholder="2026" value="2026">
+                        </div>
+                    </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                         <div>
                             <label class="admin-label">Tipo</label>
-                            <select id="add-job-type" class="admin-input" onchange="toggleJobSeasonFields()">
+                            <select id="manual-type" class="admin-input" onchange="toggleManualSeriesFields()">
                                 <option value="filme">🎬 Filme</option>
                                 <option value="serie">📺 Série / Dorama</option>
                             </select>
                         </div>
                         <div>
                             <label class="admin-label">Preferência de Áudio</label>
-                            <select id="add-job-audio" class="admin-input">
+                            <select id="manual-audio-pref" class="admin-input">
                                 <option value="dublado">🇧🇷 Dublado (PT-BR)</option>
                                 <option value="legendado">💬 Legendado (PT-BR)</option>
                             </select>
                         </div>
                     </div>
 
-                    <div id="job-season-fields" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px;">
-                        <div>
-                            <label class="admin-label">Temporada</label>
-                            <input type="number" id="add-job-season" class="admin-input" value="1" min="1">
+                    <!-- CAMPOS EXCLUSIVOS DE SÉRIE -->
+                    <div id="manual-series-fields" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label class="admin-label">Temporada</label>
+                                <input type="number" id="manual-season" class="admin-input" value="1" min="1">
+                            </div>
+                            <div id="manual-ep-box">
+                                <label class="admin-label">Episódio</label>
+                                <input type="number" id="manual-episode" class="admin-input" value="1" min="1">
+                            </div>
                         </div>
-                        <div>
-                            <label class="admin-label">Episódio</label>
-                            <input type="number" id="add-job-episode" class="admin-input" value="1" min="1">
+                        <div id="manual-all-eps-box" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                            <input type="checkbox" id="manual-all-episodes" onchange="toggleAllEpisodesCheck(this.checked)" style="width: 16px; height: 16px; accent-color: #3b82f6; cursor: pointer;">
+                            <label for="manual-all-episodes" style="font-size: 12px; color: #fff; font-weight: 700; cursor: pointer;">
+                                📥 Enfileirar Todos os Episódios desta Temporada de uma só vez
+                            </label>
                         </div>
                     </div>
 
-                    <label class="admin-label">Prioridade</label>
-                    <select id="add-job-priority" class="admin-input">
-                        <option value="1">🔥 VIP (Prioridade 1 - Máxima)</option>
-                        <option value="2">🍿 Pedido de Usuário (Prioridade 2)</option>
-                        <option value="3">📺 Série / Próximo Episódio (Prioridade 3)</option>
-                        <option value="4">🤖 Auto-Feeder (Prioridade 4)</option>
-                    </select>
+                    <!-- CAMPO DO MODO MAGNET LINK -->
+                    <div id="mode-magnet-fields" style="display: none;">
+                        <label class="admin-label">🧲 Magnet Link / Link Direto do Vídeo</label>
+                        <input type="text" id="manual-magnet-url" class="admin-input" placeholder="magnet:?xt=urn:btih:... ou link HTTP">
+                        <p style="font-size: 11px; color: var(--text-muted); margin-top: -8px; margin-bottom: 12px;">O robô baixará diretamente desta fonte, converterá para 1080p e salvará no catálogo com os metadados do TMDB.</p>
+                    </div>
 
-                    <button type="submit" class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 10px;">
-                        🚀 Enfileirar Agora
+                    <!-- CAMPO DO MODO UPLOAD DE ARQUIVO DO COMPUTADOR -->
+                    <div id="mode-upload-fields" style="display: none; background: rgba(255,255,255,0.02); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: 12px; padding: 16px; margin-bottom: 14px; text-align: center;">
+                        <div style="font-size: 28px; margin-bottom: 6px;">📁</div>
+                        <label class="admin-label" style="font-size: 13px; color: #fff; cursor: pointer;">
+                            Selecione o arquivo de vídeo do seu computador (.mp4, .mkv, .avi, etc.)
+                        </label>
+                        <input type="file" id="manual-video-file" accept="video/*,.mkv,.mp4,.avi,.mov,.webm,.ts" class="admin-input" style="background: transparent; border: none; margin-bottom: 4px;" onchange="handleManualFileSelected(this)">
+                        <div id="upload-file-info" style="font-size: 11px; color: #38bdf8; font-weight: 700; margin-top: 4px;"></div>
+                        
+                        <div id="upload-progress-box" style="display: none; margin-top: 12px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+                                <span id="upload-progress-text">Enviando arquivo para o servidor...</span>
+                                <span id="upload-progress-pct" style="color: #34d399; font-weight: 800;">0%</span>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.08); border-radius: 6px; height: 8px; overflow: hidden;">
+                                <div id="upload-progress-bar" style="width: 0%; height: 100%; background: var(--blue-gradient); transition: width 0.1s ease;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CAMPOS DO MODO CADASTRO DIRETO -->
+                    <div id="mode-direct-fields" style="display: none;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label class="admin-label">Message ID Telegram</label>
+                                <input type="number" id="manual-message-id" class="admin-input" placeholder="Ex: 4892">
+                            </div>
+                            <div>
+                                <label class="admin-label">File ID (Opcional)</label>
+                                <input type="text" id="manual-file-id" class="admin-input" placeholder="BAACAgEAAxkBAAI...">
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label class="admin-label">Qualidade</label>
+                                <select id="manual-qualidade" class="admin-input">
+                                    <option value="1080p Full HD">1080p Full HD</option>
+                                    <option value="720p HD">720p HD</option>
+                                    <option value="4K UHD">4K UHD</option>
+                                    <option value="CAM (Cinema)">CAM (Cinema)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="admin-label">Áudio</label>
+                                <select id="manual-audio-direct" class="admin-input">
+                                    <option value="Dublado (PT-BR)">Dublado (PT-BR)</option>
+                                    <option value="Dual Áudio (Dublado + Original)">Dual Áudio (Dublado + Original)</option>
+                                    <option value="Legendado (PT-BR)">Legendado (PT-BR)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PRIORIDADE DA FILA (MODOS 1 E 2) -->
+                    <div id="manual-priority-box">
+                        <label class="admin-label">Prioridade na Fila</label>
+                        <select id="manual-priority" class="admin-input">
+                            <option value="1">🔥 Prioridade 1 (VIP - Fura Fila Máxima)</option>
+                            <option value="2">🍿 Prioridade 2 (Normal)</option>
+                            <option value="3">📺 Prioridade 3 (Episódio de Série)</option>
+                            <option value="4">🤖 Prioridade 4 (Auto-Feeder)</option>
+                        </select>
+                    </div>
+
+                    <!-- SINOPSE -->
+                    <label class="admin-label">Sinopse / Descrição</label>
+                    <textarea id="manual-synopsis" class="admin-input" style="height: 65px; resize: vertical;" placeholder="Descrição do filme ou episódio..."></textarea>
+
+                    <button type="submit" id="manual-submit-btn" class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 6px; padding: 12px; font-size: 14px;">
+                        🚀 Enfileirar para Download Automático
                     </button>
                 </form>
             </div>
@@ -2278,7 +2671,7 @@
 
     <!-- MODAL PÚBLICO DE DETALHES DE MÍDIA -->
     <div class="modal-backdrop" id="media-modal" onclick="closeModal(event)">
-        <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-card" style="max-width: 680px;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeModalDirect()">✕</button>
             <div class="modal-header-img" id="modal-backdrop-img"></div>
             <div class="modal-body">
@@ -2290,7 +2683,24 @@
                 <p class="modal-synopsis" id="modal-synopsis">
                     Sinopse...
                 </p>
-                <div class="modal-actions">
+
+                <!-- SEASONS & EPISODES EXPLORER (PARA SÉRIES E DORAMAS) -->
+                <div id="modal-series-explorer" style="display: none; margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h4 style="font-size: 14px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 6px;">
+                            📺 Temporadas & Episódios
+                        </h4>
+                        <span id="modal-total-eps-badge" style="font-size: 11px; background: rgba(255,255,255,0.08); color: var(--text-muted); padding: 2px 8px; border-radius: 999px; font-weight: 700;">0 eps</span>
+                    </div>
+
+                    <!-- Abas de Temporadas -->
+                    <div class="seasons-selector-bar" id="modal-seasons-tabs"></div>
+
+                    <!-- Lista de Episódios da Temporada Selecionada -->
+                    <div class="episodes-grid" id="modal-episodes-list"></div>
+                </div>
+
+                <div class="modal-actions" id="modal-movie-actions">
                     <a id="modal-bot-link" href="https://t.me/BrasilFlix_bot" target="_blank" class="btn-modal btn-modal-primary">
                         🍿 Assistir no Telegram
                     </a>
@@ -2791,6 +3201,8 @@
             }).join('');
         }
 
+        let currentModalSerie = null;
+
         function openModalById(id, type) {
             const list = type === 'filme' ? fullCatalog.filmes : fullCatalog.series;
             const item = (list || []).find(i => String(i.id) === String(id));
@@ -2804,11 +3216,14 @@
             if (modalBackdrop) modalBackdrop.style.backgroundImage = backdrop ? `url("${backdrop}")` : 'none';
 
             const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
+            const isSerie = item.itemType === 'serie' || item.tipo === 'serie';
+
             document.getElementById('modal-meta').innerHTML = 
                 '<span>📅 ' + (item.ano || '2026') + '</span> • ' +
                 '<span>⭐ ' + rating + '</span> • ' +
-                '<span>🔊 ' + (item.audioBadge || 'Dublado') + '</span> • ' +
-                '<span>🎞️ ' + (item.qualidade || '1080p Full HD') + '</span>';
+                '<span>🔊 ' + (item.audioBadge || (item.isDublado ? 'Dublado' : 'Legendado')) + '</span> • ' +
+                '<span>🎞️ ' + (item.qualidade || '1080p Full HD') + '</span>' +
+                (isSerie ? ' • <span>📺 ' + (item.totalEpisodios || 0) + ' eps</span>' : '');
 
             const genresBadges = (item.generos || []).map(g => `<span class="modal-genre-tag" onclick="filterByGenreDirect('${g}')">🏷️ ${g}</span>`).join('');
             const genresBox = document.getElementById('modal-genres-box');
@@ -2816,8 +3231,91 @@
                 genresBox.innerHTML = genresBadges ? `<span style="font-size: 11px; color: var(--text-muted); font-weight: 700; align-self: center; margin-right: 4px;">Categorias:</span> ${genresBadges}` : '';
             }
 
-            document.getElementById('modal-bot-link').href = 'https://t.me/BrasilFlix_bot?start=ver_' + item.id;
+            const seriesExplorer = document.getElementById('modal-series-explorer');
+            const movieActions = document.getElementById('modal-movie-actions');
+
+            if (isSerie) {
+                currentModalSerie = item;
+                if (seriesExplorer) seriesExplorer.style.display = 'block';
+                if (movieActions) movieActions.style.display = 'none';
+
+                renderSeriesSeasonsInModal(item);
+            } else {
+                currentModalSerie = null;
+                if (seriesExplorer) seriesExplorer.style.display = 'none';
+                if (movieActions) movieActions.style.display = 'flex';
+                document.getElementById('modal-bot-link').href = 'https://t.me/BrasilFlix_bot?start=ver_' + item.id;
+            }
+
             document.getElementById('media-modal')?.classList.add('active');
+        }
+
+        function renderSeriesSeasonsInModal(serie, activeSeasonNum = null) {
+            const seasonsTabs = document.getElementById('modal-seasons-tabs');
+            const episodesList = document.getElementById('modal-episodes-list');
+            const totalBadge = document.getElementById('modal-total-eps-badge');
+
+            if (!serie) return;
+
+            if (totalBadge) {
+                totalBadge.innerText = `${serie.totalEpisodios || 0} episódio(s) no catálogo`;
+            }
+
+            const temporadas = serie.temporadas || [];
+            if (temporadas.length === 0) {
+                if (seasonsTabs) seasonsTabs.innerHTML = '';
+                if (episodesList) episodesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 16px;">Nenhum episódio cadastrado ainda.</div>';
+                return;
+            }
+
+            const selectedSeason = activeSeasonNum 
+                ? (temporadas.find(t => t.numero === activeSeasonNum) || temporadas[0])
+                : temporadas[0];
+
+            if (seasonsTabs) {
+                seasonsTabs.innerHTML = temporadas.map(t => {
+                    const isActive = t.numero === selectedSeason.numero;
+                    const epCount = (t.episodios || []).length;
+                    return `
+                        <button class="season-btn ${isActive ? 'active' : ''}" onclick="renderSeriesSeasonsInModal(currentModalSerie, ${t.numero})">
+                            Temporada ${t.numero} <span style="opacity: 0.7; font-size: 11px;">(${epCount} eps)</span>
+                        </button>
+                    `;
+                }).join('');
+            }
+
+            if (episodesList) {
+                const eps = selectedSeason.episodios || [];
+                if (eps.length === 0) {
+                    episodesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 16px;">Nenhum episódio nesta temporada.</div>';
+                } else {
+                    episodesList.innerHTML = eps.map(ep => {
+                        const epNumStr = ep.numero < 10 ? `E0${ep.numero}` : `E${ep.numero}`;
+                        const epNome = ep.nome || `Episódio ${ep.numero}`;
+                        const audioBadge = ep.isDublado ? '🇧🇷 Dublado' : '💬 Legendado';
+                        const qualBadge = ep.qualidade || '1080p Full HD';
+                        const tgLink = `https://t.me/BrasilFlix_bot?start=serie_${serie.id}_${selectedSeason.numero}_${ep.numero}`;
+
+                        return `
+                            <div class="episode-row">
+                                <div class="episode-info-left">
+                                    <span class="ep-number-tag">T${selectedSeason.numero}${epNumStr}</span>
+                                    <div class="ep-title-box">
+                                        <h5>${epNome}</h5>
+                                        <div class="ep-meta-tags">
+                                            <span>✨ ${qualBadge}</span>
+                                            <span>• 🔊 ${audioBadge}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <a href="${tgLink}" target="_blank" class="btn-play-ep">
+                                    ▶️ Assistir
+                                </a>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
         }
 
         function closeModal(e) {
@@ -3174,37 +3672,336 @@
             }
         }
 
-        async function handleAdminAddJob(e) {
-            e.preventDefault();
-            const title = document.getElementById('add-job-title').value;
-            const type = document.getElementById('add-job-type').value;
-            const audio = document.getElementById('add-job-audio').value;
-            const priority = document.getElementById('add-job-priority').value;
-            const season = document.getElementById('add-job-season').value;
-            const episode = document.getElementById('add-job-episode').value;
+        let currentManualActionMode = 'queue';
+        let tmdbSearchTimeout = null;
+
+        function switchManualActionMode(mode) {
+            currentManualActionMode = mode;
+            ['queue', 'magnet', 'upload', 'direct'].forEach(m => {
+                const btn = document.getElementById('btn-mode-' + m);
+                if (btn) btn.classList.toggle('active', m === mode);
+            });
+
+            const magnetFields = document.getElementById('mode-magnet-fields');
+            const uploadFields = document.getElementById('mode-upload-fields');
+            const directFields = document.getElementById('mode-direct-fields');
+            const priorityBox = document.getElementById('manual-priority-box');
+            const allEpsBox = document.getElementById('manual-all-eps-box');
+            const submitBtn = document.getElementById('manual-submit-btn');
+
+            if (magnetFields) magnetFields.style.display = mode === 'magnet' ? 'block' : 'none';
+            if (uploadFields) uploadFields.style.display = mode === 'upload' ? 'block' : 'none';
+            if (directFields) directFields.style.display = mode === 'direct' ? 'block' : 'none';
+            if (priorityBox) priorityBox.style.display = mode === 'direct' ? 'none' : 'block';
+            if (allEpsBox) allEpsBox.style.display = (mode === 'direct' || mode === 'upload') ? 'none' : 'flex';
+
+            if (submitBtn) {
+                if (mode === 'queue') {
+                    submitBtn.innerText = '🚀 Enfileirar para Download Automático';
+                    submitBtn.className = 'btn-modal btn-modal-primary';
+                } else if (mode === 'magnet') {
+                    submitBtn.innerText = '🧲 Baixar via Magnet Link Personalizado';
+                    submitBtn.className = 'btn-modal btn-modal-vip';
+                } else if (mode === 'upload') {
+                    submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
+                    submitBtn.className = 'btn-modal btn-modal-primary';
+                } else {
+                    submitBtn.innerText = '📥 Salvar Diretamente no Catálogo';
+                    submitBtn.className = 'btn-modal btn-modal-primary';
+                }
+            }
+        }
+
+        function handleManualFileSelected(input) {
+            const file = input.files?.[0];
+            const infoBox = document.getElementById('upload-file-info');
+            if (!file || !infoBox) return;
+
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            const sizeGB = (file.size / (1024 * 1024 * 1024)).toFixed(2);
+            const displaySize = file.size > 1024 * 1024 * 1024 ? `${sizeGB} GB` : `${sizeMB} MB`;
+
+            infoBox.innerText = `✓ Arquivo selecionado: ${file.name} (${displaySize})`;
+        }
+
+        function toggleManualSeriesFields() {
+            const type = document.getElementById('manual-type').value;
+            const fields = document.getElementById('manual-series-fields');
+            if (fields) {
+                fields.style.display = type === 'serie' ? 'block' : 'none';
+            }
+        }
+
+        function toggleAllEpisodesCheck(isChecked) {
+            const epBox = document.getElementById('manual-ep-box');
+            if (epBox) {
+                epBox.style.opacity = isChecked ? '0.4' : '1';
+                epBox.style.pointerEvents = isChecked ? 'none' : 'auto';
+            }
+        }
+
+        function handleTmdbInput(val) {
+            if (tmdbSearchTimeout) clearTimeout(tmdbSearchTimeout);
+            if (!val || val.trim().length < 2) {
+                document.getElementById('tmdb-search-results').style.display = 'none';
+                return;
+            }
+            tmdbSearchTimeout = setTimeout(() => triggerTmdbSearch(), 350);
+        }
+
+        async function triggerTmdbSearch() {
+            const q = document.getElementById('manual-tmdb-query')?.value?.trim();
+            if (!q) return;
+
+            const resultsContainer = document.getElementById('tmdb-search-results');
+            if (!resultsContainer) return;
+
+            resultsContainer.style.display = 'flex';
+            resultsContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 12px;">🔍 Buscando no TMDB...</div>';
 
             try {
-                const res = await fetch('/api/admin/queue/add', {
+                const res = await fetch(`/api/admin/tmdb/search?query=${encodeURIComponent(q)}`, { headers: getAuthHeaders() });
+                const data = await res.json();
+                const list = data.results || [];
+
+                if (list.length === 0) {
+                    resultsContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 12px;">Nenhum resultado encontrado no TMDB.</div>';
+                    return;
+                }
+
+                resultsContainer.innerHTML = list.slice(0, 10).map(item => {
+                    const poster = item.posterUrl || 'https://via.placeholder.com/92x138/111827/9ca3af?text=Sem+Capa';
+                    const ano = item.ano || (item.dataLancamento ? item.dataLancamento.split('-')[0] : '');
+                    const tipoBadge = item.tipo === 'serie' ? '📺 Série' : '🎬 Filme';
+
+                    return `
+                        <div class="tmdb-result-card" onclick='selectTmdbResult(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
+                            <img class="tmdb-result-thumb" src="${poster}" alt="${item.nome}">
+                            <div class="tmdb-result-info">
+                                <div class="tmdb-result-title">${item.nome}</div>
+                                <div class="tmdb-result-meta">
+                                    <span style="background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;">${tipoBadge}</span>
+                                    <span>${ano}</span>
+                                    <span>⭐ ${(item.nota || 8.0).toFixed(1)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                resultsContainer.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 12px;">Erro ao consultar TMDB.</div>';
+            }
+        }
+
+        async function selectTmdbResult(item) {
+            document.getElementById('tmdb-search-results').style.display = 'none';
+
+            // Auto preenchimento dos campos principais
+            document.getElementById('manual-title').value = item.nome || '';
+            document.getElementById('manual-year').value = item.ano || (item.dataLancamento ? item.dataLancamento.split('-')[0] : '2026');
+            document.getElementById('manual-type').value = item.tipo === 'serie' ? 'serie' : 'filme';
+            document.getElementById('manual-synopsis').value = item.sinopse || item.descricao || '';
+            document.getElementById('manual-tmdb-id').value = item.tmdbId || '';
+            document.getElementById('manual-imdb-id').value = item.imdbId || '';
+            document.getElementById('manual-poster-url').value = item.posterUrl || '';
+            document.getElementById('manual-backdrop-url').value = item.backdropUrl || '';
+            document.getElementById('manual-original-title').value = item.nomeOriginal || item.nome || '';
+            document.getElementById('manual-genres-json').value = JSON.stringify(item.generos || []);
+            document.getElementById('manual-rating').value = item.nota || 8.0;
+
+            toggleManualSeriesFields();
+
+            // Exibe card visual do item selecionado
+            const card = document.getElementById('tmdb-selected-card');
+            if (card) {
+                card.style.display = 'flex';
+                document.getElementById('sel-poster').src = item.posterUrl || 'https://via.placeholder.com/92x138/111827/9ca3af?text=Capa';
+                document.getElementById('sel-title').innerText = item.nome;
+                document.getElementById('sel-meta').innerText = `${item.ano || '2026'} • ⭐ ${(item.nota || 8.0).toFixed(1)} • ${item.tipo === 'serie' ? 'Série / Dorama' : 'Filme'}`;
+                document.getElementById('sel-overview').innerText = item.sinopse || item.descricao || 'Sem sinopse disponível.';
+
+                const gBox = document.getElementById('sel-genres');
+                if (gBox) {
+                    gBox.innerHTML = (item.generos || []).map(g => `<span class="genre-pill" style="font-size: 10px;">${g}</span>`).join('');
+                }
+            }
+
+            // Se for série, busca detalhes de temporadas e episódios
+            if (item.tipo === 'serie' && item.tmdbId) {
+                try {
+                    const res = await fetch(`/api/admin/tmdb/details/${item.tmdbId}?tipo=serie`, { headers: getAuthHeaders() });
+                    const det = await res.json();
+                    if (det?.details?.imdbId) {
+                        document.getElementById('manual-imdb-id').value = det.details.imdbId;
+                    }
+                } catch (e) {}
+            }
+
+            showToast(`Dados de "${item.nome}" preenchidos pelo bot!`, 'success');
+        }
+
+        function resetTmdbSelection() {
+            document.getElementById('tmdb-selected-card').style.display = 'none';
+            document.getElementById('manual-tmdb-query').value = '';
+            document.getElementById('manual-tmdb-query').focus();
+        }
+
+        async function handleManualMediaFormSubmit(e) {
+            e.preventDefault();
+
+            const title = document.getElementById('manual-title').value;
+            const ano = document.getElementById('manual-year').value;
+            const type = document.getElementById('manual-type').value;
+            const audioPref = document.getElementById('manual-audio-pref').value;
+            const season = document.getElementById('manual-season').value;
+            const episode = document.getElementById('manual-episode').value;
+            const allEpisodes = document.getElementById('manual-all-episodes')?.checked || false;
+            const priority = document.getElementById('manual-priority').value;
+            const synopsis = document.getElementById('manual-synopsis').value;
+
+            const tmdbId = document.getElementById('manual-tmdb-id').value;
+            const imdbId = document.getElementById('manual-imdb-id').value;
+            const posterUrl = document.getElementById('manual-poster-url').value;
+            const backdropUrl = document.getElementById('manual-backdrop-url').value;
+            const nomeOriginal = document.getElementById('manual-original-title').value;
+            const rating = document.getElementById('manual-rating').value;
+
+            let generos = [];
+            try { generos = JSON.parse(document.getElementById('manual-genres-json').value || '[]'); } catch (err) {}
+
+            const magnetUrl = document.getElementById('manual-magnet-url').value;
+            const messageId = document.getElementById('manual-message-id').value;
+            const fileId = document.getElementById('manual-file-id').value;
+            const qualidade = document.getElementById('manual-qualidade').value;
+            const audioDirect = document.getElementById('manual-audio-direct').value;
+
+            // Se o modo for UPLOAD DE ARQUIVO LOCAL
+            if (currentManualActionMode === 'upload') {
+                const fileInput = document.getElementById('manual-video-file');
+                const file = fileInput?.files?.[0];
+                if (!file) {
+                    showToast('Selecione um arquivo de vídeo do seu computador.', 'error');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('videoFile', file);
+                formData.append('title', title);
+                formData.append('ano', ano);
+                formData.append('type', type);
+                formData.append('audioPreference', audioPref);
+                formData.append('priority', priority);
+                formData.append('season', season || '1');
+                formData.append('episode', episode || '1');
+                formData.append('sinopse', synopsis || '');
+                if (tmdbId) formData.append('tmdbId', tmdbId);
+                if (imdbId) formData.append('imdbId', imdbId);
+                formData.append('posterUrl', posterUrl || '');
+                formData.append('backdropUrl', backdropUrl || '');
+                formData.append('nomeOriginal', nomeOriginal || title);
+                formData.append('generos', JSON.stringify(generos));
+                formData.append('nota', rating || '8.0');
+
+                const progressBox = document.getElementById('upload-progress-box');
+                const progressBar = document.getElementById('upload-progress-bar');
+                const progressPct = document.getElementById('upload-progress-pct');
+                const submitBtn = document.getElementById('manual-submit-btn');
+
+                if (progressBox) progressBox.style.display = 'block';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerText = '⏳ Enviando arquivo para o servidor...';
+                }
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/admin/catalogo/upload-media', true);
+                xhr.setRequestHeader('Authorization', `Bearer ${adminToken}`);
+
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const pct = Math.round((event.loaded / event.total) * 100);
+                        if (progressBar) progressBar.style.width = `${pct}%`;
+                        if (progressPct) progressPct.innerText = `${pct}%`;
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
+                    }
+                    if (progressBox) progressBox.style.display = 'none';
+
+                    try {
+                        const res = JSON.parse(xhr.responseText);
+                        if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                            showToast(res.message || 'Arquivo enviado com sucesso!', 'success');
+                            closeAdminModal('admin-modal-add-job');
+                            loadAdminQueue();
+                            loadAdminCatalog();
+                            loadAdminStats();
+                        } else {
+                            showToast(res.error || 'Erro ao enviar arquivo.', 'error');
+                        }
+                    } catch (e) {
+                        showToast('Resposta inválida do servidor.', 'error');
+                    }
+                };
+
+                xhr.onerror = () => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
+                    }
+                    if (progressBox) progressBox.style.display = 'none';
+                    showToast('Falha na conexão durante o envio do arquivo.', 'error');
+                };
+
+                xhr.send(formData);
+                return;
+            }
+
+            const payload = {
+                action: currentManualActionMode,
+                title,
+                ano,
+                type,
+                audioPreference: audioPref,
+                priority: parseInt(priority, 10),
+                season: parseInt(season || 1, 10),
+                episode: parseInt(episode || 1, 10),
+                allEpisodes,
+                sinopse: synopsis,
+                tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                imdbId,
+                posterUrl,
+                backdropUrl,
+                nomeOriginal,
+                generos,
+                nota: parseFloat(rating || 8.0),
+                magnetUrl,
+                messageId: messageId ? parseInt(messageId, 10) : null,
+                fileId,
+                qualidade,
+                audio: audioDirect
+            };
+
+            try {
+                const res = await fetch('/api/admin/catalogo/manual-add', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ title, type, priority, audioPreference: audio, season, episode })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
 
-                showToast(`"${title}" enfileirado com sucesso!`, 'success');
+                showToast(data.message || 'Mídia cadastrada/enfileirada com sucesso!', 'success');
                 closeAdminModal('admin-modal-add-job');
                 loadAdminQueue();
+                loadAdminCatalog();
+                loadAdminStats();
             } catch (err) {
-                showToast(err.message || 'Erro ao adicionar trabalho.', 'error');
-            }
-        }
-
-        function toggleJobSeasonFields() {
-            const type = document.getElementById('add-job-type').value;
-            const fields = document.getElementById('job-season-fields');
-            if (fields) {
-                fields.style.display = type === 'serie' ? 'grid' : 'none';
+                showToast(err.message || 'Erro ao processar mídia.', 'error');
             }
         }
 
