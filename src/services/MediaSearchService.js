@@ -665,14 +665,21 @@ class MediaSearchService {
             else if (seedsA >= 10) scoreA += 900;
             else if (seedsA >= 4) scoreA += 400;
             else if (seedsA >= 2) scoreA += 100;
-            else if (seedsA === 1) scoreA -= 1200; // Penalidade forte para torrent quase sem seeder
-            else if (seedsA === 0) scoreA -= 2500; // Penalidade severa para torrent morto
+            else if (seedsA === 1) {
+                // Se for Dublado/Dual PT-BR com preferência dublada, valoriza a tentativa
+                if (a.isDublado && pref === 'dublado') scoreA += 300;
+                else scoreA -= 400;
+            }
+            else if (seedsA === 0) scoreA -= 2500; // Torrent categoricamente morto
 
             if (seedsB >= 25) scoreB += 1400;
             else if (seedsB >= 10) scoreB += 900;
             else if (seedsB >= 4) scoreB += 400;
             else if (seedsB >= 2) scoreB += 100;
-            else if (seedsB === 1) scoreB -= 1200;
+            else if (seedsB === 1) {
+                if (b.isDublado && pref === 'dublado') scoreB += 300;
+                else scoreB -= 400;
+            }
             else if (seedsB === 0) scoreB -= 2500;
 
             scoreA += Math.min(400, seedsA * 10);
