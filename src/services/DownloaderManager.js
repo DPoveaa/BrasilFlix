@@ -450,6 +450,9 @@ class DownloaderManager extends EventEmitter {
                     lastBytesChangeTime = now;
                 }
 
+                const stalledMs = now - lastBytesChangeTime;
+                const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
+
                 const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
                 const noPeerTimeoutMs = isDub ? 240000 : 180000; // 4 minutos para Dublado, 3 minutos para geral
                 const stalledTimeoutMs = isDub ? 360000 : 240000; // 6 minutos sem dados para Dublado, 4 minutos para geral
