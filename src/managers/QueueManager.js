@@ -718,7 +718,7 @@ class QueueManager extends EventEmitter {
 
             let lastError = null;
             const maxAttempts = Math.min(8, sources.length);
-            const maxDownloadBatchTimeMs = 25 * 60 * 1000; // 25 min de limite global para a esteira de tentativas
+            const maxDownloadBatchTimeMs = 45 * 60 * 1000; // 45 min de limite global para a esteira de tentativas
             const downloadBatchStartTime = Date.now();
 
             for (let i = 0; i < maxAttempts; i++) {
@@ -735,13 +735,29 @@ class QueueManager extends EventEmitter {
                         downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type, audio: currentSource.audio });
+                        }, {
+                            title: job.title,
+                            season: job.season,
+                            episode: job.episode,
+                            type: job.type,
+                            audio: currentSource.audio,
+                            isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
+                            audioPreference: job.audioPreference || 'dublado'
+                        });
                     } else if (currentSource.url) {
                         const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
                         downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type, audio: currentSource.audio });
+                        }, {
+                            title: job.title,
+                            season: job.season,
+                            episode: job.episode,
+                            type: job.type,
+                            audio: currentSource.audio,
+                            isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
+                            audioPreference: job.audioPreference || 'dublado'
+                        });
                     }
 
                     if (downloadedMedia && downloadedMedia.filePath) {

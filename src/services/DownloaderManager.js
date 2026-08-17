@@ -128,13 +128,21 @@ class DownloaderManager extends EventEmitter {
         return new Promise((resolve, reject) => {
             console.log(`📥 Iniciando download via Torrent: "${displayTitle}" [${audioBadge}] [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
-            // Instância isolada por download com alto limite de conexões simultâneas
+            // Instância isolada por download com alto limite de conexões simultâneas e DHT robusto
             const client = new WT({
-                maxConns: 200,
-                dht: true,
+                maxConns: 300,
+                dht: {
+                    bootstrap: [
+                        'router.bittorrent.com:6881',
+                        'dht.transmissionbt.com:6881',
+                        'router.utorrent.com:6881',
+                        'dht.libtorrent.org:25401',
+                        'dht.aelitis.com:6881'
+                    ]
+                },
                 tracker: true,
                 downloadLimit: -1,
-                uploadLimit: 1024 * 50
+                uploadLimit: 1024 * 100
             });
 
             let torrent = null;
@@ -442,37 +450,38 @@ class DownloaderManager extends EventEmitter {
                     lastBytesChangeTime = now;
                 }
 
-                const stalledMs = now - lastBytesChangeTime;
-                const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
+                const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
+                const noPeerTimeoutMs = isDub ? 240000 : 180000; // 4 minutos para Dublado, 3 minutos para geral
+                const stalledTimeoutMs = isDub ? 360000 : 240000; // 6 minutos sem dados para Dublado, 4 minutos para geral
 
-                // 1. Aborta rapidamente se estiver sem nenhum peer conectado após 35s
-                if (torrent.numPeers === 0 && stalledMs >= 35000 && torrent.progress < 0.01) {
+                // 1. Aborta se estiver sem nenhum peer conectado após 3-4 minutos (dá tempo para DHT e PEX conectarem)
+                if (torrent.numPeers === 0 && stalledMs >= noPeerTimeoutMs && torrent.progress < 0.01) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent sem peers ativos (0 peers após 35s). Abortando imediatamente para tentar outra fonte...`);
+                    console.log(`⚠️ Torrent sem peers ativos (0 peers após ${Math.round(noPeerTimeoutMs / 1000)}s). Abortando para tentar outra fonte...`);
                     finished = true;
                     safeCleanup();
-                    return reject(new Error('Torrent sem peers ativos após 35s.'));
+                    return reject(new Error(`Torrent sem peers ativos após ${Math.round(noPeerTimeoutMs / 1000)}s.`));
                 }
 
-                // 2. Aborta se estiver completamente estagnado por 75s (com peers mas sem envio de dados)
-                if (stalledMs >= 75000 && torrent.progress < 0.01) {
+                // 2. Aborta se estiver completamente estagnado por 5-6 minutos (com peers mas sem envio de dados)
+                if (stalledMs >= stalledTimeoutMs && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s), estagnado por ${Math.round(stalledMs / 1000)}s). Abortando para tentar outra fonte...`);
                     finished = true;
                     safeCleanup();
-                    return reject(new Error('Download estagnado sem dados/seeders ativos após 75s.'));
+                    return reject(new Error(`Download estagnado sem dados/seeders ativos após ${Math.round(stalledTimeoutMs / 1000)}s.`));
                 }
 
-                // 2. Aborta se for um torrent excessivamente lento (< 0.25 MB/s após 180 segundos com previsão > 75 min)
+                // 3. Permite downloads pacientes de até 20-30 minutos para fontes raras
                 const speedMB = torrent.downloadSpeed / (1024 * 1024);
                 const remainingSec = speedMB > 0 ? (torrent.length - currentBytes) / (speedMB * 1024 * 1024) : 99999;
                 
-                if (elapsedSec >= 180 && speedMB < 0.25 && remainingSec > 4500 && torrent.progress < 0.05) {
+                if (elapsedSec >= 600 && speedMB < 0.05 && remainingSec > 7200 && torrent.progress < 0.05) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 75 min). Abortando para buscar fonte mais rápida...`);
+                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 120 min após 10 min de tentativa). Abortando para buscar fonte mais rápida...`);
                     finished = true;
                     safeCleanup();
-                    return reject(new Error('Torrent com poucos seeders/velocidade insuficiente.'));
+                    return reject(new Error('Torrent com velocidade insuficiente após 10 min.'));
                 }
             }, 5000);
         });
