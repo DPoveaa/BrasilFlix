@@ -4,7 +4,7 @@ const TMDBService = require('./TMDBService');
 
 class MediaSearchService {
     constructor() {
-        this.timeout = 12000;
+        this.timeout = 7000;
     }
 
     async search(query, tipo = 'filme', options = {}) {
@@ -158,23 +158,30 @@ class MediaSearchService {
             }
         }
 
-        for (const q of variations) {
-            try {
-                const apiResults = await this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode });
+        // Executa as buscas de variações em lotes paralelos de 3 para resposta instantânea
+        const batchSize = 3;
+        for (let i = 0; i < variations.length; i += batchSize) {
+            const batch = variations.slice(i, i + batchSize);
+            const batchPromises = batch.map(q => 
+                this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode })
+                    .catch(() => [])
+            );
+
+            const batchResults = await Promise.all(batchPromises);
+            for (const apiResults of batchResults) {
                 for (const item of apiResults) {
                     if (item.isPtBr && !seenHashes.has(item.infoHash)) {
                         seenHashes.add(item.infoHash);
                         allResults.push(item);
                     }
                 }
-                // Para busca mais eficiente: só para cedo se já tiver fontes saudáveis suficientes do tipo preferido
-                const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders >= 5);
-                const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 5);
-                const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
-                if (targetCount >= 4) break;
-            } catch (e) {
-                console.warn(`⚠️ Diagnóstico busca Torrent API ("${q}"):`, e.message);
             }
+
+            // Para cedo se já encontrou fontes saudáveis suficientes do tipo preferido
+            const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders >= 3);
+            const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 3);
+            const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
+            if (targetCount >= 3) break;
         }
 
         // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p e arquivos incompatíveis
@@ -624,24 +631,25 @@ class MediaSearchService {
             let scoreA = 0;
             let scoreB = 0;
 
-            // 1. Preferência de Áudio
+            // 1. Preferência de Áudio (DUBLADO É PRIORIDADE MÁXIMA ABSOLUTA)
             if (pref === 'legendado') {
-                if (a.isLegendado) scoreA += 900;
-                if (b.isLegendado) scoreB += 900;
-                if (a.isDublado) scoreA += 250;
-                if (b.isDublado) scoreB += 250;
+                if (a.isLegendado) scoreA += 5000;
+                if (b.isLegendado) scoreB += 5000;
+                if (a.isDublado) scoreA += 400;
+                if (b.isDublado) scoreB += 400;
             } else {
-                if (a.isDublado) scoreA += 900;
-                if (b.isDublado) scoreB += 900;
+                // Modo padrão: DUBLADO (PT-BR) ganha +5000 pontos para NUNCA perder para releases legendados em inglês
+                if (a.isDublado) scoreA += 5000;
+                if (b.isDublado) scoreB += 5000;
                 if (a.isLegendado) scoreA += 300;
                 if (b.isLegendado) scoreB += 300;
             }
 
             // 2. Fidelidade PT-BR vs PT-PT
-            if (a.isPtBrExplicit) scoreA += 400;
-            if (b.isPtBrExplicit) scoreB += 400;
-            if (a.isPtPt) scoreA -= 800;
-            if (b.isPtPt) scoreB -= 800;
+            if (a.isPtBrExplicit) scoreA += 600;
+            if (b.isPtBrExplicit) scoreB += 600;
+            if (a.isPtPt) scoreA -= 2000;
+            if (b.isPtPt) scoreB -= 2000;
 
             // 3. Formato e Qualidade
             if (a.isWebDl) scoreA += 450;

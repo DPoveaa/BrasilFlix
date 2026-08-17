@@ -217,6 +217,7 @@ class TelegramUploader {
 
             const sentMessage = await client.sendFile(this.storageGroupId, {
                 file: inputFile,
+                mimeType: 'video/mp4',
                 caption: caption,
                 parseMode: 'md',
                 supportsStreaming: true,

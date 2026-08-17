@@ -2,6 +2,7 @@ const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
 const config = require('../../config');
+const SubtitleSync = require('./SubtitleSync');
 
 class VideoProcessor {
     constructor() {
@@ -37,6 +38,7 @@ class VideoProcessor {
                         sizeBytes,
                         sizeMB: (sizeBytes / (1024 * 1024)).toFixed(2),
                         videoCodec: (videoStream.codec_name || '').toLowerCase(),
+                        pixFmt: (videoStream.pix_fmt || 'yuv420p').toLowerCase(),
                         audioStreams: audioStreams.map((a, idx) => ({
                             index: idx,
                             codec: (a.codec_name || '').toLowerCase(),
@@ -362,7 +364,11 @@ class VideoProcessor {
                         if (subRes.data && this.isPortugueseSubtitleContent(subRes.data)) {
                             await fs.writeFile(srtPath, subRes.data, 'utf8');
                             console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
-                            return srtPath;
+                            
+                            // Sincroniza a legenda externa contra o áudio real do vídeo para garantir alinhamento perfeito (100% sincronizado)
+                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
+                            const finalSrt = await SubtitleSync.syncSubtitle(inputPath, srtPath, syncedSrtPath);
+                            return finalSrt;
                         }
                     } catch (errSub) {}
                 }
@@ -378,7 +384,10 @@ class VideoProcessor {
                 if (res.data && this.isPortugueseSubtitleContent(res.data)) {
                     await fs.writeFile(srtPath, res.data, 'utf8');
                     console.log(`✅ Legenda PT-BR direta baixada e validada!`);
-                    return srtPath;
+                    
+                    const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
+                    const finalSrt = await SubtitleSync.syncSubtitle(inputPath, srtPath, syncedSrtPath);
+                    return finalSrt;
                 }
             } catch (e) {}
         }
@@ -395,7 +404,8 @@ class VideoProcessor {
             : (metadata.nome || metadata.title || path.basename(inputPath));
 
         const isUnderSizeLimit = info.sizeBytes <= this.maxSizeBytes;
-        const isFastCodec = info.videoCodec === 'h264';
+        const isStandard8Bit = info.pixFmt === 'yuv420p';
+        const isFastCodec = info.videoCodec === 'h264' && isStandard8Bit;
         const isResolutionFine = (info.width || 1920) <= 1920; // 1080p ou menor
 
         // Detectar com precisão a faixa de áudio em Português
@@ -478,8 +488,8 @@ class VideoProcessor {
                             const empty = Math.max(0, barLength - filled);
                             const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-                            const audioTag = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? ' | 🔊 Dublado' : ' | 💬 Legendado';
-                            process.stdout.write(`\r\x1b[36m⚡ [REMUX: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)} | 🚀 ${speedStr}${audioTag}\x1b[0m `);
+                            const audioBadge = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? '🔊 Dublado' : '💬 Legendado';
+                            process.stdout.write(`\r\x1b[36m⚡ [REMUX: "${optTitle}"] [${audioBadge}] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)} | 🚀 ${speedStr}\x1b[0m `);
                         }
 
                         if (onProgress) onProgress(percent, `Remux 1080p (${percent}%) - ${speedStr}`);
@@ -572,6 +582,9 @@ class VideoProcessor {
                 '-c:v', 'libx264',
                 '-preset', 'faster',
                 '-crf', '20',
+                '-profile:v', 'high',
+                '-level', '4.1',
+                '-pix_fmt', 'yuv420p',
                 '-maxrate', `${maxVideoKbps}k`,
                 '-bufsize', `${maxVideoKbps * 2}k`,
                 '-threads', `${safeThreads}`,
@@ -622,8 +635,8 @@ class VideoProcessor {
                         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
                         // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        const audioTag = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? ' | 🔊 Dublado' : ' | 💬 Legendado';
-                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}${audioTag}\x1b[0m`);
+                        const audioBadge = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? '🔊 Dublado' : '💬 Legendado';
+                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] [${audioBadge}] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m`);
                     }
 
                     if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);

@@ -932,6 +932,68 @@ class QueueManager extends EventEmitter {
             );
         }
 
+        // Se o download bruto for Dual Áudio (tem Áudio Dublado E também Legendas/Áudio Original),
+        // gera e envia automaticamente a versão Legendada a partir do MESMO arquivo sem precisar baixar de novo!
+        if (langInfo && langInfo.hasBoth && rawFilePath && fs.existsSync(rawFilePath)) {
+            try {
+                console.log(`🎙️ [DUAL ÁUDIO DETECTADO] Aproveitando o download único para gerar e subir também a versão LEGENDADA oficial...`);
+                const optLegPath = path.join(path.dirname(rawFilePath), `opt_leg_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
+                
+                await VideoProcessor.optimizeForTelegram(rawFilePath, optLegPath, null, {
+                    nome: job.title,
+                    tipo: job.type,
+                    season: job.season,
+                    episode: job.episode,
+                    totalTemporadas: metadata.totalTemporadas,
+                    totalEpisodios: metadata.totalEpisodios,
+                    imdbId: metadata.imdbId,
+                    tmdbId: metadata.tmdbId,
+                    subtitleUrl: bestSource?.subtitleUrl,
+                    isDublado: false,
+                    isLegendado: true
+                });
+
+                if (fs.existsSync(optLegPath)) {
+                    const metaLeg = {
+                        ...metadata,
+                        audio: 'Legendado (PT-BR)',
+                        isDublado: false,
+                        isLegendado: true
+                    };
+                    const uploadLegResult = await this.uploader.uploadVideo(optLegPath, metaLeg);
+                    
+                    if (job.type === 'filme') {
+                        await this.catalogoManager.atualizarMidiaFilme(metadata.nome, {
+                            messageId: uploadLegResult.messageId,
+                            fileId: uploadLegResult.fileId,
+                            qualidade: metadata.qualidade,
+                            isCam: metadata.isCam,
+                            audio: 'Legendado (PT-BR)',
+                            isDublado: false,
+                            isLegendado: true,
+                            tmdbId: metadata.tmdbId
+                        });
+                    } else {
+                        await this.catalogoManager.adicionarEpisodioSerie(
+                            metadata.nome,
+                            job.season || 1,
+                            job.episode || 1,
+                            uploadLegResult.messageId,
+                            uploadLegResult.fileId,
+                            {
+                                ...metaLeg,
+                                episodioNome: metadata.episodioNome
+                            }
+                        );
+                    }
+                    console.log(`✅ [DUAL ÁUDIO] Versão Legendada gerada e vinculada ao catálogo com sucesso! (MessageId: ${uploadLegResult.messageId})`);
+                    await DownloaderManager.cleanupFile(optLegPath);
+                }
+            } catch (errLeg) {
+                console.warn('⚠️ Não foi possível gerar versão legendada complementar no dual áudio:', errLeg.message);
+            }
+        }
+
         // Se o arquivo possui AMBAS as versões (Dublado e Legendado) a partir do mesmo download,
         // marca como concluídos quaisquer jobs pendentes na fila para a outra versão, evitando download duplicado!
         if (metadata.isDublado && metadata.isLegendado) {
