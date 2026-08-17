@@ -76,7 +76,14 @@ class DownloaderManager extends EventEmitter {
             throw new Error('Módulo WebTorrent não disponível.');
         }
 
-        const torrentTarget = this.extractCleanHash(magnetOrTorrent);
+        let torrentTarget = magnetOrTorrent;
+        if (typeof magnetOrTorrent === 'string' && !magnetOrTorrent.startsWith('magnet:') && !magnetOrTorrent.startsWith('http')) {
+            const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
+            if (hashMatch) {
+                torrentTarget = `magnet:?xt=urn:btih:${hashMatch[1].toLowerCase()}`;
+            }
+        }
+
         const mediaTitle = options.title || 'Mídia';
         const startTime = Date.now();
 
@@ -95,6 +102,10 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.openbittorrent.com:80/announce',
             'udp://tracker.cyberia.is:6969/announce',
             'udp://9.rarbg.to:2920/announce',
+            'udp://tracker.coppersurfer.tk:6969/announce',
+            'udp://tracker.leechers-paradise.org:6969/announce',
+            'udp://tracker.internetwarriors.net:1337/announce',
+            'udp://exodus.desync.com:6969/announce',
             'wss://tracker.openwebtorrent.com',
             'wss://tracker.btorrent.xyz',
             'wss://tracker.files.fm:7073/announce'
