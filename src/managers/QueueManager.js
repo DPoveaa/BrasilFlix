@@ -499,6 +499,7 @@ class QueueManager extends EventEmitter {
                 let nextTargetSeason = null;
                 let nextTargetEp = null;
 
+                // 1º Passo: Encontrar o primeiro episódio totalmente faltante no catálogo
                 for (let s = 1; s <= totalTemporadas; s++) {
                     const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
                     
@@ -527,19 +528,28 @@ class QueueManager extends EventEmitter {
                             nextTargetEp = ep;
                             break;
                         }
-                        const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
-                        const epLeg = epItem.isLegendado || epItem.audio?.toLowerCase().includes('legendado');
-                        if ((pref === 'dublado' && !epDub) || (pref === 'legendado' && !epLeg)) {
-                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
-                                continue;
-                            }
-                            nextTargetSeason = s;
-                            nextTargetEp = ep;
-                            break;
-                        }
                     }
 
                     if (nextTargetSeason !== null) break;
+                }
+
+                // 2º Passo: Se todos os episódios já existem no catálogo, verifica se algum pode receber upgrade de áudio
+                if (nextTargetSeason === null && pref === 'dublado') {
+                    for (let s = 1; s <= totalTemporadas; s++) {
+                        const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
+                        for (const epItem of (tempS?.episodios || [])) {
+                            const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
+                            if (!epDub) {
+                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, epItem.numero)) {
+                                    continue;
+                                }
+                                nextTargetSeason = s;
+                                nextTargetEp = epItem.numero;
+                                break;
+                            }
+                        }
+                        if (nextTargetSeason !== null) break;
+                    }
                 }
 
                 if (nextTargetSeason !== null && nextTargetEp !== null) {
