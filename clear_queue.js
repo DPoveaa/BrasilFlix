@@ -5,23 +5,16 @@ const path = require('path');
 async function clearQueue() {
     console.log('🧹 Limpando toda a fila do BrasilFlix...');
     try {
-        // 1. Limpar tabelas no PostgreSQL
+        // 1. Limpar apenas tabela queue_jobs no PostgreSQL
         await db.query('DELETE FROM queue_jobs');
-        await db.query('DELETE FROM episodios');
-        await db.query('DELETE FROM series');
-        await db.query('DELETE FROM filmes');
-        console.log('✅ Banco de dados PostgreSQL (queue_jobs, episodios, series, filmes) limpo com sucesso!');
+        console.log('✅ Fila de downloads (queue_jobs) limpa no PostgreSQL!');
 
-        // 2. Limpar arquivos locais JSON
+        // 2. Limpar arquivo local queue.json
         const queueFile = path.resolve('./data/queue.json');
         if (fs.existsSync(queueFile)) {
             await fs.writeJson(queueFile, []);
         }
-        const catalogoFile = path.resolve('./data/catalogo.json');
-        if (fs.existsSync(catalogoFile)) {
-            await fs.writeJson(catalogoFile, { filmes: [], series: [] }, { spaces: 2 });
-        }
-        console.log('✅ Arquivos locais data/queue.json e data/catalogo.json resetados!');
+        console.log('✅ Arquivo local data/queue.json resetado!');
 
         // 3. Limpar pasta temporária de downloads
         const tempDir = path.resolve('./downloads/temp');
