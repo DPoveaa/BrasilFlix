@@ -693,22 +693,40 @@ class QueueManager extends EventEmitter {
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
-            // Se o episódio já está cadastrado como Legendado e estamos procurando Dublado,
-            // mas NÃO há nenhuma fonte Dublada disponível com seeds, não baixa o mesmo legendado repetido:
-            if (job.type === 'serie' && job.audioPreference === 'dublado') {
-                const serieNoCat = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
-                const tempNoCat = (serieNoCat?.temporadas || []).find(t => t.numero === (job.season || 1));
-                const epNoCat = (tempNoCat?.episodios || []).find(e => e.numero === (job.episode || 1));
-                const jaTemLegendado = epNoCat && (epNoCat.isLegendado || epNoCat.audio?.toLowerCase().includes('legendado'));
+            // Se a preferência do job for estritamente Dublado, filtra APENAS fontes Dubladas:
+            if (job.audioPreference === 'dublado') {
+                const dubSources = sources.filter(s => s.isDublado);
+                if (dubSources.length > 0) {
+                    sources = dubSources;
+                } else {
+                    // Verifica se já temos a versão legendada no catálogo
+                    let jaTemLegendado = false;
+                    if (job.type === 'filme') {
+                        const f = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme');
+                        jaTemLegendado = f && (f.isLegendado || !!f.versoes?.legendado || f.audio?.toLowerCase().includes('legendado'));
+                    } else {
+                        const s = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                        const t = (s?.temporadas || []).find(temp => temp.numero === (job.season || 1));
+                        const ep = (t?.episodios || []).find(e => e.numero === (job.episode || 1));
+                        jaTemLegendado = ep && (ep.isLegendado || ep.audio?.toLowerCase().includes('legendado'));
+                    }
 
-                if (jaTemLegendado) {
-                    const dubSources = sources.filter(s => s.isDublado);
-                    if (dubSources.length === 0) {
-                        console.log(`ℹ️ [SÉRIE] "${job.title}" T${job.season || 1}E${job.episode || 1} já está no catálogo como Legendado e não possui fontes Dubladas com seeds no momento. Avançando para o próximo episódio...`);
-                        await this.enqueueNextAvailableEpisode(metadata, job);
+                    if (jaTemLegendado) {
+                        console.log(`ℹ️ "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e não há fontes Dubladas disponíveis. Pulando...`);
+                        if (job.type === 'serie') {
+                            await this.enqueueNextAvailableEpisode(metadata, job);
+                        }
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Já possui versão Legendada no catálogo';
+                        await this.saveJob(job);
                         return;
                     }
-                    sources = dubSources;
+                }
+            } else if (job.audioPreference === 'legendado') {
+                const legSources = sources.filter(s => s.isLegendado);
+                if (legSources.length > 0) {
+                    sources = legSources;
                 }
             }
 

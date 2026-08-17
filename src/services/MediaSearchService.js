@@ -8,16 +8,20 @@ class MediaSearchService {
     }
 
     async search(query, tipo = 'filme', options = {}) {
+        if (typeof tipo === 'object') {
+            options = tipo;
+            tipo = options.tipo || 'filme';
+        }
         const cleanQuery = this.cleanQuery(query);
         const originalName = options.nomeOriginal ? this.cleanQuery(options.nomeOriginal) : null;
-        const ano = options.ano || '';
+        const ano = options.ano || options.year || '';
         const forcarNaoCam = options.onlyWebDl || false;
         let imdbId = options.imdbId || null;
         const pref = options.audioPreference || 'geral';
         const season = options.season || 1;
         const episode = options.episode || 1;
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
-        console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''}...`);
+        console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''} ${tipo === 'serie' ? `(T${season}E${episode})` : ''}...`);
 
         const allResults = [];
         const seenHashes = new Set();
@@ -99,34 +103,31 @@ class MediaSearchService {
                 }
             } else {
                 variations.push(
-                    `${cleanQuery} S${sPadded} complete`,
+                    `${cleanQuery} S${sPadded}E${ePadded} dual`,
+                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
+                    `${cleanQuery} S${sPadded}E${ePadded}`,
                     `${cleanQuery} S${sPadded} dual`,
                     `${cleanQuery} S${sPadded} dublado`,
-                    `${cleanQuery} temporada ${season} completa`,
+                    `${cleanQuery} S${sPadded} complete`,
                     `${cleanQuery} temporada ${season} dual`,
                     `${cleanQuery} temporada ${season} dublado`,
+                    `${cleanQuery} temporada ${season} completa`,
                     `${cleanQuery} season ${season} dual`,
-                    `${cleanQuery} season ${season} dublado`,
                     `${cleanQuery} S${sPadded} 1080p dual`,
-                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
-                    `${cleanQuery} S${sPadded}E${ePadded} dual`,
                     `${cleanQuery} 1080p dual`,
-                    `${cleanQuery} 1080p dublado`,
                     `${cleanQuery} dual audio`,
-                    `${cleanQuery} dublado`,
-                    `${cleanQuery} nacional`
+                    `${cleanQuery} dublado`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
-                        `${originalName} S${sPadded} complete`,
-                        `${originalName} S${sPadded} dual`,
-                        `${originalName} S${sPadded} dublado`,
-                        `${originalName} season ${season} complete`,
-                        `${originalName} season ${season} dual`,
                         `${originalName} S${sPadded}E${ePadded} dual`,
                         `${originalName} S${sPadded}E${ePadded} dublado`,
-                        `${originalName} dual`,
-                        `${originalName} dublado`
+                        `${originalName} S${sPadded}E${ePadded}`,
+                        `${originalName} S${sPadded} dual`,
+                        `${originalName} S${sPadded} dublado`,
+                        `${originalName} S${sPadded} complete`,
+                        `${originalName} season ${season} dual`,
+                        `${originalName} dual`
                     );
                 }
             }
@@ -444,7 +445,9 @@ class MediaSearchService {
             .toLowerCase()
             .replace(/[\._\-\+\[\]\(\)\{\}~]/g, ' ')
             .replace(/\b(19\d\d|20\d\d)\b/g, '')
-            .replace(/\b(2160p|1080p|720p|480p|4k|2k|fhd|uhd|bluray|blu-ray|bdrip|brrip|web-dl|webrip|web|hdtv|hdrip|dvdrip|dvd|remux|telesync|hdts|ts|cam|camrip|hdcam|x264|x265|hevc|h264|h265|aac|ac3|dts|ddp\d*|atmos|mp3|eac3|flac|mkv|mp4|avi|dublado|dual|legendado|nacional|pt-br|ptbr|sub|multi|season|temporada|completa|s\d+|e\d+|ep\d*|hc-sub|pre|lipeh|kyogo|lapumia|wolverdon|starck|vizer|acervo|yg|1xbet|mostbet|remuxdoc|lmntry|maze|ddr|tmb|psa|galaxyrg|rarbg|tgx|megusta|ntb|yify|yts)\b/gi, '')
+            .replace(/\b(s\d+e\d+|s\d+|e\d+|ep\d+|\d+x\d+|temporada\s*\d+|season\s*\d+|completa|complete)\b/gi, '')
+            .replace(/\b(2160p|1080p|720p|480p|4k|2k|fhd|uhd|bluray|blu-ray|bdrip|brrip|web-dl|webrip|web|hdtv|hdrip|dvdrip|dvd|remux|telesync|hdts|ts|cam|camrip|hdcam|x264|x265|hevc|h264|h265|aac|ac3|dts|ddp\d*|atmos|mp3|eac3|flac|mkv|mp4|avi|dublado|dual|legendado|nacional|pt-br|ptbr|sub|multi|dl|hc-sub|pre)\b/gi, '')
+            .replace(/\b(www|com|br|org|net|acesse|ondebaixo|comandotorrents|bludv|lapumia|wolverdon|starck|vizer|acervo|yg|1xbet|mostbet|remuxdoc|lmntry|maze|ddr|tmb|psa|galaxyrg|rarbg|tgx|megusta|ntb|yify|yts)\b/gi, '')
             .replace(/\b(and|e|&|the|a|o|as|os|um|uma|de|da|do|em|of|in|for|no|na)\b/gi, '')
             .replace(/[^\w\s\u00C0-\u00FF]/gi, ' ')
             .replace(/\s+/g, ' ')
@@ -520,6 +523,10 @@ class MediaSearchService {
         const tTokens = cTorrent.split(' ').filter(Boolean);
         const qTokens = cTarget.split(' ').filter(Boolean);
 
+        if (qTokens.length > 0 && qTokens.every(q => tTokens.includes(q))) {
+            return 0.95;
+        }
+
         let intersection = 0;
         const tSet = new Set(tTokens);
         for (const q of qTokens) {
@@ -546,76 +553,102 @@ class MediaSearchService {
 
     async searchTorrentApi(query, opts = {}) {
         const results = [];
-        try {
-            const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}`;
-            const response = await axios.get(url, { timeout: this.timeout });
+        const seenHashes = new Set();
 
-            if (Array.isArray(response.data) && response.data.length > 0 && response.data[0].id !== '0') {
-                for (const item of response.data.slice(0, 30)) {
-                    const name = item.name || '';
-                    const sizeBytes = parseInt(item.size || 0, 10);
-                    const seeders = parseInt(item.seeders || 0, 10);
-                    const magnet = `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(name)}`;
+        const parseAndAdd = (name, infoHash, sizeBytes, seeders, sourceName) => {
+            if (!name || !infoHash || seenHashes.has(infoHash.toLowerCase())) return;
+            seenHashes.add(infoHash.toLowerCase());
 
-                    if (opts.query && !this.matchesMovieTitle(name, opts.query, opts.originalName, opts.ano)) {
-                        continue;
-                    }
+            if (opts.query && !this.matchesMovieTitle(name, opts.query, opts.originalName, opts.ano)) {
+                return;
+            }
 
-                    const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name);
-                    const isPtPtExplicit = /\b(pt[-_]?pt|pt_pt|ptpt|dobrado)\b/i.test(name);
-                    const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
-                    const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
-                    const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
+            const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name);
+            const isPtPtExplicit = /\b(pt[-_]?pt|pt_pt|ptpt|dobrado)\b/i.test(name);
+            const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
+            const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
+            const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(name));
 
-                    const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
+            const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
+            const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
+            const isExplicitPtBr = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
+            const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr) && !isPtPtExplicit;
 
-                    const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
-                    const isExplicitPtBr = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
-
-                    const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr) && !isPtPtExplicit;
-
-                    // Descarta categoricamente qualquer release 4K / 2160p / UHD
-                    if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(name)) {
-                        continue;
-                    }
-
-                    // Se for filme, descarta arquivos gigantes (> 5.5 GB). Para séries, permite season packs até 60 GB
-                    const maxAllowedBytes = opts.tipo === 'serie' ? (60 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
-                    if (sizeBytes > maxAllowedBytes) {
-                        continue;
-                    }
-
-                    const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(name);
-                    const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(name) && !isCam;
-                    const is1080p = (/\b(1080p|fhd|fullhd|bluray|web-dl|1080)\b/i.test(name)) && !isCam;
-
-                    if (isCam && (!config.ALLOW_CINEMA_CAM && !opts.allowCam)) {
-                        continue;
-                    }
-
-                    results.push({
-                        title: name,
-                        infoHash: item.info_hash,
-                        source: 'ThePirateBay',
-                        magnet: magnet,
-                        sizeBytes: sizeBytes,
-                        sizeMB: (sizeBytes / (1024 * 1024)).toFixed(1),
-                        seeders: seeders,
-                        isCam: isCam,
-                        isWebDl: isWebDl,
-                        quality: isCam ? 'CAM (Cinema)' : (is1080p ? '1080p Full HD' : '720p HD'),
-                        audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
-                        isPtBr: true,
-                        isPtBrExplicit: isPtBrExplicit || isBrazilianGroup,
-                        isPtPt: isPtPtExplicit,
-                        isDublado: isDublado,
-                        isLegendado: isLegendado
-                    });
+            if (opts.tipo === 'serie' && opts.season) {
+                const sPad = String(opts.season).padStart(2, '0');
+                const sRegex = new RegExp(`\\b(s${opts.season}|s${sPad}|temporada\\s*${opts.season}|temporada\\s*${sPad}|season\\s*${opts.season}|season\\s*${sPad}|${opts.season}ª\\s*temporada)\\b`, 'i');
+                const hasSeason = sRegex.test(name);
+                const hasAnySeason = /\b(s\d+|temporada\s*\d+|season\s*\d+|\d+x\d+)\b/i.test(name);
+                
+                if (hasAnySeason && !hasSeason) {
+                    return;
                 }
             }
-        } catch (e) {
-            // Silencia timeout esperado do TPB/ApiBay para manter logs limpos
-        }
+
+            // Descarta 4K / 2160p
+            if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(name)) return;
+
+            const maxAllowedBytes = opts.tipo === 'serie' ? (80 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
+            if (sizeBytes > maxAllowedBytes) return;
+
+            const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(name);
+            const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(name) && !isCam;
+            const is1080p = (/\b(1080p|fhd|fullhd|bluray|web-dl|1080)\b/i.test(name)) && !isCam;
+
+            if (isCam && (!config.ALLOW_CINEMA_CAM && !opts.allowCam)) return;
+
+            results.push({
+                title: name,
+                infoHash: infoHash.toLowerCase(),
+                source: sourceName,
+                magnet: `magnet:?xt=urn:btih:${infoHash.toLowerCase()}&dn=${encodeURIComponent(name)}`,
+                sizeBytes: sizeBytes,
+                sizeMB: (sizeBytes / (1024 * 1024)).toFixed(1),
+                seeders: seeders || 0,
+                isCam: isCam,
+                isWebDl: isWebDl,
+                quality: isCam ? 'CAM (Cinema)' : (is1080p ? '1080p Full HD' : '720p HD'),
+                audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
+                isPtBr: true,
+                isPtBrExplicit: isPtBrExplicit || isBrazilianGroup,
+                isPtPt: isPtPtExplicit,
+                isDublado: isDublado,
+                isLegendado: isLegendado
+            });
+        };
+
+        // Executa buscas paralelas em BitSearch, SolidTorrents e ApiBay
+        const searches = [
+            // 1. BitSearch
+            axios.get(`https://bitsearch.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+                .then(res => {
+                    const items = res.data?.results || [];
+                    for (const it of items) {
+                        parseAndAdd(it.title, it.infohash, it.size || 0, it.seeders || 0, 'BitSearch');
+                    }
+                }).catch(() => {}),
+
+            // 2. SolidTorrents
+            axios.get(`https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+                .then(res => {
+                    const items = res.data?.results || [];
+                    for (const it of items) {
+                        parseAndAdd(it.title, it.infohash, it.size || 0, it.seeders || 0, 'SolidTorrents');
+                    }
+                }).catch(() => {}),
+
+            // 3. ApiBay (ThePirateBay)
+            axios.get(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+                .then(res => {
+                    if (Array.isArray(res.data) && res.data.length > 0 && res.data[0].id !== '0') {
+                        for (const it of res.data.slice(0, 30)) {
+                            parseAndAdd(it.name, it.info_hash, parseInt(it.size || 0, 10), parseInt(it.seeders || 0, 10), 'ThePirateBay');
+                        }
+                    }
+                }).catch(() => {})
+        ];
+
+        await Promise.all(searches);
         return results;
     }
 
