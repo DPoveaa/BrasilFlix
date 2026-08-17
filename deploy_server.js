@@ -5,8 +5,8 @@ async function deployToServer() {
     const conn = new Client();
 
     conn.on('ready', () => {
-        console.log('🔌 Conectado via SSH (192.168.15.50:22). Executando git pull, clear-queue e restart no PM2...');
-        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git pull && node clear_queue.js && pm2 restart brasilflix';
+        console.log('🔌 Conectado via SSH (192.168.15.50:22). Executando git pull, npm install, clear-queue e restart no PM2...');
+        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git pull && npm install --omit=dev && node clear_queue.js && pm2 restart brasilflix';
 
         conn.exec(cmd, (err, stream) => {
             if (err) {
