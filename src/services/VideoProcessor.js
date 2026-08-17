@@ -549,6 +549,8 @@ class VideoProcessor {
             const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
             const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
             const audioBitrateKbps = 192;
+            const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
+
             // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
             let vfFilter = "scale='min(1920,iw)':-2";
             let tempSrtRelative = null;
@@ -590,9 +592,13 @@ class VideoProcessor {
             const ffmpeg = spawn('ffmpeg', args);
 
             let lastLogTime = Date.now();
+            let ffmpegStderrBuffer = [];
 
             ffmpeg.stderr.on('data', (data) => {
                 const text = data.toString();
+                ffmpegStderrBuffer.push(text);
+                if (ffmpegStderrBuffer.length > 20) ffmpegStderrBuffer.shift();
+
                 const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
                 const speedMatch = text.match(/speed=\s*([\d.]+)x/);
                 const fpsMatch = text.match(/fps=\s*([\d.]+)/);
@@ -634,6 +640,10 @@ class VideoProcessor {
                     resolve(outputPath);
                 } else {
                     process.stdout.write('\n');
+                    const errSnippet = ffmpegStderrBuffer.slice(-5).join('\n').trim();
+                    if (errSnippet) {
+                        console.error(`❌ [FFmpeg Erro] Código ${code}. Diagnóstico:\n${errSnippet}`);
+                    }
                     reject(new Error(`Erro na transcodificação do vídeo: código ${code}`));
                 }
             });
