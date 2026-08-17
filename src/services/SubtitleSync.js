@@ -39,9 +39,10 @@ sys.argv = [
 sys.exit(main())
             `.trim();
 
+            const pythonExec = process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
             const success = await new Promise((resolve) => {
                 let isDone = false;
-                const pyProc = spawn('python', ['-c', pythonCode, videoPath, srtInputPath, srtOutputPath]);
+                const pyProc = spawn(pythonExec, ['-c', pythonCode, videoPath, srtInputPath, srtOutputPath]);
 
                 const timeout = setTimeout(() => {
                     if (!isDone) {
@@ -52,6 +53,15 @@ sys.exit(main())
                     }
                 }, 45000);
 
+                pyProc.on('error', (err) => {
+                    if (!isDone) {
+                        isDone = true;
+                        clearTimeout(timeout);
+                        console.warn(`⚠️ [SubtitleSync] Erro ao executar ${pythonExec}:`, err.message);
+                        resolve(false);
+                    }
+                });
+
                 pyProc.on('close', (code) => {
                     if (!isDone) {
                         isDone = true;
@@ -61,15 +71,6 @@ sys.exit(main())
                         } else {
                             resolve(false);
                         }
-                    }
-                });
-
-                pyProc.on('error', (err) => {
-                    if (!isDone) {
-                        isDone = true;
-                        clearTimeout(timeout);
-                        console.warn('⚠️ [SubtitleSync] Erro ao executar processo python:', err.message);
-                        resolve(false);
                     }
                 });
             });
