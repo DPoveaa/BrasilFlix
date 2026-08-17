@@ -167,7 +167,7 @@ class TelegramUploader {
             const client = await this.getClient();
 
             // Determina a etiqueta de áudio resumida
-            const audioEtiqueta = metadata.isLegendado || (audio && audio.toLowerCase().includes('legendado')) ? 'Legendado' : 'Dublado';
+            const audioEtiqueta = isLeg ? 'Legendado' : 'Dublado';
             const totalBytes = fs.statSync(filePath).size;
             const formatBytesHelper = (bytes) => {
                 const gb = bytes / (1024 * 1024 * 1024);

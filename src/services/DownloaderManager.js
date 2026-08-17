@@ -369,8 +369,9 @@ class DownloaderManager extends EventEmitter {
                     const remainingBytes = Math.max(0, curTotal - curDownloaded);
                     const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
+                    const audioTag = options.audio ? ` | ${options.audio.includes('Dublado') ? '🔊 Dublado' : '💬 Legendado'}` : '';
 
-                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${displayTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}\x1b[0m`;
+                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${displayTitle}"] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}${audioTag}\x1b[0m`;
 
                     if (process.stdout.isTTY) {
                         process.stdout.write(`\r${logLine} `);

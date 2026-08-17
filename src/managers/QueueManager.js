@@ -683,6 +683,25 @@ class QueueManager extends EventEmitter {
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
+            // Se o episódio já está cadastrado como Legendado e estamos procurando Dublado,
+            // mas NÃO há nenhuma fonte Dublada disponível com seeds, não baixa o mesmo legendado repetido:
+            if (job.type === 'serie' && job.audioPreference === 'dublado') {
+                const serieNoCat = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                const tempNoCat = (serieNoCat?.temporadas || []).find(t => t.numero === (job.season || 1));
+                const epNoCat = (tempNoCat?.episodios || []).find(e => e.numero === (job.episode || 1));
+                const jaTemLegendado = epNoCat && (epNoCat.isLegendado || epNoCat.audio?.toLowerCase().includes('legendado'));
+
+                if (jaTemLegendado) {
+                    const dubSources = sources.filter(s => s.isDublado);
+                    if (dubSources.length === 0) {
+                        console.log(`ℹ️ [SÉRIE] "${job.title}" T${job.season || 1}E${job.episode || 1} já está no catálogo como Legendado e não possui fontes Dubladas com seeds no momento. Avançando para o próximo episódio...`);
+                        await this.enqueueNextAvailableEpisode(metadata, job);
+                        return;
+                    }
+                    sources = dubSources;
+                }
+            }
+
             // 3. Download com Fallback Automático entre as melhores opções (tenta até 8 fontes com timeout global de 25 min)
             job.status = 'downloading';
             await this.saveJob(job);
@@ -706,13 +725,13 @@ class QueueManager extends EventEmitter {
                         downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type });
+                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type, audio: currentSource.audio });
                     } else if (currentSource.url) {
                         const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
                         downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
                             job.progress = progress.percent;
                             job.progressDetails = `${progress.downloaded} / ${progress.total}`;
-                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type });
+                        }, { title: job.title, season: job.season, episode: job.episode, type: job.type, audio: currentSource.audio });
                     }
 
                     if (downloadedMedia && downloadedMedia.filePath) {

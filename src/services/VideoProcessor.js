@@ -478,7 +478,8 @@ class VideoProcessor {
                             const empty = Math.max(0, barLength - filled);
                             const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-                            process.stdout.write(`\r\x1b[36m⚡ [REMUX: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)} | 🚀 ${speedStr}\x1b[0m `);
+                            const audioTag = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? ' | 🔊 Dublado' : ' | 💬 Legendado';
+                            process.stdout.write(`\r\x1b[36m⚡ [REMUX: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)} | 🚀 ${speedStr}${audioTag}\x1b[0m `);
                         }
 
                         if (onProgress) onProgress(percent, `Remux 1080p (${percent}%) - ${speedStr}`);
@@ -621,7 +622,8 @@ class VideoProcessor {
                         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
                         // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m`);
+                        const audioTag = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? ' | 🔊 Dublado' : ' | 💬 Legendado';
+                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO: "${optTitle}"] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}${audioTag}\x1b[0m`);
                     }
 
                     if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);
