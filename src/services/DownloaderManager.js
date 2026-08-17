@@ -111,6 +111,14 @@ class DownloaderManager extends EventEmitter {
             'wss://tracker.files.fm:7073/announce'
         ];
 
+        if (typeof torrentTarget === 'string' && torrentTarget.startsWith('magnet:')) {
+            for (const tr of trackers) {
+                if (!torrentTarget.includes(encodeURIComponent(tr)) && !torrentTarget.includes(tr)) {
+                    torrentTarget += `&tr=${encodeURIComponent(tr)}`;
+                }
+            }
+        }
+
         const isSerie = options.type === 'serie' || (options.season && options.episode && options.type !== 'filme');
         const displayTitle = isSerie
             ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})` 
@@ -121,7 +129,7 @@ class DownloaderManager extends EventEmitter {
 
             // Instância isolada por download com alto limite de conexões simultâneas
             const client = new WT({
-                maxConns: 150,
+                maxConns: 200,
                 dht: true,
                 tracker: true,
                 downloadLimit: -1,
