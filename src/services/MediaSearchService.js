@@ -696,6 +696,13 @@ class MediaSearchService {
 
                 if (sizeB >= 350 && sizeB <= 2500) scoreB += 500;
                 else if (sizeB > 70000) scoreB -= 1500;
+
+                // 6. PRIORIDADE MÁXIMA PARA TEMPORADA COMPLETA / SEASON PACKS (Todos os episódios juntos)
+                const isPackA = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|s\d{2}[._ -]?(complete|dual|dublado|1080p)|pack|all[._ -]?episodes)\b/i.test(a.title) && !/\b(e\d{2}|ep\d{2}|episodio)\b/i.test(a.title);
+                const isPackB = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|s\d{2}[._ -]?(complete|dual|dublado|1080p)|pack|all[._ -]?episodes)\b/i.test(b.title) && !/\b(e\d{2}|ep\d{2}|episodio)\b/i.test(b.title);
+
+                if (isPackA && (a.seeders || 0) > 0) scoreA += 2000;
+                if (isPackB && (b.seeders || 0) > 0) scoreB += 2000;
             }
 
             return scoreB - scoreA;
