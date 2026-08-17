@@ -1082,10 +1082,10 @@ class CommandHandler {
             targetFileId = episodio.versoes.legendado.fileId || targetFileId;
         }
 
+        const epTitulo = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` • _${episodio.nome}_` : '';
         const caption = `🍿 *BrasilFlix — ${serie.nome}*\n\n` +
-                       `📺 *Temporada ${tempNum} • Episódio ${epNum}*\n` +
-                       `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'}\n` +
-                       `🔊 *Áudio:* ${episodio.audio || (episodio.isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')}\n\n` +
+                       `📺 *Temporada ${tempNum} • Episódio ${epNum}*${epTitulo}\n` +
+                       `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'} | 🔊 *Áudio:* ${episodio.audio || (episodio.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n\n` +
                        `🍿 _Bom episódio! Assista com a melhor qualidade._`;
 
         await this.bot.sendMessage(chatId, `🚀 *Enviando ${serie.nome} (T${tempNum}E${epNum}) em alta velocidade...*`, { parse_mode: 'Markdown' });
@@ -1112,7 +1112,13 @@ class CommandHandler {
                 };
                 await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: keyboard });
             } else {
-                await this.bot.sendMessage(chatId, `🍿 *Bom episódio, assinante VIP! Aproveite!*`, { parse_mode: 'Markdown' });
+                const epNomeCompleto = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` — _${episodio.nome}_` : '';
+                const msgVip = `🍿 *BrasilFlix VIP* • *Pronto para assistir!*\n\n` +
+                               `📺 *${serie.nome}* (T${tempNum}E${epNum})${epNomeCompleto}\n` +
+                               `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'}  |  🔊 *Áudio:* ${episodio.audio || (episodio.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n` +
+                               `💎 *Acesso:* Assinante VIP Liberado\n\n` +
+                               `🍿 *Bom episódio! Tenha uma excelente sessão.*`;
+                await this.bot.sendMessage(chatId, msgVip, { parse_mode: 'Markdown' });
             }
         } catch (error) {
             console.error('❌ Erro ao enviar episódio:', error);
@@ -5661,10 +5667,12 @@ class CommandHandler {
                 };
                 await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: keyboard });
             } else {
-                const msg = `✅ *${serie.nome}* (T${seasonNum}E${epNum})\n` +
-                            `🎬 *${ep.nome || `Episódio ${epNum}`}*\n` +
-                            `✨ *Qualidade:* 1080p | 🔊 *Áudio:* ${ep.audio || 'Dublado'}\n\n` +
-                            `🍿 *Bom episódio, assinante VIP!*`;
+                const epNomeCompleto = ep.nome && !ep.nome.startsWith('Episódio') ? ` — _${ep.nome}_` : '';
+                const msg = `🍿 *BrasilFlix VIP* • *Pronto para assistir!*\n\n` +
+                            `📺 *${serie.nome}* (T${seasonNum}E${epNum})${epNomeCompleto}\n` +
+                            `✨ *Qualidade:* ${ep.qualidade || '1080p Full HD'}  |  🔊 *Áudio:* ${ep.audio || (ep.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n` +
+                            `💎 *Acesso:* Assinante VIP Liberado\n\n` +
+                            `🍿 *Bom episódio! Tenha uma excelente sessão.*`;
                 await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
             }
         } catch (e) {
