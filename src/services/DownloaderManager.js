@@ -425,13 +425,22 @@ class DownloaderManager extends EventEmitter {
                 const stalledMs = now - lastBytesChangeTime;
                 const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
 
-                // 1. Aborta se estiver completamente estagnado por 150s no início (sem progresso significativo e sem peers)
-                if (stalledMs >= 150000 && torrent.progress < 0.01) {
+                // 1. Aborta rapidamente se estiver sem nenhum peer conectado após 35s
+                if (torrent.numPeers === 0 && stalledMs >= 35000 && torrent.progress < 0.01) {
+                    process.stdout.write('\n');
+                    console.log(`⚠️ Torrent sem peers ativos (0 peers após 35s). Abortando imediatamente para tentar outra fonte...`);
+                    finished = true;
+                    safeCleanup();
+                    return reject(new Error('Torrent sem peers ativos após 35s.'));
+                }
+
+                // 2. Aborta se estiver completamente estagnado por 75s (com peers mas sem envio de dados)
+                if (stalledMs >= 75000 && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s), estagnado por ${Math.round(stalledMs / 1000)}s). Abortando para tentar outra fonte...`);
                     finished = true;
                     safeCleanup();
-                    return reject(new Error('Download estagnado sem dados/seeders ativos após 150s.'));
+                    return reject(new Error('Download estagnado sem dados/seeders ativos após 75s.'));
                 }
 
                 // 2. Aborta se for um torrent excessivamente lento (< 0.25 MB/s após 180 segundos com previsão > 75 min)

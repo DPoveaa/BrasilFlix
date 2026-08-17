@@ -53,6 +53,9 @@ process.on('SIGTERM', () => {
 });
 
 process.on('uncaughtException', (error) => {
+    if (error?.message?.includes('User-Initiated Abort') || error?.code === 'ERR_DATA_CHANNEL') {
+        return;
+    }
     console.error('⚠️ Aviso - Exceção assíncrona capturada:', error?.message || error);
 });
 

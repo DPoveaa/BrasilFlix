@@ -198,12 +198,13 @@ class MediaSearchService {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
         }
 
-        if (ptBrResults.length === 0 && imdbId) {
-            console.log(`🌐 Nenhuma versão dublada encontrada. Buscando legendas oficiais PT-BR no OpenSubtitles (${imdbId})...`);
+        const activeSeedsCount = ptBrResults.filter(r => (r.seeders || 0) > 0).length;
+        if (activeSeedsCount === 0 && imdbId) {
+            console.log(`🌐 Nenhuma fonte com sementes ativas encontrada para "${cleanQuery}". Buscando legendas oficiais PT-BR no OpenSubtitles (${imdbId})...`);
             try {
                 const ptSubs = await this.getOpenSubtitlesPT(imdbId, tipo, season, episode);
                 if (ptSubs.length > 0) {
-                    console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando melhor versão 1080p WEB-DL...`);
+                    console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando melhor versão 1080p WEB-DL com sementes ativas...`);
                     const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { season, episode });
                     for (const st of fallbackStreams) {
                         st.isPtBr = true;
