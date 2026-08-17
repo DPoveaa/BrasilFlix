@@ -5,8 +5,8 @@ async function deployToServer() {
     const conn = new Client();
 
     conn.on('ready', () => {
-        console.log('🔌 Conectado via SSH (192.168.15.50:22). Executando git pull, npm install, clear-queue e restart no PM2...');
-        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git pull && npm install --omit=dev && node clear_queue.js && pm2 restart brasilflix';
+        console.log('🔌 Conectado via SSH (192.168.15.50:22). Executando deploy completo...');
+        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git reset --hard HEAD && git pull origin main && npm install --omit=dev && (pip install ffsubsync --break-system-packages 2>/dev/null || pip install ffsubsync 2>/dev/null || true) && node clear_queue.js && pm2 restart brasilflix && pm2 status';
 
         conn.exec(cmd, (err, stream) => {
             if (err) {
