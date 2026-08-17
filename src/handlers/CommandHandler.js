@@ -1112,12 +1112,9 @@ class CommandHandler {
                 };
                 await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: keyboard });
             } else {
-                const epNomeCompleto = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` — _${episodio.nome}_` : '';
-                const msgVip = `🍿 *BrasilFlix VIP* • *Pronto para assistir!*\n\n` +
-                               `📺 *${serie.nome}* (T${tempNum}E${epNum})${epNomeCompleto}\n` +
-                               `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'}  |  🔊 *Áudio:* ${episodio.audio || (episodio.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n` +
-                               `💎 *Acesso:* Assinante VIP Liberado\n\n` +
-                               `🍿 *Bom episódio! Tenha uma excelente sessão.*`;
+                const epNomeCompleto = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` — ${episodio.nome}` : '';
+                const msgVip = `🍿 *Bom episódio!*\n` +
+                               `📺 *${serie.nome}* (T${tempNum}E${epNum})${epNomeCompleto}`;
                 await this.bot.sendMessage(chatId, msgVip, { parse_mode: 'Markdown' });
             }
         } catch (error) {
@@ -5667,12 +5664,9 @@ class CommandHandler {
                 };
                 await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: keyboard });
             } else {
-                const epNomeCompleto = ep.nome && !ep.nome.startsWith('Episódio') ? ` — _${ep.nome}_` : '';
-                const msg = `🍿 *BrasilFlix VIP* • *Pronto para assistir!*\n\n` +
-                            `📺 *${serie.nome}* (T${seasonNum}E${epNum})${epNomeCompleto}\n` +
-                            `✨ *Qualidade:* ${ep.qualidade || '1080p Full HD'}  |  🔊 *Áudio:* ${ep.audio || (ep.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n` +
-                            `💎 *Acesso:* Assinante VIP Liberado\n\n` +
-                            `🍿 *Bom episódio! Tenha uma excelente sessão.*`;
+                const epNomeCompleto = ep.nome && !ep.nome.startsWith('Episódio') ? ` — ${ep.nome}` : '';
+                const msg = `🍿 *Bom episódio!*\n` +
+                            `📺 *${serie.nome}* (T${seasonNum}E${epNum})${epNomeCompleto}`;
                 await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
             }
         } catch (e) {
