@@ -454,10 +454,10 @@ class DownloaderManager extends EventEmitter {
                 const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
 
                 const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
-                const noPeerTimeoutMs = isDub ? 240000 : 180000; // 4 minutos para Dublado, 3 minutos para geral
-                const stalledTimeoutMs = isDub ? 360000 : 240000; // 6 minutos sem dados para Dublado, 4 minutos para geral
+                const noPeerTimeoutMs = 90000; // 90s para abortar se tiver 0 peers e 0 bytes (evita travamentos longos)
+                const stalledTimeoutMs = 150000; // 2.5 min se estiver com peers mas 0 bytes transferidos
 
-                // 1. Aborta se estiver sem nenhum peer conectado após 3-4 minutos (dá tempo para DHT e PEX conectarem)
+                // 1. Aborta se estiver sem nenhum peer conectado após 90s
                 if (torrent.numPeers === 0 && stalledMs >= noPeerTimeoutMs && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent sem peers ativos (0 peers após ${Math.round(noPeerTimeoutMs / 1000)}s). Abortando para tentar outra fonte...`);
@@ -466,7 +466,7 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Torrent sem peers ativos após ${Math.round(noPeerTimeoutMs / 1000)}s.`));
                 }
 
-                // 2. Aborta se estiver completamente estagnado por 5-6 minutos (com peers mas sem envio de dados)
+                // 2. Aborta se estiver completamente estagnado por 2.5 min (com peers mas sem envio de dados)
                 if (stalledMs >= stalledTimeoutMs && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent estagnado sem velocidade ativa (${torrent.numPeers} peer(s), estagnado por ${Math.round(stalledMs / 1000)}s). Abortando para tentar outra fonte...`);

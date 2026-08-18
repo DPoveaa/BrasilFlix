@@ -564,8 +564,8 @@ class QueueManager extends EventEmitter {
                     await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
                     return;
                 }
-            } else if (requestedEp > 1) {
-                console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Forçando início a partir do Episódio 1 (T${seasonNum}E1)!`);
+            } else if (requestedEp > 1 && !this.isEpisodeSkippedRecently(metadata.nome || job.title, seasonNum, 1) && !this.isEpisodeSkippedRecently(job.title, seasonNum, 1)) {
+                console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Iniciando a partir do Episódio 1 (T${seasonNum}E1)!`);
                 job.episode = 1;
                 await this.saveJob(job);
             }
@@ -785,6 +785,55 @@ class QueueManager extends EventEmitter {
                 } catch (err) {
                     console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
                     lastError = err;
+                }
+            }
+
+            if (!downloadedMedia || !bestSource) {
+                // Se a busca inicial era Dublado e todas as fontes falharam, tenta fallback para 1080p Legendado (OpenSubtitles PT-BR)
+                if (job.audioPreference === 'dublado') {
+                    console.log(`⚠️ Todas as fontes dubladas para "${job.title}" estavam sem seeders. Buscando fallback 1080p Legendado com OpenSubtitles PT-BR...`);
+                    try {
+                        const legSources = await MediaSearchService.search(job.title, job.type, {
+                            nomeOriginal: metadata.nomeOriginal,
+                            ano: metadata.ano,
+                            tmdbId: metadata.tmdbId,
+                            imdbId: metadata.imdbId,
+                            season: job.season || 1,
+                            episode: job.episode || 1,
+                            audioPreference: 'legendado'
+                        });
+
+                        const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub);
+                        for (let j = 0; j < Math.min(4, candidatesLeg.length); j++) {
+                            const currentLeg = candidatesLeg[j];
+                            console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
+                            try {
+                                if (currentLeg.magnet) {
+                                    downloadedMedia = await DownloaderManager.downloadTorrent(currentLeg.magnet, (progress) => {
+                                        job.progress = progress.percent;
+                                        job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
+                                    }, {
+                                        title: job.title,
+                                        season: job.season,
+                                        episode: job.episode,
+                                        type: job.type,
+                                        audio: currentLeg.audio || 'Legendado (PT-BR)',
+                                        isDublado: false,
+                                        audioPreference: 'legendado'
+                                    });
+                                }
+                                if (downloadedMedia && downloadedMedia.filePath) {
+                                    bestSource = currentLeg;
+                                    break;
+                                }
+                            } catch (errLeg) {
+                                console.warn(`⚠️ [Fallback Legendado] Fonte [${j + 1}] falhou: ${errLeg.message}`);
+                                lastError = errLeg;
+                            }
+                        }
+                    } catch (eLeg) {
+                        console.warn('⚠️ Falha ao buscar fallback legendado:', eLeg.message);
+                    }
                 }
             }
 
