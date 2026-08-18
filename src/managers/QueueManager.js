@@ -577,24 +577,12 @@ class QueueManager extends EventEmitter {
                             nextTargetEp = ep;
                             break;
                         }
-                        const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
-                        const epLeg = epItem.isLegendado || !!epItem.versoes?.legendado || epItem.audio?.toLowerCase().includes('legendado');
-
-                        if (pref === 'legendado' && !epLeg) {
-                            nextTargetSeason = s;
-                            nextTargetEp = ep;
-                            break;
-                        } else if (pref === 'dublado' && !epDub) {
-                            nextTargetSeason = s;
-                            nextTargetEp = ep;
-                            break;
-                        }
                     }
 
                     if (nextTargetSeason !== null) break;
                 }
 
-                // 2º Passo: Se todos os episódios já existem no catálogo, verifica se algum pode receber upgrade de áudio
+                // 2º Passo: Se todos os episódios já existem no catálogo, verifica se algum pode receber upgrade de áudio para Dublado
                 if (nextTargetSeason === null && pref === 'dublado') {
                     for (let s = 1; s <= totalTemporadas; s++) {
                         const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
@@ -648,36 +636,16 @@ class QueueManager extends EventEmitter {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const optInfo = await VideoProcessor.getVideoInfo(optimizedPath);
-
-                    // Validação de Duração Completa para Retomada
-                    let isDurationValid = optInfo && optInfo.duration >= 300; // Mínimo 5 min
-
-                    if (rawFilePath && fs.existsSync(rawFilePath)) {
-                        const rawInfo = await VideoProcessor.getVideoInfo(rawFilePath);
-                        if (rawInfo && rawInfo.duration > 0) {
-                            const diff = Math.abs(optInfo.duration - rawInfo.duration);
-                            if (diff > 15 && optInfo.duration < rawInfo.duration * 0.95) {
-                                isDurationValid = false;
-                            }
-                        }
-                    }
-
-                    if (isDurationValid) {
-                        console.log(`♻️ Retomando do arquivo otimizado completo (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB, Duração: ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
+                    if (optInfo && optInfo.duration > 0) {
+                        console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
-                        downloadedMedia = { filePath: rawFilePath || optimizedPath, fileName: path.basename(rawFilePath || optimizedPath), sizeBytes: optStat.size };
-                        bestSource = job.bestSource;
-                    } else {
-                        console.warn(`🧹 Arquivo otimizado incompleto/cortado (${optInfo?.durationFormatted || '0s'}), descartando para re-codificar do início...`);
-                        await DownloaderManager.cleanupFile(optimizedPath);
-                        optimizedPath = null;
-                        job.optimizedPath = null;
+                        bestSource = job.bestSource || { title: job.title, source: 'Cache Local', audio: '1080p Full HD' };
+                        langInfo = job.langInfo || langInfo;
                     }
                 } catch (e) {
                     console.warn('⚠️ Arquivo otimizado inválido, descartando:', e.message);
                     await DownloaderManager.cleanupFile(optimizedPath);
                     optimizedPath = null;
-                    job.optimizedPath = null;
                 }
             } else {
                 await DownloaderManager.cleanupFile(optimizedPath);
@@ -731,6 +699,11 @@ class QueueManager extends EventEmitter {
                     source: 'Manual (Admin Magnet)'
                 }];
             } else {
+                const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
+                                   this.catalogoManager.buscarItemExato(job.title, 'serie');
+                const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
+                const jaPossuiLegendado = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
+
                 sources = await MediaSearchService.search(job.title, job.type, {
                     nomeOriginal: metadata.nomeOriginal,
                     ano: metadata.ano,
@@ -738,7 +711,8 @@ class QueueManager extends EventEmitter {
                     imdbId: metadata.imdbId,
                     season: job.season || 1,
                     episode: job.episode || 1,
-                    audioPreference: job.audioPreference || 'dublado'
+                    audioPreference: job.audioPreference || 'dublado',
+                    ignorarFallbackLegendado: jaPossuiLegendado
                 });
             }
 

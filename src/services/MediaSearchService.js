@@ -207,7 +207,7 @@ class MediaSearchService {
         }
 
         const dubComSeeds = ptBrResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
-        const shouldFetchLegendado = ptBrResults.length === 0 || (pref === 'legendado') || (pref === 'dublado' && dubComSeeds.length === 0);
+        const shouldFetchLegendado = !options.ignorarFallbackLegendado && (ptBrResults.length === 0 || (pref === 'legendado') || (pref === 'dublado' && dubComSeeds.length === 0));
 
         // Busca fallback de OpenSubtitles se não houver dublado com seeders saudáveis
         if (shouldFetchLegendado && imdbId) {

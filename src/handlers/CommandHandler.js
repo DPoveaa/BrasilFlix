@@ -5651,7 +5651,7 @@ class CommandHandler {
             return;
         }
 
-        const temDublado = !!(ep.isDublado || ep.versoes?.dublado?.messageId || (!ep.audio?.toLowerCase().includes('legendado') && (ep.messageId || ep.fileId)));
+        const temDublado = !!(ep.isDublado || ep.versoes?.dublado?.messageId || (ep.audio?.toLowerCase().includes('dublado') && (ep.messageId || ep.fileId)));
         const temLegendado = !!(ep.isLegendado || ep.versoes?.legendado?.messageId || (ep.audio?.toLowerCase().includes('legendado') && (ep.messageId || ep.fileId)));
 
         // Se o episódio possui AMBAS as opções de áudio (Dublado e Legendado), abre a tela de seleção de áudio
@@ -5678,7 +5678,7 @@ class CommandHandler {
         }
 
         // Se tiver apenas 1 versão de áudio disponível, entrega diretamente
-        const audioFinal = temLegendado ? 'legendado' : 'dublado';
+        const audioFinal = temDublado ? 'dublado' : 'legendado';
         await this.handleAssistirEpisodio(chatId, userId, serieId, seasonNum, epNum, callbackQuery, audioFinal);
     }
 

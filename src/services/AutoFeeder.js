@@ -161,6 +161,9 @@ class AutoFeeder {
                         season: tipo === 'serie' ? 1 : null,
                         episode: tipo === 'serie' ? 1 : null
                     });
+                    await this.pedidosManager.marcarComoProcessado(pedido.id);
+                } else {
+                    await this.pedidosManager.marcarComoProcessado(pedido.id);
                 }
             }
         } catch (e) {
