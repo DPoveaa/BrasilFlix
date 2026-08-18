@@ -913,8 +913,15 @@ class QueueManager extends EventEmitter {
         metadata.season = job.season;
         metadata.episode = job.episode;
         metadata.episodioNome = job.type === 'serie' ? `Episódio ${job.episode || 1}` : '';
-        metadata.qualidade = bestSource?.quality || '1080p';
-        metadata.isCam = bestSource?.isCam || false;
+
+        // Detecção robusta de Cinema/CAM (por título, tags ou data de lançamento futura no TMDB)
+        const isCamTitle = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema)\b/i.test(bestSource?.title || '') || (bestSource?.isCam === true);
+        const tmdbYear = parseInt(metadata.ano || new Date().getFullYear(), 10);
+        const isUnreleasedMovie = job.type === 'filme' && tmdbYear >= new Date().getFullYear() && (metadata.dataLancamento && new Date(metadata.dataLancamento) > new Date());
+        const isCamFinal = isCamTitle || isUnreleasedMovie || (bestSource?.quality && bestSource.quality.includes('CAM'));
+
+        metadata.isCam = isCamFinal;
+        metadata.qualidade = isCamFinal ? 'CAM (Cinema)' : (bestSource?.quality || '1080p Full HD');
         metadata.audio = langInfo?.audioText || bestSource?.audio || 'Dublado (PT-BR)';
         metadata.isDublado = langInfo ? langInfo.isDublado : true;
         metadata.isLegendado = langInfo ? langInfo.isLegendado : false;
