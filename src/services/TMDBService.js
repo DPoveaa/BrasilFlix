@@ -15,6 +15,64 @@ class TMDBService {
         return `${this.imageBaseUrl}/${size}${posterPath}`;
     }
 
+    _cleanForComparison(text) {
+        if (!text) return '';
+        return text
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    rankSearchResults(items, query) {
+        if (!items || items.length === 0) return [];
+        const qClean = this._cleanForComparison(query);
+        const qTokens = qClean.split(' ').filter(Boolean);
+        const nowStr = new Date().toISOString().split('T')[0];
+
+        return items.sort((a, b) => {
+            let scoreA = 0;
+            let scoreB = 0;
+
+            const nameA = this._cleanForComparison(a.nome);
+            const origA = this._cleanForComparison(a.nomeOriginal);
+            const nameB = this._cleanForComparison(b.nome);
+            const origB = this._cleanForComparison(b.nomeOriginal);
+
+            // 1. Correspondência Exata de Título
+            if (nameA === qClean || origA === qClean) scoreA += 10000;
+            if (nameB === qClean || origB === qClean) scoreB += 10000;
+
+            // 2. Prefixo de Título
+            if (nameA.startsWith(qClean) || origA.startsWith(qClean)) scoreA += 2500;
+            if (nameB.startsWith(qClean) || origB.startsWith(qClean)) scoreB += 2500;
+
+            // 3. Contém todas as palavras da consulta
+            if (qTokens.length > 0) {
+                if (qTokens.every(tok => nameA.includes(tok) || origA.includes(tok))) scoreA += 1500;
+                if (qTokens.every(tok => nameB.includes(tok) || origB.includes(tok))) scoreB += 1500;
+            }
+
+            // 4. Já lançado vs Lançamento Futuro (privilegia obras já disponíveis em disco/digital)
+            if (a.dataLancamento && a.dataLancamento <= nowStr) scoreA += 2000;
+            else if (a.dataLancamento && a.dataLancamento > nowStr) scoreA -= 2000;
+
+            if (b.dataLancamento && b.dataLancamento <= nowStr) scoreB += 2000;
+            else if (b.dataLancamento && b.dataLancamento > nowStr) scoreB -= 2000;
+
+            // 5. Popularidade e Quantidade de Votos (obras consagradas têm prioridade sobre curtas/spin-offs)
+            scoreA += Math.min(3000, Math.log10(Math.max(1, a.votos || 0)) * 600);
+            scoreB += Math.min(3000, Math.log10(Math.max(1, b.votos || 0)) * 600);
+
+            scoreA += (a.nota || 0) * 50;
+            scoreB += (b.nota || 0) * 50;
+
+            return scoreB - scoreA;
+        });
+    }
+
     async searchMulti(query) {
         try {
             if (!query || query.trim().length === 0) return [];
@@ -30,9 +88,11 @@ class TMDBService {
             });
 
             const results = response.data.results || [];
-            return results
+            const formatted = results
                 .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
                 .map(item => this.formatItem(item));
+
+            return this.rankSearchResults(formatted, query);
         } catch (error) {
             console.error('❌ Erro na busca TMDB:', error.message);
             return [];
@@ -55,7 +115,8 @@ class TMDBService {
             });
 
             const results = response.data.results || [];
-            return results.map(item => this.formatItem({ ...item, media_type: 'movie' }));
+            const formatted = results.map(item => this.formatItem({ ...item, media_type: 'movie' }));
+            return this.rankSearchResults(formatted, query);
         } catch (error) {
             console.error('❌ Erro na busca de filme TMDB:', error.message);
             return [];
@@ -78,7 +139,8 @@ class TMDBService {
             });
 
             const results = response.data.results || [];
-            return results.map(item => this.formatItem({ ...item, media_type: 'tv' }));
+            const formatted = results.map(item => this.formatItem({ ...item, media_type: 'tv' }));
+            return this.rankSearchResults(formatted, query);
         } catch (error) {
             console.error('❌ Erro na busca de série TMDB:', error.message);
             return [];

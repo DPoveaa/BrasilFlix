@@ -246,30 +246,60 @@ class MediaSearchService {
     async searchTorrentio(imdbId, tipo = 'filme', opts = {}) {
         if (!imdbId) return [];
         const results = [];
-        try {
-            const season = opts.season || 1;
-            const episode = opts.episode || 1;
-            const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
-            const url = `https://torrentio.strem.fun/stream/${streamPath}`;
-            
-            const response = await axios.get(url, { timeout: this.timeout });
-            const streams = response.data.streams || [];
+        const seenHashes = new Set();
+        const season = opts.season || 1;
+        const episode = opts.episode || 1;
+        const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
 
-            for (const st of streams) {
+        const endpoints = [
+            `https://torrentio.strem.fun/brazuca/stream/${streamPath}`,
+            `https://torrentio.strem.fun/language=portuguese/stream/${streamPath}`,
+            `https://torrentio.strem.fun/stream/${streamPath}`
+        ];
+
+        const fetchStreams = async (url) => {
+            try {
+                const https = require('https');
+                const agent = new https.Agent({ rejectUnauthorized: false });
+                const res = await axios.get(url, { 
+                    timeout: this.timeout,
+                    httpsAgent: agent,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    }
+                });
+                return res.data?.streams || [];
+            } catch (e) {
+                return [];
+            }
+        };
+
+        try {
+            const allStreamArrays = await Promise.all(endpoints.map(fetchStreams));
+            const rawStreams = allStreamArrays.flat();
+
+            for (const st of rawStreams) {
+                if (!st.infoHash || seenHashes.has(st.infoHash.toLowerCase())) continue;
+                seenHashes.add(st.infoHash.toLowerCase());
+
                 const rawTitle = st.title || '';
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
 
-                // Distinção explícita de PT-BR vs PT-PT
-                const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
-                const isPtPtExplicit = /(🇵🇹|\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b)/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title);
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer/i.test(title);
+                // Grupos de lançamento 100% brasileiros
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo/i.test(title);
+
+                // Marcação explícita de PT-BR / Dublado
+                const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
+
+                // Marcação explícita de Portugal (NUNCA aplicada a grupos brasileiros)
+                const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && (/\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title));
 
                 const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
                 const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
-                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(rawTitle));
 
-                const isDublado = (isExplicitPtDubInTitle || (isBrazilianGroup && (/\b(dual|dublado|dub)\b/i.test(title) || hasPtAudioFlag)) || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit;
+                const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit;
 
                 const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt[-_ ]?br|subs?\.pob|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
                 const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (isPtBrExplicit || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle)) && !isPtPtExplicit;
@@ -310,14 +340,14 @@ class MediaSearchService {
                 }
 
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
-                const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
+                const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(title);
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
                 const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title);
 
                 results.push({
                     title: title,
-                    infoHash: st.infoHash,
+                    infoHash: st.infoHash.toLowerCase(),
                     source: `Torrentio (${sourceGroup})`,
                     magnet: magnet,
                     sizeBytes: parseFloat(sizeMB) * 1024 * 1024,
@@ -563,16 +593,21 @@ class MediaSearchService {
                 return;
             }
 
-            const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name);
-            const isPtPtExplicit = /\b(pt[-_]?pt|pt_pt|ptpt|dobrado)\b/i.test(name);
             const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
+            const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name) || isBrazilianGroup;
+            const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && /\b(pt[-_]?pt|pt_pt|ptpt|dobrado|european[._ -]?portuguese)\b/i.test(name);
             const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
-            const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(name));
+            const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
 
             const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
             const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
-            const isExplicitPtBr = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
-            const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBr) && !isPtPtExplicit;
+            const isExplicitPtBrSub = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
+            const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBrSub) && !isPtPtExplicit;
+
+            // Se não tiver nem áudio dublado nem legenda em português comprovada, descarta imediatamente (evita falsos positivos em inglês)
+            if (!isDublado && !isLegendado) {
+                return;
+            }
 
             if (opts.tipo === 'serie' && opts.season) {
                 const sPad = String(opts.season).padStart(2, '0');
@@ -617,10 +652,14 @@ class MediaSearchService {
             });
         };
 
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+
         // Executa buscas paralelas em BitSearch, SolidTorrents e ApiBay
         const searches = [
             // 1. BitSearch
-            axios.get(`https://bitsearch.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+            axios.get(`https://bitsearch.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000, headers })
                 .then(res => {
                     const items = res.data?.results || [];
                     for (const it of items) {
@@ -629,7 +668,7 @@ class MediaSearchService {
                 }).catch(() => {}),
 
             // 2. SolidTorrents
-            axios.get(`https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+            axios.get(`https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000, headers })
                 .then(res => {
                     const items = res.data?.results || [];
                     for (const it of items) {
@@ -638,7 +677,7 @@ class MediaSearchService {
                 }).catch(() => {}),
 
             // 3. ApiBay (ThePirateBay)
-            axios.get(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, { timeout: 6000 })
+            axios.get(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, { timeout: 6000, headers })
                 .then(res => {
                     if (Array.isArray(res.data) && res.data.length > 0 && res.data[0].id !== '0') {
                         for (const it of res.data.slice(0, 30)) {

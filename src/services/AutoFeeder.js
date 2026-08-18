@@ -261,6 +261,23 @@ class AutoFeeder {
         const title = item.nome;
         if (!title) return;
 
+        // 1. Filtrar títulos em idiomas asiáticos sem tradução/ocidentalização
+        if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(title)) {
+            // Se o título está em caracteres coreanos/chineses puros e não tem título em português legível
+            if (!item.nomeOriginal || /[\uac00-\ud7af]/.test(item.nomeOriginal)) {
+                return;
+            }
+        }
+
+        // 2. Filtrar conteúdos futuros que ainda não estrearam em streaming/digital
+        const nowStr = new Date().toISOString().split('T')[0];
+        if (item.dataLancamento && item.dataLancamento > nowStr) {
+            // Se for filme futuro não lançado, não enfileira
+            if (!config.ALLOW_CINEMA_CAM) {
+                return;
+            }
+        }
+
         const existing = this.catalogoManager.buscarItemExato(title, tipo);
         if (existing) {
             return;

@@ -863,12 +863,21 @@ class QueueManager extends EventEmitter {
                 if (!langInfo.isValid) {
                     console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado nem legenda em Português detectada no download de "${job.title}".`);
                     await DownloaderManager.cleanupFile(rawFilePath);
+                    if (job.type === 'serie') {
+                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        console.warn(`⚠️ [PULO INTELIGENTE] Arquivo sem português para "${job.title}" T${job.season || 1}E${job.episode || 1}. Avançando para o próximo episódio...`);
+                        await this.enqueueNextAvailableEpisode(metadata, job);
+                    }
                     throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
                 }
 
                 console.log(`🎙️ Conteúdo em Português e Duração validados com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''})`);
             } catch (err) {
                 if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
+                    if (job.type === 'serie' && !err.message.includes('não contém áudio nem legendas')) {
+                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        await this.enqueueNextAvailableEpisode(metadata, job);
+                    }
                     throw err;
                 }
             }
