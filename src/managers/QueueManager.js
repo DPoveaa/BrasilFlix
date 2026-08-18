@@ -334,6 +334,18 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        // Evita jobs duplicados idênticos já presentes na fila
+        const existingInQueue = this.queue.find(j => 
+            j.type === type &&
+            j.title.toLowerCase() === job.title.toLowerCase() &&
+            (type !== 'serie' || (j.season === job.season && j.episode === job.episode)) &&
+            (j.audioPreference === job.audioPreference || (!j.audioPreference && !job.audioPreference))
+        );
+        if (existingInQueue) {
+            console.log(`ℹ️ [Fila] Trabalho para "${job.title}" ${type === 'serie' ? `T${job.season}E${job.episode}` : ''} [${job.audioPreference}] já está na fila.`);
+            return existingInQueue;
+        }
+
         // Se for série e o episódio já existir no catálogo com o áudio desejado, busca o próximo episódio pendente
         if (type === 'serie') {
             const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
@@ -342,13 +354,12 @@ class QueueManager extends EventEmitter {
                 const epExistente = (temporada?.episodios || []).find(e => e.numero === job.episode);
                 if (epExistente) {
                     const pref = job.audioPreference || 'dublado';
-                    const epDub = epExistente.isDublado || epExistente.audio?.toLowerCase().includes('dublado');
-                    const epLeg = epExistente.isLegendado || epExistente.audio?.toLowerCase().includes('legendado');
-                    const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg);
+                    const epDub = epExistente.isDublado || !!epExistente.versoes?.dublado || epExistente.audio?.toLowerCase().includes('dublado');
+                    const epLeg = epExistente.isLegendado || !!epExistente.versoes?.legendado || epExistente.audio?.toLowerCase().includes('legendado');
+                    const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg) || (epDub && epLeg);
 
                     if (audioMatches) {
                         if (!extraData.isManualAdd || (!extraData.episode && !extraData.season)) {
-                            const epsCadastrados = (temporada?.episodios || []).map(e => e.numero);
                             let nextMissing = null;
                             for (let ep = 1; ep <= 30; ep++) {
                                 const epObj = (temporada?.episodios || []).find(e => e.numero === ep);
@@ -356,15 +367,15 @@ class QueueManager extends EventEmitter {
                                     nextMissing = ep;
                                     break;
                                 }
-                                const isD = epObj.isDublado || epObj.audio?.toLowerCase().includes('dublado');
-                                const isL = epObj.isLegendado || epObj.audio?.toLowerCase().includes('legendado');
+                                const isD = epObj.isDublado || !!epObj.versoes?.dublado || epObj.audio?.toLowerCase().includes('dublado');
+                                const isL = epObj.isLegendado || !!epObj.versoes?.legendado || epObj.audio?.toLowerCase().includes('legendado');
                                 if ((pref === 'dublado' && !isD) || (pref === 'legendado' && !isL)) {
                                     nextMissing = ep;
                                     break;
                                 }
                             }
                             if (nextMissing) {
-                                console.log(`📺 [Fila] "${title}" T${job.season}E${job.episode} já existe. Direcionando trabalho para o próximo episódio pendente: T${job.season}E${nextMissing}`);
+                                console.log(`📺 [Fila] "${title}" T${job.season}E${job.episode} já existe com áudio ${pref}. Direcionando trabalho para o próximo episódio pendente: T${job.season}E${nextMissing}`);
                                 job.episode = nextMissing;
                             } else {
                                 console.log(`ℹ️ [Fila] Todos os episódios da Temporada ${job.season} de "${title}" já estão no catálogo com áudio ${pref}.`);
@@ -565,20 +576,18 @@ class QueueManager extends EventEmitter {
                             nextTargetSeason = s;
                             nextTargetEp = ep;
                             break;
-                        } else if (pref === 'legendado') {
-                            const epLeg = epItem.isLegendado || epItem.audio?.toLowerCase().includes('legendado');
-                            if (!epLeg) {
-                                nextTargetSeason = s;
-                                nextTargetEp = ep;
-                                break;
-                            }
-                        } else if (pref === 'dublado') {
-                            const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
-                            if (!epDub) {
-                                nextTargetSeason = s;
-                                nextTargetEp = ep;
-                                break;
-                            }
+                        }
+                        const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
+                        const epLeg = epItem.isLegendado || !!epItem.versoes?.legendado || epItem.audio?.toLowerCase().includes('legendado');
+
+                        if (pref === 'legendado' && !epLeg) {
+                            nextTargetSeason = s;
+                            nextTargetEp = ep;
+                            break;
+                        } else if (pref === 'dublado' && !epDub) {
+                            nextTargetSeason = s;
+                            nextTargetEp = ep;
+                            break;
                         }
                     }
 
@@ -590,7 +599,7 @@ class QueueManager extends EventEmitter {
                     for (let s = 1; s <= totalTemporadas; s++) {
                         const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
                         for (const epItem of (tempS?.episodios || [])) {
-                            const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
+                            const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
                             if (!epDub) {
                                 nextTargetSeason = s;
                                 nextTargetEp = epItem.numero;
@@ -1136,12 +1145,10 @@ class QueueManager extends EventEmitter {
         }
 
         // 7. Notificação formal EXCLUSIVAMENTE no Grupo de Armazém
-        // 7. Notificação formal nos Grupos e Canais oficiais
         try {
             const storageGroupId = config.STORAGE_GROUP_ID;
-            const notifGroupId = config.NOTIFICATION_GROUP_ID;
 
-            if (this.bot) {
+            if (this.bot && storageGroupId) {
                 const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
 
@@ -1160,12 +1167,7 @@ class QueueManager extends EventEmitter {
                                  `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
                                  `🍿 *Disponível imediatamente para todos os usuários!*`;
 
-                if (storageGroupId) {
-                    await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
-                }
-                if (notifGroupId && notifGroupId !== storageGroupId) {
-                    await this.bot.sendMessage(notifGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
-                }
+                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
             }
         } catch (e) {}
 
@@ -1276,21 +1278,25 @@ class QueueManager extends EventEmitter {
                 totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || 10;
             }
 
-            // Se o episódio atual foi catalogado como Legendado, verifica se episódios anteriores só têm versão Dublada e enfileira a Legendada para manter 100% de cobertura
-            if (metadata.isLegendado) {
+            // Se o episódio atual foi catalogado como Legendado puro (sem dublado) e configurado para complementar
+            if (metadata.isLegendado && !metadata.isDublado && config.AUTO_DUAL_AUDIO) {
                 const sItem = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
                 const tItem = (sItem?.temporadas || []).find(t => t.numero === currentSeasonNum);
                 for (let ep = 1; ep < currentEpNum; ep++) {
                     const prevEp = (tItem?.episodios || []).find(e => e.numero === ep);
-                    if (prevEp && !prevEp.isLegendado && !prevEp.audio?.toLowerCase().includes('legendado')) {
-                        console.log(`💬 [ESTEIRA DUAL SÉRIE] Enfileirando versão Legendada complementar para "${metadata.nome || job.title}" - T${currentSeasonNum}E${ep}...`);
-                        this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
-                            tmdbId: metadata.tmdbId,
-                            season: currentSeasonNum,
-                            episode: ep,
-                            audioPreference: 'legendado',
-                            queueOrder: -1
-                        });
+                    const prevHasLeg = prevEp && (prevEp.isLegendado || !!prevEp.versoes?.legendado || prevEp.audio?.toLowerCase().includes('legendado'));
+                    if (prevEp && !prevHasLeg) {
+                        const alreadyInQueue = this.queue.some(q => q.title.toLowerCase() === (metadata.nome || job.title).toLowerCase() && q.season === currentSeasonNum && q.episode === ep && q.audioPreference === 'legendado');
+                        if (!alreadyInQueue) {
+                            console.log(`💬 [ESTEIRA DUAL SÉRIE] Enfileirando versão Legendada complementar para "${metadata.nome || job.title}" - T${currentSeasonNum}E${ep}...`);
+                            this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                                tmdbId: metadata.tmdbId,
+                                season: currentSeasonNum,
+                                episode: ep,
+                                audioPreference: 'legendado',
+                                queueOrder: -1
+                            });
+                        }
                     }
                 }
             }

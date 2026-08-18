@@ -113,9 +113,17 @@ class AutoFeeder {
                 }
 
                 if (serieExistente) {
-                    // Para séries: só marca como concluído se a temporada 1 estiver completa no catálogo
+                    let totalEpsTemp1 = 10;
+                    try {
+                        if (serieExistente.tmdbId) {
+                            const sDetails = await TMDBService.getSeasonDetails(serieExistente.tmdbId, 1);
+                            if (sDetails?.episodios?.length > 0) {
+                                totalEpsTemp1 = sDetails.episodios.length;
+                            }
+                        }
+                    } catch (e) {}
+
                     const temp1 = (serieExistente.temporadas || []).find(t => t.numero === 1);
-                    const totalEpsTemp1 = serieExistente.totalEpisodios || 10;
                     const epsCadastrados = temp1 ? (temp1.episodios || []).length : 0;
 
                     if (epsCadastrados >= totalEpsTemp1 && totalEpsTemp1 > 0) {

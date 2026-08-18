@@ -133,7 +133,9 @@ class SwarmWatcher {
                 if (this.catalogoManager) {
                     if (type === 'filme') {
                         const f = this.catalogoManager.buscarItemExato(title, 'filme', it.tmdb_id, it.imdb_id);
-                        const satisfied = pref === 'dublado' ? (f?.isDublado || f?.audio?.includes('Dublado')) : (f?.isLegendado || f?.audio?.includes('Legendado'));
+                        const satisfied = pref === 'legendado'
+                            ? (f?.isLegendado || !!f?.versoes?.legendado || f?.audio?.toLowerCase().includes('legendado'))
+                            : (f?.isDublado || !!f?.versoes?.dublado || f?.audio?.toLowerCase().includes('dublado'));
                         if (satisfied) {
                             await this.removeFromWatchlist(title, type, null, null, pref);
                             continue;
@@ -142,7 +144,9 @@ class SwarmWatcher {
                         const s = this.catalogoManager.buscarItemExato(title, 'serie', it.tmdb_id, it.imdb_id);
                         const tempS = (s?.temporadas || []).find(t => t.numero === (season || 1));
                         const epS = (tempS?.episodios || []).find(e => e.numero === (episode || 1));
-                        const satisfied = pref === 'dublado' ? (epS?.isDublado || epS?.audio?.includes('Dublado')) : (epS?.isLegendado || epS?.audio?.includes('Legendado'));
+                        const satisfied = pref === 'legendado'
+                            ? (epS?.isLegendado || !!epS?.versoes?.legendado || epS?.audio?.toLowerCase().includes('legendado'))
+                            : (epS?.isDublado || !!epS?.versoes?.dublado || epS?.audio?.toLowerCase().includes('dublado'));
                         if (satisfied) {
                             await this.removeFromWatchlist(title, type, season, episode, pref);
                             continue;

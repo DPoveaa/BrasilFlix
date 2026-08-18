@@ -39,6 +39,20 @@ class CatalogoManager {
                 if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
                 if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
 
+                let versoes = ep.versoes || {};
+                if (typeof versoes === 'string') {
+                    try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                }
+                if (!versoes.dublado && ep.is_dublado) {
+                    versoes.dublado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                }
+                if (!versoes.legendado && ep.is_legendado) {
+                    versoes.legendado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                }
+
+                const hasDub = ep.is_dublado || !!versoes.dublado;
+                const hasLeg = ep.is_legendado || !!versoes.legendado;
+
                 epsPorSerie[ep.serie_id][ep.temporada_numero].push({
                     numero: ep.numero,
                     nome: ep.nome || `Episódio ${ep.numero}`,
@@ -46,13 +60,10 @@ class CatalogoManager {
                     messageId: ep.message_id ? Number(ep.message_id) : null,
                     fileId: ep.file_id,
                     qualidade: ep.qualidade || '1080p',
-                    audio: ep.audio || (ep.is_dublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-                    isDublado: ep.is_dublado,
-                    isLegendado: ep.is_legendado,
-                    versoes: {
-                        dublado: ep.is_dublado ? { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' } : null,
-                        legendado: ep.is_legendado ? { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' } : null
-                    },
+                    audio: ep.audio || (hasDub && hasLeg ? 'Dual Áudio (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
+                    isDublado: hasDub,
+                    isLegendado: hasLeg,
+                    versoes: versoes,
                     dataAdicionado: ep.created_at
                 });
             }
@@ -67,6 +78,8 @@ class CatalogoManager {
                 })).sort((a, b) => a.numero - b.numero);
 
                 const totalEps = temporadas.reduce((acc, t) => acc + (t.episodios ? t.episodios.length : 0), 0);
+                const hasDub = s.is_dublado || temporadas.some(t => (t.episodios || []).some(e => e.isDublado || !!e.versoes?.dublado));
+                const hasLeg = s.is_legendado || temporadas.some(t => (t.episodios || []).some(e => e.isLegendado || !!e.versoes?.legendado));
 
                 return {
                     id: s.id,
@@ -82,8 +95,8 @@ class CatalogoManager {
                     nota: parseFloat(s.nota || 8.0),
                     generos: Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos) : []),
                     isDorama: s.is_dorama,
-                    isDublado: s.is_dublado,
-                    isLegendado: s.is_legendado,
+                    isDublado: hasDub,
+                    isLegendado: hasLeg,
                     isCam: s.is_cam,
                     totalTemporadas: temporadas.length,
                     totalEpisodios: totalEps,
@@ -95,34 +108,46 @@ class CatalogoManager {
             }).filter(s => s.totalEpisodios > 0);
 
             // Mapeia Filmes
-            const filmes = filmesRes.rows.map(f => ({
-                id: f.id,
-                tmdbId: f.tmdb_id,
-                imdbId: f.imdb_id,
-                nome: f.nome,
-                nomeOriginal: f.nome_original,
-                descricao: f.sinopse || '',
-                sinopse: f.sinopse || '',
-                posterUrl: f.poster_url,
-                backdropUrl: f.backdrop_url,
-                ano: f.ano || '',
-                nota: parseFloat(f.nota || 8.0),
-                generos: Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []),
-                qualidade: f.qualidade || '1080p',
-                isCam: f.is_cam,
-                isDublado: f.is_dublado,
-                isLegendado: f.is_legendado,
-                audio: f.audio || (f.is_dublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-                versoes: {
-                    dublado: f.is_dublado ? { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam } : null,
-                    legendado: f.is_legendado ? { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam } : null
-                },
-                messageId: f.message_id ? Number(f.message_id) : null,
-                fileId: f.file_id,
-                tipo: 'filme',
-                dataAdicionado: f.created_at,
-                tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
-            })).filter(f => !!f.messageId || !!f.fileId);
+            const filmes = filmesRes.rows.map(f => {
+                let versoes = f.versoes || {};
+                if (typeof versoes === 'string') {
+                    try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                }
+                if (!versoes.dublado && f.is_dublado) {
+                    versoes.dublado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
+                }
+                if (!versoes.legendado && f.is_legendado) {
+                    versoes.legendado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
+                }
+                const hasDub = f.is_dublado || !!versoes.dublado;
+                const hasLeg = f.is_legendado || !!versoes.legendado;
+
+                return {
+                    id: f.id,
+                    tmdbId: f.tmdb_id,
+                    imdbId: f.imdb_id,
+                    nome: f.nome,
+                    nomeOriginal: f.nome_original,
+                    descricao: f.sinopse || '',
+                    sinopse: f.sinopse || '',
+                    posterUrl: f.poster_url,
+                    backdropUrl: f.backdrop_url,
+                    ano: f.ano || '',
+                    nota: parseFloat(f.nota || 8.0),
+                    generos: Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []),
+                    qualidade: f.qualidade || '1080p',
+                    isCam: f.is_cam,
+                    isDublado: hasDub,
+                    isLegendado: hasLeg,
+                    audio: f.audio || (hasDub && hasLeg ? 'Dual Áudio (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
+                    versoes: versoes,
+                    messageId: f.message_id ? Number(f.message_id) : null,
+                    fileId: f.file_id,
+                    tipo: 'filme',
+                    dataAdicionado: f.created_at,
+                    tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
+                };
+            }).filter(f => !!f.messageId || !!f.fileId || !!f.versoes?.dublado || !!f.versoes?.legendado);
 
             this.catalogo = { filmes, series };
             console.log(`📚 Catálogo carregado do PostgreSQL: ${filmes.length} filmes, ${series.length} séries.`);
@@ -200,6 +225,11 @@ class CatalogoManager {
             return { success: true, message: 'Versão atualizada no catálogo', item: existente };
         }
 
+        const versoes = {
+            dublado: isDublado ? { messageId: messageId ? Number(messageId) : null, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null,
+            legendado: isLegendado ? { messageId: messageId ? Number(messageId) : null, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null
+        };
+
         // Persistência no PostgreSQL
         let dbId = metadadosExtras.id;
         try {
@@ -207,9 +237,9 @@ class CatalogoManager {
                 INSERT INTO filmes (
                     nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                     nota, tmdb_id, imdb_id, message_id, file_id, qualidade, audio,
-                    is_dublado, is_legendado, is_cam, created_at, updated_at
+                    is_dublado, is_legendado, is_cam, versoes, created_at, updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
                 ) RETURNING id
             `, [
                 nome.trim(), metadadosExtras.nomeOriginal || nome.trim(),
@@ -225,7 +255,8 @@ class CatalogoManager {
                 metadadosExtras.fileId || null,
                 metadadosExtras.qualidade || '1080p',
                 metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-                isDublado, isLegendado, metadadosExtras.isCam || false
+                isDublado, isLegendado, metadadosExtras.isCam || false,
+                JSON.stringify(versoes)
             ]);
             dbId = res.rows[0]?.id;
         } catch (e) {
@@ -250,10 +281,7 @@ class CatalogoManager {
             isDublado: isDublado,
             isLegendado: isLegendado,
             audio: metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-            versoes: {
-                dublado: isDublado ? { messageId, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null,
-                legendado: isLegendado ? { messageId, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null
-            },
+            versoes: versoes,
             messageId,
             fileId: metadadosExtras.fileId || null,
             tipo: 'filme',
@@ -279,8 +307,16 @@ class CatalogoManager {
         const isNovaDub = novaMidia.isDublado ?? (novaMidia.audio ? !novaMidia.audio.toLowerCase().includes('legendado') : false);
         const isNovaLeg = novaMidia.isLegendado ?? (novaMidia.audio ? novaMidia.audio.toLowerCase().includes('legendado') : false);
 
+        if (!filme.versoes) filme.versoes = {};
+
         if (isNovaDub) {
             filme.isDublado = true;
+            filme.versoes.dublado = {
+                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.dublado?.messageId || filme.messageId,
+                fileId: novaMidia.fileId || filme.versoes?.dublado?.fileId || filme.fileId,
+                qualidade: novaMidia.qualidade || filme.qualidade,
+                isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
+            };
             filme.messageId = novaMidia.messageId || filme.messageId;
             filme.fileId = novaMidia.fileId || filme.fileId;
             filme.qualidade = novaMidia.qualidade || filme.qualidade;
@@ -289,21 +325,32 @@ class CatalogoManager {
 
         if (isNovaLeg) {
             filme.isLegendado = true;
+            filme.versoes.legendado = {
+                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.legendado?.messageId || filme.messageId,
+                fileId: novaMidia.fileId || filme.versoes?.legendado?.fileId || filme.fileId,
+                qualidade: novaMidia.qualidade || filme.qualidade,
+                isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
+            };
             if (!filme.isDublado) {
                 filme.messageId = novaMidia.messageId || filme.messageId;
                 filme.fileId = novaMidia.fileId || filme.fileId;
             }
         }
 
+        const audioTexto = (filme.isDublado && filme.isLegendado)
+            ? 'Dual Áudio (Dublado + Legendado)'
+            : (filme.isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+        filme.audio = audioTexto;
+
         try {
             await db.query(`
                 UPDATE filmes SET 
                     message_id = $1, file_id = $2, qualidade = $3, audio = $4,
-                    is_dublado = $5, is_legendado = $6, is_cam = $7, updated_at = NOW()
-                WHERE id = $8
+                    is_dublado = $5, is_legendado = $6, is_cam = $7, versoes = $8, updated_at = NOW()
+                WHERE id = $9
             `, [
                 filme.messageId, filme.fileId, filme.qualidade, filme.audio,
-                filme.isDublado, filme.isLegendado, filme.isCam, filme.id
+                filme.isDublado, filme.isLegendado, filme.isCam, JSON.stringify(filme.versoes), filme.id
             ]);
         } catch (e) {
             console.warn('⚠️ Erro ao atualizar filme no PostgreSQL:', e.message);
@@ -374,42 +421,6 @@ class CatalogoManager {
             if (isLeg) serie.isLegendado = true;
         }
 
-        // Persistência do Episódio no PostgreSQL
-        try {
-            await db.query(`
-                INSERT INTO episodios (
-                    serie_id, temporada_numero, numero, nome, sinopse,
-                    message_id, file_id, qualidade, audio, is_dublado, is_legendado, created_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
-                ) ON CONFLICT (serie_id, temporada_numero, numero) DO UPDATE SET
-                    message_id = EXCLUDED.message_id,
-                    file_id = EXCLUDED.file_id,
-                    qualidade = EXCLUDED.qualidade,
-                    audio = EXCLUDED.audio,
-                    is_dublado = EXCLUDED.is_dublado,
-                    is_legendado = EXCLUDED.is_legendado
-            `, [
-                serie.id, temporadaNum, episodioNum,
-                metadados.episodioNome || `Episódio ${episodioNum}`,
-                metadados.episodioSinopse || '',
-                messageId || null, fileId || null,
-                metadados.qualidade || '1080p',
-                metadados.audio || (isDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-                isDub, isLeg
-            ]);
-
-            await db.query(`
-                UPDATE series SET 
-                    total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
-                    total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
-                    updated_at = NOW()
-                WHERE id = $1
-            `, [serie.id]);
-        } catch (e) {
-            console.warn('⚠️ Erro ao persistir episódio no PostgreSQL:', e.message);
-        }
-
         // Encontrar ou criar temporada no cache
         let temporada = serie.temporadas.find(t => t.numero === temporadaNum);
         if (!temporada) {
@@ -422,22 +433,83 @@ class CatalogoManager {
             serie.temporadas.sort((a, b) => a.numero - b.numero);
         }
 
-        const epIndex = temporada.episodios.findIndex(e => e.numero === episodioNum);
-        const epData = {
-            numero: episodioNum,
-            nome: metadados.episodioNome || `Episódio ${episodioNum}`,
-            sinopse: metadados.episodioSinopse || '',
-            messageId: messageId,
-            fileId: fileId,
-            qualidade: metadados.qualidade || '1080p',
-            audio: metadados.audio || (isDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
-            versoes: {
-                dublado: isDub ? { messageId, fileId, qualidade: metadados.qualidade || '1080p' } : null,
-                legendado: isLeg ? { messageId, fileId, qualidade: metadados.qualidade || '1080p' } : null
-            },
-            dataAdicionado: new Date().toISOString()
+        const existingEp = temporada.episodios.find(e => e.numero === episodioNum);
+        const finalIsDub = isDub || (existingEp ? existingEp.isDublado : false);
+        const finalIsLeg = isLeg || (existingEp ? existingEp.isLegendado : false);
+
+        const existingVersoes = existingEp?.versoes || {};
+        const versoes = {
+            dublado: isDub
+                ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
+                : (existingVersoes.dublado || null),
+            legendado: isLeg
+                ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
+                : (existingVersoes.legendado || null)
         };
 
+        const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || messageId;
+        const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || fileId;
+        const primaryAudio = (finalIsDub && finalIsLeg)
+            ? 'Dual Áudio (Dublado + Legendado)'
+            : (finalIsDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+
+        // Persistência do Episódio no PostgreSQL
+        try {
+            await db.query(`
+                INSERT INTO episodios (
+                    serie_id, temporada_numero, numero, nome, sinopse,
+                    message_id, file_id, qualidade, audio, is_dublado, is_legendado, versoes, created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW()
+                ) ON CONFLICT (serie_id, temporada_numero, numero) DO UPDATE SET
+                    nome = COALESCE(EXCLUDED.nome, episodios.nome),
+                    sinopse = COALESCE(EXCLUDED.sinopse, episodios.sinopse),
+                    message_id = COALESCE(EXCLUDED.message_id, episodios.message_id),
+                    file_id = COALESCE(EXCLUDED.file_id, episodios.file_id),
+                    qualidade = EXCLUDED.qualidade,
+                    audio = EXCLUDED.audio,
+                    is_dublado = (episodios.is_dublado OR EXCLUDED.is_dublado),
+                    is_legendado = (episodios.is_legendado OR EXCLUDED.is_legendado),
+                    versoes = COALESCE(episodios.versoes, '{}'::jsonb) || EXCLUDED.versoes
+            `, [
+                serie.id, temporadaNum, episodioNum,
+                metadados.episodioNome || `Episódio ${episodioNum}`,
+                metadados.episodioSinopse || '',
+                primaryMessageId || null, primaryFileId || null,
+                metadados.qualidade || '1080p',
+                primaryAudio,
+                finalIsDub, finalIsLeg,
+                JSON.stringify(versoes)
+            ]);
+
+            await db.query(`
+                UPDATE series SET 
+                    total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                    total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                    is_dublado = (SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1),
+                    is_legendado = (SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1),
+                    updated_at = NOW()
+                WHERE id = $1
+            `, [serie.id]);
+        } catch (e) {
+            console.warn('⚠️ Erro ao persistir episódio no PostgreSQL:', e.message);
+        }
+
+        const epData = {
+            numero: episodioNum,
+            nome: metadados.episodioNome || existingEp?.nome || `Episódio ${episodioNum}`,
+            sinopse: metadados.episodioSinopse || existingEp?.sinopse || '',
+            messageId: primaryMessageId,
+            fileId: primaryFileId,
+            qualidade: metadados.qualidade || existingEp?.qualidade || '1080p',
+            audio: primaryAudio,
+            isDublado: finalIsDub,
+            isLegendado: finalIsLeg,
+            versoes: versoes,
+            dataAdicionado: existingEp?.dataAdicionado || new Date().toISOString()
+        };
+
+        const epIndex = temporada.episodios.findIndex(e => e.numero === episodioNum);
         if (epIndex >= 0) {
             temporada.episodios[epIndex] = epData;
         } else {
@@ -446,7 +518,7 @@ class CatalogoManager {
         }
 
         this.saveCatalogo();
-        console.log(`✅ Episódio adicionado: ${serieNome} T${temporadaNum}E${episodioNum} (Msg: ${messageId})`);
+        console.log(`✅ Episódio catalogado: ${serieNome} T${temporadaNum}E${episodioNum} [Dub: ${finalIsDub}, Leg: ${finalIsLeg}] (Msg: ${primaryMessageId})`);
         return { success: true, serie, temporada, episodio: epData };
     }
 
@@ -583,6 +655,14 @@ class CatalogoManager {
         if (!id) return null;
         const numId = Number(id);
         return (this.catalogo.series || []).find(s => s.id === numId || String(s.id) === String(id)) || null;
+    }
+
+    buscarEpisodio(serieId, seasonNum, epNum) {
+        const serie = this.buscarSeriePorId(serieId);
+        if (!serie) return null;
+        const temp = (serie.temporadas || []).find(t => t.numero === Number(seasonNum));
+        if (!temp) return null;
+        return (temp.episodios || []).find(e => e.numero === Number(epNum)) || null;
     }
 
     buscarFilmePorId(id) {

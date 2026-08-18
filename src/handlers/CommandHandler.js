@@ -1000,51 +1000,7 @@ class CommandHandler {
     }
 
     async handleTemporadaSerie(chatId, userId, serieId, tempNum, callbackQuery) {
-        const serie = this.catalogoManager.getItemPorId(serieId);
-        if (!serie) {
-            await this.sendOrEdit(chatId, '❌ Série não encontrada no catálogo.', {}, callbackQuery);
-            return;
-        }
-
-        const temporada = (serie.temporadas || []).find(t => t.numero === Number(tempNum));
-        const episodios = temporada?.episodios || [];
-
-        if (episodios.length === 0) {
-            const mensagem = `📺 *${serie.nome}* — Temporada ${tempNum}\n\n` +
-                            `⚠️ _Nenhum episódio desta temporada foi baixado ainda. O robô já está monitorando os episódios!_`;
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: '🔙 Voltar à Série', callback_data: `info_serie_${serie.id}` }]
-                ]
-            };
-            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
-            return;
-        }
-
-        const mensagem = `📺 *${serie.nome}* — Temporada ${tempNum}\n\n` +
-                        `✨ *${episodios.length} episódio(s) disponíveis em 1080p Full HD:*\n\n` +
-                        `🍿 *Selecione o episódio para assistir:*`;
-
-        const keyboard = { inline_keyboard: [] };
-        let row = [];
-        episodios.forEach(ep => {
-            const audioBadge = ep.isDublado ? '🇧🇷 Dublado' : '💬 Legendado';
-            row.push({
-                text: `▶️ Ep ${ep.numero} (${audioBadge})`,
-                callback_data: `serie_ep_${serie.id}_${tempNum}_${ep.numero}`
-            });
-            if (row.length === 2) {
-                keyboard.inline_keyboard.push(row);
-                row = [];
-            }
-        });
-        if (row.length > 0) keyboard.inline_keyboard.push(row);
-
-        keyboard.inline_keyboard.push([
-            { text: '🔙 Voltar à Série', callback_data: `info_serie_${serie.id}` }
-        ]);
-
-        await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+        return this.handleTemporadaSelect(chatId, userId, serieId, tempNum, callbackQuery);
     }
 
     async handleAssistirEpisodio(chatId, userId, serieId, tempNum, epNum, callbackQuery, versaoAudio = 'dublado') {
@@ -1074,21 +1030,22 @@ class CommandHandler {
         let targetMessageId = episodio.messageId;
         let targetFileId = episodio.fileId;
 
-        if (versaoAudio === 'dublado' && episodio.versoes?.dublado?.messageId) {
-            targetMessageId = episodio.versoes.dublado.messageId;
-            targetFileId = episodio.versoes.dublado.fileId || targetFileId;
-        } else if (versaoAudio === 'legendado' && episodio.versoes?.legendado?.messageId) {
-            targetMessageId = episodio.versoes.legendado.messageId;
-            targetFileId = episodio.versoes.legendado.fileId || targetFileId;
+        if (versaoAudio === 'legendado') {
+            targetMessageId = episodio.versoes?.legendado?.messageId || (episodio.isLegendado ? episodio.messageId : null) || episodio.versoes?.dublado?.messageId || episodio.messageId;
+            targetFileId = episodio.versoes?.legendado?.fileId || (episodio.isLegendado ? episodio.fileId : null) || episodio.versoes?.dublado?.fileId || episodio.fileId;
+        } else {
+            targetMessageId = episodio.versoes?.dublado?.messageId || (episodio.isDublado ? episodio.messageId : null) || episodio.versoes?.legendado?.messageId || episodio.messageId;
+            targetFileId = episodio.versoes?.dublado?.fileId || (episodio.isDublado ? episodio.fileId : null) || episodio.versoes?.legendado?.fileId || episodio.fileId;
         }
 
         const epTitulo = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` • _${episodio.nome}_` : '';
+        const audioDesc = versaoAudio === 'legendado' ? '💬 Legendado (PT-BR)' : '🇧🇷 Dublado (PT-BR)';
         const caption = `🍿 *BrasilFlix — ${serie.nome}*\n\n` +
                        `📺 *Temporada ${tempNum} • Episódio ${epNum}*${epTitulo}\n` +
-                       `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'} | 🔊 *Áudio:* ${episodio.audio || (episodio.isDublado ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)')}\n\n` +
+                       `✨ *Qualidade:* ${episodio.qualidade || '1080p Full HD'} | 🔊 *Áudio:* ${audioDesc}\n\n` +
                        `🍿 _Bom episódio! Assista com a melhor qualidade._`;
 
-        await this.bot.sendMessage(chatId, `🚀 *Enviando ${serie.nome} (T${tempNum}E${epNum}) em alta velocidade...*`, { parse_mode: 'Markdown' });
+        await this.bot.sendMessage(chatId, `🚀 *Enviando ${serie.nome} (T${tempNum}E${epNum}) [${versaoAudio === 'legendado' ? 'Legendado' : 'Dublado'}] em alta velocidade...*`, { parse_mode: 'Markdown' });
 
         try {
             const entregue = await this.entregarVideoAoUsuario(chatId, targetMessageId, targetFileId, caption);
@@ -1097,6 +1054,18 @@ class CommandHandler {
                 return;
             }
 
+            const nextEpNum = Number(epNum) + 1;
+            const proximoEpisodio = (temporada?.episodios || []).find(e => e.numero === nextEpNum);
+
+            const followUpButtons = [];
+            if (proximoEpisodio) {
+                followUpButtons.push([{ text: `▶️ Próximo: Ep ${nextEpNum}`, callback_data: `ep_${serie.id}_${tempNum}_${nextEpNum}` }]);
+            }
+            followUpButtons.push([
+                { text: '🔙 Lista de Episódios', callback_data: `temp_${serie.id}_${tempNum}` },
+                { text: '🍿 Menu Principal', callback_data: 'voltar_menu' }
+            ]);
+
             if (!isAssinante) {
                 this.consumirCotaGratis(userId, username, 'serie');
                 const novaCota = this.getCotaGratuita(userId);
@@ -1104,18 +1073,13 @@ class CommandHandler {
                                 `📊 *Seu saldo restante:* ${novaCota.filmesRestantes} filme(s) e ${novaCota.epsRestantes} episódio(s) de série.\n\n` +
                                 `💡 *Para maratonar séries completas sem limites, assine por apenas R$ 15,00/mês!*`;
 
-                const keyboard = {
-                    inline_keyboard: [
-                        [{ text: '💎 Ver Planos VIP - R$ 15', callback_data: 'ver_planos' }],
-                        [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
-                    ]
-                };
-                await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: keyboard });
+                followUpButtons.unshift([{ text: '💎 Ver Planos VIP - R$ 15', callback_data: 'ver_planos' }]);
+                await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: followUpButtons } });
             } else {
                 const epNomeCompleto = episodio.nome && !episodio.nome.startsWith('Episódio') ? ` — ${episodio.nome}` : '';
                 const msgVip = `🍿 *Bom episódio!*\n` +
-                               `📺 *${serie.nome}* (T${tempNum}E${epNum})${epNomeCompleto}`;
-                await this.bot.sendMessage(chatId, msgVip, { parse_mode: 'Markdown' });
+                               `📺 *${serie.nome}* (T${tempNum}E${epNum})${epNomeCompleto} [${audioDesc}]`;
+                await this.bot.sendMessage(chatId, msgVip, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: followUpButtons } });
             }
         } catch (error) {
             console.error('❌ Erro ao enviar episódio:', error);
@@ -1597,7 +1561,18 @@ class CommandHandler {
                 const parts = data.split('_');
                 const serieId = parts[1];
                 const seasonNum = parseInt(parts[2], 10);
-                await this.handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery);
+                const filtro = parts[3] || 'todos';
+                await this.handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery, filtro);
+                return;
+            }
+
+            if (data.startsWith('serie_ep_')) {
+                const parts = data.split('_');
+                const serieId = parts[2];
+                const seasonNum = parseInt(parts[3], 10);
+                const epNum = parseInt(parts[4], 10);
+                const audio = parts[5] || 'dublado';
+                await this.handleAssistirEpisodio(chatId, userId, serieId, seasonNum, epNum, callbackQuery, audio);
                 return;
             }
 
@@ -5577,30 +5552,64 @@ class CommandHandler {
         });
     }
 
-    async handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery) {
+    async handleTemporadaSelect(chatId, userId, serieId, seasonNum, callbackQuery, audioFiltro = 'todos') {
         const serie = this.catalogoManager.getItemPorId(serieId);
         if (!serie || !serie.temporadas) {
-            await this.bot.sendMessage(chatId, '❌ Série/Dorama não encontrado no catálogo.');
+            await this.sendOrEdit(chatId, '❌ Série/Dorama não encontrado no catálogo.', {}, callbackQuery);
             return;
         }
 
-        const temporada = serie.temporadas.find(t => t.numero === seasonNum);
+        const temporada = serie.temporadas.find(t => t.numero === Number(seasonNum));
         if (!temporada || !temporada.episodios || temporada.episodios.length === 0) {
-            await this.bot.sendMessage(chatId, `❌ Nenhum episódio disponível ainda para a Temporada ${seasonNum}.`);
+            const msgVazia = `📺 *${serie.nome}* — Temporada ${seasonNum}\n\n` +
+                            `⚠️ _Nenhum episódio desta temporada foi baixado ainda. O robô já está monitorando os episódios!_`;
+            const kbVazia = {
+                inline_keyboard: [
+                    [{ text: '🔙 Voltar à Série', callback_data: `info_serie_${serie.id}` }]
+                ]
+            };
+            await this.sendOrEdit(chatId, msgVazia, { parse_mode: 'Markdown', reply_markup: kbVazia }, callbackQuery);
             return;
         }
 
-        const keyboard = {
-            inline_keyboard: []
-        };
+        const todosEps = temporada.episodios;
+        const totalDub = todosEps.filter(e => e.isDublado || !!e.versoes?.dublado || !e.audio?.toLowerCase().includes('legendado')).length;
+        const totalLeg = todosEps.filter(e => e.isLegendado || !!e.versoes?.legendado || e.audio?.toLowerCase().includes('legendado')).length;
+        const temAmbosTipos = totalDub > 0 && totalLeg > 0;
+
+        let episodiosFiltrados = todosEps;
+        if (audioFiltro === 'dublado') {
+            episodiosFiltrados = todosEps.filter(e => e.isDublado || !!e.versoes?.dublado || !e.audio?.toLowerCase().includes('legendado'));
+        } else if (audioFiltro === 'legendado') {
+            episodiosFiltrados = todosEps.filter(e => e.isLegendado || !!e.versoes?.legendado || e.audio?.toLowerCase().includes('legendado'));
+        }
+
+        const keyboard = { inline_keyboard: [] };
+
+        // Barra de Filtro se a temporada contiver episódios dublados e legendados
+        if (temAmbosTipos) {
+            keyboard.inline_keyboard.push([
+                { text: `${audioFiltro === 'todos' ? '🔘' : '⚪'} Todos (${todosEps.length})`, callback_data: `temp_${serie.id}_${seasonNum}_todos` },
+                { text: `${audioFiltro === 'dublado' ? '🔘' : '⚪'} 🇧🇷 Dub (${totalDub})`, callback_data: `temp_${serie.id}_${seasonNum}_dublado` },
+                { text: `${audioFiltro === 'legendado' ? '🔘' : '⚪'} 💬 Leg (${totalLeg})`, callback_data: `temp_${serie.id}_${seasonNum}_legendado` }
+            ]);
+        }
 
         let row = [];
-        temporada.episodios.forEach((ep) => {
+        episodiosFiltrados.forEach((ep) => {
+            const hasDub = ep.isDublado || !!ep.versoes?.dublado;
+            const hasLeg = ep.isLegendado || !!ep.versoes?.legendado;
+            let badge = '[D]';
+            if (hasDub && hasLeg) badge = '[D/L]';
+            else if (hasLeg) badge = '[L]';
+            else if (hasDub) badge = '[D]';
+            else if (ep.audio?.toLowerCase().includes('legendado')) badge = '[L]';
+
             row.push({
-                text: `Ep ${ep.numero}`,
-                callback_data: `ep_${serieId}_${seasonNum}_${ep.numero}`
+                text: `▶️ Ep ${ep.numero} ${badge}`,
+                callback_data: `ep_${serie.id}_${seasonNum}_${ep.numero}`
             });
-            if (row.length === 4) {
+            if (row.length === 3) {
                 keyboard.inline_keyboard.push(row);
                 row = [];
             }
@@ -5608,20 +5617,23 @@ class CommandHandler {
         if (row.length > 0) keyboard.inline_keyboard.push(row);
 
         keyboard.inline_keyboard.push([
-            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+            { text: '🔙 Voltar à Série', callback_data: `info_serie_${serie.id}` },
+            { text: '🍿 Menu Principal', callback_data: 'voltar_menu' }
         ]);
 
-        const mensagem = `📺 *${serie.nome}* - *Temporada ${seasonNum}*\n\n` +
+        const badgeAudiosTemporada = temAmbosTipos ? '🇧🇷 Dublado & 💬 Legendado' : (totalLeg > 0 ? '💬 Legendado' : '🇧🇷 Dublado');
+        const mensagem = `📺 *${serie.nome}* — *Temporada ${seasonNum}*\n\n` +
+                        `✨ *${episodiosFiltrados.length} episódio(s) exibidos em 1080p Full HD*\n` +
+                        `🔊 *Áudios disponíveis:* ${badgeAudiosTemporada}\n\n` +
                         `🍿 *Selecione o episódio que deseja assistir:*`;
 
-        await this.bot.sendMessage(chatId, mensagem, {
+        await this.sendOrEdit(chatId, mensagem, {
             parse_mode: 'Markdown',
             reply_markup: keyboard
-        });
+        }, callbackQuery);
     }
 
     async handleEpisodioSelect(chatId, userId, serieId, seasonNum, epNum, callbackQuery) {
-        const username = callbackQuery?.from?.username || callbackQuery?.from?.first_name || 'Usuário';
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
         const cota = this.getCotaGratuita(userId);
 
@@ -5631,48 +5643,43 @@ class CommandHandler {
         }
 
         const serie = this.catalogoManager.getItemPorId(serieId);
-        const temporada = serie?.temporadas?.find(t => t.numero === seasonNum);
-        const ep = temporada?.episodios?.find(e => e.numero === epNum);
+        const temporada = serie?.temporadas?.find(t => t.numero === Number(seasonNum));
+        const ep = temporada?.episodios?.find(e => e.numero === Number(epNum));
 
-        if (!ep || (!ep.messageId && !ep.fileId)) {
-            await this.bot.sendMessage(chatId, '❌ Episódio não disponível no momento.');
+        if (!ep || (!ep.messageId && !ep.fileId && !ep.versoes?.dublado && !ep.versoes?.legendado)) {
+            await this.sendOrEdit(chatId, `⚠️ Episódio ${epNum} da Temporada ${seasonNum} não está disponível no momento.`, {}, callbackQuery);
             return;
         }
 
-        try {
-            const entregue = await this.entregarVideoAoUsuario(chatId, ep.messageId, ep.fileId, `📺 *${serie.nome}* - T${seasonNum}E${epNum} 🍿 BrasilFlix`);
+        const temDublado = !!(ep.isDublado || ep.versoes?.dublado?.messageId || (!ep.audio?.toLowerCase().includes('legendado') && (ep.messageId || ep.fileId)));
+        const temLegendado = !!(ep.isLegendado || ep.versoes?.legendado?.messageId || (ep.audio?.toLowerCase().includes('legendado') && (ep.messageId || ep.fileId)));
 
-            if (!entregue) {
-                await this.bot.sendMessage(chatId, '❌ Não foi possível entregar o episódio neste momento. O suporte já foi notificado.');
-                return;
-            }
+        // Se o episódio possui AMBAS as opções de áudio (Dublado e Legendado), abre a tela de seleção de áudio
+        if (temDublado && temLegendado) {
+            const epTitulo = ep.nome && !ep.nome.startsWith('Episódio') ? ` — *${ep.nome}*` : '';
+            const sinopse = ep.sinopse ? `\n\n📝 _${ep.sinopse.substring(0, 250)}${ep.sinopse.length > 250 ? '...' : ''}_` : '';
+            const mensagem = `📺 *${serie.nome}*\n` +
+                            `🎬 *Temporada ${seasonNum} • Episódio ${epNum}*${epTitulo}${sinopse}\n\n` +
+                            `✨ *Qualidade:* ${ep.qualidade || '1080p Full HD'}\n` +
+                            `🔊 *Este episódio possui versões Dublada e Legendada disponíveis.*\n\n` +
+                            `🍿 *Escolha a versão de áudio para assistir:*`;
 
-            if (!isAssinante) {
-                this.consumirCotaGratis(userId, username, 'serie');
-                const novaCota = this.getCotaGratuita(userId);
-                const msg = `✅ *${serie.nome}* (T${seasonNum}E${epNum})\n` +
-                            `🎬 *${ep.nome || `Episódio ${epNum}`}*\n\n` +
-                            `🎁 *Você utilizou 1 episódio gratuito!*\n` +
-                            `📊 *Seu saldo restante no mês:* ${novaCota.filmesRestantes} filme e ${novaCota.epsRestantes} episódio(s).\n\n` +
-                            `💡 *Assine por R$ 15,00/mês para assistir a episódios e temporadas ilimitadas!*`;
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: '🎬 Assistir Dublado (PT-BR)', callback_data: `serie_ep_${serie.id}_${seasonNum}_${epNum}_dublado` }],
+                    [{ text: '💬 Assistir Legendado (PT-BR)', callback_data: `serie_ep_${serie.id}_${seasonNum}_${epNum}_legendado` }],
+                    [{ text: '🔙 Voltar aos Episódios', callback_data: `temp_${serie.id}_${seasonNum}` }],
+                    [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
+                ]
+            };
 
-                const keyboard = {
-                    inline_keyboard: [
-                        [{ text: '💎 Ver Planos VIP - R$ 15', callback_data: 'ver_planos' }],
-                        [{ text: '🍿 Menu Principal', callback_data: 'voltar_menu' }]
-                    ]
-                };
-                await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: keyboard });
-            } else {
-                const epNomeCompleto = ep.nome && !ep.nome.startsWith('Episódio') ? ` — ${ep.nome}` : '';
-                const msg = `🍿 *Bom episódio!*\n` +
-                            `📺 *${serie.nome}* (T${seasonNum}E${epNum})${epNomeCompleto}`;
-                await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-            }
-        } catch (e) {
-            console.error('Erro ao enviar episódio:', e.message);
-            await this.bot.sendMessage(chatId, '❌ Erro ao enviar arquivo do episódio.');
+            await this.sendOrEdit(chatId, mensagem, { parse_mode: 'Markdown', reply_markup: keyboard }, callbackQuery);
+            return;
         }
+
+        // Se tiver apenas 1 versão de áudio disponível, entrega diretamente
+        const audioFinal = temLegendado ? 'legendado' : 'dublado';
+        await this.handleAssistirEpisodio(chatId, userId, serieId, seasonNum, epNum, callbackQuery, audioFinal);
     }
 
     async handleVerDireto(chatId, userId, messageId, callbackQuery) {

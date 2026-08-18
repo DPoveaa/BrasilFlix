@@ -89,12 +89,14 @@ async function createTables() {
             is_dublado BOOLEAN DEFAULT true,
             is_legendado BOOLEAN DEFAULT false,
             is_cam BOOLEAN DEFAULT false,
+            versoes JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
         -- Garantir tipo BIGINT caso tabela tenha sido criada anteriormente com INTEGER
         ALTER TABLE filmes ALTER COLUMN id TYPE BIGINT;
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
 
         CREATE TABLE IF NOT EXISTS series (
             id BIGSERIAL PRIMARY KEY,
@@ -133,12 +135,14 @@ async function createTables() {
             audio VARCHAR(100),
             is_dublado BOOLEAN DEFAULT true,
             is_legendado BOOLEAN DEFAULT false,
+            versoes JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             UNIQUE(serie_id, temporada_numero, numero)
         );
 
         ALTER TABLE episodios ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE episodios ALTER COLUMN serie_id TYPE BIGINT;
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,
