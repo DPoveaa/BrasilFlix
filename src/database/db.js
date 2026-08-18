@@ -37,9 +37,10 @@ function getPool() {
             database: config.DB_NAME,
             user: config.DB_USER,
             password: config.DB_PASSWORD,
-            max: 20,
-            idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 5000,
+            max: 25,
+            idleTimeoutMillis: 60000,
+            connectionTimeoutMillis: 15000,
+            keepAlive: true
         });
 
         pool.on('error', (err) => {
@@ -51,8 +52,18 @@ function getPool() {
 
 async function query(text, params) {
     const p = getPool();
-    const res = await p.query(text, params);
-    return res;
+    try {
+        const res = await p.query(text, params);
+        return res;
+    } catch (err) {
+        if (err.message && (err.message.includes('timeout') || err.message.includes('Connection terminated') || err.message.includes('ECONNRESET'))) {
+            console.warn('⚠️ Tentando reconectar e reexecutar query PostgreSQL após timeout...');
+            await new Promise(r => setTimeout(r, 1000));
+            const res = await p.query(text, params);
+            return res;
+        }
+        throw err;
+    }
 }
 
 async function createTables() {
