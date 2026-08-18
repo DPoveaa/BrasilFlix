@@ -454,10 +454,10 @@ class DownloaderManager extends EventEmitter {
                 const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
 
                 const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
-                const noPeerTimeoutMs = 90000; // 90s para abortar se tiver 0 peers e 0 bytes (evita travamentos longos)
-                const stalledTimeoutMs = 150000; // 2.5 min se estiver com peers mas 0 bytes transferidos
+                const noPeerTimeoutMs = isDub ? 240000 : 180000; // 4 minutos de paciência para o DHT conectar em peers de lançamentos dublados
+                const stalledTimeoutMs = isDub ? 360000 : 240000; // 6 minutos sem dados após conectar
 
-                // 1. Aborta se estiver sem nenhum peer conectado após 90s
+                // 1. Aborta se estiver sem nenhum peer conectado após o tempo limite
                 if (torrent.numPeers === 0 && stalledMs >= noPeerTimeoutMs && torrent.progress < 0.01) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Torrent sem peers ativos (0 peers após ${Math.round(noPeerTimeoutMs / 1000)}s). Abortando para tentar outra fonte...`);
