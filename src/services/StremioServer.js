@@ -221,10 +221,28 @@ class StremioServer {
             }
         });
 
+        this.app.put('/api/admin/queue/:id', auth, async (req, res) => {
+            try {
+                const job = await this.queueManager.editJob(req.params.id, req.body);
+                res.json({ success: true, message: `Trabalho "${job?.title || req.params.id}" atualizado com sucesso!`, job });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         this.app.delete('/api/admin/queue/:id', auth, async (req, res) => {
             try {
+                const result = await this.queueManager.deleteJob(req.params.id, true);
+                res.json({ success: true, message: 'Trabalho excluído com sucesso!', result });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/queue/:id/cancel', auth, async (req, res) => {
+            try {
                 const result = await this.queueManager.cancelJob(req.params.id);
-                res.json(result);
+                res.json({ success: true, message: 'Trabalho cancelado com sucesso!', result });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }

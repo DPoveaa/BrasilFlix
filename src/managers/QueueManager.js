@@ -1444,6 +1444,69 @@ class QueueManager extends EventEmitter {
         return { id: jobId, priority: priorityInt };
     }
 
+    async editJob(jobId, updates = {}) {
+        let job = this.queue.find(j => j.id === jobId);
+        if (!job) {
+            const res = await db.query(`SELECT * FROM queue_jobs WHERE id = $1`, [jobId]);
+            if (res.rows.length === 0) {
+                throw new Error('Trabalho não encontrado no banco de dados.');
+            }
+            job = this._rowToJob(res.rows[0]);
+        }
+
+        if (updates.title) job.title = updates.title.trim();
+        if (updates.type) job.type = updates.type;
+        if (updates.audioPreference) job.audioPreference = updates.audioPreference;
+        if (updates.priority !== undefined) job.priority = parseInt(updates.priority, 10);
+        if (updates.season !== undefined) job.season = updates.type === 'serie' ? parseInt(updates.season || 1, 10) : null;
+        if (updates.episode !== undefined) job.episode = updates.type === 'serie' ? parseInt(updates.episode || 1, 10) : null;
+        if (updates.rawFilePath !== undefined) job.rawFilePath = updates.rawFilePath;
+        if (updates.isManualAdd !== undefined) job.isManualAdd = updates.isManualAdd;
+
+        if (updates.metaDetails) {
+            job.metaDetails = {
+                ...(job.metaDetails || {}),
+                ...updates.metaDetails
+            };
+        }
+
+        // Se o job estava com erro/falha ou se foi solicitado requeue, reseta status para queued
+        if (job.status === 'failed' || updates.requeue) {
+            job.status = 'queued';
+            job.progress = 0;
+            job.error = null;
+            job.progressDetails = 'Atualizado pelo Administrador';
+        }
+
+        const memIdx = this.queue.findIndex(j => j.id === jobId);
+        if (memIdx >= 0) {
+            this.queue[memIdx] = job;
+        } else if (job.status === 'queued') {
+            this.queue.push(job);
+        }
+
+        this.sortQueue();
+        await this.saveJob(job);
+        return job;
+    }
+
+    async deleteJob(jobId, deletePhysicalFile = true) {
+        const job = this.queue.find(j => j.id === jobId);
+        if (job && job.rawFilePath && deletePhysicalFile) {
+            try {
+                if (fs.existsSync(job.rawFilePath)) {
+                    await fs.remove(job.rawFilePath);
+                }
+            } catch (err) {
+                console.warn('⚠️ Não foi possível excluir arquivo físico do upload:', err.message);
+            }
+        }
+
+        this.queue = this.queue.filter(j => j.id !== jobId);
+        await db.query(`DELETE FROM queue_jobs WHERE id = $1`, [jobId]);
+        return { success: true, id: jobId };
+    }
+
     async cancelJob(jobId) {
         const job = this.queue.find(j => j.id === jobId);
         if (job) {

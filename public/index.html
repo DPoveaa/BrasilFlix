@@ -2596,6 +2596,117 @@
         </div>
     </div>
 
+    <!-- MODAL 1.5: EDITAR TRABALHO / UPLOAD NA FILA -->
+    <div class="modal-backdrop" id="admin-modal-edit-job" onclick="closeAdminModalOnClick(event, 'admin-modal-edit-job')">
+        <div class="modal-card" style="max-width: 600px; max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-edit-job')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                    <div style="font-size: 24px; width: 42px; height: 42px; background: rgba(168, 85, 247, 0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(168, 85, 247, 0.3);">✏️</div>
+                    <div>
+                        <h2 style="font-size: 18px; font-weight: 800; color: #fff; line-height: 1.2;">Editar Item na Fila</h2>
+                        <p style="font-size: 12px; color: var(--text-muted);">Corrija o título, vincule metadados do TMDB ou ajuste a temporada/episódio.</p>
+                    </div>
+                </div>
+
+                <!-- BUSCA RÁPIDA TMDB PARA CORREÇÃO -->
+                <div style="margin-bottom: 14px;">
+                    <label class="admin-label">🔍 Re-vincular com o TMDB (Opcional)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="edit-tmdb-query" class="admin-input" style="margin-bottom: 0; flex: 1;" placeholder="Buscar título correto no TMDB...">
+                        <button type="button" class="btn-action btn-action-primary" onclick="triggerEditTmdbSearch()">Buscar</button>
+                    </div>
+                </div>
+                <div id="edit-tmdb-results" class="tmdb-results-container" style="display: none;"></div>
+
+                <form onsubmit="handleEditJobFormSubmit(event)">
+                    <input type="hidden" id="edit-job-id" value="">
+                    <input type="hidden" id="edit-tmdb-id" value="">
+                    <input type="hidden" id="edit-imdb-id" value="">
+                    <input type="hidden" id="edit-poster-url" value="">
+                    <input type="hidden" id="edit-backdrop-url" value="">
+                    <input type="hidden" id="edit-genres-json" value="[]">
+                    <input type="hidden" id="edit-original-title" value="">
+                    <input type="hidden" id="edit-rating" value="8.0">
+
+                    <!-- CAMPOS PRINCIPAIS EDITÁVEIS -->
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Título da Mídia</label>
+                            <input type="text" id="edit-title" class="admin-input" required>
+                        </div>
+                        <div>
+                            <label class="admin-label">Ano</label>
+                            <input type="text" id="edit-year" class="admin-input" placeholder="2026">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Tipo</label>
+                            <select id="edit-type" class="admin-input" onchange="toggleEditSeriesFields()">
+                                <option value="filme">🎬 Filme</option>
+                                <option value="serie">📺 Série / Dorama</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="admin-label">Preferência de Áudio</label>
+                            <select id="edit-audio-pref" class="admin-input">
+                                <option value="dublado">🇧🇷 Dublado (PT-BR)</option>
+                                <option value="legendado">💬 Legendado (PT-BR)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- CAMPOS EXCLUSIVOS DE SÉRIE -->
+                    <div id="edit-series-fields" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label class="admin-label">Temporada</label>
+                                <input type="number" id="edit-season" class="admin-input" value="1" min="1">
+                            </div>
+                            <div>
+                                <label class="admin-label">Episódio</label>
+                                <input type="number" id="edit-episode" class="admin-input" value="1" min="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                        <div>
+                            <label class="admin-label">Prioridade na Fila</label>
+                            <select id="edit-priority" class="admin-input">
+                                <option value="1">🔥 Prioridade 1 (VIP - Fura Fila Máxima)</option>
+                                <option value="2">🍿 Prioridade 2 (Normal)</option>
+                                <option value="3">📺 Prioridade 3 (Episódio de Série)</option>
+                                <option value="4">🤖 Prioridade 4 (Auto-Feeder)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <label class="admin-label">Sinopse / Descrição</label>
+                    <textarea id="edit-synopsis" class="admin-input" style="height: 65px; resize: vertical;" placeholder="Descrição da mídia..."></textarea>
+
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px;">
+                        <input type="checkbox" id="edit-requeue" style="width: 16px; height: 16px; accent-color: #3b82f6; cursor: pointer;">
+                        <label for="edit-requeue" style="font-size: 12px; color: #fff; font-weight: 700; cursor: pointer;">
+                            🔄 Resetar status para "Aguardando" e reprocessar na esteira
+                        </label>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" class="btn-modal btn-modal-primary" style="flex: 1; padding: 12px; font-size: 14px;">
+                            💾 Salvar Alterações
+                        </button>
+                        <button type="button" class="btn-modal btn-modal-secondary" style="padding: 12px;" onclick="closeAdminModal('admin-modal-edit-job')">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL 2: CONCEDER / RENOVAR ASSINATURA VIP -->
     <div class="modal-backdrop" id="admin-modal-grant-sub" onclick="closeAdminModalOnClick(event, 'admin-modal-grant-sub')">
         <div class="modal-card" style="max-width: 480px;" onclick="event.stopPropagation()">
@@ -3419,7 +3530,7 @@
         async function loadAdminStats() {
             if (!adminToken) return;
             try {
-                const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
+const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 if (!res.ok) return;
                 const data = await res.json();
 
@@ -3462,6 +3573,10 @@
                         'failed': '#ef4444'
                     };
                     const statusColor = statusColors[j.status] || '#9ca3af';
+                    const isManual = j.isManualAdd || !!j.rawFilePath;
+                    const typeBadge = isManual 
+                        ? `<span style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800;">📁 Upload Manual</span>` 
+                        : `<span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800;">🤖 Auto Torrent</span>`;
 
                     return `
                         <tr class="draggable-row" draggable="true" data-id="${j.id}" data-index="${idx}"
@@ -3472,7 +3587,10 @@
                                 <span class="drag-handle" title="Arraste para reordenar">⠿</span>
                             </td>
                             <td>
-                                <strong>${j.title}${epStr}</strong>
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <strong>${j.title}${epStr}</strong>
+                                    ${typeBadge}
+                                </div>
                                 <div style="font-size: 10px; color: var(--text-muted);">${j.id}</div>
                             </td>
                             <td>${j.type === 'filme' ? '🎬 Filme' : '📺 Série'}</td>
@@ -3496,11 +3614,12 @@
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
                                 <div style="display: inline-flex; gap: 4px;">
+                                    <button class="btn-action" style="padding: 4px 7px;" onclick="openEditJobModal('${j.id}')" title="Editar Título, Temporada/Episódio, TMDB ou Prioridade">✏️</button>
                                     <button class="btn-action" style="padding: 4px 7px;" onclick="handleMoveJobStep('${j.id}', 'up')" title="Subir 1 posição na fila">⬆️</button>
                                     <button class="btn-action" style="padding: 4px 7px;" onclick="handleMoveJobStep('${j.id}', 'down')" title="Descer 1 posição na fila">⬇️</button>
                                     <button class="btn-action btn-action-primary" style="padding: 4px 8px;" onclick="handleMoveJobTop('${j.id}')" title="Mover para o Topo Absoluto (Próximo)">🔝 Topo</button>
                                     ${j.status === 'failed' ? `<button class="btn-action btn-action-success" style="padding: 4px 8px;" onclick="handleRetryJob('${j.id}')" title="Tentar Novamente">🔄</button>` : ''}
-                                    <button class="btn-action btn-action-danger" style="padding: 4px 8px;" onclick="handleCancelJob('${j.id}')" title="Excluir da Fila">✕</button>
+                                    <button class="btn-action btn-action-danger" style="padding: 4px 8px;" onclick="handleDeleteJob('${j.id}', '${(j.title || '').replace(/'/g, "\\'")}')" title="Cancelar e Excluir">🗑️</button>
                                 </div>
                             </td>
                         </tr>
@@ -3541,53 +3660,46 @@
         }
 
         function handleDragEnter(e) {
-            const targetRow = e.currentTarget.closest('tr');
-            if (targetRow && targetRow !== dragSrcEl) {
-                targetRow.classList.add('drag-over');
-            }
+            e.currentTarget.classList.add('drag-over');
         }
 
         function handleDragLeave(e) {
-            const targetRow = e.currentTarget.closest('tr');
-            if (targetRow) {
-                targetRow.classList.remove('drag-over');
-            }
+            e.currentTarget.classList.remove('drag-over');
         }
 
         async function handleDrop(e) {
             if (e.stopPropagation) e.stopPropagation();
-            const targetRow = e.currentTarget.closest('tr');
-            if (!targetRow || !dragSrcEl || dragSrcEl === targetRow) return false;
+            e.currentTarget.classList.remove('drag-over');
 
-            targetRow.classList.remove('drag-over');
+            const sourceId = e.dataTransfer.getData('text/plain');
+            const targetId = e.currentTarget.getAttribute('data-id');
 
-            const srcId = dragSrcEl.getAttribute('data-id');
-            const targetId = targetRow.getAttribute('data-id');
+            if (sourceId === targetId) return false;
 
-            const srcIndex = currentAdminJobs.findIndex(j => j.id === srcId);
-            const targetIndex = currentAdminJobs.findIndex(j => j.id === targetId);
+            const fromIndex = currentAdminJobs.findIndex(j => j.id === sourceId);
+            const toIndex = currentAdminJobs.findIndex(j => j.id === targetId);
 
-            if (srcIndex < 0 || targetIndex < 0) return false;
+            if (fromIndex < 0 || toIndex < 0) return false;
 
-            // Reorganiza array local
-            const [movedItem] = currentAdminJobs.splice(srcIndex, 1);
-            currentAdminJobs.splice(targetIndex, 0, movedItem);
+            const [movedItem] = currentAdminJobs.splice(fromIndex, 1);
+            currentAdminJobs.splice(toIndex, 0, movedItem);
 
-            // Salva no backend
-            const orderedIds = currentAdminJobs.map(j => j.id);
+            const jobIds = currentAdminJobs.map(j => j.id);
+
             try {
                 const res = await fetch('/api/admin/queue/reorder', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ jobIds: orderedIds })
+                    body: JSON.stringify({ jobIds })
                 });
                 if (!res.ok) throw new Error();
-                showToast('Ordem da fila atualizada com sucesso!', 'success');
+                showToast('Fila reordenada com sucesso!', 'success');
                 loadAdminQueue();
             } catch (err) {
                 showToast('Erro ao reordenar fila.', 'error');
                 loadAdminQueue();
             }
+
             return false;
         }
 
@@ -3604,8 +3716,8 @@
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
-                if (!res.ok) throw new Error();
                 const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro');
                 showToast(data.message || 'Trabalho movido para o topo da fila!', 'success');
                 loadAdminQueue();
             } catch (e) {
@@ -3613,7 +3725,7 @@
             }
         }
 
-        async function handleChangeJobPriority(jobId, newPriority) {
+        async function handleChangeJobPriority(jobId, priority) {
             try {
                 const res = await fetch(`/api/admin/queue/${jobId}/priority`, {
                     method: 'PUT',
@@ -3642,18 +3754,189 @@
             }
         }
 
-        async function handleCancelJob(jobId) {
-            if (!confirm('Deseja realmente remover/cancelar este item da fila?')) return;
+        async function handleDeleteJob(jobId, title = '') {
+            const name = title ? `"${title}"` : 'este trabalho';
+            if (!confirm(`Deseja realmente CANCELAR e EXCLUIR ${name} da fila? (Arquivos locais associados também serão removidos)`)) return;
+
             try {
                 const res = await fetch(`/api/admin/queue/${jobId}`, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });
-                if (!res.ok) throw new Error();
-                showToast('Trabalho removido da fila.', 'info');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Falha ao excluir.');
+
+                showToast(data.message || 'Trabalho cancelado e excluído com sucesso!', 'success');
                 loadAdminQueue();
+                loadAdminStats();
             } catch (e) {
-                showToast('Erro ao remover trabalho.', 'error');
+                showToast(e.message || 'Erro ao excluir trabalho.', 'error');
+            }
+        }
+
+        function toggleEditSeriesFields() {
+            const type = document.getElementById('edit-type').value;
+            const fields = document.getElementById('edit-series-fields');
+            if (fields) {
+                fields.style.display = type === 'serie' ? 'block' : 'none';
+            }
+        }
+
+        async function openEditJobModal(jobId) {
+            const job = (currentAdminJobs || []).find(j => j.id === jobId);
+            if (!job) {
+                showToast('Trabalho não encontrado na memória.', 'error');
+                return;
+            }
+
+            document.getElementById('edit-job-id').value = job.id;
+            document.getElementById('edit-title').value = job.title || '';
+            document.getElementById('edit-year').value = job.metaDetails?.ano || job.ano || '';
+            document.getElementById('edit-type').value = job.type || 'filme';
+            document.getElementById('edit-audio-pref').value = job.audioPreference || 'dublado';
+            document.getElementById('edit-season').value = job.season || 1;
+            document.getElementById('edit-episode').value = job.episode || 1;
+            document.getElementById('edit-priority').value = job.priority || 1;
+            document.getElementById('edit-synopsis').value = job.metaDetails?.sinopse || '';
+            document.getElementById('edit-tmdb-id').value = job.metaDetails?.tmdbId || job.tmdbId || '';
+            document.getElementById('edit-imdb-id').value = job.metaDetails?.imdbId || job.imdbId || '';
+            document.getElementById('edit-poster-url').value = job.metaDetails?.posterUrl || '';
+            document.getElementById('edit-backdrop-url').value = job.metaDetails?.backdropUrl || '';
+            document.getElementById('edit-original-title').value = job.metaDetails?.nomeOriginal || job.nomeOriginal || '';
+            document.getElementById('edit-genres-json').value = JSON.stringify(job.metaDetails?.generos || []);
+            document.getElementById('edit-rating').value = job.metaDetails?.nota || 8.0;
+            document.getElementById('edit-requeue').checked = (job.status === 'failed');
+
+            document.getElementById('edit-tmdb-query').value = job.title || '';
+            document.getElementById('edit-tmdb-results').style.display = 'none';
+
+            toggleEditSeriesFields();
+            openAdminModal('admin-modal-edit-job');
+        }
+
+        async function triggerEditTmdbSearch() {
+            const q = document.getElementById('edit-tmdb-query')?.value?.trim();
+            if (!q) return;
+
+            const resultsContainer = document.getElementById('edit-tmdb-results');
+            if (!resultsContainer) return;
+
+            resultsContainer.style.display = 'flex';
+            resultsContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 12px;">🔍 Buscando no TMDB...</div>';
+
+            try {
+                const res = await fetch(`/api/admin/tmdb/search?query=${encodeURIComponent(q)}`, { headers: getAuthHeaders() });
+                const data = await res.json();
+                const list = data.results || [];
+
+                if (list.length === 0) {
+                    resultsContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 12px;">Nenhum resultado encontrado no TMDB.</div>';
+                    return;
+                }
+
+                resultsContainer.innerHTML = list.slice(0, 8).map(item => {
+                    const poster = item.posterUrl || 'https://via.placeholder.com/92x138/111827/9ca3af?text=Sem+Capa';
+                    const ano = item.ano || (item.dataLancamento ? item.dataLancamento.split('-')[0] : '');
+                    const tipoBadge = item.tipo === 'serie' ? '📺 Série' : '🎬 Filme';
+
+                    return `
+                        <div class="tmdb-result-card" onclick='selectEditTmdbResult(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
+                            <img class="tmdb-result-thumb" src="${poster}" alt="${item.nome}">
+                            <div class="tmdb-result-info">
+                                <div class="tmdb-result-title">${item.nome}</div>
+                                <div class="tmdb-result-meta">
+                                    <span style="background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;">${tipoBadge}</span>
+                                    <span>${ano}</span>
+                                    <span>⭐ ${(item.nota || 8.0).toFixed(1)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                resultsContainer.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 12px;">Erro ao consultar TMDB.</div>';
+            }
+        }
+
+        function selectEditTmdbResult(item) {
+            document.getElementById('edit-tmdb-results').style.display = 'none';
+            document.getElementById('edit-title').value = item.nome || '';
+            document.getElementById('edit-year').value = item.ano || (item.dataLancamento ? item.dataLancamento.split('-')[0] : '2026');
+            document.getElementById('edit-type').value = item.tipo === 'serie' ? 'serie' : 'filme';
+            document.getElementById('edit-synopsis').value = item.sinopse || item.descricao || '';
+            document.getElementById('edit-tmdb-id').value = item.tmdbId || '';
+            document.getElementById('edit-imdb-id').value = item.imdbId || '';
+            document.getElementById('edit-poster-url').value = item.posterUrl || '';
+            document.getElementById('edit-backdrop-url').value = item.backdropUrl || '';
+            document.getElementById('edit-original-title').value = item.nomeOriginal || item.nome || '';
+            document.getElementById('edit-genres-json').value = JSON.stringify(item.generos || []);
+            document.getElementById('edit-rating').value = item.nota || 8.0;
+
+            toggleEditSeriesFields();
+            showToast(`Dados vinculados ao TMDB: "${item.nome}"!`, 'success');
+        }
+
+        async function handleEditJobFormSubmit(e) {
+            e.preventDefault();
+
+            const jobId = document.getElementById('edit-job-id').value;
+            const title = document.getElementById('edit-title').value;
+            const ano = document.getElementById('edit-year').value;
+            const type = document.getElementById('edit-type').value;
+            const audioPref = document.getElementById('edit-audio-pref').value;
+            const season = document.getElementById('edit-season').value;
+            const episode = document.getElementById('edit-episode').value;
+            const priority = document.getElementById('edit-priority').value;
+            const synopsis = document.getElementById('edit-synopsis').value;
+            const requeue = document.getElementById('edit-requeue').checked;
+
+            const tmdbId = document.getElementById('edit-tmdb-id').value;
+            const imdbId = document.getElementById('edit-imdb-id').value;
+            const posterUrl = document.getElementById('edit-poster-url').value;
+            const backdropUrl = document.getElementById('edit-backdrop-url').value;
+            const nomeOriginal = document.getElementById('edit-original-title').value;
+            const rating = document.getElementById('edit-rating').value;
+
+            let generos = [];
+            try { generos = JSON.parse(document.getElementById('edit-genres-json').value || '[]'); } catch (err) {}
+
+            const payload = {
+                title,
+                type,
+                audioPreference: audioPref,
+                priority: parseInt(priority, 10),
+                season: type === 'serie' ? parseInt(season || 1, 10) : null,
+                episode: type === 'serie' ? parseInt(episode || 1, 10) : null,
+                requeue: requeue,
+                metaDetails: {
+                    sinopse: synopsis,
+                    ano: ano || new Date().getFullYear().toString(),
+                    tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+                    imdbId: imdbId || null,
+                    posterUrl: posterUrl || '',
+                    backdropUrl: backdropUrl || '',
+                    nomeOriginal: nomeOriginal || title,
+                    generos: generos,
+                    nota: parseFloat(rating || 8.0)
+                }
+            };
+
+            try {
+                const res = await fetch(`/api/admin/queue/${jobId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao salvar edição.');
+
+                showToast(data.message || 'Trabalho atualizado com sucesso!', 'success');
+                closeAdminModal('admin-modal-edit-job');
+                loadAdminQueue();
+                loadAdminCatalog();
+                loadAdminStats();
+            } catch (err) {
+                showToast(err.message || 'Erro ao editar trabalho.', 'error');
             }
         }
 
