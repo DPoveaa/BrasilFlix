@@ -1284,6 +1284,25 @@ class QueueManager extends EventEmitter {
                 totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || 10;
             }
 
+            // Se o episódio atual foi catalogado como Legendado, verifica se episódios anteriores só têm versão Dublada e enfileira a Legendada para manter 100% de cobertura
+            if (metadata.isLegendado) {
+                const sItem = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                const tItem = (sItem?.temporadas || []).find(t => t.numero === currentSeasonNum);
+                for (let ep = 1; ep < currentEpNum; ep++) {
+                    const prevEp = (tItem?.episodios || []).find(e => e.numero === ep);
+                    if (prevEp && !prevEp.isLegendado && !prevEp.audio?.toLowerCase().includes('legendado')) {
+                        console.log(`💬 [ESTEIRA DUAL SÉRIE] Enfileirando versão Legendada complementar para "${metadata.nome || job.title}" - T${currentSeasonNum}E${ep}...`);
+                        this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                            tmdbId: metadata.tmdbId,
+                            season: currentSeasonNum,
+                            episode: ep,
+                            audioPreference: 'legendado',
+                            queueOrder: -1
+                        });
+                    }
+                }
+            }
+
             const nextEp = currentEpNum + 1;
 
             if (nextEp <= totalEpsNestaTemporada) {
