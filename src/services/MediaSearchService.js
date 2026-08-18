@@ -339,6 +339,17 @@ class MediaSearchService {
                     continue;
                 }
 
+                if (tipo === 'serie' && episode) {
+                    const epMatch = title.match(/\b(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
+                    const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(title) && !epMatch;
+                    if (epMatch) {
+                        const foundEp = parseInt(epMatch[1], 10);
+                        if (foundEp !== episode) {
+                            continue; // Rejeita episódios divergentes (ex: E17 quando buscamos E02)
+                        }
+                    }
+                }
+
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(title);
@@ -609,14 +620,30 @@ class MediaSearchService {
                 return;
             }
 
-            if (opts.tipo === 'serie' && opts.season) {
-                const sPad = String(opts.season).padStart(2, '0');
-                const sRegex = new RegExp(`\\b(s${opts.season}|s${sPad}|temporada\\s*${opts.season}|temporada\\s*${sPad}|season\\s*${opts.season}|season\\s*${sPad}|${opts.season}ª\\s*temporada)\\b`, 'i');
-                const hasSeason = sRegex.test(name);
-                const hasAnySeason = /\b(s\d+|temporada\s*\d+|season\s*\d+|\d+x\d+)\b/i.test(name);
-                
-                if (hasAnySeason && !hasSeason) {
-                    return;
+            if (opts.tipo === 'serie') {
+                if (opts.season) {
+                    const sPad = String(opts.season).padStart(2, '0');
+                    const sRegex = new RegExp(`\\b(s${opts.season}|s${sPad}|temporada\\s*${opts.season}|temporada\\s*${sPad}|season\\s*${opts.season}|season\\s*${sPad}|${opts.season}ª\\s*temporada)\\b`, 'i');
+                    const hasSeason = sRegex.test(name);
+                    const hasAnySeason = /\b(s\d+|temporada\s*\d+|season\s*\d+|\d+x\d+)\b/i.test(name);
+                    
+                    if (hasAnySeason && !hasSeason) {
+                        return;
+                    }
+                }
+
+                if (opts.episode) {
+                    const epMatch = name.match(/\b(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
+                    const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(name) && !epMatch;
+
+                    if (epMatch) {
+                        const foundEp = parseInt(epMatch[1], 10);
+                        if (foundEp !== opts.episode) {
+                            return; // Rejeita episódios divergentes (ex: E17 quando buscamos E02)
+                        }
+                    } else if (!isPack) {
+                        return;
+                    }
                 }
             }
 
