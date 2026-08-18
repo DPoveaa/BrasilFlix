@@ -2,6 +2,8 @@ const cron = require('node-cron');
 const config = require('../../config');
 const TMDBService = require('./TMDBService');
 const MediaSearchService = require('./MediaSearchService');
+const SwarmWatcher = require('./SwarmWatcher');
+const DiskCleaner = require('./DiskCleaner');
 const { PRIORITIES } = require('../managers/QueueManager');
 
 class AutoFeeder {
@@ -21,6 +23,13 @@ class AutoFeeder {
 
         console.log('🤖 AutoFeeder ativado! Monitorando pedidos de clientes, lançamentos e episódios semanais...');
 
+        // Inicializa o Monitor de Sementes e Watchlist de Torrents
+        SwarmWatcher.init(this.queueManager, this.catalogoManager);
+        SwarmWatcher.startWatchCycle(30 * 60 * 1000);
+
+        // Inicializa o Auto-Cleaner de Disco (remove arquivos órfãos > 30 min)
+        DiskCleaner.startAutoCleanup(() => this.queueManager.getActiveFiles(), 45 * 60 * 1000);
+
         // Executa uma verificação inicial após 8 segundos de inicialização
         setTimeout(() => {
             this.runCheck();
@@ -38,6 +47,9 @@ class AutoFeeder {
         this.isRunningCheck = true;
 
         try {
+            // 0. Checa sementes de itens monitorados na watchlist
+            await SwarmWatcher.checkWatchlist();
+
             // 1. Reprocessar Pedidos Pendentes de Clientes (ex: The Rookie, pedidos que ainda não foram concluídos)
             await this.checkPendingPedidos();
 

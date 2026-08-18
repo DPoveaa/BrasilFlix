@@ -8,6 +8,8 @@ const MediaSearchService = require('../services/MediaSearchService');
 const DownloaderManager = require('../services/DownloaderManager');
 const VideoProcessor = require('../services/VideoProcessor');
 const TelegramUploader = require('../services/TelegramUploader');
+const DiskCleaner = require('../services/DiskCleaner');
+const SwarmWatcher = require('../services/SwarmWatcher');
 
 const PRIORITIES = {
     VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila)
@@ -32,6 +34,19 @@ class QueueManager extends EventEmitter {
 
         // Inicializa banco e carrega fila de forma assíncrona
         this._init();
+    }
+
+    getActiveFiles() {
+        const files = [];
+        if (this.activeTask) {
+            if (this.activeTask.rawFilePath) files.push(this.activeTask.rawFilePath);
+            if (this.activeTask.optimizedFilePath) files.push(this.activeTask.optimizedFilePath);
+        }
+        for (const j of this.queue) {
+            if (j.rawFilePath) files.push(j.rawFilePath);
+            if (j.optimizedFilePath) files.push(j.optimizedFilePath);
+        }
+        return files;
     }
 
     isEpisodeSkippedRecently(title, season, episode) {
@@ -836,8 +851,22 @@ class QueueManager extends EventEmitter {
             if (!downloadedMedia || !bestSource) {
                 if (job.type === 'serie') {
                     this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                    console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Mantendo esteira no episódio atual...`);
+                    console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Adicionando ao Swarm Watcher...`);
                 }
+                // Registra na watchlist persistente para baixar assim que houver sementes ativas
+                SwarmWatcher.addToWatchlist({
+                    title: metadata.nome || job.title,
+                    type: job.type,
+                    tmdbId: metadata.tmdbId,
+                    imdbId: metadata.imdbId,
+                    season: job.season,
+                    episode: job.episode,
+                    audioPreference: job.audioPreference || 'dublado',
+                    userId: job.userId,
+                    username: job.username,
+                    reason: 'no_seeders'
+                }).catch(() => {});
+
                 throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
             }
 
@@ -1319,6 +1348,18 @@ class QueueManager extends EventEmitter {
                 }
             }
         }
+
+        // Remove da watchlist de sementes pois já foi concluído
+        SwarmWatcher.removeFromWatchlist(
+            metadata.nome || job.title,
+            job.type,
+            job.season,
+            job.episode,
+            metadata.isDublado ? 'dublado' : 'legendado'
+        ).catch(() => {});
+
+        // Executa limpeza de disco assíncrona após finalizar processamento
+        DiskCleaner.scanAndClean(this.getActiveFiles()).catch(() => {});
     }
 
     getStatus() {

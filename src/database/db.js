@@ -214,6 +214,25 @@ async function createTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS swarm_watchlist (
+            id BIGSERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            type VARCHAR(50) DEFAULT 'filme',
+            tmdb_id INTEGER,
+            imdb_id VARCHAR(50),
+            season INTEGER,
+            episode INTEGER,
+            audio_preference VARCHAR(50) DEFAULT 'dublado',
+            user_id BIGINT,
+            username VARCHAR(255),
+            reason VARCHAR(100) DEFAULT 'no_seeders',
+            last_checked TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            check_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        ALTER TABLE swarm_watchlist ALTER COLUMN id TYPE BIGINT;
+
         CREATE TABLE IF NOT EXISTS consumo_gratis (
             id SERIAL PRIMARY KEY,
             identificador VARCHAR(150) NOT NULL,
