@@ -553,6 +553,26 @@ class QueueManager extends EventEmitter {
                             nextTargetSeason = s;
                             nextTargetEp = ep;
                             break;
+                        } else if (pref === 'legendado') {
+                            const epLeg = epItem.isLegendado || epItem.audio?.toLowerCase().includes('legendado');
+                            if (!epLeg) {
+                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
+                                    continue;
+                                }
+                                nextTargetSeason = s;
+                                nextTargetEp = ep;
+                                break;
+                            }
+                        } else if (pref === 'dublado') {
+                            const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
+                            if (!epDub) {
+                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
+                                    continue;
+                                }
+                                nextTargetSeason = s;
+                                nextTargetEp = ep;
+                                break;
+                            }
                         }
                     }
 
