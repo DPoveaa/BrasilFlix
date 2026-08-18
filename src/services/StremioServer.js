@@ -50,7 +50,7 @@ class StremioServer {
     setupRoutes() {
         // 1. APIs Publicas Seguras (Zero dados sensiveis)
         this.app.get('/api/status', (req, res) => {
-            const queueStatus = this.queueManager ? this.queueManager.getPublicStatus() : { isProcessing: false, activeTask: null, queue: [], recentCompleted: [], totalQueued: 0 };
+            const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
             const stats = this.catalogoManager.getEstatisticas();
             res.json({
                 online: true,
@@ -67,7 +67,7 @@ class StremioServer {
         });
 
         this.app.get('/api/fila', (req, res) => {
-            const queueStatus = this.queueManager ? this.queueManager.getPublicStatus() : { isProcessing: false, activeTask: null, queue: [], recentCompleted: [], totalQueued: 0 };
+            const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
             res.json(queueStatus);
         });
 

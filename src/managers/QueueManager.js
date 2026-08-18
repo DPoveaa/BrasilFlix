@@ -1439,20 +1439,30 @@ class QueueManager extends EventEmitter {
         let recentCompleted = [];
 
         if (cat && cat.catalogo) {
-            const filmesRecentes = (cat.catalogo.filmes || []).map(f => ({
-                id: f.id,
-                title: f.nome,
-                type: 'filme',
-                season: null,
-                episode: null,
-                qualidade: f.qualidade || '1080p Full HD',
-                data: new Date(f.dataAdicionado || 0).getTime()
-            }));
+            const filmesRecentes = (cat.catalogo.filmes || []).map(f => {
+                const hasDub = f.isDublado || !!f.versoes?.dublado;
+                const hasLeg = f.isLegendado || !!f.versoes?.legendado;
+                return {
+                    id: f.id,
+                    title: f.nome,
+                    type: 'filme',
+                    season: null,
+                    episode: null,
+                    qualidade: f.qualidade || (f.isCam ? 'CAM' : '1080p Full HD'),
+                    isCam: f.isCam,
+                    isDublado: hasDub,
+                    isLegendado: hasLeg,
+                    audioBadge: hasDub && hasLeg ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : '')),
+                    data: new Date(f.dataAdicionado || 0).getTime()
+                };
+            });
 
             const epsRecentes = [];
             for (const s of (cat.catalogo.series || [])) {
                 for (const t of (s.temporadas || [])) {
                     for (const ep of (t.episodios || [])) {
+                        const hasDub = ep.isDublado || !!ep.versoes?.dublado;
+                        const hasLeg = ep.isLegendado || !!ep.versoes?.legendado;
                         epsRecentes.push({
                             id: ep.id || s.id,
                             title: s.nome,
@@ -1460,6 +1470,10 @@ class QueueManager extends EventEmitter {
                             season: t.numero,
                             episode: ep.numero,
                             qualidade: ep.qualidade || '1080p Full HD',
+                            isCam: false,
+                            isDublado: hasDub,
+                            isLegendado: hasLeg,
+                            audioBadge: hasDub && hasLeg ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : '')),
                             data: new Date(ep.dataAdicionado || s.dataAdicionado || 0).getTime()
                         });
                     }
@@ -1468,11 +1482,11 @@ class QueueManager extends EventEmitter {
 
             recentCompleted = [...filmesRecentes, ...epsRecentes]
                 .sort((a, b) => b.data - a.data)
-                .slice(0, 6);
+                .slice(0, 8);
         } else {
             recentCompleted = this.queue
                 .filter(j => j.status === 'completed')
-                .slice(-6)
+                .slice(-8)
                 .reverse()
                 .map(formatJob);
         }
@@ -1480,6 +1494,8 @@ class QueueManager extends EventEmitter {
         return {
             isProcessing: this.isProcessing,
             activeTask: active,
+            activeTasks: activeTasks,
+            maxConcurrentJobs: this.maxConcurrentJobs || 4,
             queue: pending,
             recentCompleted: recentCompleted,
             totalQueued: pending.length

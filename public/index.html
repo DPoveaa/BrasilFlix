@@ -3014,13 +3014,24 @@
                             recentList.innerHTML = data.queue.recentCompleted.map(item => {
                                 const epStr = (item.type === 'serie' && (item.season || item.episode)) ? ` (T${item.season || 1}E${item.episode || 1})` : '';
                                 const typeStr = item.type === 'filme' ? '🎬 Filme' : '📺 Série';
+                                const isDub = item.isDublado || item.audioBadge?.includes('D');
+                                const isLeg = item.isLegendado || item.audioBadge?.includes('L');
+                                let audioLabel = '🔊 Áudio';
+                                if (isDub && isLeg) audioLabel = '🔊 Dual Áudio (Dub+Leg)';
+                                else if (isDub) audioLabel = '🇧🇷 Dublado';
+                                else if (isLeg) audioLabel = '💬 Legendado';
+                                
+                                const qualLabel = item.isCam ? '📹 Cinema [CAM]' : (item.qualidade || '💎 1080p Full HD');
+                                const qualBadgeClass = item.isCam ? 'badge-priority' : 'badge-completed';
+
                                 return `
                                     <div class="queue-item">
                                         <div class="queue-item-info">
                                             <h4>${item.title}${epStr}</h4>
                                             <div class="queue-item-meta">
-                                                <span class="badge-completed">1080p Full HD</span>
-                                                <span>${typeStr}</span>
+                                                <span class="${qualBadgeClass}">${qualLabel}</span>
+                                                <span style="color: #60a5fa; font-weight: 700;">${audioLabel}</span>
+                                                <span>• ${typeStr}</span>
                                             </div>
                                         </div>
                                         <span style="color: #34d399; font-weight: 700; font-size: 12px;">✓ Pronto</span>
@@ -3320,8 +3331,16 @@
         let currentModalSerie = null;
 
         function openModalById(id, type) {
-            const list = type === 'filme' ? fullCatalog.filmes : fullCatalog.series;
-            const item = (list || []).find(i => String(i.id) === String(id));
+            let item = null;
+            if (type === 'serie' || type === 'dorama') {
+                item = (fullCatalog.series || []).find(i => String(i.id) === String(id));
+            } else if (type === 'filme') {
+                item = (fullCatalog.filmes || []).find(i => String(i.id) === String(id));
+            }
+            if (!item) {
+                item = (fullCatalog.series || []).find(i => String(i.id) === String(id)) || 
+                       (fullCatalog.filmes || []).find(i => String(i.id) === String(id));
+            }
             if (!item) return;
 
             document.getElementById('modal-title').innerText = item.nome || 'Título Indisponível';
@@ -3332,7 +3351,11 @@
             if (modalBackdrop) modalBackdrop.style.backgroundImage = backdrop ? `url("${backdrop}")` : 'none';
 
             const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-            const isSerie = item.itemType === 'serie' || item.tipo === 'serie';
+            const isSerie = (type === 'serie' || type === 'dorama') || 
+                            item.itemType === 'serie' || 
+                            item.tipo === 'serie' || 
+                            !!item.temporadas || 
+                            (item.totalEpisodios !== undefined && item.totalEpisodios !== null);
 
             document.getElementById('modal-meta').innerHTML = 
                 '<span>📅 ' + (item.ano || '2026') + '</span> • ' +
