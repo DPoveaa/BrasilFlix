@@ -671,6 +671,26 @@ class CatalogoManager {
         return pontuados.map(p => p.item);
     }
 
+    buscarItemExato(termo, tipo = null, tmdbId = null, imdbId = null) {
+        if (!termo && !tmdbId && !imdbId) return null;
+        const normTermo = termo ? this.normalizarTexto(termo) : '';
+
+        const lista = tipo === 'serie' 
+            ? (this.catalogo.series || [])
+            : (tipo === 'filme' ? (this.catalogo.filmes || []) : [...(this.catalogo.filmes || []), ...(this.catalogo.series || [])]);
+
+        return lista.find(item => {
+            if (tmdbId && item.tmdbId && (item.tmdbId == tmdbId || item.tmdbId === parseInt(tmdbId, 10))) return true;
+            if (imdbId && item.imdbId && item.imdbId === imdbId) return true;
+            if (normTermo) {
+                const normNome = this.normalizarTexto(item.nome || '');
+                const normOrig = this.normalizarTexto(item.nomeOriginal || '');
+                if (normNome === normTermo || normOrig === normTermo) return true;
+            }
+            return false;
+        }) || null;
+    }
+
     normalizarTexto(texto) {
         if (!texto) return '';
         return texto.toLowerCase()

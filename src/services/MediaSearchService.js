@@ -340,9 +340,16 @@ class MediaSearchService {
                 }
 
                 if (tipo === 'serie' && episode) {
-                    const epMatch = title.match(/\b(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
-                    const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(title) && !epMatch;
-                    if (epMatch) {
+                    const rangeMatch = title.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,3})\b/i);
+                    const epMatch = title.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,3})\b/i);
+
+                    if (rangeMatch) {
+                        const startEp = parseInt(rangeMatch[1], 10);
+                        const endEp = parseInt(rangeMatch[2], 10);
+                        if (episode < startEp || episode > endEp) {
+                            continue;
+                        }
+                    } else if (epMatch) {
                         const foundEp = parseInt(epMatch[1], 10);
                         if (foundEp !== episode) {
                             continue; // Rejeita episódios divergentes (ex: E17 quando buscamos E02)
@@ -633,10 +640,17 @@ class MediaSearchService {
                 }
 
                 if (opts.episode) {
-                    const epMatch = name.match(/\b(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
-                    const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(name) && !epMatch;
+                    const rangeMatch = name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,3})\b/i);
+                    const epMatch = name.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,3})\b/i);
+                    const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes|s\d{1,2}(?![._ -]?e\d+))\b/i.test(name) && !epMatch && !rangeMatch;
 
-                    if (epMatch) {
+                    if (rangeMatch) {
+                        const startEp = parseInt(rangeMatch[1], 10);
+                        const endEp = parseInt(rangeMatch[2], 10);
+                        if (opts.episode < startEp || opts.episode > endEp) {
+                            return;
+                        }
+                    } else if (epMatch) {
                         const foundEp = parseInt(epMatch[1], 10);
                         if (foundEp !== opts.episode) {
                             return; // Rejeita episódios divergentes (ex: E17 quando buscamos E02)

@@ -95,7 +95,7 @@ class AutoFeeder {
                 const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
                 const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
 
-                if (filmeExistente) {
+                if (filmeExistente || serieExistente) {
                     this.pedidosManager.marcarProcessado(pedido.id);
                     continue;
                 }
