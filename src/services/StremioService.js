@@ -114,9 +114,21 @@ class StremioService {
             const numId = parseInt(id.replace('bf_serie_', '').split(':')[0], 10);
             item = (this.catalogoManager.catalogo.series || []).find(s => s.id === numId);
         } else {
-            // Tenta por IMDb ID ou tmdbId
-            item = (this.catalogoManager.catalogo.filmes || []).find(f => f.imdbId === id || f.tmdbId === id) ||
-                   (this.catalogoManager.catalogo.series || []).find(s => s.imdbId === id || s.tmdbId === id);
+            // Tenta por IMDb ID, tmdbId numérico, tmdb:ID ou nome
+            item = (this.catalogoManager.catalogo.filmes || []).find(f => 
+                f.imdbId === id || 
+                f.tmdbId == id || 
+                (f.tmdbId && `tmdb:${f.tmdbId}` === id) ||
+                f.nome?.toLowerCase() === id.toLowerCase() ||
+                f.nomeOriginal?.toLowerCase() === id.toLowerCase()
+            ) ||
+            (this.catalogoManager.catalogo.series || []).find(s => 
+                s.imdbId === id || 
+                s.tmdbId == id || 
+                (s.tmdbId && `tmdb:${s.tmdbId}` === id) ||
+                s.nome?.toLowerCase() === id.toLowerCase() ||
+                s.nomeOriginal?.toLowerCase() === id.toLowerCase()
+            );
         }
 
         if (!item) return { meta: null };
@@ -187,7 +199,13 @@ class StremioService {
                 const numId = parseInt(id.replace('bf_movie_', ''), 10);
                 filme = (this.catalogoManager.catalogo.filmes || []).find(f => f.id === numId);
             } else {
-                filme = (this.catalogoManager.catalogo.filmes || []).find(f => f.imdbId === id || f.tmdbId === id);
+                filme = (this.catalogoManager.catalogo.filmes || []).find(f => 
+                    f.imdbId === id || 
+                    f.tmdbId == id || 
+                    (f.tmdbId && `tmdb:${f.tmdbId}` === id) ||
+                    f.nome?.toLowerCase() === id.toLowerCase() ||
+                    f.nomeOriginal?.toLowerCase() === id.toLowerCase()
+                );
             }
 
             if (!filme) return { streams: [] };
@@ -230,7 +248,13 @@ class StremioService {
                 const numId = parseInt(serieIdOrImdb.replace('bf_serie_', ''), 10);
                 serie = (this.catalogoManager.catalogo.series || []).find(s => s.id === numId);
             } else {
-                serie = (this.catalogoManager.catalogo.series || []).find(s => s.imdbId === serieIdOrImdb || s.tmdbId === serieIdOrImdb);
+                serie = (this.catalogoManager.catalogo.series || []).find(s => 
+                    s.imdbId === serieIdOrImdb || 
+                    s.tmdbId == serieIdOrImdb || 
+                    (s.tmdbId && `tmdb:${s.tmdbId}` === serieIdOrImdb) ||
+                    s.nome?.toLowerCase() === serieIdOrImdb.toLowerCase() ||
+                    s.nomeOriginal?.toLowerCase() === serieIdOrImdb.toLowerCase()
+                );
             }
 
             if (!serie) return { streams: [] };
