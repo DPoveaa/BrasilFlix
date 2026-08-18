@@ -547,18 +547,12 @@ class QueueManager extends EventEmitter {
                     for (let ep = 1; ep <= totalEpsInS; ep++) {
                         const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
                         if (!epItem) {
-                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
-                                continue;
-                            }
                             nextTargetSeason = s;
                             nextTargetEp = ep;
                             break;
                         } else if (pref === 'legendado') {
                             const epLeg = epItem.isLegendado || epItem.audio?.toLowerCase().includes('legendado');
                             if (!epLeg) {
-                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
-                                    continue;
-                                }
                                 nextTargetSeason = s;
                                 nextTargetEp = ep;
                                 break;
@@ -566,9 +560,6 @@ class QueueManager extends EventEmitter {
                         } else if (pref === 'dublado') {
                             const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
                             if (!epDub) {
-                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) {
-                                    continue;
-                                }
                                 nextTargetSeason = s;
                                 nextTargetEp = ep;
                                 break;
@@ -586,9 +577,6 @@ class QueueManager extends EventEmitter {
                         for (const epItem of (tempS?.episodios || [])) {
                             const epDub = epItem.isDublado || epItem.audio?.toLowerCase().includes('dublado');
                             if (!epDub) {
-                                if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, epItem.numero)) {
-                                    continue;
-                                }
                                 nextTargetSeason = s;
                                 nextTargetEp = epItem.numero;
                                 break;
@@ -610,7 +598,7 @@ class QueueManager extends EventEmitter {
                     await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
                     return;
                 }
-            } else if (requestedEp > 1 && !this.isEpisodeSkippedRecently(metadata.nome || job.title, seasonNum, 1) && !this.isEpisodeSkippedRecently(job.title, seasonNum, 1)) {
+            } else if (requestedEp > 1) {
                 console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Iniciando a partir do Episódio 1 (T${seasonNum}E1)!`);
                 job.episode = 1;
                 await this.saveJob(job);
@@ -737,34 +725,8 @@ class QueueManager extends EventEmitter {
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
 
-            // Se a preferência do job for estritamente Dublado, filtra APENAS fontes Dubladas:
-            if (job.audioPreference === 'dublado') {
-                const dubSources = sources.filter(s => s.isDublado);
-                if (dubSources.length > 0) {
-                    sources = dubSources;
-                } else {
-                    // Verifica se já temos a versão legendada no catálogo
-                    let jaTemLegendado = false;
-                    if (job.type === 'filme') {
-                        const f = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme');
-                        jaTemLegendado = f && (f.isLegendado || !!f.versoes?.legendado || f.audio?.toLowerCase().includes('legendado'));
-                    } else {
-                        const s = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
-                        const t = (s?.temporadas || []).find(temp => temp.numero === (job.season || 1));
-                        const ep = (t?.episodios || []).find(e => e.numero === (job.episode || 1));
-                        jaTemLegendado = ep && (ep.isLegendado || ep.audio?.toLowerCase().includes('legendado'));
-                    }
-
-                    if (jaTemLegendado) {
-                        console.log(`ℹ️ "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e não há fontes Dubladas disponíveis.`);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.progressDetails = 'Já possui versão Legendada no catálogo';
-                        await this.saveJob(job);
-                        return;
-                    }
-                }
-            } else if (job.audioPreference === 'legendado') {
+            // Se a preferência for estritamente Legendado, filtra apenas fontes legendadas
+            if (job.audioPreference === 'legendado') {
                 const legSources = sources.filter(s => s.isLegendado);
                 if (legSources.length > 0) {
                     sources = legSources;
@@ -874,8 +836,7 @@ class QueueManager extends EventEmitter {
             if (!downloadedMedia || !bestSource) {
                 if (job.type === 'serie') {
                     this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                    console.warn(`⚠️ [PULO INTELIGENTE] Todas as fontes para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders ou falharam. Registrado para retry posterior e avançando na esteira...`);
-                    await this.enqueueNextAvailableEpisode(metadata, job);
+                    console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Mantendo esteira no episódio atual...`);
                 }
                 throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
             }

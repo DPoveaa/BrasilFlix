@@ -206,22 +206,27 @@ class MediaSearchService {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
         }
 
-        // Apenas busca fallback de OpenSubtitles se NÃO foi encontrada NENHUMA fonte em Português
-        if (ptBrResults.length === 0 && imdbId) {
-            console.log(`🌐 Nenhuma fonte em Português encontrada para "${cleanQuery}". Buscando legendas oficiais PT-BR no OpenSubtitles (${imdbId})...`);
+        const dubComSeeds = ptBrResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
+        const shouldFetchLegendado = ptBrResults.length === 0 || (pref === 'legendado') || (pref === 'dublado' && dubComSeeds.length === 0);
+
+        // Busca fallback de OpenSubtitles se não houver dublado com seeders saudáveis
+        if (shouldFetchLegendado && imdbId) {
+            console.log(`🌐 Buscando e incluindo fontes 1080p Legendadas com OpenSubtitles PT-BR para "${cleanQuery}" (${imdbId})...`);
             try {
                 const ptSubs = await this.getOpenSubtitlesPT(imdbId, tipo, season, episode);
                 if (ptSubs.length > 0) {
-                    console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando melhor versão 1080p WEB-DL com sementes ativas...`);
+                    console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando versões 1080p e Season Packs com sementes ativas...`);
                     const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { season, episode });
                     for (const st of fallbackStreams) {
-                        st.isPtBr = true;
-                        st.isLegendado = true;
-                        st.isDublado = false;
-                        st.audio = 'Legendado (PT-BR)';
-                        st.hasPtSub = true;
-                        st.subtitleUrl = ptSubs[0].url;
-                        ptBrResults.push(st);
+                        if (!ptBrResults.some(r => r.infoHash === st.infoHash)) {
+                            st.isPtBr = true;
+                            st.isLegendado = true;
+                            st.isDublado = false;
+                            st.audio = 'Legendado (PT-BR)';
+                            st.hasPtSub = true;
+                            st.subtitleUrl = ptSubs[0].url;
+                            ptBrResults.push(st);
+                        }
                     }
                 }
             } catch (e) {
