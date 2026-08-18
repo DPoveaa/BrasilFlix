@@ -744,16 +744,39 @@ class StremioServer {
                     episode
                 } = req.body;
 
-                if (!title || !title.trim()) {
-                    await fs.remove(req.file.path).catch(() => {});
-                    return res.status(400).json({ error: 'Título é obrigatório.' });
+                let cleanTitle = (title || '').trim();
+                let mediaType = type === 'serie' ? 'serie' : 'filme';
+                let mediaPriority = parseInt(priority || 1, 10);
+                let sNum = parseInt(season || 1, 10);
+                let epNum = parseInt(episode || 1, 10);
+
+                if (!cleanTitle && req.file) {
+                    const rawFileName = path.basename(req.file.originalname, path.extname(req.file.originalname));
+                    const matchEp = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
+                    const matchTempOnly = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\b/i);
+
+                    if (matchEp) {
+                        mediaType = 'serie';
+                        sNum = parseInt(matchEp[1], 10);
+                        epNum = parseInt(matchEp[2], 10);
+                    } else if (matchTempOnly) {
+                        mediaType = 'serie';
+                        sNum = parseInt(matchTempOnly[1], 10);
+                    }
+
+                    cleanTitle = rawFileName
+                        .replace(/[\._]/g, ' ')
+                        .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\s*(?:e|ep|episodio|episódio|x)\s*\d{1,3}\b/gi, '')
+                        .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\b/gi, '')
+                        .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc)\b/gi, '')
+                        .replace(/[-–—]\s*\d{4}/, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
                 }
 
-                const cleanTitle = title.trim();
-                const mediaType = type === 'serie' ? 'serie' : 'filme';
-                const mediaPriority = parseInt(priority || 1, 10);
-                const sNum = parseInt(season || 1, 10);
-                const epNum = parseInt(episode || 1, 10);
+                if (!cleanTitle) {
+                    cleanTitle = path.basename(req.file.originalname, path.extname(req.file.originalname));
+                }
 
                 let parsedGeneros = [];
                 try {
@@ -762,29 +785,77 @@ class StremioServer {
                     parsedGeneros = typeof generos === 'string' ? generos.split(',').map(s => s.trim()) : [];
                 }
 
+                // Auto-enriquecimento via TMDB se campos essenciais não vieram preenchidos
+                const TMDBService = require('./TMDBService');
+                let enrichedTmdbId = tmdbId ? parseInt(tmdbId, 10) : null;
+                let enrichedImdbId = imdbId || null;
+                let enrichedPoster = posterUrl || '';
+                let enrichedBackdrop = backdropUrl || '';
+                let enrichedSinopse = sinopse || '';
+                let enrichedOriginal = nomeOriginal || cleanTitle;
+                let enrichedAno = ano || new Date().getFullYear().toString();
+                let enrichedNota = parseFloat(nota || 8.0);
+                let enrichedGeneros = parsedGeneros;
+
+                if (!enrichedTmdbId || !enrichedPoster) {
+                    try {
+                        if (mediaType === 'serie') {
+                            const results = await TMDBService.searchTV(cleanTitle);
+                            if (results && results.length > 0) {
+                                const top = results[0];
+                                enrichedTmdbId = top.tmdbId;
+                                enrichedImdbId = top.imdbId || enrichedImdbId;
+                                enrichedPoster = top.posterUrl || enrichedPoster;
+                                enrichedBackdrop = top.backdropUrl || enrichedBackdrop;
+                                enrichedSinopse = top.sinopse || enrichedSinopse;
+                                enrichedOriginal = top.nomeOriginal || enrichedOriginal;
+                                enrichedAno = top.ano || enrichedAno;
+                                enrichedNota = top.nota || enrichedNota;
+                                if (top.generos && top.generos.length > 0) enrichedGeneros = top.generos;
+                            }
+                        } else {
+                            const results = await TMDBService.searchMovie(cleanTitle);
+                            if (results && results.length > 0) {
+                                const top = results[0];
+                                enrichedTmdbId = top.tmdbId;
+                                enrichedImdbId = top.imdbId || enrichedImdbId;
+                                enrichedPoster = top.posterUrl || enrichedPoster;
+                                enrichedBackdrop = top.backdropUrl || enrichedBackdrop;
+                                enrichedSinopse = top.sinopse || enrichedSinopse;
+                                enrichedOriginal = top.nomeOriginal || enrichedOriginal;
+                                enrichedAno = top.ano || enrichedAno;
+                                enrichedNota = top.nota || enrichedNota;
+                                if (top.generos && top.generos.length > 0) enrichedGeneros = top.generos;
+                            }
+                        }
+                    } catch (eTmdb) {
+                        console.warn('⚠️ Falha ao auto-completar TMDB para upload:', eTmdb.message);
+                    }
+                }
+
                 const job = this.queueManager.addJob(cleanTitle, mediaType, mediaPriority, {
                     audioPreference: audioPreference || 'dublado',
                     season: mediaType === 'serie' ? sNum : null,
                     episode: mediaType === 'serie' ? epNum : null,
-                    tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
-                    imdbId: imdbId || null,
-                    nomeOriginal: nomeOriginal || cleanTitle,
+                    tmdbId: enrichedTmdbId,
+                    imdbId: enrichedImdbId,
+                    nomeOriginal: enrichedOriginal,
                     rawFilePath: req.file.path,
                     isManualAdd: true,
                     metaDetails: {
-                        sinopse: sinopse || '',
-                        posterUrl: posterUrl || '',
-                        backdropUrl: backdropUrl || '',
-                        ano: ano || new Date().getFullYear().toString(),
-                        generos: parsedGeneros,
-                        nota: parseFloat(nota || 8.0)
+                        sinopse: enrichedSinopse,
+                        posterUrl: enrichedPoster,
+                        backdropUrl: enrichedBackdrop,
+                        ano: enrichedAno,
+                        generos: enrichedGeneros,
+                        nota: enrichedNota
                     },
                     username: 'Admin (Upload de Arquivo)'
                 });
 
                 res.json({
                     success: true,
-                    message: `Arquivo "${req.file.originalname}" enviado com sucesso! "${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} está na esteira para processamento e upload.`,
+                    message: `Arquivo "${req.file.originalname}" recebido com sucesso! "${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} foi adicionado ao topo da fila para processamento e upload.`,
                     job
                 });
             } catch (e) {
