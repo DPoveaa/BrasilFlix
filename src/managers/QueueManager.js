@@ -713,8 +713,6 @@ class QueueManager extends EventEmitter {
             if (sources.length === 0) {
                 if (job.type === 'serie') {
                     this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                    console.warn(`⚠️ [PULO INTELIGENTE] Nenhuma fonte em Português encontrada para "${job.title}" T${job.season || 1}E${job.episode || 1}. Registrado para retry posterior e avançando na esteira...`);
-                    await this.enqueueNextAvailableEpisode(metadata, job);
                 }
                 throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
             }
@@ -738,10 +736,7 @@ class QueueManager extends EventEmitter {
                     }
 
                     if (jaTemLegendado) {
-                        console.log(`ℹ️ "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e não há fontes Dubladas disponíveis. Pulando...`);
-                        if (job.type === 'serie') {
-                            await this.enqueueNextAvailableEpisode(metadata, job);
-                        }
+                        console.log(`ℹ️ "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e não há fontes Dubladas disponíveis.`);
                         job.status = 'completed';
                         job.progress = 100;
                         job.progressDetails = 'Já possui versão Legendada no catálogo';
@@ -762,18 +757,10 @@ class QueueManager extends EventEmitter {
 
             let lastError = null;
             const maxAttempts = Math.min(8, sources.length);
-            const maxDownloadBatchTimeMs = 45 * 60 * 1000; // 45 min de limite global para a esteira de tentativas
-            const downloadBatchStartTime = Date.now();
-
             for (let i = 0; i < maxAttempts; i++) {
-                if (Date.now() - downloadBatchStartTime > maxDownloadBatchTimeMs) {
-                    console.warn(`⏱️ Limite global de tempo de download (${Math.round(maxDownloadBatchTimeMs / 60000)} min) atingido após testar ${i} fontes.`);
-                    break;
-                }
-
                 const currentSource = sources[i];
-                console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio})`);
-                
+                console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio || 'PT-BR'})`);
+
                 try {
                     if (currentSource.magnet) {
                         downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
@@ -785,8 +772,8 @@ class QueueManager extends EventEmitter {
                             episode: job.episode,
                             type: job.type,
                             audio: currentSource.audio,
-                            isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
-                            audioPreference: job.audioPreference || 'dublado'
+                            isDublado: currentSource.isDublado,
+                            audioPreference: job.audioPreference || 'geral'
                         });
                     } else if (currentSource.url) {
                         const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
@@ -826,13 +813,14 @@ class QueueManager extends EventEmitter {
                             imdbId: metadata.imdbId,
                             season: job.season || 1,
                             episode: job.episode || 1,
-                            audioPreference: 'legendado'
+                            audioPreference: 'legendado',
+                            allowOriginalAudio: true
                         });
 
-                        const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub);
-                        for (let j = 0; j < Math.min(4, candidatesLeg.length); j++) {
+                        const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub || s.isOriginal);
+                        for (let j = 0; j < Math.min(6, candidatesLeg.length); j++) {
                             const currentLeg = candidatesLeg[j];
-                            console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
+                            console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}/${Math.min(6, candidatesLeg.length)}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
                             try {
                                 if (currentLeg.magnet) {
                                     downloadedMedia = await DownloaderManager.downloadTorrent(currentLeg.magnet, (progress) => {
@@ -940,8 +928,6 @@ class QueueManager extends EventEmitter {
                     await DownloaderManager.cleanupFile(rawFilePath);
                     if (job.type === 'serie') {
                         this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                        console.warn(`⚠️ [PULO INTELIGENTE] Arquivo sem português para "${job.title}" T${job.season || 1}E${job.episode || 1}. Avançando para o próximo episódio...`);
-                        await this.enqueueNextAvailableEpisode(metadata, job);
                     }
                     throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
                 }
@@ -949,9 +935,8 @@ class QueueManager extends EventEmitter {
                 console.log(`🎙️ Conteúdo em Português e Duração validados com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''})`);
             } catch (err) {
                 if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior')) {
-                    if (job.type === 'serie' && !err.message.includes('não contém áudio nem legendas')) {
+                    if (job.type === 'serie') {
                         this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                        await this.enqueueNextAvailableEpisode(metadata, job);
                     }
                     throw err;
                 }

@@ -181,9 +181,9 @@ class VideoProcessor {
         // 1. Áudio Dublado REAL verificado estritamente via ffprobe e tags do arquivo
         const isDublado = this.hasPortugueseAudio(info, rawFileName);
 
-        // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada
+        // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada (ou original para OpenSubtitles)
         const hasPtSubsInFile = this.hasPortugueseSubtitles(info, rawFileName);
-        const isLegendado = hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
+        const isLegendado = hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || source.isOriginal === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
 
         // 3. Caso contenha AMBOS (Áudio Dublado + Legenda PT-BR no mesmo arquivo)
         if (isDublado && isLegendado) {

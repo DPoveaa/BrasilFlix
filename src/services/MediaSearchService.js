@@ -303,10 +303,11 @@ class MediaSearchService {
 
                 const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt[-_ ]?br|subs?\.pob|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
                 const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (isPtBrExplicit || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle)) && !isPtPtExplicit;
+                const isOriginalForSub = (options.audioPreference === 'legendado' || options.allowOriginalAudio) && !isPtPtExplicit && !/\b(hindi|telugu|tamil|russian|ita|french|german)\b/i.test(rawTitle);
 
-                const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag || (isBrazilianGroup && /\b(leg|legendado)\b/i.test(title)));
+                const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag || (isBrazilianGroup && /\b(leg|legendado)\b/i.test(title)) || isOriginalForSub);
 
-                // Se não tiver nem áudio dublado nem legenda em português comprovada, descarta imediatamente
+                // Se não tiver nem áudio dublado nem legenda/original apto para OpenSubtitles, descarta imediatamente
                 if (!isDublado && !isLegendado) continue;
 
                 // Extrai seeders e tamanho do texto completo retornado pelo Torrentio/Stremio
@@ -620,9 +621,10 @@ class MediaSearchService {
             const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
             const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
             const isExplicitPtBrSub = /\b(pt[-_]?br|ptbr|pt_br|portugues[a-z]*|brazilian)\b/i.test(name);
-            const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBrSub) && !isPtPtExplicit;
+            const isOriginalForSub = (opts.audioPreference === 'legendado' || opts.allowOriginalAudio) && !isPtPtExplicit && !/\b(hindi|telugu|tamil|russian|ita|french|german)\b/i.test(name);
+            const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBrSub || isOriginalForSub) && !isPtPtExplicit;
 
-            // Se não tiver nem áudio dublado nem legenda em português comprovada, descarta imediatamente (evita falsos positivos em inglês)
+            // Se não tiver nem áudio dublado nem legenda em português comprovada nem original para OpenSubtitles, descarta
             if (!isDublado && !isLegendado) {
                 return;
             }
