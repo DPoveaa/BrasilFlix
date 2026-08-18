@@ -303,7 +303,7 @@ class MediaSearchService {
 
                 const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt[-_ ]?br|subs?\.pob|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
                 const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (isPtBrExplicit || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle)) && !isPtPtExplicit;
-                const isOriginalForSub = (options.audioPreference === 'legendado' || options.allowOriginalAudio) && !isPtPtExplicit && !/\b(hindi|telugu|tamil|russian|ita|french|german)\b/i.test(rawTitle);
+                const isOriginalForSub = (opts.audioPreference === 'legendado' || opts.allowOriginalAudio) && !isPtPtExplicit && !/\b(hindi|telugu|tamil|russian|ita|french|german)\b/i.test(rawTitle);
 
                 const isLegendado = !isDublado && (isExplicitLegendadoInTitle || hasPtSubFlag || (isBrazilianGroup && /\b(leg|legendado)\b/i.test(title)) || isOriginalForSub);
 
