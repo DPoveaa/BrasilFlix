@@ -23,9 +23,9 @@ class AutoFeeder {
 
         console.log('🤖 AutoFeeder ativado! Monitorando pedidos de clientes, lançamentos e episódios semanais...');
 
-        // Inicializa o Monitor de Sementes e Watchlist de Torrents
+        // Inicializa o Monitor de Sementes e Watchlist de Torrents (a cada 3 minutos)
         SwarmWatcher.init(this.queueManager, this.catalogoManager);
-        SwarmWatcher.startWatchCycle(30 * 60 * 1000);
+        SwarmWatcher.startWatchCycle(3 * 60 * 1000);
 
         // Inicializa o Auto-Cleaner de Disco (remove arquivos órfãos > 30 min)
         DiskCleaner.startAutoCleanup(() => this.queueManager.getActiveFiles(), 45 * 60 * 1000);

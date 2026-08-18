@@ -108,17 +108,19 @@ class SwarmWatcher {
         this.isChecking = true;
 
         try {
-            // Pega até 12 itens monitorados que não foram verificados recentemente (mais antigos primeiro)
+            // Pega até 15 itens monitorados dando prioridade máxima para pedidos de clientes
             const res = await db.query(`
                 SELECT * FROM swarm_watchlist 
-                ORDER BY last_checked ASC NULLS FIRST 
-                LIMIT 12
+                ORDER BY 
+                    CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END,
+                    last_checked ASC NULLS FIRST 
+                LIMIT 15
             `);
 
             const items = res.rows;
             if (items.length === 0) return;
 
-            console.log(`🔍 [SWARM WATCHER] Verificando sementes e novas fontes para ${items.length} item(ns) em espera...`);
+            console.log(`🔍 [SWARM WATCHER] Verificando sementes (>= 1 seeder) para ${items.length} item(ns) em espera...`);
 
             for (const it of items) {
                 const title = it.title;
@@ -162,7 +164,7 @@ class SwarmWatcher {
                     continue;
                 }
 
-                // Faz busca de fontes para checar se surgiram sementes saudáveis
+                // Faz busca rápida de fontes para checar se surgiram sementes ativas (>= 1 seeder)
                 try {
                     const sources = await MediaSearchService.search(title, type, {
                         tmdbId: it.tmdb_id,
@@ -173,22 +175,22 @@ class SwarmWatcher {
                         allowOriginalAudio: pref === 'legendado'
                     });
 
-                    // Filtra fontes viáveis com sementes ativas (>= 3 seeders)
+                    // Aceita fontes com PELO MENOS 1 SEEDER ativo (mesmo 1 seeder já permite o download completo!)
                     const viableSources = sources.filter(s => {
                         const seeds = s.seeders || 0;
                         if (pref === 'dublado') {
-                            return s.isDublado && seeds >= 3;
+                            return s.isDublado && seeds >= 1;
                         } else {
-                            return (s.isLegendado || s.hasPtSub || s.isOriginal) && seeds >= 3;
+                            return (s.isLegendado || s.hasPtSub || s.isOriginal) && seeds >= 1;
                         }
                     });
 
                     if (viableSources.length > 0) {
                         const best = viableSources[0];
                         const epTag = type === 'serie' ? ` - T${season || 1}E${episode || 1}` : '';
-                        console.log(`🌟 [SWARM WATCHER] Novas sementes ativas detectadas para "${title}"${epTag}! Fonte: "${best.title}" (${best.seeders} seeds, ${best.audio || pref}). Enfileirando download imediatamente...`);
+                        console.log(`🌟 [SWARM WATCHER] Sementes detectadas para "${title}"${epTag}! Fonte: "${best.title}" (${best.seeders} seed(s), ${best.audio || pref}). Enfileirando download imediatamente...`);
 
-                        // Enfileira na frente da esteira
+                        // Enfileira com prioridade VIP
                         this.queueManager.addJob(title, type, PRIORITIES.VIP_USER, {
                             tmdbId: it.tmdb_id,
                             imdbId: it.imdb_id,
@@ -203,15 +205,15 @@ class SwarmWatcher {
                         // Remove da watchlist pois já foi enfileirado com sucesso
                         await db.query(`DELETE FROM swarm_watchlist WHERE id = $1`, [it.id]);
                     } else {
-                        // Atualiza timestamp para retestar no próximo ciclo
+                        // Atualiza timestamp para retestar no próximo ciclo de 3 min
                         await db.query(`UPDATE swarm_watchlist SET last_checked = NOW(), check_count = check_count + 1 WHERE id = $1`, [it.id]);
                     }
                 } catch (errSearch) {
                     await db.query(`UPDATE swarm_watchlist SET last_checked = NOW() WHERE id = $1`, [it.id]);
                 }
 
-                // Pequeno intervalo entre buscas para não saturar APIs
-                await new Promise(r => setTimeout(r, 1500));
+                // Intervalo mínimo entre consultas
+                await new Promise(r => setTimeout(r, 1000));
             }
         } catch (e) {
             console.warn('⚠️ [SWARM WATCHER] Erro durante verificação da watchlist:', e.message);
@@ -221,16 +223,16 @@ class SwarmWatcher {
     }
 
     /**
-     * Inicia o cron do monitor de sementes em background
-     * @param {number} intervalMs - Intervalo entre checagens (padrão: 30 minutos)
+     * Inicia o cron do monitor de sementes em background (a cada 3 minutos)
+     * @param {number} intervalMs - Intervalo entre checagens (padrão: 3 minutos)
      */
-    startWatchCycle(intervalMs = 30 * 60 * 1000) {
-        console.log(`👀 [SWARM WATCHER] Monitor de sementes e upgrades automáticos ativado (Intervalo: ${Math.round(intervalMs / 60000)} min)!`);
+    startWatchCycle(intervalMs = 3 * 60 * 1000) {
+        console.log(`👀 [SWARM WATCHER] Monitor dinâmico de sementes (>= 1 seeder) ativado (Intervalo: ${Math.round(intervalMs / 60000)} min)!`);
         
-        // Primeira checagem 2 minutos após o boot
+        // Primeira checagem 30 segundos após o boot
         setTimeout(() => {
             this.checkWatchlist().catch(() => {});
-        }, 120000);
+        }, 30000);
 
         setInterval(() => {
             this.checkWatchlist().catch(() => {});
