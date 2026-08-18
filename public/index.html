@@ -1753,22 +1753,14 @@
                 </div>
 
                 <div id="active-task-container" style="display: none;">
-                    <div class="live-header">
-                        <div class="live-title-area">
-                            <span class="live-tag" id="live-task-type">PROCESSANDO</span>
-                            <h2 class="live-item-title" id="live-task-title">Carregando...</h2>
-                        </div>
-                        <span class="badge-priority" id="live-task-priority">VIP</span>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                        <h3 style="font-size: 14px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+                            <span class="pulse-dot"></span> Trilhas Ativas em Processamento Paralelo (<span id="active-tasks-count">1</span>/4)
+                        </h3>
+                        <span class="status-pill" style="font-size: 10px;">⚡ Alta Velocidade 1080p</span>
                     </div>
-
-                    <div class="live-progress-container">
-                        <div class="live-progress-bar" id="live-progress-bar" style="width: 0%;"></div>
-                    </div>
-
-                    <div class="live-details-grid">
-                        <span id="live-stage">Codificando 1080p Full HD...</span>
-                        <span id="live-speed" style="color: #34d399; font-weight: 700;">Ativo</span>
-                        <span id="live-percent" style="color: #fff; font-weight: 800;">0%</span>
+                    <div id="active-tasks-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+                        <!-- Renderizado dinamicamente via JS -->
                     </div>
                 </div>
             </div>
@@ -2925,51 +2917,64 @@
                     const admActiveContainer = document.getElementById('adm-active-container');
                     const admIdleMsg = document.getElementById('adm-idle-message');
 
-                    if (data.queue.activeTask) {
-                        const task = data.queue.activeTask;
+                    const activeTasks = (data.queue && (data.queue.activeTasks || (data.queue.activeTask ? [data.queue.activeTask] : []))) || [];
+
+                    if (activeTasks.length > 0) {
                         if (idleMessage) idleMessage.style.display = 'none';
                         if (activeContainer) activeContainer.style.display = 'block';
 
+                        const countEl = document.getElementById('active-tasks-count');
+                        if (countEl) countEl.innerText = activeTasks.length;
+
+                        const listEl = document.getElementById('active-tasks-list');
+                        if (listEl) {
+                            listEl.innerHTML = activeTasks.map((task, idx) => {
+                                const epStr = (task.type === 'serie' && (task.season || task.episode)) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
+                                const progVal = typeof task.progress === 'number' ? Math.round(task.progress) : 0;
+                                const speedStr = task.progressDetails && task.progressDetails.includes('MB/s') 
+                                    ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' 
+                                    : (task.progressDetails && task.progressDetails.includes('x') ? task.progressDetails.split('|')[1]?.trim() || 'Ativo' : 'Ativo');
+                                const tipoLabel = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
+                                const audioLabel = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
+                                const isVip = task.priority === 1 || String(task.priority).includes('VIP');
+
+                                return `
+                                    <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                                <span class="live-tag" style="font-size: 10px; padding: 2px 6px;">${tipoLabel}</span>
+                                                <span class="live-tag" style="font-size: 10px; padding: 2px 6px; background: rgba(59,130,246,0.15); color: #60a5fa;">${audioLabel}</span>
+                                            </div>
+                                            <span class="badge-priority">${isVip ? '🔥 VIP' : 'Trilha ' + (idx + 1)}</span>
+                                        </div>
+                                        <h4 style="font-size: 13px; font-weight: 800; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            ${task.title}${epStr}
+                                        </h4>
+                                        <div class="live-progress-container" style="height: 6px; margin: 2px 0;">
+                                            <div class="live-progress-bar" style="width: ${progVal}%;"></div>
+                                        </div>
+                                        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                                            <span style="max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.progressDetails || 'Processando 1080p...'}</span>
+                                            <span style="color: #34d399; font-weight: 700;">⚡ ${speedStr}</span>
+                                            <span style="color: #fff; font-weight: 800;">${progVal}%</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('');
+                        }
+
+                        // Atualiza admin se presente
                         if (admIdleMsg) admIdleMsg.style.display = 'none';
                         if (admActiveContainer) admActiveContainer.style.display = 'block';
-
-                        const epStr = (task.type === 'serie' && (task.season || task.episode)) ? ` (T${task.season || 1}E${task.episode || 1})` : '';
-                        const progVal = typeof task.progress === 'number' ? Math.round(task.progress) : 0;
-                        const speedStr = task.progressDetails && task.progressDetails.includes('MB/s') 
-                            ? task.progressDetails.split('(')[1]?.replace(')', '') || 'Ativo' 
-                            : (task.progressDetails && task.progressDetails.includes('x') ? task.progressDetails.split('|')[1]?.trim() || 'Ativo' : 'Ativo');
-
-                        // Público
-                        const elTitle = document.getElementById('live-task-title');
-                        if (elTitle) elTitle.innerText = `${task.title}${epStr}`;
-                        const elType = document.getElementById('live-task-type');
-                        if (elType) elType.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        const elPrio = document.getElementById('live-task-priority');
-                        if (elPrio) elPrio.innerText = task.priority === 1 ? '🔥 VIP' : 'Normal';
-                        const barEl = document.getElementById('live-progress-bar');
-                        if (barEl) barEl.style.width = `${progVal}%`;
-                        const elPct = document.getElementById('live-percent');
-                        if (elPct) elPct.innerText = `${progVal}%`;
-                        const elStage = document.getElementById('live-stage');
-                        if (elStage) elStage.innerText = task.progressDetails || 'Processando em 1080p Full HD...';
-                        const elSpeed = document.getElementById('live-speed');
-                        if (elSpeed) elSpeed.innerText = speedStr;
-
-                        // Admin
+                        const firstTask = activeTasks[0];
+                        const epStr = (firstTask.type === 'serie' && (firstTask.season || firstTask.episode)) ? ` (T${firstTask.season || 1}E${firstTask.episode || 1})` : '';
+                        const progVal = typeof firstTask.progress === 'number' ? Math.round(firstTask.progress) : 0;
                         const admTitle = document.getElementById('adm-live-title');
-                        if (admTitle) admTitle.innerText = `${task.title}${epStr}`;
-                        const admStatus = document.getElementById('adm-live-status-tag');
-                        if (admStatus) admStatus.innerText = (task.status || 'PROCESSANDO').toUpperCase();
-                        const admPrio = document.getElementById('adm-live-priority');
-                        if (admPrio) admPrio.innerText = task.priority === 1 ? '🔥 1 - VIP' : `Prioridade ${task.priority}`;
+                        if (admTitle) admTitle.innerText = `${firstTask.title}${epStr} (+${activeTasks.length - 1} em paralelo)`;
                         const admBarEl = document.getElementById('adm-live-bar');
                         if (admBarEl) admBarEl.style.width = `${progVal}%`;
                         const admPct = document.getElementById('adm-live-pct');
                         if (admPct) admPct.innerText = `${progVal}%`;
-                        const admStage = document.getElementById('adm-live-stage');
-                        if (admStage) admStage.innerText = task.progressDetails || 'Processando...';
-                        const admSpeed = document.getElementById('adm-live-speed');
-                        if (admSpeed) admSpeed.innerText = `⚡ ${speedStr}`;
                     } else {
                         if (idleMessage) idleMessage.style.display = 'block';
                         if (activeContainer) activeContainer.style.display = 'none';
@@ -3398,28 +3403,36 @@
             if (episodesList) {
                 const eps = selectedSeason.episodios || [];
                 if (eps.length === 0) {
-                    episodesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 16px;">Nenhum episódio nesta temporada.</div>';
+                    episodesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 16px;">Nenhum episódio cadastrado nesta temporada.</div>';
                 } else {
                     episodesList.innerHTML = eps.map(ep => {
                         const epNumStr = ep.numero < 10 ? `E0${ep.numero}` : `E${ep.numero}`;
                         const epNome = ep.nome || `Episódio ${ep.numero}`;
-                        const audioBadge = ep.isDublado ? '🇧🇷 Dublado' : '💬 Legendado';
+                        const temDub = ep.isDublado || (ep.audio && ep.audio.includes('Dublado'));
+                        const temLeg = ep.isLegendado || (ep.audio && ep.audio.includes('Legendado'));
+                        let audioBadge = '🔊 Áudio Disponível';
+                        if (temDub && temLeg) audioBadge = '🔊 Dual Áudio (Dub + Leg)';
+                        else if (temDub) audioBadge = '🇧🇷 Dublado (PT-BR)';
+                        else if (temLeg) audioBadge = '💬 Legendado';
+
                         const qualBadge = ep.qualidade || '1080p Full HD';
                         const tgLink = `https://t.me/BrasilFlix_bot?start=serie_${serie.id}_${selectedSeason.numero}_${ep.numero}`;
 
                         return `
-                            <div class="episode-row">
-                                <div class="episode-info-left">
-                                    <span class="ep-number-tag">T${selectedSeason.numero}${epNumStr}</span>
-                                    <div class="ep-title-box">
-                                        <h5>${epNome}</h5>
-                                        <div class="ep-meta-tags">
-                                            <span>✨ ${qualBadge}</span>
-                                            <span>• 🔊 ${audioBadge}</span>
+                            <div class="episode-row" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                <div class="episode-info-left" style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                                    <span class="ep-number-tag" style="background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px;">T${selectedSeason.numero}${epNumStr}</span>
+                                    <div class="ep-title-box" style="flex: 1;">
+                                        <h5 style="font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 2px;">${epNome}</h5>
+                                        ${ep.sinopse ? `<p style="font-size: 11px; color: var(--text-muted); line-height: 1.3; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${ep.sinopse}</p>` : ''}
+                                        <div class="ep-meta-tags" style="font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap;">
+                                            <span style="color: #34d399; font-weight: 700;">✨ ${qualBadge}</span>
+                                            <span>•</span>
+                                            <span style="color: #60a5fa; font-weight: 700;">${audioBadge}</span>
                                         </div>
                                     </div>
                                 </div>
-                                <a href="${tgLink}" target="_blank" class="btn-play-ep">
+                                <a href="${tgLink}" target="_blank" class="btn-play-ep" style="background: var(--accent-gradient); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 800; text-decoration: none; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
                                     ▶️ Assistir
                                 </a>
                             </div>

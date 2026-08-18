@@ -896,7 +896,26 @@ class CatalogoManager {
                 isDorama: s.isDorama,
                 totalTemporadas: s.totalTemporadas,
                 totalEpisodios: s.totalEpisodios,
-                audioBadge: this.getAudioBadge(s)
+                audioBadge: this.getAudioBadge(s),
+                temporadas: (s.temporadas || []).map(t => ({
+                    numero: t.numero,
+                    nome: t.nome,
+                    totalEpisodios: (t.episodios || []).length,
+                    episodios: (t.episodios || []).map(ep => {
+                        const hasDub = ep.isDublado || !!ep.versoes?.dublado;
+                        const hasLeg = ep.isLegendado || !!ep.versoes?.legendado;
+                        return {
+                            numero: ep.numero,
+                            nome: ep.nome || `Episódio ${ep.numero}`,
+                            sinopse: ep.sinopse || '',
+                            qualidade: ep.qualidade || '1080p Full HD',
+                            isDublado: hasDub,
+                            isLegendado: hasLeg,
+                            audio: ep.audio || (hasDub && hasLeg ? 'Dual Áudio (Dublado + Legendado)' : (hasDub ? 'Dublado' : 'Legendado')),
+                            audioBadge: hasDub && hasLeg ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : ''))
+                        };
+                    }).sort((a, b) => a.numero - b.numero)
+                })).sort((a, b) => a.numero - b.numero)
             }))
         };
     }
