@@ -3951,24 +3951,6 @@
                     title = file.name.replace(/\.[a-zA-Z0-9]{2,4}$/, '');
                 }
 
-                const formData = new FormData();
-                formData.append('videoFile', file);
-                formData.append('title', title);
-                formData.append('ano', ano || '2026');
-                formData.append('type', type);
-                formData.append('audioPreference', audioPref);
-                formData.append('priority', priority || '1');
-                formData.append('season', season || '1');
-                formData.append('episode', episode || '1');
-                formData.append('sinopse', synopsis || '');
-                if (tmdbId) formData.append('tmdbId', tmdbId);
-                if (imdbId) formData.append('imdbId', imdbId);
-                formData.append('posterUrl', posterUrl || '');
-                formData.append('backdropUrl', backdropUrl || '');
-                formData.append('nomeOriginal', nomeOriginal || title);
-                formData.append('generos', JSON.stringify(generos));
-                formData.append('nota', rating || '8.0');
-
                 const token = adminToken || localStorage.getItem('bf_admin_token');
                 const progressBox = document.getElementById('upload-progress-box');
                 const progressBar = document.getElementById('upload-progress-bar');
@@ -3977,73 +3959,101 @@
                 const submitBtn = document.getElementById('manual-submit-btn');
 
                 if (progressBox) progressBox.style.display = 'block';
-                if (progressText) progressText.innerText = 'Enviando arquivo para o servidor...';
+                if (progressText) progressText.innerText = 'Iniciando upload em fatias seguras...';
                 if (submitBtn) {
                     submitBtn.disabled = true;
-                    submitBtn.innerText = '⏳ Enviando arquivo para o servidor...';
+                    submitBtn.innerText = '⏳ Enviando arquivo em partes...';
                 }
 
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '/api/admin/catalogo/upload-media', true);
-                if (token) {
-                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                }
+                const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB por fatia (Bypassa limites de 100MB do Cloudflare e proxies)
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                const uploadId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-                xhr.upload.onprogress = (event) => {
-                    if (event.lengthComputable) {
-                        const pct = Math.round((event.loaded / event.total) * 100);
+                try {
+                    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                        const start = chunkIndex * CHUNK_SIZE;
+                        const end = Math.min(file.size, start + CHUNK_SIZE);
+                        const chunkBlob = file.slice(start, end);
+
+                        const formData = new FormData();
+                        formData.append('chunk', chunkBlob, file.name);
+                        formData.append('uploadId', uploadId);
+                        formData.append('chunkIndex', chunkIndex);
+                        formData.append('totalChunks', totalChunks);
+                        formData.append('fileName', file.name);
+
+                        // No último chunk, anexa todos os metadados
+                        if (chunkIndex === totalChunks - 1) {
+                            formData.append('title', title);
+                            formData.append('ano', ano || '2026');
+                            formData.append('type', type);
+                            formData.append('audioPreference', audioPref);
+                            formData.append('priority', priority || '1');
+                            formData.append('season', season || '1');
+                            formData.append('episode', episode || '1');
+                            formData.append('sinopse', synopsis || '');
+                            if (tmdbId) formData.append('tmdbId', tmdbId);
+                            if (imdbId) formData.append('imdbId', imdbId);
+                            formData.append('posterUrl', posterUrl || '');
+                            formData.append('backdropUrl', backdropUrl || '');
+                            formData.append('nomeOriginal', nomeOriginal || title);
+                            formData.append('generos', JSON.stringify(generos));
+                            formData.append('nota', rating || '8.0');
+                        }
+
+                        const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+                        if (progressText) {
+                            if (pct >= 100) {
+                                progressText.innerText = '⏳ Finalizando montagem e indexando metadados no servidor...';
+                            } else {
+                                progressText.innerText = `Enviando parte ${chunkIndex + 1} de ${totalChunks} (${pct}%)...`;
+                            }
+                        }
                         if (progressBar) progressBar.style.width = `${pct}%`;
                         if (progressPct) progressPct.innerText = `${pct}%`;
-                        if (pct >= 100) {
-                            if (progressText) progressText.innerText = '⏳ Arquivo recebido! O servidor está indexando no banco de dados...';
-                            if (submitBtn) submitBtn.innerText = '⏳ Processando metadados no servidor...';
-                        } else {
-                            if (progressText) progressText.innerText = `Enviando arquivo para o servidor (${pct}%)...`;
+
+                        const res = await fetch('/api/admin/catalogo/upload-chunk', {
+                            method: 'POST',
+                            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                            body: formData
+                        });
+
+                        if (!res.ok) {
+                            let errJson = {};
+                            try { errJson = await res.json(); } catch(e) {}
+                            throw new Error(errJson.error || `Erro HTTP ${res.status} ao enviar parte ${chunkIndex + 1}`);
                         }
-                    }
-                };
 
-                xhr.onload = () => {
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
-                    }
-
-                    try {
-                        const res = JSON.parse(xhr.responseText);
-                        if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                        const data = await res.json();
+                        if (data.completed) {
                             if (progressText) progressText.innerText = '✅ Upload 100% concluído com sucesso!';
                             if (progressBar) progressBar.style.background = '#10b981';
-                            showToast(res.message || 'Arquivo enviado com sucesso e adicionado ao topo da fila!', 'success');
-                            
+                            showToast(data.message || 'Arquivo enviado com sucesso e adicionado ao topo da fila!', 'success');
+
                             setTimeout(() => {
                                 if (progressBox) progressBox.style.display = 'none';
+                                if (submitBtn) {
+                                    submitBtn.disabled = false;
+                                    submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
+                                }
                                 closeAdminModal('admin-modal-add-job');
                                 switchAdminSubTab('queue');
                                 loadAdminQueue();
                                 loadAdminCatalog();
                                 loadAdminStats();
                             }, 1000);
-                        } else {
-                            if (progressBox) progressBox.style.display = 'none';
-                            showToast(res.error || 'Erro ao enviar arquivo.', 'error');
+                            return;
                         }
-                    } catch (e) {
-                        if (progressBox) progressBox.style.display = 'none';
-                        showToast('Resposta inválida do servidor: ' + (xhr.statusText || 'Erro desconhecido'), 'error');
                     }
-                };
-
-                xhr.onerror = () => {
+                } catch (err) {
+                    console.error('Falha no upload chunked:', err);
+                    if (progressBox) progressBox.style.display = 'none';
                     if (submitBtn) {
                         submitBtn.disabled = false;
                         submitBtn.innerText = '📁 Enviar Arquivo e Processar no Robô';
                     }
-                    if (progressBox) progressBox.style.display = 'none';
-                    showToast('Falha na conexão durante o envio do arquivo.', 'error');
-                };
-
-                xhr.send(formData);
+                    showToast(err.message || 'Falha ao enviar arquivo em partes.', 'error');
+                }
                 return;
             }
 

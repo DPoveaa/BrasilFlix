@@ -699,34 +699,22 @@ class StremioServer {
         const rawStorageDir = path.resolve('./downloads/raw');
         fs.ensureDirSync(rawStorageDir);
 
-        const videoUpload = multer({
-            storage: multer.diskStorage({
-                destination: (req, file, cb) => {
-                    fs.ensureDirSync(rawStorageDir);
-                    cb(null, rawStorageDir);
-                },
-                filename: (req, file, cb) => {
-                    const ext = path.extname(file.originalname) || '.mp4';
-                    const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-                    cb(null, `${Date.now()}_${safeName}${ext}`);
-                }
-            }),
-            limits: {
-                fileSize: 50 * 1024 * 1024 * 1024 // Limite até 50GB
-            }
+        const chunkUpload = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 30 * 1024 * 1024 } // 30MB por fatia
         });
 
-        this.app.post('/api/admin/catalogo/upload-media', auth, (req, res, next) => {
-            req.setTimeout(120 * 60 * 1000); // 2 horas para uploads pesados
-            res.setTimeout(120 * 60 * 1000);
-            next();
-        }, videoUpload.single('videoFile'), async (req, res) => {
+        this.app.post('/api/admin/catalogo/upload-chunk', auth, chunkUpload.single('chunk'), async (req, res) => {
             try {
                 if (!req.file) {
-                    return res.status(400).json({ error: 'Nenhum arquivo de vídeo foi enviado.' });
+                    return res.status(400).json({ error: 'Nenhum chunk de vídeo enviado.' });
                 }
 
                 const {
+                    uploadId,
+                    chunkIndex,
+                    totalChunks,
+                    fileName,
                     title,
                     type,
                     tmdbId,
@@ -744,14 +732,42 @@ class StremioServer {
                     episode
                 } = req.body;
 
+                if (!uploadId) {
+                    return res.status(400).json({ error: 'ID de upload não informado.' });
+                }
+
+                const cIdx = parseInt(chunkIndex, 10);
+                const tChunks = parseInt(totalChunks, 10);
+                const tempFilePath = path.join(rawStorageDir, `temp_${uploadId}.part`);
+
+                // Anexa o chunk recebido ao arquivo temporário
+                await fs.appendFile(tempFilePath, req.file.buffer);
+
+                // Se ainda não for o último chunk, confirma recebimento do chunk
+                if (cIdx < tChunks - 1) {
+                    return res.json({
+                        success: true,
+                        chunkIndex: cIdx,
+                        totalChunks: tChunks,
+                        completed: false
+                    });
+                }
+
+                // Último chunk recebido! Finaliza o arquivo
+                const ext = path.extname(fileName || 'video.mp4') || '.mp4';
+                const safeName = path.basename(fileName || 'video', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+                const finalFilePath = path.join(rawStorageDir, `${Date.now()}_${safeName}${ext}`);
+
+                await fs.rename(tempFilePath, finalFilePath);
+
                 let cleanTitle = (title || '').trim();
                 let mediaType = type === 'serie' ? 'serie' : 'filme';
                 let mediaPriority = parseInt(priority || 1, 10);
                 let sNum = parseInt(season || 1, 10);
                 let epNum = parseInt(episode || 1, 10);
 
-                if (!cleanTitle && req.file) {
-                    const rawFileName = path.basename(req.file.originalname, path.extname(req.file.originalname));
+                if (!cleanTitle && fileName) {
+                    const rawFileName = path.basename(fileName, path.extname(fileName));
                     const matchEp = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
                     const matchTempOnly = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\b/i);
 
@@ -775,7 +791,7 @@ class StremioServer {
                 }
 
                 if (!cleanTitle) {
-                    cleanTitle = path.basename(req.file.originalname, path.extname(req.file.originalname));
+                    cleanTitle = path.basename(fileName || 'video', ext);
                 }
 
                 let parsedGeneros = [];
@@ -785,7 +801,6 @@ class StremioServer {
                     parsedGeneros = typeof generos === 'string' ? generos.split(',').map(s => s.trim()) : [];
                 }
 
-                // Auto-enriquecimento via TMDB se campos essenciais não vieram preenchidos
                 const TMDBService = require('./TMDBService');
                 let enrichedTmdbId = tmdbId ? parseInt(tmdbId, 10) : null;
                 let enrichedImdbId = imdbId || null;
@@ -829,7 +844,7 @@ class StremioServer {
                             }
                         }
                     } catch (eTmdb) {
-                        console.warn('⚠️ Falha ao auto-completar TMDB para upload:', eTmdb.message);
+                        console.warn('⚠️ Falha ao auto-completar TMDB para chunk upload:', eTmdb.message);
                     }
                 }
 
@@ -840,7 +855,7 @@ class StremioServer {
                     tmdbId: enrichedTmdbId,
                     imdbId: enrichedImdbId,
                     nomeOriginal: enrichedOriginal,
-                    rawFilePath: req.file.path,
+                    rawFilePath: finalFilePath,
                     isManualAdd: true,
                     metaDetails: {
                         sinopse: enrichedSinopse,
@@ -855,11 +870,12 @@ class StremioServer {
 
                 res.json({
                     success: true,
-                    message: `Arquivo "${req.file.originalname}" recebido com sucesso! "${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} foi adicionado ao topo da fila para processamento e upload.`,
+                    completed: true,
+                    message: `Arquivo "${fileName}" recebido com sucesso! "${cleanTitle}" ${mediaType === 'serie' ? `(T${sNum}E${epNum})` : ''} foi adicionado ao topo da fila para processamento e upload.`,
                     job
                 });
             } catch (e) {
-                if (req.file) await fs.remove(req.file.path).catch(() => {});
+                console.error('Erro no upload-chunk:', e);
                 res.status(500).json({ error: e.message });
             }
         });
