@@ -762,22 +762,26 @@ class MediaSearchService {
             if (is720pA) scoreA += 300;
             if (is720pB) scoreB += 300;
 
-            // 4. SAÚDE DA FONTE (Seeders informados ajudam no ranking, mas nunca descartam torrents nacionais)
+            // 4. SAÚDE DA FONTE: Prioriza fontes com 3+ seeders (rápidas) e coloca fontes com <= 2 seeders para o fim da lista
             const seedsA = a.seeders || 0;
             const seedsB = b.seeders || 0;
 
-            if (seedsA >= 25) scoreA += 800;
-            else if (seedsA >= 10) scoreA += 500;
-            else if (seedsA >= 4) scoreA += 300;
-            else if (seedsA >= 1) scoreA += 100;
+            if (seedsA >= 25) scoreA += 2500;
+            else if (seedsA >= 10) scoreA += 1800;
+            else if (seedsA >= 5) scoreA += 1200;
+            else if (seedsA >= 3) scoreA += 600;
+            else if (seedsA > 0) scoreA -= 1000; // 1 ou 2 seeds vão para baixo
+            else scoreA -= 2500; // 0 seeds vai para o fim da lista de tentativas
 
-            if (seedsB >= 25) scoreB += 800;
-            else if (seedsB >= 10) scoreB += 500;
-            else if (seedsB >= 4) scoreB += 300;
-            else if (seedsB >= 1) scoreB += 100;
+            if (seedsB >= 25) scoreB += 2500;
+            else if (seedsB >= 10) scoreB += 1800;
+            else if (seedsB >= 5) scoreB += 1200;
+            else if (seedsB >= 3) scoreB += 600;
+            else if (seedsB > 0) scoreB -= 1000;
+            else scoreB -= 2500;
 
-            scoreA += Math.min(300, seedsA * 10);
-            scoreB += Math.min(300, seedsB * 10);
+            scoreA += Math.min(400, seedsA * 10);
+            scoreB += Math.min(400, seedsB * 10);
 
             // 5. Ajuste por Tamanho
             const sizeA = (a.sizeBytes || 0) / (1024 * 1024);
