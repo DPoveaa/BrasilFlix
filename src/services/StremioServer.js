@@ -766,33 +766,46 @@ class StremioServer {
                 let sNum = parseInt(season || 1, 10);
                 let epNum = parseInt(episode || 1, 10);
 
-                if (!cleanTitle && fileName) {
+                if (fileName) {
                     const rawFileName = path.basename(fileName, path.extname(fileName));
                     const matchEp = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
                     const matchTempOnly = rawFileName.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\b/i);
+                    const matchYear = rawFileName.match(/\b(19\d{2}|20\d{2})\b/);
 
                     if (matchEp) {
                         mediaType = 'serie';
                         sNum = parseInt(matchEp[1], 10);
                         epNum = parseInt(matchEp[2], 10);
+                        if (!cleanTitle || /comandotorrents|www|\.com/i.test(cleanTitle)) {
+                            cleanTitle = rawFileName.substring(0, matchEp.index);
+                        }
                     } else if (matchTempOnly) {
                         mediaType = 'serie';
                         sNum = parseInt(matchTempOnly[1], 10);
+                        if (!cleanTitle || /comandotorrents|www|\.com/i.test(cleanTitle)) {
+                            cleanTitle = rawFileName.substring(0, matchTempOnly.index);
+                        }
+                    } else if (matchYear && (!cleanTitle || /comandotorrents|www|\.com/i.test(cleanTitle))) {
+                        cleanTitle = rawFileName.substring(0, matchYear.index);
                     }
-
-                    cleanTitle = rawFileName
-                        .replace(/[\._]/g, ' ')
-                        .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\s*(?:e|ep|episodio|episódio|x)\s*\d{1,3}\b/gi, '')
-                        .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\b/gi, '')
-                        .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc)\b/gi, '')
-                        .replace(/[-–—]\s*\d{4}/, '')
-                        .replace(/\s+/g, ' ')
-                        .trim();
                 }
 
                 if (!cleanTitle) {
                     cleanTitle = path.basename(fileName || 'video', ext);
                 }
+
+                cleanTitle = cleanTitle
+                    .replace(/https?:\/\/\S+/gi, '')
+                    .replace(/\b(?:www\.)?[a-zA-Z0-9_-]+\.(?:com|br|to|net|org|site|club|me|tv|io|top|xyz|ws|vip|cc)\b/gi, '')
+                    .replace(/[\._]/g, ' ')
+                    .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\s*(?:e|ep|episodio|episódio|x)\s*\d{1,3}\b/gi, '')
+                    .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\b/gi, '')
+                    .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc|ddp5\.1|dvdrip|hdtv|galaxytv|comando|comandotorrents|bludv|lapumia|starck|vizer|wolverdon|ondebaixo|kyogo|lipeh|cinegaveta|filmesmega|mmfilmes)\b/gi, '')
+                    .replace(/[-–—]\s*\d{4}/g, '')
+                    .replace(/\b(19\d{2}|20\d{2})\b/g, '')
+                    .replace(/\[[^\]]*\]|\([^\)]*\)/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
 
                 let parsedGeneros = [];
                 try {
