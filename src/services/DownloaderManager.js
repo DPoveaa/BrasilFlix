@@ -182,6 +182,11 @@ class DownloaderManager extends EventEmitter {
             let lastLogTime = Date.now();
             let targetEpisodeFile = null;
 
+            torrent.on('wire', (wire, addr) => {
+                const pAddr = typeof addr === 'string' ? addr : (wire.remoteAddress || 'peer');
+                console.log(`🔗 [Swarm Torrent: "${displayTitle}"] Peer conectado (${pAddr}). Solicitando blocos de dados... (Peers ativos: ${torrent.numPeers})`);
+            });
+
             torrent.on('metadata', () => {
                 // Proteção contra arquivos gigantes (4K / 20GB): aborta na hora para filmes
                 if (!options.episode && torrent.length > 5.8 * 1024 * 1024 * 1024) {
@@ -454,8 +459,16 @@ class DownloaderManager extends EventEmitter {
                 const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
 
                 const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
-                const noPeerTimeoutMs = isDub ? 60000 : 50000; // 60s de paciência para o DHT conectar em peers
-                const stalledTimeoutMs = isDub ? 120000 : 90000; // 2 minutos sem tráfego
+                const noPeerTimeoutMs = isDub ? 120000 : 90000; // 120s (2 min) de persistência para conectar em peers e puxar peças
+                const stalledTimeoutMs = isDub ? 180000 : 120000; // 3 min sem tráfego
+
+                // Log em tempo real a cada 6s enquanto tenta conectar e receber blocos
+                if (now - lastLogTime >= 6000 && torrent.progress < 0.01) {
+                    lastLogTime = now;
+                    const elapsed = Math.floor((now - downloadStartTime) / 1000);
+                    const speed = (torrent.downloadSpeed / (1024 * 1024)).toFixed(2);
+                    console.log(`⏳ [TENTANDO DOWNLOAD: "${displayTitle}"] Solicitando blocos no swarm | Peers conectados: ${torrent.numPeers} | Vel: ${speed} MB/s | Tempo: ${elapsed}s / limite: ${Math.round(noPeerTimeoutMs / 1000)}s`);
+                }
 
                 // 1. Aborta se estiver sem nenhum peer conectado após o tempo limite
                 if (torrent.numPeers === 0 && stalledMs >= noPeerTimeoutMs && torrent.progress < 0.01) {
