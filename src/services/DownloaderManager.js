@@ -19,6 +19,64 @@ class DownloaderManager extends EventEmitter {
         fs.ensureDirSync(this.downloadDir);
     }
 
+    async getTempDirSizeBytes() {
+        try {
+            if (!fs.existsSync(this.downloadDir)) return 0;
+            let total = 0;
+            const walk = (dir) => {
+                const files = fs.readdirSync(dir);
+                for (const f of files) {
+                    const full = path.join(dir, f);
+                    try {
+                        const stat = fs.statSync(full);
+                        if (stat.isDirectory()) {
+                            walk(full);
+                        } else {
+                            total += stat.size;
+                        }
+                    } catch (e) {}
+                }
+            };
+            walk(this.downloadDir);
+            return total;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    async cleanupOrphanedFiles(maxAgeHours = 3) {
+        try {
+            if (!fs.existsSync(this.downloadDir)) return;
+            const now = Date.now();
+            const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+            const items = fs.readdirSync(this.downloadDir);
+            for (const item of items) {
+                const full = path.join(this.downloadDir, item);
+                try {
+                    const stat = fs.statSync(full);
+                    if (now - stat.mtimeMs > maxAgeMs) {
+                        console.log(`🧹 [Guarda de Disco] Limpando arquivo temporário órfão (> ${maxAgeHours}h): ${item}`);
+                        await fs.remove(full).catch(() => {});
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
+    }
+
+    async ensureDiskSpace() {
+        const maxBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
+        let currentSize = await this.getTempDirSizeBytes();
+        if (currentSize >= maxBytes * 0.85) {
+            console.log(`⚠️ [Guarda de Disco] Pasta temporária atingiu ${this.formatBytes(currentSize)} (limite: ${config.MAX_TEMP_DISK_GB || 100} GB). Executando limpeza automática...`);
+            await this.cleanupOrphanedFiles(2);
+            currentSize = await this.getTempDirSizeBytes();
+            if (currentSize >= maxBytes) {
+                console.warn(`🚨 [Guarda de Disco] Diretório temporário cheio (${this.formatBytes(currentSize)}). Aguardando liberação de espaço pelos uploads...`);
+                await new Promise(r => setTimeout(r, 10000));
+            }
+        }
+    }
+
     async getWebTorrentClass() {
         if (!WebTorrentClass) {
             try {
@@ -71,6 +129,7 @@ class DownloaderManager extends EventEmitter {
 
     async downloadTorrent(magnetOrTorrent, onProgress = null, options = {}) {
         this.ensureDirectories();
+        await this.ensureDiskSpace();
         const WT = await this.getWebTorrentClass();
         if (!WT) {
             throw new Error('Módulo WebTorrent não disponível.');
@@ -488,13 +547,24 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Download estagnado sem dados/seeders ativos após ${Math.round(stalledTimeoutMs / 1000)}s.`));
                 }
 
-                // 3. Permite downloads pacientes de até 20-30 minutos para fontes raras
+                // 3. Fast-Fail & Pula Rápido: Se houver outras fontes disponíveis na lista e esta fonte estiver lenta (< 1.5 MB/s após 45s)
                 const speedMB = torrent.downloadSpeed / (1024 * 1024);
+                const hasMoreSources = options.attemptIndex !== undefined && options.totalAttempts !== undefined && (options.attemptIndex < options.totalAttempts - 1);
+                const minSpeed = config.MIN_DOWNLOAD_SPEED_MB || 1.5;
+
+                if (elapsedSec >= 45 && speedMB < minSpeed && hasMoreSources && torrent.progress < 0.15) {
+                    process.stdout.write('\n');
+                    console.log(`⏩ [WATCHDOG VELOCIDADE] Fonte lenta (${speedMB.toFixed(2)} MB/s < ${minSpeed} MB/s após ${elapsedSec}s). Pulando para tentar próxima fonte da lista (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                    finished = true;
+                    safeCleanup();
+                    return reject(new Error(`Velocidade lenta (${speedMB.toFixed(2)} MB/s). Pulando para próxima fonte.`));
+                }
+
+                // 4. Se for a última fonte disponível (ou única), permite download paciente até 20-30 min
                 const remainingSec = speedMB > 0 ? (torrent.length - currentBytes) / (speedMB * 1024 * 1024) : 99999;
-                
                 if (elapsedSec >= 600 && speedMB < 0.05 && remainingSec > 7200 && torrent.progress < 0.05) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 120 min após 10 min de tentativa). Abortando para buscar fonte mais rápida...`);
+                    console.log(`⚠️ Torrent excessivamente lento (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peer(s), previsão: > 120 min após 10 min de tentativa). Abortando...`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error('Torrent com velocidade insuficiente após 10 min.'));
@@ -505,6 +575,7 @@ class DownloaderManager extends EventEmitter {
 
     async downloadHttp(url, fileName, onProgress = null) {
         this.ensureDirectories();
+        await this.ensureDiskSpace();
         const targetPath = path.join(this.downloadDir, fileName);
         console.log(`📥 Baixando arquivo direto via HTTP: ${fileName}...`);
 

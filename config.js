@@ -54,5 +54,12 @@ module.exports = {
     ALLOW_CINEMA_CAM: process.env.ALLOW_CINEMA_CAM !== 'false',
     AUTO_UPGRADE_CAM: process.env.AUTO_UPGRADE_CAM !== 'false',
     AUTO_FEEDER_ENABLED: process.env.AUTO_FEEDER_ENABLED !== 'false',
-    AUTO_FEEDER_INTERVAL_HOURS: parseInt(process.env.AUTO_FEEDER_INTERVAL_HOURS || '4', 10)
+    AUTO_FEEDER_INTERVAL_HOURS: parseInt(process.env.AUTO_FEEDER_INTERVAL_HOURS || '4', 10),
+
+    // Concorrência Paralela & Proteção de Hardware
+    MAX_CONCURRENT_JOBS: parseInt(process.env.MAX_CONCURRENT_JOBS || '4', 10),
+    MAX_CONCURRENT_TRANSCODES: parseInt(process.env.MAX_CONCURRENT_TRANSCODES || '2', 10),
+    MAX_TEMP_DISK_GB: parseInt(process.env.MAX_TEMP_DISK_GB || '100', 10),
+    MIN_DOWNLOAD_SPEED_MB: parseFloat(process.env.MIN_DOWNLOAD_SPEED_MB || '1.5'),
+    FFMPEG_THREADS_PER_JOB: parseInt(process.env.FFMPEG_THREADS_PER_JOB || '6', 10)
 };

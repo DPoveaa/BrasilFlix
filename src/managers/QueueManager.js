@@ -28,19 +28,37 @@ class QueueManager extends EventEmitter {
         this.favoritosManager = favoritosManager;
         this.uploader = new TelegramUploader(bot);
         this.queue = []; // cache em memória sincronizado com o banco
-        this.activeTask = null;
-        this.isProcessing = false;
+        this.activeJobs = new Map(); // Mapa de jobs ativos em paralelo: id -> job
+        this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
 
         // Inicializa banco e carrega fila de forma assíncrona
         this._init();
     }
 
+    get isProcessing() {
+        return this.activeJobs.size > 0;
+    }
+
+    get activeTask() {
+        return this.activeJobs.values().next().value || null;
+    }
+
+    set activeTask(val) {
+        if (val && val.id) {
+            this.activeJobs.set(val.id, val);
+        }
+    }
+
+    getActiveTasks() {
+        return Array.from(this.activeJobs.values());
+    }
+
     getActiveFiles() {
         const files = [];
-        if (this.activeTask) {
-            if (this.activeTask.rawFilePath) files.push(this.activeTask.rawFilePath);
-            if (this.activeTask.optimizedFilePath) files.push(this.activeTask.optimizedFilePath);
+        for (const task of this.activeJobs.values()) {
+            if (task.rawFilePath) files.push(task.rawFilePath);
+            if (task.optimizedFilePath) files.push(task.optimizedFilePath);
         }
         for (const j of this.queue) {
             if (j.rawFilePath) files.push(j.rawFilePath);
@@ -457,43 +475,76 @@ class QueueManager extends EventEmitter {
         });
     }
 
-    async processNext() {
-        if (this.isProcessing) return;
+    findNextJobToProcess() {
+        if (this.queue.length === 0) return null;
 
-        // Pega o próximo item não concluído e não falhado
-        const nextJob = this.queue.find(j => j.status === 'queued');
-        if (!nextJob) {
-            this.activeTask = null;
-            return;
+        const queuedJobs = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id));
+        if (queuedJobs.length === 0) return null;
+
+        // 1. Sempre prioriza jobs VIP / Express (prioridade <= 2)
+        const expressJob = queuedJobs.find(j => Number(j.priority || 4) <= 2);
+        if (expressJob) return expressJob;
+
+        // 2. Identificar quais trilhas estão atualmente ocupadas pelos activeJobs
+        const activeTypes = new Set();
+        for (const active of this.activeJobs.values()) {
+            const isDorama = active.isDorama || active.extraData?.isDorama || active.title?.toLowerCase().includes('dorama');
+            if (isDorama) {
+                activeTypes.add('dorama');
+            } else {
+                activeTypes.add(active.type); // 'filme' ou 'serie'
+            }
         }
 
-        this.isProcessing = true;
-        this.activeTask = nextJob;
+        // Tentar pegar um job de uma trilha que NÃO está ativa no momento (distribuição equilibrada)
+        const laneCandidate = queuedJobs.find(j => {
+            const isDorama = j.isDorama || j.extraData?.isDorama || j.title?.toLowerCase().includes('dorama');
+            const laneKey = isDorama ? 'dorama' : j.type;
+            return !activeTypes.has(laneKey);
+        });
+
+        if (laneCandidate) {
+            return laneCandidate;
+        }
+
+        // Se todas as trilhas já têm 1 job ou os itens são do mesmo tipo, pega o mais prioritário da fila (work-stealing)
+        return queuedJobs[0];
+    }
+
+    async processNext() {
+        // Dispara jobs em paralelo até atingir o limite maxConcurrentJobs
+        while (this.activeJobs.size < this.maxConcurrentJobs) {
+            const nextJob = this.findNextJobToProcess();
+            if (!nextJob) break;
+
+            this.runJobWorker(nextJob);
+        }
+    }
+
+    async runJobWorker(nextJob) {
+        this.activeJobs.set(nextJob.id, nextJob);
         nextJob.status = 'processing';
         await this.saveJob(nextJob);
 
-        console.log(`\n⚙️ INICIANDO PROCESSAMENTO: "${nextJob.title}" (Prioridade: ${nextJob.priority})`);
+        console.log(`\n⚙️ [TRILHA PARALELA ${this.activeJobs.size}/${this.maxConcurrentJobs}] INICIANDO: "${nextJob.title}" (Tipo: ${nextJob.type}, Prioridade: ${nextJob.priority})`);
 
         try {
             await this.executeJob(nextJob);
             nextJob.status = 'completed';
             nextJob.progress = 100;
             await this.saveJob(nextJob);
-            // Remove da fila em memória (não é mais necessário processar)
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
-            console.log(`🎉 Trabalho concluído com sucesso: "${nextJob.title}"`);
+            console.log(`🎉 [TRILHA CONCLUÍDA] Trabalho finalizado com sucesso: "${nextJob.title}"`);
         } catch (error) {
-            console.error(`❌ Falha no processamento de "${nextJob.title}":`, error.message);
+            console.error(`❌ [TRILHA FALHA] Falha no processamento de "${nextJob.title}":`, error.message);
             nextJob.status = 'failed';
             nextJob.error = error.message;
             await this.saveJob(nextJob);
-            // Remove da fila em memória
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
         } finally {
-            this.isProcessing = false;
-            this.activeTask = null;
+            this.activeJobs.delete(nextJob.id);
 
-            // Continua imediatamente para o próximo da fila
+            // Continua imediatamente para processar o próximo item disponível
             setImmediate(() => this.processNext());
         }
     }
@@ -753,7 +804,9 @@ class QueueManager extends EventEmitter {
                             type: job.type,
                             audio: currentSource.audio,
                             isDublado: currentSource.isDublado,
-                            audioPreference: job.audioPreference || 'geral'
+                            audioPreference: job.audioPreference || 'geral',
+                            attemptIndex: i,
+                            totalAttempts: maxAttempts
                         });
                     } else if (currentSource.url) {
                         const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
@@ -1348,7 +1401,8 @@ class QueueManager extends EventEmitter {
             queued: this.queue.filter(j => j.status === 'queued').length,
             completed: this.queue.filter(j => j.status === 'completed').length,
             failed: this.queue.filter(j => j.status === 'failed').length,
-            activeTask: this.activeTask
+            activeTask: this.activeTask,
+            activeTasks: Array.from(this.activeJobs.values())
         };
     }
 
@@ -1374,7 +1428,8 @@ class QueueManager extends EventEmitter {
             createdAt: j.createdAt
         });
 
-        const active = this.activeTask ? formatJob(this.activeTask) : null;
+        const activeTasks = Array.from(this.activeJobs.values()).map(formatJob);
+        const active = activeTasks.length > 0 ? activeTasks[0] : null;
         const pending = this.queue
             .filter(j => j.status === 'queued')
             .map(formatJob);

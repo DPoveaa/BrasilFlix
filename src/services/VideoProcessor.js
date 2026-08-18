@@ -4,6 +4,29 @@ const fs = require('fs-extra');
 const config = require('../../config');
 const SubtitleSync = require('./SubtitleSync');
 
+let activeTranscodes = 0;
+const transcodeWaiters = [];
+
+function acquireTranscodeSlot() {
+    const maxTranscodes = config.MAX_CONCURRENT_TRANSCODES || 2;
+    if (activeTranscodes < maxTranscodes) {
+        activeTranscodes++;
+        return Promise.resolve();
+    }
+    return new Promise(resolve => {
+        transcodeWaiters.push(resolve);
+    });
+}
+
+function releaseTranscodeSlot() {
+    if (transcodeWaiters.length > 0) {
+        const next = transcodeWaiters.shift();
+        next();
+    } else {
+        activeTranscodes = Math.max(0, activeTranscodes - 1);
+    }
+}
+
 class VideoProcessor {
     constructor() {
         this.maxSizeBytes = config.VIDEO_MAX_SIZE_BYTES || (2 * 1024 * 1024 * 1024); // 2GB
@@ -543,133 +566,138 @@ class VideoProcessor {
     }
 
     async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null, metadata = {}) {
-        const os = require('os');
-        const cpuCount = os.cpus()?.length || 4;
-        // Reserva pelo menos 30% da CPU para os outros sites e processos do servidor
-        const safeThreads = Math.max(2, Math.min(6, Math.floor(cpuCount * 0.70)));
+        await acquireTranscodeSlot();
+        try {
+            const os = require('os');
+            const cpuCount = os.cpus()?.length || 4;
+            // Usa as threads configuradas ou limite seguro de CPU
+            const safeThreads = config.FFMPEG_THREADS_PER_JOB || Math.max(2, Math.min(6, Math.floor(cpuCount * 0.50)));
 
-        const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
-            ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
-            : (metadata.nome || metadata.title || path.basename(inputPath));
+            const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
+                ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
+                : (metadata.nome || metadata.title || path.basename(inputPath));
 
-        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: veryfast, Threads: ${safeThreads}, CRF: 22${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
-        
-        return new Promise((resolve, reject) => {
-            const totalDuration = info.duration || 1;
+            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${config.MAX_CONCURRENT_TRANSCODES || 2}${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
+            
+            return await new Promise((resolve, reject) => {
+                const totalDuration = info.duration || 1;
 
-            const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
-            const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
-            const audioBitrateKbps = 192;
-            const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
+                const safeMaxMB = (config.VIDEO_MAX_SIZE_BYTES / (1024 * 1024)) || 3950;
+                const maxTotalKbps = Math.floor((safeMaxMB * 1024 * 8) / Math.max(1, totalDuration));
+                const audioBitrateKbps = 192;
+                const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
 
-            // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
-            let vfFilter = "scale='min(1920,iw)':-2";
-            let tempSrtRelative = null;
-            if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
-                try {
-                    tempSrtRelative = `sub_active_${Date.now()}.srt`;
-                    fs.copySync(metadata.srtPath, tempSrtRelative);
-                    // Uso de caminho relativo limpo sem caracteres de drive letter (D:) do Windows
-                    vfFilter += `,subtitles='${tempSrtRelative}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
-                } catch (errSrt) {
-                    console.warn('⚠️ Falha ao preparar arquivo de legenda para filtro:', errSrt.message);
-                }
-            }
-
-            const args = [
-                '-i', inputPath,
-                '-vf', vfFilter,
-                '-c:v', 'libx264',
-                '-preset', 'faster',
-                '-crf', '20',
-                '-profile:v', 'high',
-                '-level', '4.1',
-                '-pix_fmt', 'yuv420p',
-                '-maxrate', `${maxVideoKbps}k`,
-                '-bufsize', `${maxVideoKbps * 2}k`,
-                '-threads', `${safeThreads}`,
-                '-c:a', 'aac',
-                '-b:a', `${audioBitrateKbps}k`,
-                '-ac', '2',
-                '-ar', '48000'
-            ];
-
-            // Mapeamento preciso de áudio
-            if (portugueseAudioIndex !== null) {
-                args.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
-            } else {
-                args.push('-map', '0:v:0', '-map', '0:a:0?', '-disposition:a:0', 'default');
-            }
-
-            args.push('-movflags', '+faststart', '-y', outputPath);
-
-            const ffmpeg = spawn('ffmpeg', args);
-
-            let lastLogTime = Date.now();
-            let ffmpegStderrBuffer = [];
-
-            ffmpeg.stderr.on('data', (data) => {
-                const text = data.toString();
-                ffmpegStderrBuffer.push(text);
-                if (ffmpegStderrBuffer.length > 20) ffmpegStderrBuffer.shift();
-
-                const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
-                const speedMatch = text.match(/speed=\s*([\d.]+)x/);
-                const fpsMatch = text.match(/fps=\s*([\d.]+)/);
-
-                if (timeMatch) {
-                    const hours = parseFloat(timeMatch[1]);
-                    const minutes = parseFloat(timeMatch[2]);
-                    const seconds = parseFloat(timeMatch[3]);
-                    const currentTime = (hours * 3600) + (minutes * 60) + seconds;
-                    const percent = Math.min(99, Math.round((currentTime / totalDuration) * 100));
-                    const speedStr = speedMatch ? `${speedMatch[1]}x` : '';
-                    const fpsStr = fpsMatch ? ` | FPS: ${fpsMatch[1]}` : '';
-
-                    const now = Date.now();
-                    if (now - lastLogTime > 3000) { // Atualiza a cada 3s para evitar flood nos logs do PM2
-                        lastLogTime = now;
-                        const barLength = 25;
-                        const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
-                        const empty = Math.max(0, barLength - filled);
-                        const bar = '█'.repeat(filled) + '░'.repeat(empty);
-
-                        // Amarelo vibrante para a etapa de Otimização FFmpeg
-                        const audioBadge = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? '🔊 Dublado' : '💬 Legendado';
-                        console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] [${audioBadge}] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m`);
+                // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
+                let vfFilter = "scale='min(1920,iw)':-2";
+                let tempSrtRelative = null;
+                if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                    try {
+                        tempSrtRelative = `sub_active_${Date.now()}.srt`;
+                        fs.copySync(metadata.srtPath, tempSrtRelative);
+                        // Uso de caminho relativo limpo sem caracteres de drive letter (D:) do Windows
+                        vfFilter += `,subtitles='${tempSrtRelative}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
+                    } catch (errSrt) {
+                        console.warn('⚠️ Falha ao preparar arquivo de legenda para filtro:', errSrt.message);
                     }
-
-                    if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);
-                }
-            });
-
-            ffmpeg.on('close', (code) => {
-                if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
-                    fs.remove(tempSrtRelative).catch(() => {});
                 }
 
-                if (code === 0 && fs.existsSync(outputPath)) {
-                    process.stdout.write('\n');
-                    console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
-                    if (onProgress) onProgress(100, 'Otimização Concluída');
-                    resolve(outputPath);
+                const args = [
+                    '-i', inputPath,
+                    '-vf', vfFilter,
+                    '-c:v', 'libx264',
+                    '-preset', 'faster',
+                    '-crf', '20',
+                    '-profile:v', 'high',
+                    '-level', '4.1',
+                    '-pix_fmt', 'yuv420p',
+                    '-maxrate', `${maxVideoKbps}k`,
+                    '-bufsize', `${maxVideoKbps * 2}k`,
+                    '-threads', `${safeThreads}`,
+                    '-c:a', 'aac',
+                    '-b:a', `${audioBitrateKbps}k`,
+                    '-ac', '2',
+                    '-ar', '48000'
+                ];
+
+                // Mapeamento preciso de áudio
+                if (portugueseAudioIndex !== null) {
+                    args.push('-map', '0:v:0', '-map', `0:a:${portugueseAudioIndex}`, '-disposition:a:0', 'default');
                 } else {
-                    process.stdout.write('\n');
-                    const errSnippet = ffmpegStderrBuffer.slice(-5).join('\n').trim();
-                    if (errSnippet) {
-                        console.error(`❌ [FFmpeg Erro] Código ${code}. Diagnóstico:\n${errSnippet}`);
-                    }
-                    reject(new Error(`Erro na transcodificação do vídeo: código ${code}`));
+                    args.push('-map', '0:v:0', '-map', '0:a:0?', '-disposition:a:0', 'default');
                 }
-            });
 
-            ffmpeg.on('error', (err) => {
-                if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
-                    fs.remove(tempSrtRelative).catch(() => {});
-                }
-                reject(err);
+                args.push('-movflags', '+faststart', '-y', outputPath);
+
+                const ffmpeg = spawn('ffmpeg', args);
+
+                let lastLogTime = Date.now();
+                let ffmpegStderrBuffer = [];
+
+                ffmpeg.stderr.on('data', (data) => {
+                    const text = data.toString();
+                    ffmpegStderrBuffer.push(text);
+                    if (ffmpegStderrBuffer.length > 20) ffmpegStderrBuffer.shift();
+
+                    const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+                    const speedMatch = text.match(/speed=\s*([\d.]+)x/);
+                    const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+
+                    if (timeMatch) {
+                        const hours = parseFloat(timeMatch[1]);
+                        const minutes = parseFloat(timeMatch[2]);
+                        const seconds = parseFloat(timeMatch[3]);
+                        const currentTime = (hours * 3600) + (minutes * 60) + seconds;
+                        const percent = Math.min(99, Math.round((currentTime / totalDuration) * 100));
+                        const speedStr = speedMatch ? `${speedMatch[1]}x` : '';
+                        const fpsStr = fpsMatch ? ` | FPS: ${fpsMatch[1]}` : '';
+
+                        const now = Date.now();
+                        if (now - lastLogTime > 3000) { // Atualiza a cada 3s para evitar flood nos logs do PM2
+                            lastLogTime = now;
+                            const barLength = 25;
+                            const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
+                            const empty = Math.max(0, barLength - filled);
+                            const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+                            // Amarelo vibrante para a etapa de Otimização FFmpeg
+                            const audioBadge = metadata.isDublado || metadata.audioText?.includes('Dublado') || (portugueseAudioIndex !== null && !metadata.srtPath) ? '🔊 Dublado' : '💬 Legendado';
+                            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] [${audioBadge}] [${bar}] ${percent}% | ⏱️ ${this.formatDuration(currentTime)} / ${this.formatDuration(totalDuration)}${speedStr ? ` | ⚡ ${speedStr}` : ''}${fpsStr}\x1b[0m`);
+                        }
+
+                        if (onProgress) onProgress(percent, `Otimizando 1080p (${percent}%) ${speedStr ? `[${speedStr}]` : ''}`);
+                    }
+                });
+
+                ffmpeg.on('close', (code) => {
+                    if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
+                        fs.remove(tempSrtRelative).catch(() => {});
+                    }
+
+                    if (code === 0 && fs.existsSync(outputPath)) {
+                        process.stdout.write('\n');
+                        console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
+                        if (onProgress) onProgress(100, 'Otimização Concluída');
+                        resolve(outputPath);
+                    } else {
+                        process.stdout.write('\n');
+                        const errSnippet = ffmpegStderrBuffer.slice(-5).join('\n').trim();
+                        if (errSnippet) {
+                            console.error(`❌ [FFmpeg Erro] Código ${code}. Diagnóstico:\n${errSnippet}`);
+                        }
+                        reject(new Error(`Erro na transcodificação do vídeo: código ${code}`));
+                    }
+                });
+
+                ffmpeg.on('error', (err) => {
+                    if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
+                        fs.remove(tempSrtRelative).catch(() => {});
+                    }
+                    reject(err);
+                });
             });
-        });
+        } finally {
+            releaseTranscodeSlot();
+        }
     }
 
     formatDuration(seconds) {

@@ -403,19 +403,24 @@ class CommandHandler {
         }
 
         const status = this.queueManager.getStatus();
+        const activeTasks = status.activeTasks || (status.activeTask ? [status.activeTask] : []);
         let mensagem = `⚡ *Status da Fila de Downloads BrasilFlix*\n\n`;
         
-        if (status.activeTask) {
-            mensagem += `🚀 *Processando Agora (1080p):*\n` +
-                        `🎬 *Título:* ${status.activeTask.title}\n` +
-                        `📊 *Progresso:* ${status.activeTask.progress}%\n` +
-                        `ℹ️ *Detalhes:* ${status.activeTask.progressDetails || 'Processando...'}\n\n`;
+        if (activeTasks.length > 0) {
+            mensagem += `🚀 *Trilhas Ativas em Processamento Paralelo (${activeTasks.length}/${config.MAX_CONCURRENT_JOBS || 4}):*\n\n`;
+            activeTasks.forEach((task, idx) => {
+                const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
+                const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
+                mensagem += `*Trilha ${idx + 1}:* ${tipoBadge} *${task.title}* [${audioBadge}]\n` +
+                            `📊 *Progresso:* ${task.progress || 0}%\n` +
+                            `ℹ️ *Status:* \`${task.progressDetails || task.status || 'Processando...'}\`\n\n`;
+            });
         } else {
             mensagem += `💤 *Fila Ociosa:* Nenhum download ativo no momento.\n\n`;
         }
 
         mensagem += `📋 *Estatísticas:* Total: ${status.total} | Na Fila: ${status.queued} | Concluídos: ${status.completed}\n\n` +
-                    `💡 *Dica:* Seus pedidos entram automaticamente com Prioridade Alta!`;
+                    `💡 *Dica:* Seus pedidos entram automaticamente com Prioridade Alta e furam a fila!`;
 
         await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
     }
