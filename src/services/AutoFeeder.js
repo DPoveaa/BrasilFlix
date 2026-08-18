@@ -95,9 +95,21 @@ class AutoFeeder {
                 const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
                 const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
 
-                if (filmeExistente || serieExistente) {
+                if (filmeExistente) {
                     await this.pedidosManager.marcarComoProcessado(pedido.id);
                     continue;
+                }
+
+                if (serieExistente) {
+                    // Para séries: só marca como concluído se a temporada 1 estiver completa no catálogo
+                    const temp1 = (serieExistente.temporadas || []).find(t => t.numero === 1);
+                    const totalEpsTemp1 = serieExistente.totalEpisodios || 10;
+                    const epsCadastrados = temp1 ? (temp1.episodios || []).length : 0;
+
+                    if (epsCadastrados >= totalEpsTemp1 && totalEpsTemp1 > 0) {
+                        await this.pedidosManager.marcarComoProcessado(pedido.id);
+                        continue;
+                    }
                 }
 
                 // Detecta tipo no TMDB

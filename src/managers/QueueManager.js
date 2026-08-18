@@ -1209,8 +1209,10 @@ class QueueManager extends EventEmitter {
                 }).catch(() => {});
             }
 
-            // Notifica e atualiza pedidos correspondentes deste título
-            await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, job.type);
+            // Para filmes: marca o pedido como atendido no catálogo (para séries, marca apenas ao completar a temporada)
+            if (job.type === 'filme') {
+                await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+            }
 
             // Notificação para quem favoritou a série quando sai novo episódio
             if (job.type === 'serie' && this.favoritosManager && itemId && this.bot) {
@@ -1334,9 +1336,7 @@ class QueueManager extends EventEmitter {
                     }).catch(() => {});
 
                     if (this.pedidosManager) {
-                        const pedidos = this.pedidosManager.getPedidos() || [];
-                        const matchP = pedidos.filter(p => !p.processado && p.nome && (metadata.nome || job.title).toLowerCase().includes(p.nome.toLowerCase().trim()));
-                        matchP.forEach(p => this.pedidosManager.marcarComoProcessado(p.id));
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
                     }
                 }
 
