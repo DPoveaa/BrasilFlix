@@ -716,7 +716,11 @@ class StremioServer {
             }
         });
 
-        this.app.post('/api/admin/catalogo/upload-media', auth, videoUpload.single('videoFile'), async (req, res) => {
+        this.app.post('/api/admin/catalogo/upload-media', auth, (req, res, next) => {
+            req.setTimeout(120 * 60 * 1000); // 2 horas para uploads pesados
+            res.setTimeout(120 * 60 * 1000);
+            next();
+        }, videoUpload.single('videoFile'), async (req, res) => {
             try {
                 if (!req.file) {
                     return res.status(400).json({ error: 'Nenhum arquivo de vídeo foi enviado.' });

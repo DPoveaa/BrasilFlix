@@ -249,6 +249,13 @@ class QueueManager extends EventEmitter {
             error: null
         };
 
+        if (extraData.rawFilePath) {
+            job.priority = PRIORITIES.VIP_USER;
+            job.queueOrder = -999;
+            job.isManualAdd = true;
+            job.progressDetails = 'Arquivo local pronto para processamento';
+        }
+
         // Verifica se já existe um trabalho igual na fila com a mesma preferência de áudio
         const existing = this.queue.find(j => 
             j.title.toLowerCase() === title.toLowerCase() && 
@@ -259,6 +266,25 @@ class QueueManager extends EventEmitter {
         );
 
         if (existing) {
+            // Se foi enviado um arquivo via upload manual, atualiza o existing imediatamente com o arquivo local
+            if (extraData.rawFilePath) {
+                console.log(`📁 [UPLOAD MANUAL] Vinculando arquivo local "${extraData.rawFilePath}" ao trabalho existente: "${job.title}"`);
+                existing.rawFilePath = extraData.rawFilePath;
+                existing.isManualAdd = true;
+                existing.priority = PRIORITIES.VIP_USER;
+                existing.queueOrder = -999;
+                existing.status = 'queued';
+                existing.progress = 0;
+                existing.progressDetails = 'Arquivo local pronto para processamento';
+                existing.error = null;
+                if (extraData.metaDetails) existing.metaDetails = extraData.metaDetails;
+                if (extraData.tmdbId) existing.tmdbId = extraData.tmdbId;
+                this.sortQueue();
+                this.saveJob(existing).catch(() => {});
+                setImmediate(() => this.processNext());
+                return existing;
+            }
+
             // Se for pedido de usuário, eleva a prioridade do existente
             if ((priority === PRIORITIES.VIP_USER || priority === PRIORITIES.USER) && existing.priority > priority) {
                 existing.priority = priority;
