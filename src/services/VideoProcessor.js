@@ -358,6 +358,20 @@ class VideoProcessor {
         }
 
         // 2. Busca e validação no OpenSubtitles via IMDb ID (priorizando pob / pt-br sobre por)
+        if (!metadata.imdbId && metadata.tmdbId) {
+            try {
+                const extPath = metadata.tipo === 'serie' ? `tv/${metadata.tmdbId}` : `movie/${metadata.tmdbId}`;
+                const extRes = await axios.get(`https://api.themoviedb.org/3/${extPath}/external_ids`, {
+                    params: { api_key: config.TMDB_API_KEY },
+                    timeout: 6000
+                });
+                if (extRes.data?.imdb_id) {
+                    metadata.imdbId = extRes.data.imdb_id;
+                    console.log(`🆔 [TMDB External IDs] IMDb ID resolvido com sucesso: ${metadata.imdbId}`);
+                }
+            } catch (e) {}
+        }
+
         if (metadata.imdbId) {
             try {
                 const season = metadata.season || 1;
@@ -443,6 +457,7 @@ class VideoProcessor {
             srtPath = await this.getOrExtractPortugueseSubtitle(inputPath, info, metadata);
             if (!srtPath) {
                 console.warn(`⚠️ [${optTitle}] Nenhuma legenda em Português encontrada para o release legendado.`);
+                throw new Error(`Nenhuma legenda em Português encontrada para "${optTitle}". Abortando processamento para evitar vídeo legendado sem legendas.`);
             } else {
                 metadata.srtPath = srtPath;
             }
@@ -550,15 +565,10 @@ class VideoProcessor {
         // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
         const outInfo = await this.getVideoInfo(finalPath);
         if (info.duration > 0 && outInfo.duration > 0) {
-            // Se o FFmpeg terminou com sucesso (code 0), pequenas variações entre header do container (ex: 1h34)
-            // e o fluxo real de vídeo/áudio (ex: 1h28) são comuns em releases com cortes de créditos ou dual audio.
-            // Só descarta se o arquivo tiver menos de 50% da duração original ou menos de 5 minutos (anti-corrupção real).
             const minAcceptableSec = Math.max(300, info.duration * 0.50);
             if (outInfo.duration < minAcceptableSec) {
                 await fs.remove(finalPath).catch(() => {});
                 throw new Error(`Inconsistência severa de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem apenas ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
-            } else if (Math.abs(outInfo.duration - info.duration) > 15) {
-                console.log(`ℹ️ [Duração Pós-Conversão] Vídeo processado com sucesso: ${outInfo.durationFormatted} (Original marcava ${info.durationFormatted}). Diferença natural de container/créditos aceita.`);
             }
         }
 
@@ -589,16 +599,9 @@ class VideoProcessor {
 
                 // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
                 let vfFilter = "scale='min(1920,iw)':-2";
-                let tempSrtRelative = null;
                 if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
-                    try {
-                        tempSrtRelative = `sub_active_${Date.now()}.srt`;
-                        fs.copySync(metadata.srtPath, tempSrtRelative);
-                        // Uso de caminho relativo limpo sem caracteres de drive letter (D:) do Windows
-                        vfFilter += `,subtitles='${tempSrtRelative}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
-                    } catch (errSrt) {
-                        console.warn('⚠️ Falha ao preparar arquivo de legenda para filtro:', errSrt.message);
-                    }
+                    const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
                 }
 
                 const args = [
