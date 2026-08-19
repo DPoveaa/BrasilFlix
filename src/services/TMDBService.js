@@ -236,6 +236,50 @@ class TMDBService {
         }
     }
 
+    async checkDigitalReleaseStatus(tmdbId, isDublado = true) {
+        if (!tmdbId) return { isDigitalReleased: true, isTheatricalOnly: false };
+        try {
+            const response = await axios.get(`${this.baseUrl}/movie/${tmdbId}/release_dates`, {
+                params: { api_key: this.apiKey },
+                timeout: 6000
+            });
+            const results = response.data?.results || [];
+            const now = new Date();
+
+            let hasTheatrical = false;
+            let hasGlobalDigital = false;
+            let hasBrazilDigital = false;
+
+            for (const country of results) {
+                const isBR = country.iso_3166_1 === 'BR';
+                for (const rd of (country.release_dates || [])) {
+                    const rDate = rd.release_date ? new Date(rd.release_date) : null;
+                    if (rd.type === 2 || rd.type === 3) {
+                        if (rDate && rDate <= now) hasTheatrical = true;
+                    } else if (rd.type === 4 || rd.type === 5) {
+                        if (rDate && rDate <= now) {
+                            hasGlobalDigital = true;
+                            if (isBR) hasBrazilDigital = true;
+                        }
+                    }
+                }
+            }
+
+            const digitalReleased = isDublado ? hasBrazilDigital : hasGlobalDigital;
+            const isTheatricalOnly = hasTheatrical && !digitalReleased;
+
+            return {
+                isDigitalReleased: digitalReleased,
+                isTheatricalOnly: isTheatricalOnly,
+                hasTheatrical,
+                hasGlobalDigital,
+                hasBrazilDigital
+            };
+        } catch (e) {
+            return { isDigitalReleased: true, isTheatricalOnly: false };
+        }
+    }
+
     async getTrendingMovies(timeWindow = 'week') {
         try {
             const response = await axios.get(`${this.baseUrl}/trending/movie/${timeWindow}`, {

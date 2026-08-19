@@ -15,7 +15,7 @@ class MediaSearchService {
         const cleanQuery = this.cleanQuery(query);
         const originalName = options.nomeOriginal ? this.cleanQuery(options.nomeOriginal) : null;
         const ano = options.ano || options.year || '';
-        const forcarNaoCam = options.onlyWebDl || false;
+        const forcarNaoCam = options.onlyWebDl || options.forcarNaoCam || false;
         let imdbId = options.imdbId || null;
         const pref = options.audioPreference || 'geral';
         const season = options.season || 1;
@@ -365,7 +365,7 @@ class MediaSearchService {
 
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
-                const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(title);
+                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i.test(title);
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
                 const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title);
 
@@ -674,11 +674,11 @@ class MediaSearchService {
             const maxAllowedBytes = opts.tipo === 'serie' ? (80 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
             if (sizeBytes > maxAllowedBytes) return;
 
-            const isCam = /\b(cam|camrip|hdcam|ts|telesync|hdts)\b/i.test(name);
+            const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i.test(name);
             const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(name) && !isCam;
             const is1080p = (/\b(1080p|fhd|fullhd|bluray|web-dl|1080)\b/i.test(name)) && !isCam;
 
-            if (isCam && (!config.ALLOW_CINEMA_CAM && !opts.allowCam)) return;
+            if (isCam && (opts.forcarNaoCam || (!config.ALLOW_CINEMA_CAM && !opts.allowCam))) return;
 
             results.push({
                 title: name,

@@ -570,19 +570,30 @@ class QueueManager extends EventEmitter {
             console.warn('⚠️ Erro ao consultar TMDB, usando metadados básicos:', e.message);
         }
 
-        // Validação de Existência Prévia para Filmes (evita rebaixar filmes que já estão 100% no catálogo)
+        // Validação de Existência Prévia para Filmes (evita rebaixar filmes que já estão 100% no catálogo ou baixar CAMs duplicados)
         if (job.type === 'filme' && !job.isUpgrade && !job.extraData?.isUpgrade) {
             const filmeExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') ||
                                   this.catalogoManager.buscarItemExato(job.title, 'filme');
-            if (filmeExistente && !filmeExistente.isCam) {
+            if (filmeExistente) {
                 const pref = job.audioPreference || 'dublado';
                 const temDublado = filmeExistente.isDublado || !!filmeExistente.versoes?.dublado;
                 const temLegendado = filmeExistente.isLegendado || !!filmeExistente.versoes?.legendado;
 
-                if ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (temDublado && !job.userId)) {
-                    console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : 'Legendado'}). Ignorando download duplicado.`);
-                    await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
-                    return;
+                // Se já temos a versão oficial 1080p (não-CAM), nunca rebaixa
+                if (!filmeExistente.isCam) {
+                    if ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (temDublado && !job.userId)) {
+                        console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : 'Legendado'}). Ignorando download duplicado.`);
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                        return;
+                    }
+                } else {
+                    // Se já temos versão CAM no catálogo, verifica no TMDB se o lançamento digital/físico oficial já ocorreu
+                    const relStatus = await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, pref === 'dublado');
+                    if (relStatus.isTheatricalOnly) {
+                        console.log(`ℹ️ [FILME] "${job.title}" já possui versão de Cinema (CAM) no catálogo. O lançamento oficial em Streaming/Digital (VOD) ainda não ocorreu no TMDB. Ignorando download repetido.`);
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                        return;
+                    }
                 }
             }
         }
@@ -750,6 +761,9 @@ class QueueManager extends EventEmitter {
                     source: 'Manual (Admin Magnet)'
                 }];
             } else {
+                const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
+                const jaTemCam = !!(filmeExist && filmeExist.isCam);
+
                 const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
                                    this.catalogoManager.buscarItemExato(job.title, 'serie');
                 const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
@@ -763,8 +777,18 @@ class QueueManager extends EventEmitter {
                     season: job.season || 1,
                     episode: job.episode || 1,
                     audioPreference: job.audioPreference || 'dublado',
+                    forcarNaoCam: jaTemCam,
                     ignorarFallbackLegendado: jaPossuiLegendado
                 });
+
+                if (jaTemCam) {
+                    sources = sources.filter(s => !s.isCam);
+                    if (sources.length === 0) {
+                        console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                        return;
+                    }
+                }
             }
 
             if (sources.length === 0) {
@@ -1029,11 +1053,11 @@ class QueueManager extends EventEmitter {
         metadata.episode = job.episode;
         metadata.episodioNome = job.type === 'serie' ? `Episódio ${job.episode || 1}` : '';
 
-        // Detecção robusta de Cinema/CAM (por título, tags ou data de lançamento futura no TMDB)
-        const isCamTitle = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema)\b/i.test(bestSource?.title || '') || (bestSource?.isCam === true);
-        const tmdbYear = parseInt(metadata.ano || new Date().getFullYear(), 10);
-        const isUnreleasedMovie = job.type === 'filme' && tmdbYear >= new Date().getFullYear() && (metadata.dataLancamento && new Date(metadata.dataLancamento) > new Date());
-        const isCamFinal = isCamTitle || isUnreleasedMovie || (bestSource?.quality && bestSource.quality.includes('CAM'));
+        // Detecção ultra robusta de Cinema/CAM (por título, tags ampliadas e validação de janela digital TMDB)
+        const CAM_REGEX = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i;
+        const isCamTitle = CAM_REGEX.test(bestSource?.title || '') || (bestSource?.isCam === true);
+        const relStatus = job.type === 'filme' ? await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference !== 'legendado') : { isTheatricalOnly: false };
+        const isCamFinal = isCamTitle || relStatus.isTheatricalOnly || (bestSource?.quality && bestSource.quality.includes('CAM'));
 
         metadata.isCam = isCamFinal;
         metadata.qualidade = isCamFinal ? 'CAM (Cinema)' : (bestSource?.quality || '1080p Full HD');
