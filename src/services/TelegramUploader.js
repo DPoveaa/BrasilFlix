@@ -39,8 +39,15 @@ class TelegramUploader {
             const session = new StringSession(config.TELEGRAM_SESSION || '');
 
             const client = new TelegramClient(session, apiId, apiHash, {
-                connectionRetries: 5,
-                useIPv6: false
+                connectionRetries: 15,
+                retryDelay: 2000,
+                autoReconnect: true,
+                useIPv6: false,
+                timeout: 60,
+                floodSleepThreshold: 120,
+                deviceModel: 'BrasilFlix Engine',
+                appVersion: '2.0.0',
+                systemVersion: 'Linux'
             });
 
             console.log('🔌 Conectando ao Telegram MTProto (suporte a uploads de até 4GB Premium)...');
@@ -52,6 +59,11 @@ class TelegramUploader {
                     botAuthToken: config.BOT_TOKEN
                 });
                 console.log('✅ Cliente MTProto autenticado via Bot Token!');
+            }
+
+            // Desativa o loop de updates em segundo plano (o GramJS é usado apenas como uploader/sender de arquivos pesados)
+            if (typeof client._updateLoop === 'function') {
+                client._updateLoop = async () => {};
             }
 
             this.client = client;

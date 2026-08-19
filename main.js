@@ -53,12 +53,21 @@ process.on('SIGTERM', () => {
 });
 
 process.on('uncaughtException', (error) => {
-    if (error?.message?.includes('User-Initiated Abort') || error?.code === 'ERR_DATA_CHANNEL') {
+    if (error?.message?.includes('User-Initiated Abort') || 
+        error?.code === 'ERR_DATA_CHANNEL' ||
+        error?.message === 'TIMEOUT' ||
+        error?.stack?.includes('updates.js') ||
+        error?.stack?.includes('telegram/client')) {
         return;
     }
     console.error('⚠️ Aviso - Exceção assíncrona capturada:', error?.message || error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+    if (reason?.message === 'TIMEOUT' || 
+        reason?.stack?.includes('updates.js') || 
+        reason?.stack?.includes('telegram/client')) {
+        return;
+    }
     console.error('⚠️ Aviso - Rejeição assíncrona capturada:', reason?.message || reason);
 });
