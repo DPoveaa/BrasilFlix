@@ -33,7 +33,7 @@ sys.argv = [
     sys.argv[1],
     '-i', sys.argv[2],
     '-o', sys.argv[3],
-    '--max-offset-seconds', '120',
+    '--max-offset-seconds', '180',
     '--vad', 'subs_then_webrtc'
 ]
 sys.exit(main())
@@ -48,10 +48,10 @@ sys.exit(main())
                     if (!isDone) {
                         isDone = true;
                         try { pyProc.kill('SIGKILL'); } catch (e) {}
-                        console.warn('⚠️ [SubtitleSync] Timeout de 45s ao sincronizar legenda. Usando versão original.');
+                        console.warn('⚠️ [SubtitleSync] Timeout de 120s ao sincronizar legenda. Usando versão original.');
                         resolve(false);
                     }
-                }, 45000);
+                }, 120000);
 
                 pyProc.on('error', (err) => {
                     if (!isDone) {
