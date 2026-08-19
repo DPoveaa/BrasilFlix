@@ -399,8 +399,8 @@ class DownloaderManager extends EventEmitter {
                     }
 
                     // 3. Verificação de integridade estrutural via ffprobe
-                    const videoInfo = await VideoProcessor.getVideoInfo(fullPath);
-                    if (!videoInfo.duration || videoInfo.duration <= 0) {
+                    const videoInfo = await VideoProcessor.getVideoInfo(fullPath).catch(() => null);
+                    if (!videoInfo || !videoInfo.duration || videoInfo.duration <= 0) {
                         isCompleting = false;
                         return;
                     }

@@ -672,8 +672,8 @@ class VideoProcessor {
                 });
 
                 ffmpeg.on('close', (code) => {
-                    if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
-                        fs.remove(tempSrtRelative).catch(() => {});
+                    if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                        fs.remove(metadata.srtPath).catch(() => {});
                     }
 
                     if (code === 0 && fs.existsSync(outputPath)) {
@@ -692,8 +692,8 @@ class VideoProcessor {
                 });
 
                 ffmpeg.on('error', (err) => {
-                    if (tempSrtRelative && fs.existsSync(tempSrtRelative)) {
-                        fs.remove(tempSrtRelative).catch(() => {});
+                    if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                        fs.remove(metadata.srtPath).catch(() => {});
                     }
                     reject(err);
                 });
