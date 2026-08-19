@@ -251,11 +251,24 @@ class DownloaderManager extends EventEmitter {
             'udp://tracker.opentrackr.org:1337/announce',
             'udp://open.stealth.si:80/announce',
             'udp://tracker.torrent.eu.org:451/announce',
-            'udp://tracker.openbittorrent.com:80/announce',
-            'udp://tracker.cyberia.is:6969/announce',
+            'udp://explodie.org:6969/announce',
             'udp://tracker.moeking.me:6969/announce',
             'http://tracker.opentrackr.org:1337/announce',
-            'wss://tracker.openwebtorrent.com'
+            'udp://p4p.arenabg.com:1337/announce',
+            'udp://tracker.birkenwald.de:6969/announce',
+            'udp://tracker.dler.org:6969/announce',
+            'udp://opentor.net:6969/announce',
+            'udp://open.demonii.com:1337/announce',
+            'udp://tracker.openbittorrent.com:80/announce',
+            'udp://tracker.cyberia.is:6969/announce',
+            'udp://9.rarbg.to:2920/announce',
+            'udp://tracker.coppersurfer.tk:6969/announce',
+            'udp://tracker.leechers-paradise.org:6969/announce',
+            'udp://tracker.internetwarriors.net:1337/announce',
+            'udp://exodus.desync.com:6969/announce',
+            'wss://tracker.openwebtorrent.com',
+            'wss://tracker.btorrent.xyz',
+            'wss://tracker.files.fm:7073/announce'
         ];
 
         if (typeof torrentTarget === 'string' && torrentTarget.startsWith('magnet:')) {
@@ -275,19 +288,21 @@ class DownloaderManager extends EventEmitter {
         return new Promise((resolve, reject) => {
             console.log(`📥 Iniciando download via Torrent: "${displayTitle}" [${audioBadge}] [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
-            // Instância otimizada: balanceada para alta velocidade sem flood de pacotes UDP na rede local
+            // Instância otimizada: alta velocidade de download mantendo controle de recursos
             const client = new WT({
-                maxConns: 45, // Limite seguro por torrent (4 downloads = máx 180 conexões, sem saturar a tabela NAT do modem)
+                maxConns: 80, // Permite conexão com até 80 peers para velocidade máxima de download
                 dht: {
                     bootstrap: [
                         'router.bittorrent.com:6881',
-                        'dht.transmissionbt.com:6881'
+                        'dht.transmissionbt.com:6881',
+                        'router.utorrent.com:6881',
+                        'dht.libtorrent.org:25401',
+                        'dht.aelitis.com:6881'
                     ]
                 },
                 tracker: true,
-                utp: false, // Desativa uTP (micro-pacotes UDP), priorizando TCP estável para não interferir em jogos e no ping da casa
                 downloadLimit: -1,
-                uploadLimit: 0 // Upload desativado (0 B/s) - modo exclusivo de download sem semear/compartilhar com terceiros
+                uploadLimit: 1024 * 500 // Permite 500 KB/s durante o download para troca de handshakes P2P (destruído na hora ao concluir)
             });
 
             let torrent = null;
