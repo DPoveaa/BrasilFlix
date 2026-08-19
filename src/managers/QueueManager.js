@@ -29,8 +29,9 @@ class QueueManager extends EventEmitter {
         this.uploader = new TelegramUploader(bot);
         this.queue = []; // cache em memória sincronizado com o banco
         this.activeJobs = new Map(); // Mapa de jobs ativos em paralelo: id -> job
-        this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 6;
+        this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 10;
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
+        this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
 
         // Inicializa banco e carrega fila de forma assíncrona
