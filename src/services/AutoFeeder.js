@@ -242,15 +242,22 @@ class AutoFeeder {
             console.log(`🔄 AutoFeeder: Verificando possíveis upgrades para ${camMovies.length} filme(s) em qualidade de Cinema...`);
 
             for (const filme of camMovies) {
+                // 1. Verifica no TMDB se o lançamento digital/VOD oficial já ocorreu antes de procurar upgrades
+                const relStatus = await TMDBService.checkDigitalReleaseStatus(filme.tmdbId, filme.isDublado);
+                if (relStatus.isTheatricalOnly) {
+                    continue; // Pula: filme ainda está exclusivo dos cinemas, sem lançamento digital no TMDB
+                }
+
                 const sources = await MediaSearchService.search(filme.nome, 'filme', {
                     nomeOriginal: filme.nomeOriginal,
                     ano: filme.ano,
-                    onlyWebDl: true
+                    onlyWebDl: true,
+                    forcarNaoCam: true
                 });
 
-                const officialSource = sources.find(s => s.isWebDl && s.seeders > 0);
+                const officialSource = sources.find(s => s.isWebDl && !s.isCam && s.seeders > 0);
                 if (officialSource) {
-                    console.log(`🌟 UPGRADE ENCONTRADO para "${filme.nome}"! Fonte Oficial: ${officialSource.title}`);
+                    console.log(`🌟 UPGRADE OFICIAL ENCONTRADO para "${filme.nome}"! Fonte: ${officialSource.title}`);
                     this.queueManager.addJob(filme.nome, 'filme', 2, {
                         tmdbId: filme.tmdbId,
                         isUpgrade: true,
