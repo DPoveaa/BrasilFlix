@@ -63,17 +63,30 @@ class DownloaderManager extends EventEmitter {
         } catch (e) {}
     }
 
-    async ensureDiskSpace() {
+    async isDiskOvercrowded() {
         const maxBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
+        const currentSize = await this.getTempDirSizeBytes();
+        // Se ultrapassar 75% dos 100GB (~75GB), segura novos downloads para dar espaço à duplicação da transcodificação
+        return currentSize >= maxBytes * 0.75;
+    }
+
+    async ensureDiskSpace(estimatedSizeBytes = 0) {
+        const maxGB = config.MAX_TEMP_DISK_GB || 100;
+        const maxBytes = maxGB * 1024 * 1024 * 1024;
+        // Considera margem de segurança para duplicação do vídeo durante a transcodificação FFmpeg (raw + opt)
+        const safetyMarginBytes = Math.max(estimatedSizeBytes * 2, 8 * 1024 * 1024 * 1024);
+
         let currentSize = await this.getTempDirSizeBytes();
-        if (currentSize >= maxBytes * 0.85) {
-            console.log(`⚠️ [Guarda de Disco] Pasta temporária atingiu ${this.formatBytes(currentSize)} (limite: ${config.MAX_TEMP_DISK_GB || 100} GB). Executando limpeza automática...`);
-            await this.cleanupOrphanedFiles(2);
+        if (currentSize + safetyMarginBytes >= maxBytes * 0.75) {
+            console.log(`⚠️ [Guarda de Disco] Pasta temporária em ${this.formatBytes(currentSize)} (margem de duplicação: ${this.formatBytes(safetyMarginBytes)}, limite: ${maxGB} GB). Executando limpeza automática...`);
+            await this.cleanupOrphanedFiles(1);
             currentSize = await this.getTempDirSizeBytes();
-            if (currentSize >= maxBytes) {
-                console.warn(`🚨 [Guarda de Disco] Diretório temporário cheio (${this.formatBytes(currentSize)}). Aguardando liberação de espaço pelos uploads...`);
-                await new Promise(r => setTimeout(r, 10000));
-            }
+        }
+
+        while (currentSize + safetyMarginBytes >= maxBytes * 0.85) {
+            console.warn(`🚨 [Guarda de Disco] Espaço em disco temporário próximo ao limite (${this.formatBytes(currentSize)} / ${maxGB} GB). Aguardando liberação de espaço por uploads concluídos...`);
+            await new Promise(r => setTimeout(r, 6000));
+            currentSize = await this.getTempDirSizeBytes();
         }
     }
 

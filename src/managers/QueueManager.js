@@ -526,6 +526,13 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
+        // Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
+        const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
+        if (diskCrowded) {
+            console.log('⏳ [Guarda de Disco] Espaço temporário atingiu margem de segurança. Segurando novos downloads até uploads concluírem.');
+            return;
+        }
+
         // Dispara jobs em paralelo enquanto houver slots de download livres e o limite global não for atingido
         while (this.activeJobs.size < this.maxConcurrentJobs && this.getActiveDownloadsCount() < this.maxConcurrentDownloads) {
             const nextJob = this.findNextJobToProcess();
@@ -1056,6 +1063,16 @@ class QueueManager extends EventEmitter {
                 isDublado: langInfo?.isDublado ?? true,
                 isLegendado: langInfo?.isLegendado ?? false
             });
+
+            // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
+            // para não manter cópias duplicadas ocupando espaço durante a fase de upload
+            if (rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
+                console.log(`🧹 [Otimização Concluída] Liberando espaço em disco: removendo arquivo bruto original (${path.basename(rawFilePath)})...`);
+                await DownloaderManager.cleanupFile(rawFilePath);
+                rawFilePath = null;
+                job.rawFilePath = null;
+                await this.saveJob(job);
+            }
         }
 
         // 5. Envio ao Telegram com Barra de Upload em Tempo Real
