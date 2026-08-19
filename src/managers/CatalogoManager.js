@@ -28,9 +28,9 @@ class CatalogoManager {
                 await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '')`);
             } catch (e) {}
 
-            // Carrega Filmes do PostgreSQL
-            const filmesRes = await db.query(`SELECT * FROM filmes ORDER BY id ASC`);
-            const seriesRes = await db.query(`SELECT * FROM series ORDER BY id ASC`);
+            // Carrega Filmes do PostgreSQL (Mais recentes adicionados primeiro)
+            const filmesRes = await db.query(`SELECT * FROM filmes ORDER BY id DESC`);
+            const seriesRes = await db.query(`SELECT * FROM series ORDER BY id DESC`);
             const epsRes = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
 
             // Mapeia episódios por série e temporada

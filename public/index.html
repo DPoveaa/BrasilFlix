@@ -1755,7 +1755,7 @@
                 <div id="active-task-container" style="display: none;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
                         <h3 style="font-size: 14px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
-                            <span class="pulse-dot"></span> Trilhas Ativas em Processamento Paralelo (<span id="active-tasks-count">1</span>/4)
+                            <span class="pulse-dot"></span> Trilhas Ativas em Processamento Paralelo (<span id="active-tasks-count">1</span>/<span id="active-tasks-max">10</span>)
                         </h3>
                         <span class="status-pill" style="font-size: 10px;">⚡ Alta Velocidade 1080p</span>
                     </div>
@@ -2983,6 +2983,9 @@
                     const admIdleMsg = document.getElementById('adm-idle-message');
 
                     const activeTasks = (data.queue && (data.queue.activeTasks || (data.queue.activeTask ? [data.queue.activeTask] : []))) || [];
+                    const maxJobs = data.queue?.maxConcurrentJobs || 10;
+                    const maxEl = document.getElementById('active-tasks-max');
+                    if (maxEl) maxEl.innerText = maxJobs;
 
                     if (activeTasks.length > 0) {
                         if (idleMessage) idleMessage.style.display = 'none';
@@ -3003,14 +3006,19 @@
                                 const audioLabel = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
                                 const isVip = task.priority === 1 || String(task.priority).includes('VIP');
 
+                                let stageBadge = '📥 Download';
+                                if (task.status === 'processing') stageBadge = '⚙️ Otimização';
+                                else if (task.status === 'uploading') stageBadge = '🚀 Envio Telegram';
+
                                 return `
                                     <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                                             <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                                 <span class="live-tag" style="font-size: 10px; padding: 2px 6px;">${tipoLabel}</span>
                                                 <span class="live-tag" style="font-size: 10px; padding: 2px 6px; background: rgba(59,130,246,0.15); color: #60a5fa;">${audioLabel}</span>
+                                                <span class="live-tag" style="font-size: 10px; padding: 2px 6px; background: rgba(16,185,129,0.15); color: #34d399;">${stageBadge}</span>
                                             </div>
-                                            <span class="badge-priority">${isVip ? '🔥 VIP' : 'Trilha ' + (idx + 1)}</span>
+                                            <span class="badge-priority">${isVip ? '🔥 VIP' : '#' + (idx + 1)}</span>
                                         </div>
                                         <h4 style="font-size: 13px; font-weight: 800; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                             ${task.title}${epStr}
@@ -3309,6 +3317,16 @@
                 ...(fullCatalog.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
                 ...(fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }))
             ];
+
+            // Ordena os mais recentemente adicionados no topo por padrão
+            baseList.sort((a, b) => {
+                const idA = Number(a.id) || 0;
+                const idB = Number(b.id) || 0;
+                if (idA && idB && idA !== idB) return idB - idA;
+                const dateA = a.createdAt || a.dataAdicionado ? new Date(a.createdAt || a.dataAdicionado).getTime() : 0;
+                const dateB = b.createdAt || b.dataAdicionado ? new Date(b.createdAt || b.dataAdicionado).getTime() : 0;
+                return dateB - dateA;
+            });
 
             // Atualiza contadores numéricos da barra lateral
             updateFilterCounts(baseList);

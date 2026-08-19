@@ -56,6 +56,67 @@ class QueueManager extends EventEmitter {
         return Array.from(this.activeJobs.values());
     }
 
+    getStatus() {
+        const activeTasks = Array.from(this.activeJobs.values());
+        const queuedJobs = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id));
+        return {
+            isProcessing: activeTasks.length > 0,
+            activeTask: activeTasks[0] || null,
+            activeTasks: activeTasks,
+            totalActive: activeTasks.length,
+            maxConcurrentJobs: this.maxConcurrentJobs || 10,
+            maxConcurrentDownloads: this.maxConcurrentDownloads || 4,
+            maxConcurrentTranscodes: config.MAX_CONCURRENT_TRANSCODES || 2,
+            maxConcurrentUploads: this.maxConcurrentUploads || 4,
+            totalQueued: queuedJobs.length,
+            queued: queuedJobs.length,
+            total: this.queue.length + activeTasks.length,
+            completed: 0,
+            queue: queuedJobs
+        };
+    }
+
+    getPublicStatus(catalogoManager) {
+        const activeTasks = Array.from(this.activeJobs.values()).map(task => ({
+            id: task.id,
+            title: task.title,
+            type: task.type,
+            season: task.season,
+            episode: task.episode,
+            status: task.status,
+            progress: typeof task.progress === 'number' ? Math.round(task.progress) : 0,
+            progressDetails: task.progressDetails || '',
+            priority: task.priority || 2,
+            audioPreference: task.audioPreference || 'dublado',
+            createdAt: task.createdAt
+        }));
+
+        const queued = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id)).map(j => ({
+            id: j.id,
+            title: j.title,
+            type: j.type,
+            season: j.season,
+            episode: j.episode,
+            status: j.status,
+            priority: j.priority || 2,
+            audioPreference: j.audioPreference || 'dublado',
+            createdAt: j.createdAt
+        }));
+
+        return {
+            isProcessing: activeTasks.length > 0,
+            activeTask: activeTasks[0] || null,
+            activeTasks: activeTasks,
+            totalActive: activeTasks.length,
+            maxConcurrentJobs: this.maxConcurrentJobs || 10,
+            maxConcurrentDownloads: this.maxConcurrentDownloads || 4,
+            maxConcurrentTranscodes: config.MAX_CONCURRENT_TRANSCODES || 2,
+            maxConcurrentUploads: this.maxConcurrentUploads || 4,
+            totalQueued: queued.length,
+            queue: queued
+        };
+    }
+
     getActiveFiles() {
         const files = [];
         for (const task of this.activeJobs.values()) {
