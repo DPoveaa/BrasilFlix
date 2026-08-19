@@ -397,22 +397,48 @@ class MediaSearchService {
 
     async getOpenSubtitlesPT(imdbId, tipo = 'filme', season = 1, episode = 1) {
         if (!imdbId) return [];
-        try {
-            const https = require('https');
-            const agent = new https.Agent({ rejectUnauthorized: false });
-            const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
-            const url = `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`;
-            const res = await axios.get(url, { timeout: 8000, httpsAgent: agent });
-            const subs = res.data?.subtitles || [];
-            const ptSubs = subs.filter(s => {
-                const lang = (s.lang || s.language || '').toLowerCase();
-                return ['pob', 'por', 'pt', 'pt-br', 'ptbr'].includes(lang);
-            });
-            return ptSubs;
-        } catch (e) {
-            console.warn('⚠️ Erro ao consultar OpenSubtitles:', e.message);
-            return [];
+        const cacheKey = `${imdbId}_${tipo}_${season}_${episode}`;
+        if (this._subCache && this._subCache.has(cacheKey)) {
+            const cached = this._subCache.get(cacheKey);
+            if (Date.now() - cached.time < 30 * 60 * 1000) {
+                return cached.subs;
+            }
         }
+
+        const https = require('https');
+        const agent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+        const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+        
+        const endpoints = [
+            `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
+            `https://subtitles.strem.io/subtitles/${streamPath}`,
+            `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
+        ];
+
+        for (const url of endpoints) {
+            try {
+                const res = await axios.get(url, { 
+                    timeout: 6000, 
+                    httpsAgent: agent,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
+                });
+                const subs = res.data?.subtitles || [];
+                const ptSubs = subs.filter(s => {
+                    const lang = (s.lang || s.language || '').toLowerCase();
+                    return ['pob', 'por', 'pt', 'pt-br', 'ptbr', 'brazilian'].includes(lang);
+                });
+
+                if (ptSubs.length > 0) {
+                    if (!this._subCache) this._subCache = new Map();
+                    this._subCache.set(cacheKey, { subs: ptSubs, time: Date.now() });
+                    return ptSubs;
+                }
+            } catch (e) {
+                // Tenta próximo endpoint silenciosamente
+            }
+        }
+
+        return [];
     }
 
     async searchTorrentioAllStreams(imdbId, tipo = 'filme', opts = {}) {

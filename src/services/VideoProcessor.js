@@ -377,41 +377,56 @@ class VideoProcessor {
                 const season = metadata.season || 1;
                 const episode = metadata.episode || 1;
                 const streamPath = metadata.tipo === 'serie' ? `series/${metadata.imdbId}:${season}:${episode}.json` : `movie/${metadata.imdbId}.json`;
-                const osUrl = `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`;
-                const res = await axios.get(osUrl, { timeout: 8000, httpsAgent: agent });
-                const subs = res.data?.subtitles || [];
+                
+                const endpoints = [
+                    `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
+                    `https://subtitles.strem.io/subtitles/${streamPath}`,
+                    `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
+                ];
 
-                // Prioriza: pob (Português do Brasil) > pt-br > brazilian > por > pt
-                const ptSubs = subs.filter(s => {
-                    const lang = (s.lang || s.language || '').toLowerCase();
-                    return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
-                }).sort((a, b) => {
-                    const langA = (a.lang || a.language || '').toLowerCase();
-                    const langB = (b.lang || b.language || '').toLowerCase();
-                    const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 2 : 1;
-                    const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 2 : 1;
-                    return scoreB - scoreA;
-                });
-
-                console.log(`🌐 Testando ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
-
-                for (const sub of ptSubs) {
+                let ptSubs = [];
+                for (const osUrl of endpoints) {
                     try {
-                        const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
-                        if (subRes.data && this.isPortugueseSubtitleContent(subRes.data)) {
-                            await fs.writeFile(srtPath, subRes.data, 'utf8');
-                            console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
-                            
-                            // Sincroniza a legenda externa contra o áudio real do vídeo para garantir alinhamento perfeito (100% sincronizado)
-                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
-                            const finalSrt = await SubtitleSync.syncSubtitle(inputPath, srtPath, syncedSrtPath);
-                            return finalSrt;
-                        }
-                    } catch (errSub) {}
+                        const res = await axios.get(osUrl, { 
+                            timeout: 6000, 
+                            httpsAgent: agent,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
+                        });
+                        const subs = res.data?.subtitles || [];
+                        ptSubs = subs.filter(s => {
+                            const lang = (s.lang || s.language || '').toLowerCase();
+                            return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
+                        }).sort((a, b) => {
+                            const langA = (a.lang || a.language || '').toLowerCase();
+                            const langB = (b.lang || b.language || '').toLowerCase();
+                            const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 2 : 1;
+                            const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 2 : 1;
+                            return scoreB - scoreA;
+                        });
+
+                        if (ptSubs.length > 0) break;
+                    } catch (e) {}
                 }
-            } catch (e) {
-                console.warn('⚠️ Falha ao consultar OpenSubtitles:', e.message);
-            }
+
+                if (ptSubs.length > 0) {
+                    console.log(`🌐 Testando ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
+
+                    for (const sub of ptSubs) {
+                        try {
+                            const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
+                            if (subRes.data && this.isPortugueseSubtitleContent(subRes.data)) {
+                                await fs.writeFile(srtPath, subRes.data, 'utf8');
+                                console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
+                                
+                                // Sincroniza a legenda externa contra o áudio real do vídeo para garantir alinhamento perfeito (100% sincronizado)
+                                const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
+                                const finalSrt = await SubtitleSync.syncSubtitle(inputPath, srtPath, syncedSrtPath);
+                                return finalSrt;
+                            }
+                        } catch (errSub) {}
+                    }
+                }
+            } catch (e) {}
         }
 
         // 3. Fallback de URL direta caso fornecida
