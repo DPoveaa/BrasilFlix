@@ -29,7 +29,8 @@ class QueueManager extends EventEmitter {
         this.uploader = new TelegramUploader(bot);
         this.queue = []; // cache em memória sincronizado com o banco
         this.activeJobs = new Map(); // Mapa de jobs ativos em paralelo: id -> job
-        this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 4;
+        this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 6;
+        this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
 
         // Inicializa banco e carrega fila de forma assíncrona
@@ -511,9 +512,21 @@ class QueueManager extends EventEmitter {
         return queuedJobs[0];
     }
 
+    getActiveDownloadsCount() {
+        let count = 0;
+        for (const job of this.activeJobs.values()) {
+            if (job.status === 'downloading' || job.status === 'searching' || job.status === 'processing') {
+                if (!job.progressDetails || !job.progressDetails.includes('Otimizando')) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     async processNext() {
-        // Dispara jobs em paralelo até atingir o limite maxConcurrentJobs
-        while (this.activeJobs.size < this.maxConcurrentJobs) {
+        // Dispara jobs em paralelo enquanto houver slots de download livres e o limite global não for atingido
+        while (this.activeJobs.size < this.maxConcurrentJobs && this.getActiveDownloadsCount() < this.maxConcurrentDownloads) {
             const nextJob = this.findNextJobToProcess();
             if (!nextJob) break;
 
@@ -1021,6 +1034,9 @@ class QueueManager extends EventEmitter {
             optimizedPath = path.join(path.dirname(rawFilePath), `opt_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
             job.optimizedPath = optimizedPath;
             await this.saveJob(job);
+
+            // Dispara imediatamente o próximo download da fila enquanto este otimiza em paralelo
+            setImmediate(() => this.processNext());
             
             await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
                 job.progress = percent;
@@ -1047,6 +1063,9 @@ class QueueManager extends EventEmitter {
         job.progressDetails = 'Iniciando envio ao Telegram...';
         this.activeTask = job;
         await this.saveJob(job);
+
+        // Dispara o próximo item enquanto este faz upload para o Telegram
+        setImmediate(() => this.processNext());
 
         metadata.tipo = job.type;
         metadata.season = job.season;
