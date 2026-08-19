@@ -287,7 +287,7 @@ class DownloaderManager extends EventEmitter {
                 tracker: true,
                 utp: false, // Desativa uTP (micro-pacotes UDP), priorizando TCP estável para não interferir em jogos e no ping da casa
                 downloadLimit: -1,
-                uploadLimit: 1024 * 60 // 60 KB/s de upload para eliminar bufferbloat na banda de subida
+                uploadLimit: 0 // Upload desativado (0 B/s) - modo exclusivo de download sem semear/compartilhar com terceiros
             });
 
             let torrent = null;
