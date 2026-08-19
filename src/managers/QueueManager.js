@@ -1216,27 +1216,6 @@ class QueueManager extends EventEmitter {
             console.warn('⚠️ Erro ao disparar notificações de conclusão:', errNotif.message);
         }
 
-        // 9.5 Esteira Contínua para Filmes: Se faltar a versão complementar (Dublado ou Legendado), enfileira automaticamente!
-        if (job.type === 'filme') {
-            const itemAtualizado = this.catalogoManager.buscarItemExato(metadata.nome, 'filme');
-            const temDublado = itemAtualizado?.isDublado || !!itemAtualizado?.versoes?.dublado;
-            const temLegendado = itemAtualizado?.isLegendado || !!itemAtualizado?.versoes?.legendado;
-
-            if (metadata.isDublado && !temLegendado) {
-                console.log(`💬 [ESTEIRA DUAL] "${metadata.nome}" cadastrado dublado. Enfileirando versão Legendada em background...`);
-                this.addJob(metadata.nome, 'filme', PRIORITIES.FEEDER, {
-                    tmdbId: metadata.tmdbId,
-                    audioPreference: 'legendado'
-                });
-            } else if (metadata.isLegendado && !temDublado) {
-                console.log(`🇧🇷 [ESTEIRA DUAL] "${metadata.nome}" cadastrado legendado. Enfileirando busca por versão Dublada em background...`);
-                this.addJob(metadata.nome, 'filme', PRIORITIES.FEEDER, {
-                    tmdbId: metadata.tmdbId,
-                    audioPreference: 'dublado'
-                });
-            }
-        }
-
         // 10. Se for Série/Dorama, enfileira o próximo episódio e próxima temporada automaticamente até completar 100%!
         if (job.type === 'serie') {
             const currentSeasonNum = job.season || 1;
@@ -1261,29 +1240,6 @@ class QueueManager extends EventEmitter {
             } catch (e) {
                 const temporadaAtual = (metadata.temporadas || []).find(t => t.numero === currentSeasonNum);
                 totalEpsNestaTemporada = temporadaAtual?.episodiosContagem || 10;
-            }
-
-            // Se o episódio atual foi catalogado como Legendado puro (sem dublado) e configurado para complementar
-            if (metadata.isLegendado && !metadata.isDublado && config.AUTO_DUAL_AUDIO) {
-                const sItem = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
-                const tItem = (sItem?.temporadas || []).find(t => t.numero === currentSeasonNum);
-                for (let ep = 1; ep < currentEpNum; ep++) {
-                    const prevEp = (tItem?.episodios || []).find(e => e.numero === ep);
-                    const prevHasLeg = prevEp && (prevEp.isLegendado || !!prevEp.versoes?.legendado || prevEp.audio?.toLowerCase().includes('legendado'));
-                    if (prevEp && !prevHasLeg) {
-                        const alreadyInQueue = this.queue.some(q => q.title.toLowerCase() === (metadata.nome || job.title).toLowerCase() && q.season === currentSeasonNum && q.episode === ep && q.audioPreference === 'legendado');
-                        if (!alreadyInQueue) {
-                            console.log(`💬 [ESTEIRA DUAL SÉRIE] Enfileirando versão Legendada complementar para "${metadata.nome || job.title}" - T${currentSeasonNum}E${ep}...`);
-                            this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
-                                tmdbId: metadata.tmdbId,
-                                season: currentSeasonNum,
-                                episode: ep,
-                                audioPreference: 'legendado',
-                                queueOrder: -1
-                            });
-                        }
-                    }
-                }
             }
 
             const nextEp = currentEpNum + 1;
