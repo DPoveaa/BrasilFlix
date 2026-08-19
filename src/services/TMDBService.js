@@ -265,11 +265,13 @@ class TMDBService {
                 }
             }
 
-            const digitalReleased = isDublado ? hasBrazilDigital : hasGlobalDigital;
-            const isTheatricalOnly = hasTheatrical && !digitalReleased;
+            // Se o filme já estreou digitalmente/em streaming no mundo ou no Brasil, ele já existe em WEB-DL/BluRay oficial
+            const isDigitalReleased = hasGlobalDigital || hasBrazilDigital;
+            // TheatricalOnly só é true se estreou nos cinemas E NÃO teve nenhum lançamento digital/físico no mundo
+            const isTheatricalOnly = hasTheatrical && !isDigitalReleased;
 
             return {
-                isDigitalReleased: digitalReleased,
+                isDigitalReleased: isDigitalReleased,
                 isTheatricalOnly: isTheatricalOnly,
                 hasTheatrical,
                 hasGlobalDigital,
