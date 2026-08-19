@@ -144,22 +144,34 @@ class BrasilFlixBot {
         }
     }
 
-    async setupBotCommands() {
+    async setupBotCommands(retryCount = 0) {
+        // Aguarda 2 segundos após a inicialização para estabilização de sockets/DNS
+        if (retryCount === 0) {
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
         try {
             await this.bot.setMyCommands([
-                { command: 'start', description: 'Abrir menu principal do BrasilFlix' },
-                { command: 'catalogo', description: 'Navegar por filmes, séries e doramas' },
-                { command: 'stremio', description: 'Instalar Addon no app Stremio VIP' },
-                { command: 'pedir', description: 'Fazer pedido de filme ou série' },
-                { command: 'fila', description: 'Ver status da fila de downloads' },
-                { command: 'favoritos', description: 'Meus títulos favoritos salvos' },
-                { command: 'assinar', description: 'Planos e assinaturas VIP' },
-                { command: 'meuplano', description: 'Consultar status do meu plano' },
-                { command: 'ajuda', description: 'Suporte e como usar o robô' }
+                { command: 'start', description: '🍿 Início / Menu Principal' },
+                { command: 'buscar', description: '🔍 Buscar Filme ou Série' },
+                { command: 'catalogo', description: '📚 Ver Catálogo Completo' },
+                { command: 'favoritos', description: '⭐ Meus Favoritos' },
+                { command: 'pedido', description: '🎬 Fazer Pedido de Filme/Série' },
+                { command: 'stremio', description: '📺 Assistir na TV (Stremio)' },
+                { command: 'fila', description: '⚡ Status de Downloads' },
+                { command: 'assinar', description: '💎 Planos e Assinaturas VIP' },
+                { command: 'meuplano', description: '💳 Consultar Meu Plano' },
+                { command: 'ajuda', description: '❓ Dúvidas e Suporte' }
             ]);
-            console.log('✅ Comandos do bot configurados com sucesso!');
+            console.log('✅ Comandos do bot configurados no Telegram com sucesso!');
         } catch (e) {
-            console.warn('Aviso ao registrar comandos do bot:', e.message);
+            if (retryCount < 3) {
+                const waitMs = (retryCount + 1) * 3000;
+                console.warn(`⚠️ [setMyCommands] Tentativa ${retryCount + 1} falhou (${e.message}). Tentando novamente em ${waitMs / 1000}s...`);
+                setTimeout(() => this.setupBotCommands(retryCount + 1), waitMs);
+            } else {
+                console.warn('⚠️ Não foi possível registrar comandos do bot no Telegram:', e.message);
+            }
         }
     }
 }

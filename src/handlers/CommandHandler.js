@@ -16,9 +16,6 @@ class CommandHandler {
         this.resultadosBuscaTemp = new Map(); // Resultados temporários de busca por usuário
         this.carregarTestesGratuitos(); // Carregar dados salvos
         
-        // Configurar comandos do bot
-        this.setupBotCommands();
-        
         // Limpar estados expirados a cada 5 minutos
         setInterval(() => {
             this.limparEstadosExpirados();
@@ -27,25 +24,6 @@ class CommandHandler {
 
     setFavoritosManager(favoritosManager) {
         this.favoritosManager = favoritosManager;
-    }
-
-    async setupBotCommands() {
-        try {
-            await this.bot.setMyCommands([
-                { command: 'start', description: '🍿 Início / Menu Principal' },
-                { command: 'buscar', description: '🔍 Buscar Filme ou Série' },
-                { command: 'catalogo', description: '📚 Ver Catálogo' },
-                { command: 'favoritos', description: '⭐ Meus Favoritos' },
-                { command: 'pedido', description: '🎬 Pedir Filme ou Série' },
-                { command: 'stremio', description: '📺 Assistir na TV (Stremio)' },
-                { command: 'fila', description: '⚡ Status de Downloads' },
-                { command: 'assinar', description: '💎 Assinar VIP' },
-                { command: 'ajuda', description: '❓ Dúvidas e Ajuda' }
-            ]);
-            console.log('✅ Comandos do bot configurados com sucesso!');
-        } catch (error) {
-            console.error('❌ Erro ao configurar comandos do bot:', error);
-        }
     }
 
     async handleStart(msg, callbackQuery = null) {
