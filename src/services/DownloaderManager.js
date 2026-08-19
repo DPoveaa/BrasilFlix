@@ -130,6 +130,94 @@ class DownloaderManager extends EventEmitter {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
 
+    findEpisodeFileInTorrent(files, season, episode) {
+        if (!files || files.length === 0) return null;
+        const seasonNum = parseInt(season || 1, 10);
+        const epNum = parseInt(episode || 1, 10);
+        const sPad2 = String(seasonNum).padStart(2, '0');
+        const epPad2 = String(epNum).padStart(2, '0');
+        const epPad3 = String(epNum).padStart(3, '0');
+
+        const videoFiles = files.filter(f => {
+            const ext = path.extname(f.name).toLowerCase();
+            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
+        });
+
+        if (videoFiles.length === 0) return null;
+        if (videoFiles.length === 1) return videoFiles[0];
+
+        // 1. Padrões estritos de Temporada + Episódio (S01E01, S1E1, 1x01, T01E01, Season 1 Episode 1)
+        const strictPatterns = [
+            new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}(?:v\\d+)?(?:\\D|$)`, 'i'),
+            new RegExp(`s${sPad2}[._ -]*e${epPad2}(?:\\D|$)`, 'i'),
+            new RegExp(`\\b${seasonNum}x0*${epNum}\\b`, 'i'),
+            new RegExp(`\\bt0*${seasonNum}[._ -]*e0*${epNum}\\b`, 'i'),
+            new RegExp(`(?:season|temporada)[._ -]*0*${seasonNum}[._ -]+(?:episode|episodio|ep|e)[._ -]*0*${epNum}\\b`, 'i')
+        ];
+
+        for (const regex of strictPatterns) {
+            const match = videoFiles.find(f => regex.test(f.name) || regex.test(f.path));
+            if (match) return match;
+        }
+
+        // 2. Padrão de Faixa/Multi-episódio (ex: S01E01-E05, onde epNum está dentro do intervalo)
+        const rangeMatch = videoFiles.find(f => {
+            const str = `${f.path} ${f.name}`;
+            const m = str.match(new RegExp(`s0*${seasonNum}[._ -]*e0*(\\d+)[._ -]*(?:-|~|a|e|to)[._ -]*e?0*(\\d+)`, 'i'));
+            if (m) {
+                const start = parseInt(m[1], 10);
+                const end = parseInt(m[2], 10);
+                if (epNum >= start && epNum <= end) return true;
+            }
+            return false;
+        });
+        if (rangeMatch) return rangeMatch;
+
+        // 3. Padrão por pasta da temporada (ex: pasta "Season 1/" ou "S01/" contendo arquivos "01.mkv" ou "Ep.1.mp4")
+        const seasonFolderRegex = new RegExp(`(?:season|temporada|s)[._ -]*0*${seasonNum}(?:[\\\\/]|$)`, 'i');
+        const seasonFolderFiles = videoFiles.filter(f => seasonFolderRegex.test(f.path));
+        if (seasonFolderFiles.length > 0) {
+            const epInFolderPatterns = [
+                new RegExp(`\\b(?:ep|e|episodio|episode)[._ -]*0*${epNum}\\b`, 'i'),
+                new RegExp(`\\b${epPad2}\\b`),
+                new RegExp(`\\b0*${epNum}\\b`)
+            ];
+            for (const regex of epInFolderPatterns) {
+                const match = seasonFolderFiles.find(f => regex.test(f.name));
+                if (match) return match;
+            }
+        }
+
+        // 4. Animes e Séries sem temporada no nome do arquivo (ex: "Bleach - 01", "Bleach 001", "01.mkv", "Episodio 01")
+        const cleanName = (str) => {
+            return str
+                .replace(/\b(1080p|720p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                .replace(/\b(19\d{2}|20\d{2})\b/g, '')
+                .replace(/\[[^\]]*\]|\([^\)]*\)/g, ' ');
+        };
+
+        const animePatterns = [
+            new RegExp(`(?:ep|episodio|episode|e)[._ -]*0*${epNum}(?:\\D|$)`, 'i'),
+            new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
+            new RegExp(`(?:^|[._ -])0*${epPad2}(?:[._ -]|$)`),
+            new RegExp(`(?:^|[._ -])0*${epPad3}(?:[._ -]|$)`),
+            new RegExp(`\\b${epNum}\\b`)
+        ];
+
+        for (const regex of animePatterns) {
+            const match = videoFiles.find(f => regex.test(cleanName(f.name)));
+            if (match) return match;
+        }
+
+        // 5. Fallback por ordenação alfanumérica se a lista tiver exatamente os episódios indexados
+        const sortedFiles = [...videoFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        if (sortedFiles.length >= epNum && epNum > 0) {
+            return sortedFiles[epNum - 1];
+        }
+
+        return videoFiles[0];
+    }
+
     extractCleanHash(magnetOrTorrent) {
         if (typeof magnetOrTorrent === 'string') {
             const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
@@ -271,91 +359,34 @@ class DownloaderManager extends EventEmitter {
                 if (options.episode && torrent.files && torrent.files.length > 1) {
                     const seasonNum = parseInt(options.season || 1, 10);
                     const epNum = parseInt(options.episode, 10);
-                    const epPadded2 = String(epNum).padStart(2, '0');
-                    const epPadded3 = String(epNum).padStart(3, '0');
-                    const sPadded2 = String(seasonNum).padStart(2, '0');
 
-                    // Filtra apenas arquivos com extensão de vídeo
-                    const videoFiles = torrent.files.filter(f => {
-                        const ext = path.extname(f.name).toLowerCase();
-                        return ['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext);
-                    });
-
-                    // 1. Padrões estritos de Temporada + Episódio (S01E02, S1E2, S01.E02, S01 - E02, T01E02, 1x02, 01x02, Season 1 Episode 2)
-                    const strictPatterns = [
-                        new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}(?:v\\d+)?\\b`, 'i'),
-                        new RegExp(`s${sPadded2}[._ -]*e${epPadded2}\\b`, 'i'),
-                        new RegExp(`\\b${seasonNum}x0*${epNum}\\b`, 'i'),
-                        new RegExp(`\\bt0*${seasonNum}[._ -]*e0*${epNum}\\b`, 'i'),
-                        new RegExp(`(?:season|temporada)[._ -]*0*${seasonNum}[._ -]+(?:episode|episodio|ep|e)[._ -]*0*${epNum}\\b`, 'i')
-                    ];
-
-                    let found = null;
-                    for (const regex of strictPatterns) {
-                        found = videoFiles.find(f => regex.test(f.name) || regex.test(f.path));
-                        if (found) break;
-                    }
-
-                    // 2. Padrão de Faixa/Multi-episódio (ex: S01E01-E05, S01E01-04 onde epNum está dentro do intervalo)
-                    if (!found) {
-                        found = videoFiles.find(f => {
-                            const str = `${f.path} ${f.name}`;
-                            const rangeMatch = str.match(new RegExp(`s0*${seasonNum}[._ -]*e0*(\\d+)[._ -]*(?:-|~|a|e|to)[._ -]*e?0*(\\d+)`, 'i'));
-                            if (rangeMatch) {
-                                const start = parseInt(rangeMatch[1], 10);
-                                const end = parseInt(rangeMatch[2], 10);
-                                if (epNum >= start && epNum <= end) return true;
-                            }
-                            return false;
+                    // Desmarca o torrent inteiro para NÃO puxar blocos de outros episódios
+                    try {
+                        torrent.deselect(0, torrent.pieces.length - 1, false);
+                        torrent.files.forEach(f => {
+                            try { f.deselect(); } catch (e) {}
                         });
-                    }
+                    } catch (e) {}
 
-                    // 3. Padrão por pasta da temporada (ex: pasta "Season 1/" ou "S01/" contendo arquivos "01.mkv" ou "Ep.1.mp4")
-                    if (!found) {
-                        const seasonFolderRegex = new RegExp(`(?:season|temporada|s)[._ -]*0*${seasonNum}(?:[\\\\/]|$)`, 'i');
-                        const seasonFolderFiles = videoFiles.filter(f => seasonFolderRegex.test(f.path));
-
-                        if (seasonFolderFiles.length > 0) {
-                            const epInFolderPatterns = [
-                                new RegExp(`\\b(?:ep|e|episodio|episode)[._ -]*0*${epNum}\\b`, 'i'),
-                                new RegExp(`\\b${epPadded2}\\b`),
-                                new RegExp(`\\b0*${epNum}\\b`)
-                            ];
-                            for (const regex of epInFolderPatterns) {
-                                found = seasonFolderFiles.find(f => regex.test(f.name));
-                                if (found) break;
-                            }
-                        }
-                    }
-
-                    // 4. Padrões avulsos de Episódio com proteção contra números de resolução/ano/codec
-                    if (!found) {
-                        const epPatterns = [
-                            new RegExp(`\\b(?:ep|episodio|episode)[._ -]*0*${epNum}\\b`, 'i'),
-                            new RegExp(`\\be0*${epNum}\\b`, 'i'),
-                            new RegExp(`[._ -]e0*${epNum}[._ -]`, 'i'),
-                            new RegExp(`[._ -]ep0*${epNum}[._ -]`, 'i')
-                        ];
-                        for (const regex of epPatterns) {
-                            found = videoFiles.find(f => regex.test(f.name));
-                            if (found) break;
-                        }
-                    }
-
+                    const found = this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
                     if (found) {
                         targetEpisodeFile = found;
                         try {
-                            torrent.files.forEach(f => {
-                                if (f !== found) f.deselect();
-                            });
                             found.select();
                             found.on('done', () => checkAndComplete());
-                            console.log(`🎯 [Multi-Pack] Otimização: baixando somente o episódio desejado: ${found.name} (${this.formatBytes(found.length)})`);
+                            console.log(`🎯 [Multi-Pack] Otimização: baixando SOMENTE o episódio solicitado: ${found.name} (${this.formatBytes(found.length)})`);
                         } catch (e) {
                             console.warn('⚠️ Erro ao selecionar arquivo alvo no pack:', e.message);
                         }
                     } else {
-                        console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${sPadded2}E${epPadded2}. Mantendo seleção completa.`);
+                        console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
+                        const videoFiles = torrent.files.filter(f => {
+                            const ext = path.extname(f.name).toLowerCase();
+                            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
+                        });
+                        videoFiles.forEach(vf => {
+                            try { vf.select(); } catch (e) {}
+                        });
                     }
                 }
             });

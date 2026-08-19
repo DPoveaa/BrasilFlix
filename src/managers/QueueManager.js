@@ -827,6 +827,52 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        // Se for série, verifica se o episódio já está presente no disco (ex: de um pack de temporada previamente baixado)
+        if (!resumeFromOptimized && !resumeFromRaw && job.type === 'serie') {
+            try {
+                const tempDir = DownloaderManager.downloadDir;
+                if (fs.existsSync(tempDir)) {
+                    const allTempFiles = [];
+                    const scanDir = (dir) => {
+                        const entries = fs.readdirSync(dir, { withFileTypes: true });
+                        for (const entry of entries) {
+                            const full = path.join(dir, entry.name);
+                            if (entry.isDirectory()) {
+                                scanDir(full);
+                            } else {
+                                const ext = path.extname(entry.name).toLowerCase();
+                                if (['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext)) {
+                                    try {
+                                        allTempFiles.push({ path: full, name: entry.name, size: fs.statSync(full).size });
+                                    } catch (err) {}
+                                }
+                            }
+                        }
+                    };
+                    scanDir(tempDir);
+
+                    // Procura se algum arquivo já existente no disco corresponde a esta série e ao episódio solicitado
+                    const titleClean = (job.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const matchedFile = allTempFiles.find(f => {
+                        const nameClean = f.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (!nameClean.includes(titleClean)) return false;
+                        const epMatch = DownloaderManager.findEpisodeFileInTorrent([f], job.season || 1, job.episode || 1);
+                        return epMatch !== null && f.size > 20 * 1024 * 1024;
+                    });
+
+                    if (matchedFile) {
+                        console.log(`⚡ [REUTILIZAÇÃO DE PACK] Episódio T${job.season || 1}E${job.episode || 1} já disponível no disco (${(matchedFile.size / (1024*1024)).toFixed(1)} MB): ${matchedFile.name}`);
+                        resumeFromRaw = true;
+                        rawFilePath = matchedFile.path;
+                        job.rawFilePath = rawFilePath;
+                        downloadedMedia = { filePath: rawFilePath, fileName: matchedFile.name, sizeBytes: matchedFile.size };
+                        bestSource = { title: job.title, source: 'Pack em Disco', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao verificar pack em disco:', e.message);
+            }
+        }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
             if (job.customMagnet) {
