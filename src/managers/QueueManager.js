@@ -1176,27 +1176,38 @@ class QueueManager extends EventEmitter {
             const storageGroupId = config.STORAGE_GROUP_ID;
 
             if (this.bot && storageGroupId) {
-                const tipoTexto = job.type === 'serie' ? `📺 *Série/Dorama:* ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` : `🎬 *Filme:* ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
+                const tipoTexto = job.type === 'serie' 
+                    ? `📺 <b>Série/Dorama:</b> ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` 
+                    : `🎬 <b>Filme:</b> ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = bestSource?.title || bestSource?.provider || bestSource?.source || 'Automática (Torrentio/Stremio)';
 
-                let audioBloco = '🔊 *Áudio:* Dublado (Áudio PT-BR)';
+                let audioBloco = '🔊 <b>Áudio:</b> Dublado (Áudio PT-BR)';
                 if (metadata.isDublado && metadata.isLegendado) {
-                    audioBloco = '🔊 *Áudio:* Dual Áudio (Dublado + Original)\n📝 *Legendas:* Português (PT-BR)';
+                    audioBloco = '🔊 <b>Áudio:</b> Dual Áudio (Dublado + Original)\n📝 <b>Legendas:</b> Português (PT-BR)';
                 } else if (metadata.isLegendado) {
-                    audioBloco = '🔊 *Áudio:* Original (Inglês)\n📝 *Legendas:* Português (PT-BR) [Embutida/Hardsub]';
+                    audioBloco = '🔊 <b>Áudio:</b> Original (Inglês)\n📝 <b>Legendas:</b> Português (PT-BR) [Embutida/Hardsub]';
                 }
 
-                const notifMsg = `✅ *Conteúdo Armazenado & Catalogado com Sucesso!*\n\n` +
+                const notifMsg = `✅ <b>Conteúdo Armazenado & Catalogado com Sucesso!</b>\n\n` +
                                  `${tipoTexto}\n` +
-                                 `✨ *Qualidade:* ${metadata.qualidade || '1080p Full HD'}\n` +
+                                 `✨ <b>Qualidade:</b> ${metadata.qualidade || '1080p Full HD'}\n` +
                                  `${audioBloco}\n` +
-                                 `📦 *Fonte/Release:* \`${fonteInfo}\`\n` +
-                                 `🆔 *Message ID:* \`${uploadResult.messageId}\`\n\n` +
-                                 `🍿 *Disponível imediatamente para todos os usuários!*`;
+                                 `📦 <b>Fonte/Release:</b> <code>${fonteInfo}</code>\n` +
+                                 `🆔 <b>Message ID:</b> <code>${uploadResult.messageId}</code>\n\n` +
+                                 `🍿 <b>Disponível imediatamente para todos os usuários!</b>`;
 
-                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'HTML' }).catch(async (err) => {
+                    console.warn('⚠️ Falha ao enviar com HTML no armazém, tentando texto puro:', err.message);
+                    const plainMsg = notifMsg.replace(/<[^>]*>/g, '');
+                    await this.bot.sendMessage(storageGroupId, plainMsg).catch(err2 => {
+                        console.error('❌ Erro definitivo ao enviar confirmação no grupo armazém:', err2.message);
+                    });
+                });
+                console.log(`📢 [ARMAZÉM] Notificação de confirmação enviada com sucesso no grupo ${storageGroupId}!`);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error('❌ Erro no bloco de notificação do armazém:', e.message);
+        }
 
         // 8. Limpeza dos arquivos temporários
         await DownloaderManager.cleanupFile(rawFilePath);
