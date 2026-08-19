@@ -239,11 +239,20 @@ class TMDBService {
     async checkDigitalReleaseStatus(tmdbId, isDublado = true) {
         if (!tmdbId) return { isDigitalReleased: true, isTheatricalOnly: false };
         try {
-            const response = await axios.get(`${this.baseUrl}/movie/${tmdbId}/release_dates`, {
-                params: { api_key: this.apiKey },
-                timeout: 6000
-            });
-            const results = response.data?.results || [];
+            const [relRes, movieRes] = await Promise.all([
+                axios.get(`${this.baseUrl}/movie/${tmdbId}/release_dates`, {
+                    params: { api_key: this.apiKey },
+                    timeout: 6000
+                }).catch(() => null),
+                axios.get(`${this.baseUrl}/movie/${tmdbId}`, {
+                    params: { api_key: this.apiKey },
+                    timeout: 6000
+                }).catch(() => null)
+            ]);
+
+            const results = relRes?.data?.results || [];
+            const originalLang = movieRes?.data?.original_language || 'en';
+            const isBrazilianMovie = originalLang === 'pt';
             const now = new Date();
 
             let hasTheatrical = false;
@@ -265,9 +274,19 @@ class TMDBService {
                 }
             }
 
-            // Se o filme já estreou digitalmente/em streaming no mundo ou no Brasil, ele já existe em WEB-DL/BluRay oficial
-            const isDigitalReleased = hasGlobalDigital || hasBrazilDigital;
-            // TheatricalOnly só é true se estreou nos cinemas E NÃO teve nenhum lançamento digital/físico no mundo
+            // Para produções internacionais (ex: Disney/Pixar Toy Story 5, Marvel):
+            // - Legendado (áudio original em inglês) fica oficial no VOD global (hasGlobalDigital)
+            // - Dublado (áudio pt-br) SÓ tem áudio de estúdio oficial quando sai o VOD/Streaming no Brasil (hasBrazilDigital)
+            // Caso contrário, trata-se de áudio gravado no cinema sincronizado sobre imagem de WEBRip (CAM Audio)
+            let isDigitalReleased = false;
+            if (isBrazilianMovie) {
+                isDigitalReleased = hasGlobalDigital || hasBrazilDigital;
+            } else if (isDublado) {
+                isDigitalReleased = hasBrazilDigital;
+            } else {
+                isDigitalReleased = hasGlobalDigital;
+            }
+
             const isTheatricalOnly = hasTheatrical && !isDigitalReleased;
 
             return {
@@ -275,7 +294,8 @@ class TMDBService {
                 isTheatricalOnly: isTheatricalOnly,
                 hasTheatrical,
                 hasGlobalDigital,
-                hasBrazilDigital
+                hasBrazilDigital,
+                isBrazilianMovie
             };
         } catch (e) {
             return { isDigitalReleased: true, isTheatricalOnly: false };
