@@ -2824,18 +2824,68 @@
         let adminToken = localStorage.getItem('bf_admin_token') || null;
         let dragSrcEl = null;
 
+        function getRouteStateFromUrl() {
+            const hash = window.location.hash.replace(/^#\/?/, '').trim();
+            const pathname = window.location.pathname.replace(/^\//, '').trim();
+            
+            // Prioridade 1: Hash da URL (ex: #catalogo, #stremio, #admin, #admin/queue, #admin/catalog)
+            if (hash) {
+                const parts = hash.split('/');
+                const mainTabKey = parts[0];
+                const subTabKey = parts[1] || null;
+                return {
+                    mainTab: 'tab-' + mainTabKey,
+                    adminSubTab: subTabKey
+                };
+            }
+
+            // Prioridade 2: Pathname (ex: /admin)
+            if (pathname === 'admin') {
+                return {
+                    mainTab: 'tab-admin',
+                    adminSubTab: 'overview'
+                };
+            }
+
+            // Prioridade 3: Salvo no localStorage para F5
+            const savedMain = localStorage.getItem('bf_active_tab') || 'tab-inicio';
+            const savedAdminSub = localStorage.getItem('bf_admin_subtab') || 'overview';
+            return {
+                mainTab: savedMain,
+                adminSubTab: savedAdminSub
+            };
+        }
+
         function initApp() {
             fetchStatus();
             loadCatalog();
             setInterval(fetchStatus, 2500);
 
-            if (window.location.pathname === '/admin' || window.location.hash === '#admin') {
-                switchTab('tab-admin');
+            // Carrega estado da rota salvo / URL
+            const route = getRouteStateFromUrl();
+            if (document.getElementById(route.mainTab)) {
+                switchTab(route.mainTab, false);
+            } else {
+                switchTab('tab-inicio', false);
             }
 
             if (adminToken) {
-                checkAdminAuth();
+                checkAdminAuth(route.adminSubTab);
+            } else if (route.mainTab === 'tab-admin') {
+                document.getElementById('admin-login-view').style.display = 'block';
+                document.getElementById('admin-dashboard-view').style.display = 'none';
             }
+
+            // Escuta mudanças de hash na URL (botão Voltar/Avançar do navegador)
+            window.addEventListener('hashchange', () => {
+                const currentRoute = getRouteStateFromUrl();
+                if (document.getElementById(currentRoute.mainTab)) {
+                    switchTab(currentRoute.mainTab, false);
+                    if (currentRoute.mainTab === 'tab-admin' && currentRoute.adminSubTab) {
+                        switchAdminSubTab(currentRoute.adminSubTab, false);
+                    }
+                }
+            });
         }
 
         if (document.readyState === 'loading') {
@@ -2844,7 +2894,7 @@
             initApp();
         }
 
-        function switchTab(tabId) {
+        function switchTab(tabId, updateUrl = true) {
             document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
@@ -2855,11 +2905,26 @@
             const targetContent = document.getElementById(tabId);
             if (targetContent) targetContent.classList.add('active');
 
+            // Salva no localStorage para persistência em F5
+            localStorage.setItem('bf_active_tab', tabId);
+
+            if (updateUrl) {
+                let newHash = '#' + baseId;
+                if (tabId === 'tab-admin') {
+                    const currentAdminSub = localStorage.getItem('bf_admin_subtab') || 'overview';
+                    newHash = `#admin/${currentAdminSub}`;
+                }
+                if (window.location.hash !== newHash) {
+                    history.replaceState(null, '', newHash);
+                }
+            }
+
             if (tabId === 'tab-catalogo') {
                 renderCatalog();
             } else if (tabId === 'tab-admin') {
                 if (adminToken) {
-                    checkAdminAuth();
+                    const sub = localStorage.getItem('bf_admin_subtab') || 'overview';
+                    checkAdminAuth(sub);
                 } else {
                     document.getElementById('admin-login-view').style.display = 'block';
                     document.getElementById('admin-dashboard-view').style.display = 'none';
@@ -3521,7 +3586,7 @@
             showToast('Sessão de admin encerrada.', 'info');
         }
 
-        async function checkAdminAuth() {
+        async function checkAdminAuth(initialSubTab) {
             if (!adminToken) return;
 
             try {
@@ -3535,18 +3600,14 @@
                 document.getElementById('admin-dashboard-view').style.display = 'block';
                 document.getElementById('admin-user-display').innerText = `@${data.user?.username || 'admin'}`;
                 
-                loadAdminStats();
-                loadAdminQueue();
-                loadAdminSubs();
-                loadAdminTokens();
-                loadAdminRequests();
-                loadAdminCatalog();
+                const targetSubTab = initialSubTab || localStorage.getItem('bf_admin_subtab') || 'overview';
+                switchAdminSubTab(targetSubTab, false);
             } catch (e) {
                 console.warn('Erro auth admin:', e);
             }
         }
 
-        function switchAdminSubTab(subTabId) {
+        function switchAdminSubTab(subTabId, updateUrl = true) {
             document.querySelectorAll('.admin-sub-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.admin-subtab-content').forEach(c => c.style.display = 'none');
 
@@ -3555,6 +3616,15 @@
 
             if (btn) btn.classList.add('active');
             if (content) content.style.display = 'block';
+
+            // Salva sub-aba no localStorage e na URL
+            localStorage.setItem('bf_admin_subtab', subTabId);
+            if (updateUrl) {
+                const newHash = `#admin/${subTabId}`;
+                if (window.location.hash !== newHash) {
+                    history.replaceState(null, '', newHash);
+                }
+            }
 
             if (subTabId === 'overview') loadAdminStats();
             else if (subTabId === 'queue') loadAdminQueue();

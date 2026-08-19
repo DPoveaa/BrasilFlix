@@ -428,7 +428,7 @@ class CommandHandler {
             }
 
             if (uploads.length > 0) {
-                mensagem += `🚀 *Envio ao Telegram MTProto (${uploads.length}/${config.MAX_CONCURRENT_UPLOADS || 4}):*\n`;
+                mensagem += `🚀 *Envio ao Telegram (${uploads.length}/${config.MAX_CONCURRENT_UPLOADS || 4}):*\n`;
                 uploads.forEach(task => {
                     const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
                     const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
