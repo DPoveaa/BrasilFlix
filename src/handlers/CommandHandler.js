@@ -376,31 +376,83 @@ class CommandHandler {
     async handleFila(msg) {
         const chatId = msg.chat.id;
         if (!this.queueManager) {
-            await this.bot.sendMessage(chatId, 'ℹ️ Sistema de fila em inicialização.');
+            await this.bot.sendMessage(chatId, 'ℹ️ Sistema de esteira em inicialização.');
             return;
         }
 
         const status = this.queueManager.getStatus();
         const activeTasks = status.activeTasks || (status.activeTask ? [status.activeTask] : []);
-        let mensagem = `⚡ *Status da Fila de Downloads BrasilFlix*\n\n`;
+        let mensagem = `⚡ *Central de Processamento BrasilFlix*\n\n`;
         
         if (activeTasks.length > 0) {
-            mensagem += `🚀 *Trilhas Ativas em Processamento Paralelo (${activeTasks.length}/${config.MAX_CONCURRENT_JOBS || 4}):*\n\n`;
-            activeTasks.forEach((task, idx) => {
-                const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
-                const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
-                mensagem += `*Trilha ${idx + 1}:* ${tipoBadge} *${task.title}* [${audioBadge}]\n` +
-                            `📊 *Progresso:* ${task.progress || 0}%\n` +
-                            `ℹ️ *Status:* \`${task.progressDetails || task.status || 'Processando...'}\`\n\n`;
-            });
+            const downloads = [];
+            const transcodes = [];
+            const uploads = [];
+
+            for (const task of activeTasks) {
+                const details = (task.progressDetails || '').toLowerCase();
+                const st = (task.status || '').toLowerCase();
+                if (st === 'uploading' || details.includes('enviando') || details.includes('telegram')) {
+                    uploads.push(task);
+                } else if (details.includes('otimizando') || (st === 'processing' && task.progress > 0 && !details.includes('baixando') && !details.includes('download'))) {
+                    transcodes.push(task);
+                } else {
+                    downloads.push(task);
+                }
+            }
+
+            if (downloads.length > 0) {
+                mensagem += `📥 *Downloads da Internet (${downloads.length}/${config.MAX_CONCURRENT_DOWNLOADS || 4}):*\n`;
+                downloads.forEach(task => {
+                    const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
+                    const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
+                    const p = Math.round(task.progress || 0);
+                    const bar = this.gerarBarraProgresso(p, 8);
+                    mensagem += `├ ${tipoBadge} *${task.title}* [${audioBadge}]\n` +
+                                `│ ${bar} ${p}% | \`${task.progressDetails || 'Baixando...'}\`\n`;
+                });
+                mensagem += `\n`;
+            }
+
+            if (transcodes.length > 0) {
+                mensagem += `⚙️ *Otimização 1080p FFmpeg (${transcodes.length}/${config.MAX_CONCURRENT_TRANSCODES || 2}):*\n`;
+                transcodes.forEach(task => {
+                    const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
+                    const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
+                    const p = Math.round(task.progress || 0);
+                    const bar = this.gerarBarraProgresso(p, 8);
+                    mensagem += `├ ${tipoBadge} *${task.title}* [${audioBadge}]\n` +
+                                `│ ${bar} ${p}% | \`${task.progressDetails || 'Otimizando 1080p...'}\`\n`;
+                });
+                mensagem += `\n`;
+            }
+
+            if (uploads.length > 0) {
+                mensagem += `🚀 *Envio ao Telegram MTProto (${uploads.length}/${config.MAX_CONCURRENT_UPLOADS || 4}):*\n`;
+                uploads.forEach(task => {
+                    const tipoBadge = task.type === 'serie' ? '📺 Série' : '🎬 Filme';
+                    const audioBadge = task.audioPreference === 'legendado' ? '💬 Leg' : '🇧🇷 Dub';
+                    const p = Math.round(task.progress || 0);
+                    const bar = this.gerarBarraProgresso(p, 8);
+                    mensagem += `├ ${tipoBadge} *${task.title}* [${audioBadge}]\n` +
+                                `│ ${bar} ${p}% | \`${task.progressDetails || 'Enviando ao Telegram...'}\`\n`;
+                });
+                mensagem += `\n`;
+            }
         } else {
-            mensagem += `💤 *Fila Ociosa:* Nenhum download ativo no momento.\n\n`;
+            mensagem += `💤 *Esteira Ociosa:* Nenhum download ativo no momento.\n\n`;
         }
 
-        mensagem += `📋 *Estatísticas:* Total: ${status.total} | Na Fila: ${status.queued} | Concluídos: ${status.completed}\n\n` +
-                    `💡 *Dica:* Seus pedidos entram automaticamente com Prioridade Alta e furam a fila!`;
+        mensagem += `📋 *Estatísticas:* ${activeTasks.length} ativos | ${status.queued || 0} na fila | ${status.completed || 0} concluídos hoje\n\n` +
+                    `💡 *Dica VIP:* Pedidos de assinantes entram direto com Prioridade Máxima no topo da esteira!`;
 
         await this.bot.sendMessage(chatId, mensagem, { parse_mode: 'Markdown' });
+    }
+
+    gerarBarraProgresso(percentual, tamanho = 8) {
+        const preenchido = Math.min(tamanho, Math.max(0, Math.round((percentual / 100) * tamanho)));
+        const vazio = tamanho - preenchido;
+        return `[${'█'.repeat(preenchido)}${'░'.repeat(vazio)}]`;
     }
 
     buscarSimilares(nome) {

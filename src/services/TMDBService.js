@@ -255,6 +255,24 @@ class TMDBService {
             const isBrazilianMovie = originalLang === 'pt';
             const now = new Date();
 
+            // Filmes de catálogo antigos (lançados há mais de 150 dias, como Interestelar 2014, Avatar, Harry Potter):
+            // Já tiveram lançamentos oficiais consolidados em Blu-ray, DVD, TV e streaming há muito tempo!
+            const primaryReleaseDateStr = movieRes?.data?.release_date;
+            if (primaryReleaseDateStr) {
+                const pDate = new Date(primaryReleaseDateStr);
+                const daysDiff = (now - pDate) / (1000 * 60 * 60 * 24);
+                if (daysDiff > 150) {
+                    return {
+                        isDigitalReleased: true,
+                        isTheatricalOnly: false,
+                        hasTheatrical: true,
+                        hasGlobalDigital: true,
+                        hasBrazilDigital: true,
+                        isCatalog: true
+                    };
+                }
+            }
+
             let hasTheatrical = false;
             let hasGlobalDigital = false;
             let hasBrazilDigital = false;
