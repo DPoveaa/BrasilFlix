@@ -81,18 +81,6 @@ class CatalogoManager {
                 const hasDub = s.is_dublado || temporadas.some(t => (t.episodios || []).some(e => e.isDublado || !!e.versoes?.dublado));
                 const hasLeg = s.is_legendado || temporadas.some(t => (t.episodios || []).some(e => e.isLegendado || !!e.versoes?.legendado));
 
-                return {
-                    id: s.id,
-                    tmdbId: s.tmdb_id,
-                    imdbId: s.imdb_id,
-                    nome: s.nome,
-                    nomeOriginal: s.nome_original,
-                    descricao: s.sinopse || '',
-                    sinopse: s.sinopse || '',
-                    posterUrl: s.poster_url,
-                    backdropUrl: s.backdrop_url,
-                    ano: s.ano || '',
-                    nota: parseFloat(s.nota || 8.0),
                 const generosArr = Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos) : []);
                 const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
                 const isAnime = s.is_anime || (hasAnimeGenre && s.is_dorama) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
