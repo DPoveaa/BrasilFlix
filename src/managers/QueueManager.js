@@ -544,8 +544,22 @@ class QueueManager extends EventEmitter {
         const queuedJobs = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id));
         if (queuedJobs.length === 0) return null;
 
+        // Constrói um set de chaves de episódios ATIVOS para evitar processar o mesmo episódio em paralelo
+        const activeEpisodeKeys = new Set();
+        for (const active of this.activeJobs.values()) {
+            const key = `${(active.title || '').toLowerCase().trim()}|${active.type}|${active.season ?? ''}|${active.episode ?? ''}`;
+            activeEpisodeKeys.add(key);
+        }
+
+        // Filtra jobs cujo episódio já está sendo processado por outra trilha
+        const eligibleJobs = queuedJobs.filter(j => {
+            const key = `${(j.title || '').toLowerCase().trim()}|${j.type}|${j.season ?? ''}|${j.episode ?? ''}`;
+            return !activeEpisodeKeys.has(key);
+        });
+        if (eligibleJobs.length === 0) return null;
+
         // 1. Sempre prioriza jobs VIP / Express (prioridade <= 2)
-        const expressJob = queuedJobs.find(j => Number(j.priority || 4) <= 2);
+        const expressJob = eligibleJobs.find(j => Number(j.priority || 4) <= 2);
         if (expressJob) return expressJob;
 
         // 2. Identificar quais trilhas estão atualmente ocupadas pelos activeJobs
@@ -560,7 +574,7 @@ class QueueManager extends EventEmitter {
         }
 
         // Tentar pegar um job de uma trilha que NÃO está ativa no momento (distribuição equilibrada)
-        const laneCandidate = queuedJobs.find(j => {
+        const laneCandidate = eligibleJobs.find(j => {
             const isDorama = j.isDorama || j.extraData?.isDorama || j.title?.toLowerCase().includes('dorama');
             const laneKey = isDorama ? 'dorama' : j.type;
             return !activeTypes.has(laneKey);
@@ -1087,7 +1101,13 @@ class QueueManager extends EventEmitter {
                         const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
                         if (!jaCatalogado) {
                             try {
-                                const existingJob = this.queue.find(q => (q.title || '').toLowerCase() === (job.title || '').toLowerCase() && q.season === (job.season || 1) && q.episode === epNum);
+                                // Verifica se já existe job para este episódio com o MESMO audioPreference (evita duplicata de pack)
+                                const existingJob = this.queue.find(q =>
+                                    (q.title || '').toLowerCase() === (job.title || '').toLowerCase() &&
+                                    q.season === (job.season || 1) &&
+                                    q.episode === epNum &&
+                                    (q.audioPreference || 'dublado') === (job.audioPreference || 'dublado')
+                                );
                                 if (existingJob) {
                                     existingJob.rawFilePath = epInfo.filePath;
                                     existingJob.expectedSize = epInfo.sizeBytes;
