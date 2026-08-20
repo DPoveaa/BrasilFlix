@@ -689,6 +689,7 @@ class QueueManager extends EventEmitter {
             const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
                                   this.catalogoManager.buscarItemExato(job.title, 'serie');
             if (serieExistente) {
+                const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
                 let nextTargetSeason = null;
                 let nextTargetEp = null;
 
