@@ -2592,8 +2592,9 @@
                     <div id="manual-priority-box">
                         <label class="admin-label">Prioridade na Fila</label>
                         <select id="manual-priority" class="admin-input">
-                            <option value="1">🔥 Prioridade 1 (VIP - Fura Fila Máxima)</option>
-                            <option value="2">📺 Prioridade 2 (Série do Catálogo / Pedido Normal)</option>
+                            <option value="1">🔥 Prioridade 1 (VIP - Assinante Fura-Fila)</option>
+                            <option value="2">📺 Prioridade 2 (Continuação de Série)</option>
+                            <option value="3">🍿 Prioridade 3 (Pedido de Usuário Normal)</option>
                             <option value="5">🤖 Prioridade 5 (Auto-Feeder / Background)</option>
                         </select>
                     </div>
@@ -2690,8 +2691,9 @@
                         <div>
                             <label class="admin-label">Prioridade na Fila</label>
                             <select id="edit-priority" class="admin-input">
-                                <option value="1">🔥 Prioridade 1 (VIP - Fura Fila Máxima)</option>
-                                <option value="2">📺 Prioridade 2 (Série do Catálogo / Pedido Normal)</option>
+                                <option value="1">🔥 Prioridade 1 (VIP - Assinante Fura-Fila)</option>
+                                <option value="2">📺 Prioridade 2 (Continuação de Série)</option>
+                                <option value="3">🍿 Prioridade 3 (Pedido de Usuário Normal)</option>
                                 <option value="5">🤖 Prioridade 5 (Auto-Feeder / Background)</option>
                             </select>
                         </div>
@@ -3763,9 +3765,10 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                             <td>${j.type === 'filme' ? '🎬 Filme' : '📺 Série'}</td>
                             <td>
                                 <select class="admin-select" onchange="handleChangeJobPriority('${j.id}', this.value)">
-                                    <option value="1" ${j.priority === 1 ? 'selected' : ''}>🔥 1 - VIP (Fura-Fila)</option>
-                                    <option value="2" ${j.priority === 2 ? 'selected' : ''}>📺 2 - Série / Pedido</option>
-                                    <option value="5" ${j.priority === 5 || j.priority === 4 ? 'selected' : ''}>🤖 5 - Auto-Feeder</option>
+                                    <option value="1" ${j.priority === 1 ? 'selected' : ''}>🔥 1 - VIP</option>
+                                    <option value="2" ${j.priority === 2 ? 'selected' : ''}>📺 2 - Série</option>
+                                    <option value="3" ${j.priority === 3 ? 'selected' : ''}>🍿 3 - Normal</option>
+                                    <option value="5" ${j.priority === 5 || j.priority === 4 ? 'selected' : ''}>🤖 5 - Feeder</option>
                                 </select>
                             </td>
                             <td>${j.audioPreference === 'dublado' ? '🇧🇷 Dublado' : '💬 Legendado'}</td>

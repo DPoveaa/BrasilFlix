@@ -204,6 +204,12 @@ class MediaSearchService {
 
         if (forcarNaoCam) {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
+        } else {
+            // Se já existirem versões oficiais (WEB-DL, BluRay, HDTV) com sementes ativas, descarta categoricamente versões de Cinema (CAM)
+            const hasOfficialWithSeeds = ptBrResults.some(r => !r.isCam && (r.seeders || 0) > 0);
+            if (hasOfficialWithSeeds) {
+                ptBrResults = ptBrResults.filter(r => !r.isCam);
+            }
         }
 
         const dubComSeeds = ptBrResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
@@ -796,8 +802,11 @@ class MediaSearchService {
             if (b.isPtPt) scoreB -= 2000;
 
             // 3. Formato e Qualidade
-            if (a.isWebDl) scoreA += 450;
-            if (b.isWebDl) scoreB += 450;
+            if (a.isWebDl) scoreA += 1500;
+            if (b.isWebDl) scoreB += 1500;
+
+            if (a.isCam) scoreA -= 8000;
+            if (b.isCam) scoreB -= 8000;
 
             const is1080pA = /\b(1080p|1080|fhd|fullhd)\b/i.test(a.title);
             const is1080pB = /\b(1080p|1080|fhd|fullhd)\b/i.test(b.title);

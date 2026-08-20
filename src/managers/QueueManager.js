@@ -12,11 +12,11 @@ const DiskCleaner = require('../services/DiskCleaner');
 const SwarmWatcher = require('../services/SwarmWatcher');
 
 const PRIORITIES = {
-    VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila)
+    VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila Máxima)
     USER: 1,      // Compatibilidade
-    FREE_USER: 2, // Pedido de Usuário Gratuito (Fila normal)
-    SERIES: 2,    // Continuação / Finalização de série/dorama do catálogo (Alta prioridade)
-    FEEDER: 5     // Auto-Feeder (novo título em background)
+    SERIES: 2,    // Continuação / Finalização de série do catálogo
+    FREE_USER: 3, // Pedido de Usuário Gratuito / Normal
+    FEEDER: 5     // Auto-Feeder (Sugestão do sistema em background)
 };
 
 class QueueManager extends EventEmitter {
@@ -895,6 +895,16 @@ class QueueManager extends EventEmitter {
                 const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
                 const jaPossuiLegendado = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
 
+                let forcarNaoCam = jaTemCam;
+                if (job.type === 'filme' && metadata.tmdbId) {
+                    try {
+                        const relStatus = await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference === 'dublado');
+                        if (!relStatus.isTheatricalOnly) {
+                            forcarNaoCam = true; // Filme já teve estreia digital/streaming/blu-ray: rejeita categoricamente versões CAM de cinema
+                        }
+                    } catch (e) {}
+                }
+
                 sources = await MediaSearchService.search(job.title, job.type, {
                     nomeOriginal: metadata.nomeOriginal,
                     ano: metadata.ano,
@@ -903,13 +913,15 @@ class QueueManager extends EventEmitter {
                     season: job.season || 1,
                     episode: job.episode || 1,
                     audioPreference: job.audioPreference || 'dublado',
-                    forcarNaoCam: jaTemCam,
+                    forcarNaoCam: forcarNaoCam,
                     ignorarFallbackLegendado: jaPossuiLegendado
                 });
 
-                if (jaTemCam) {
-                    sources = sources.filter(s => !s.isCam);
-                    if (sources.length === 0) {
+                if (jaTemCam || forcarNaoCam) {
+                    const nonCamSources = sources.filter(s => !s.isCam);
+                    if (nonCamSources.length > 0) {
+                        sources = nonCamSources;
+                    } else if (jaTemCam) {
                         console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
                         await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
                         return;
