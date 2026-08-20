@@ -1199,11 +1199,17 @@ class QueueManager extends EventEmitter {
 
         // Detecção ultra robusta de Cinema/CAM (por título, tags ampliadas e validação de janela digital TMDB)
         const CAM_REGEX = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i;
-        const isCamTitle = CAM_REGEX.test(bestSource?.title || '') || (bestSource?.isCam === true);
+        // Grupos de release conhecidos exclusivamente por CAMs
+        const CAM_GROUPS_REGEX = /\b(mutiny|c0p|evo-cam|evo\.cam|hdcam|ddhdcam|bdvd|evo-hd)\b/i;
+        const sourceTitle = bestSource?.title || '';
+        const isCamTitle = CAM_REGEX.test(sourceTitle) || CAM_GROUPS_REGEX.test(sourceTitle) || (bestSource?.isCam === true);
         const relStatus = job.type === 'filme' ? await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference !== 'legendado') : { isTheatricalOnly: false };
-        const isCamFinal = isCamTitle || relStatus.isTheatricalOnly || (bestSource?.quality && bestSource.quality.includes('CAM'));
+        const isCamFinal = isCamTitle || relStatus.isTheatricalOnly || (bestSource?.quality && bestSource.quality.toUpperCase().includes('CAM'));
 
         metadata.isCam = isCamFinal;
+        if (isCamFinal) {
+            console.log(`🎬 [CAM DETECTADO] "${job.title}" identificado como gravação de Cinema. Motivo: ${isCamTitle ? 'título/grupo de release CAM' : 'lançamento digital não ocorreu (TMDB theatrical-only)'}`);
+        }
         metadata.qualidade = isCamFinal ? 'CAM (Cinema)' : (bestSource?.quality || '1080p Full HD');
         
         // Classificação rigorosa: Ou é 100% Dublado (áudio PT-BR sem legendas na tela) ou 100% Legendado (áudio original + legendas PT-BR)
