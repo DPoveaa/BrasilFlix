@@ -2987,7 +2987,8 @@
 
                     if (fEl) fEl.innerText = fCount;
                     if (sEl) sEl.innerText = sCount;
-                    if (tEl) tEl.innerText = fCount + sCount;
+                    // Usa o total geral (filmes + séries + animes + doramas) para bater com o rodapé do catálogo
+                    if (tEl) tEl.innerText = Number(data.stats.total) || (fCount + sCount);
                 }
 
                 if (data && data.queue) {
@@ -3706,7 +3707,8 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 document.getElementById('adm-stat-queue').innerText = data.fila?.queued || 0;
                 document.getElementById('adm-stat-subs').innerText = data.assinaturasAtivas || 0;
                 document.getElementById('adm-stat-pedidos').innerText = data.pedidosPendentes || 0;
-                const totCat = (data.catalogo?.totalFilmes || 0) + (data.catalogo?.totalSeries || 0);
+                // Usa o total geral do catálogo (filmes + séries + animes + doramas)
+                const totCat = Number(data.catalogo?.total) || ((data.catalogo?.totalFilmes || 0) + (data.catalogo?.totalSeries || 0));
                 document.getElementById('adm-stat-catalogo').innerText = totCat;
 
                 const uptimeMin = Math.floor((data.uptime || 0) / 60);
