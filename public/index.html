@@ -828,6 +828,23 @@
             gap: 3px;
         }
 
+        .cat-badge {
+            position: absolute;
+            bottom: 6px;
+            left: 6px;
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .cat-badge-anime  { background: rgba(139, 92, 246, 0.85); color: #fff; }
+        .cat-badge-dorama { background: rgba(236, 72, 153, 0.85); color: #fff; }
+        .cat-badge-serie  { background: rgba(59, 130, 246, 0.85); color: #fff; }
+        .cat-badge-filme  { background: rgba(16, 185, 129, 0.85); color: #fff; }
+
         .media-content {
             padding: 10px;
             flex: 1;
@@ -1829,6 +1846,12 @@
                                 <button class="filter-link" data-filter="type" data-val="serie" onclick="setCatalogFilter('type', 'serie', this)">
                                     <span class="filter-name">📺 Séries</span>
                                     <span class="filter-count" id="count-type-serie">0</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-filter="type" data-val="anime" onclick="setCatalogFilter('type', 'anime', this)">
+                                    <span class="filter-name">⛩️ Animes</span>
+                                    <span class="filter-count" id="count-type-anime">0</span>
                                 </button>
                             </li>
                             <li>
@@ -3218,17 +3241,20 @@
         function updateFilterCounts(allItems) {
             // Contagem por Tipo
             const countAll = allItems.length;
-            const countFilmes = allItems.filter(i => i.itemType === 'filme').length;
-            const countSeries = allItems.filter(i => i.itemType === 'serie').length;
-            const countDoramas = allItems.filter(i => i.isDorama).length;
+            const countFilmes = allItems.filter(i => i.itemType === 'filme' && !i.isAnime).length;
+            const countSeries = allItems.filter(i => i.itemType === 'serie' && !i.isAnime && !i.isDorama).length;
+            const countAnimes = allItems.filter(i => i.isAnime).length;
+            const countDoramas = allItems.filter(i => i.isDorama && !i.isAnime).length;
 
             const elAll = document.getElementById('count-type-all');
             const elF = document.getElementById('count-type-filme');
             const elS = document.getElementById('count-type-serie');
+            const elA = document.getElementById('count-type-anime');
             const elD = document.getElementById('count-type-dorama');
             if (elAll) elAll.innerText = countAll;
             if (elF) elF.innerText = countFilmes;
             if (elS) elS.innerText = countSeries;
+            if (elA) elA.innerText = countAnimes;
             if (elD) elD.innerText = countDoramas;
 
             // Contagem por Áudio
@@ -3279,8 +3305,10 @@
 
             if (catalogFilters.type !== 'todos') {
                 activeCountTotal++;
-                const labels = { filme: 'Filmes', serie: 'Séries', dorama: 'Doramas' };
-                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('type', 'todos')">🎬 ${labels[catalogFilters.type] || catalogFilters.type} ✕</span>`;
+                const labels = { filme: 'Filmes', serie: 'Séries', anime: 'Animes', dorama: 'Doramas' };
+                const icons = { filme: '🎬', serie: '📺', anime: '⛩️', dorama: '🌸' };
+                const icon = icons[catalogFilters.type] || '🎬';
+                chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('type', 'todos')">${icon} ${labels[catalogFilters.type] || catalogFilters.type} ✕</span>`;
             }
 
             if (catalogFilters.audio !== 'todos') {
@@ -3334,9 +3362,10 @@
             let allItems = [...baseList];
 
             // 1. Filtro de Tipo
-            if (catalogFilters.type === 'filme') allItems = allItems.filter(i => i.itemType === 'filme');
-            else if (catalogFilters.type === 'serie') allItems = allItems.filter(i => i.itemType === 'serie');
-            else if (catalogFilters.type === 'dorama') allItems = allItems.filter(i => i.isDorama);
+            if (catalogFilters.type === 'filme') allItems = allItems.filter(i => i.itemType === 'filme' && !i.isAnime);
+            else if (catalogFilters.type === 'serie') allItems = allItems.filter(i => i.itemType === 'serie' && !i.isAnime && !i.isDorama);
+            else if (catalogFilters.type === 'anime') allItems = allItems.filter(i => i.isAnime);
+            else if (catalogFilters.type === 'dorama') allItems = allItems.filter(i => i.isDorama && !i.isAnime);
 
             // 2. Filtro de Áudio
             if (catalogFilters.audio === 'dublado') allItems = allItems.filter(i => i.isDublado);
@@ -3388,7 +3417,22 @@
                 const badgeClass = item.isCam ? 'badge-cam-tag' : (item.isDublado ? 'badge-dub-tag' : 'badge-leg-tag');
                 const badgeText = item.audioBadge || (item.isCam ? '[CAM]' : '[1080p]');
                 const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-                const subText = item.itemType === 'filme' ? 'Filme' : (item.totalEpisodios ? `${item.totalEpisodios} eps` : 'Série');
+
+                // Badge de categoria (Anime / Dorama / Série / Filme)
+                let catBadge = '';
+                if (item.isAnime) {
+                    catBadge = `<div class="cat-badge cat-badge-anime">⛩️ Anime</div>`;
+                } else if (item.isDorama) {
+                    catBadge = `<div class="cat-badge cat-badge-dorama">🌸 Dorama</div>`;
+                } else if (item.itemType === 'serie') {
+                    catBadge = `<div class="cat-badge cat-badge-serie">📺 Série</div>`;
+                } else {
+                    catBadge = `<div class="cat-badge cat-badge-filme">🎬 Filme</div>`;
+                }
+
+                const subText = item.isAnime ? (item.totalEpisodios ? `${item.totalEpisodios} eps` : 'Anime') :
+                                item.isDorama ? (item.totalEpisodios ? `${item.totalEpisodios} eps` : 'Dorama') :
+                                item.itemType === 'filme' ? 'Filme' : (item.totalEpisodios ? `${item.totalEpisodios} eps` : 'Série');
                 const genresPills = (item.generos || []).slice(0, 2).map(g => `<span class="genre-pill">${g}</span>`).join('');
 
                 return `
@@ -3397,6 +3441,7 @@
                             <img src="${poster}" class="poster-img" loading="lazy" alt="${item.nome}">
                             <div class="badge-overlay ${badgeClass}">${badgeText}</div>
                             <div class="rating-overlay">⭐ ${rating}</div>
+                            ${catBadge}
                         </div>
                         <div class="media-content">
                             <h4 class="media-title">${item.nome}</h4>

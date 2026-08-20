@@ -638,7 +638,7 @@ class CommandHandler {
     }
 
     async handleCatalogoFilmes(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
-        let filmes = this.catalogoManager.catalogo.filmes || [];
+        let filmes = this.catalogoManager.getFilmesNormais();
         let tituloCategoria = '🎬 *Filmes Disponíveis*';
 
         if (audioFiltro === 'dublado') {
@@ -725,8 +725,8 @@ class CommandHandler {
     }
 
     async handleCatalogoSeries(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
-        let series = this.catalogoManager.catalogo.series || [];
-        let tituloCategoria = '📺 *Séries & Doramas Disponíveis*';
+        let series = this.catalogoManager.getSeriesNormais();
+        let tituloCategoria = '📺 *Séries Disponíveis*';
 
         if (audioFiltro === 'dublado') {
             series = this.catalogoManager.getSeriesDubladas();
@@ -802,6 +802,178 @@ class CommandHandler {
 
         keyboard.inline_keyboard.push([
             { text: '🔍 Buscar Série', callback_data: 'buscar' },
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleCatalogoAnimes(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
+        let animes = this.catalogoManager.getAnimes();
+        let tituloCategoria = '⛩️ *Animes Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            animes = this.catalogoManager.getAnimesDublados();
+            tituloCategoria = '⛩️ *Animes Dublados*';
+        } else if (audioFiltro === 'legendado') {
+            animes = this.catalogoManager.getAnimesLegendados();
+            tituloCategoria = '💬 *Animes Legendados*';
+        }
+        
+        if (animes.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum anime encontrado no catálogo no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const animesPorPagina = 8;
+        const paginas = Math.ceil(animes.length / animesPorPagina);
+        const paginaAtual = Math.max(0, Math.min(pagina, paginas - 1));
+        
+        const inicio = paginaAtual * animesPorPagina;
+        const fim = Math.min(inicio + animesPorPagina, animes.length);
+        const animesPagina = animes.slice(inicio, fim);
+
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${animes.length} animes\n\n` +
+                        `Selecione um anime para ver episódios e assistir:`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        animesPagina.forEach(item => {
+            const badge = this.catalogoManager.getAudioBadge(item) || '[D]';
+            const ano = item.ano ? ` (${item.ano})` : '';
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${item.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
+            
+            const callbackData = (item.temporadas || item.totalEpisodios !== undefined)
+                ? `info_serie_${item.id}`
+                : `info_filme_${item.id}`;
+
+            keyboard.inline_keyboard.push([
+                { text: `${prefixo}${nomeFinal}`, callback_data: callbackData }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (paginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `animes_pagina_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < paginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `animes_pagina_${paginaAtual + 1}` });
+            }
+        }
+        
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Buscar Anime', callback_data: 'buscar' },
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
+    async handleCatalogoDoramas(chatId, userId, callbackQuery, audioFiltro = 'todos', pagina = 0) {
+        let doramas = this.catalogoManager.getDoramas();
+        let tituloCategoria = '🌸 *Doramas & K-Dramas Disponíveis*';
+
+        if (audioFiltro === 'dublado') {
+            doramas = this.catalogoManager.getDoramasDublados();
+            tituloCategoria = '🌸 *Doramas Dublados*';
+        } else if (audioFiltro === 'legendado') {
+            doramas = this.catalogoManager.getDoramasLegendados();
+            tituloCategoria = '💬 *Doramas Legendados*';
+        }
+        
+        if (doramas.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum dorama encontrado no catálogo no momento.`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const doramasPorPagina = 8;
+        const paginas = Math.ceil(doramas.length / doramasPorPagina);
+        const paginaAtual = Math.max(0, Math.min(pagina, paginas - 1));
+        
+        const inicio = paginaAtual * doramasPorPagina;
+        const fim = Math.min(inicio + doramasPorPagina, doramas.length);
+        const doramasPagina = doramas.slice(inicio, fim);
+
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${doramas.length} doramas\n\n` +
+                        `Selecione um dorama para ver episódios e assistir:`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        doramasPagina.forEach(dorama => {
+            const badge = this.catalogoManager.getAudioBadge(dorama) || '[D]';
+            const ano = dorama.ano ? ` (${dorama.ano})` : '';
+            const prefixo = `${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${dorama.nome}${ano}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
+            
+            keyboard.inline_keyboard.push([
+                { text: `${prefixo}${nomeFinal}`, callback_data: `info_serie_${dorama.id}` }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (paginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `doramas_pagina_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < paginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `doramas_pagina_${paginaAtual + 1}` });
+            }
+        }
+        
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Buscar Dorama', callback_data: 'buscar' },
             { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
         ]);
 
@@ -1692,6 +1864,24 @@ class CommandHandler {
                 case 'catalogo_series_legendadas':
                     await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'legendado', 0);
                     break;
+                case 'catalogo_animes':
+                    await this.handleCatalogoAnimes(chatId, userId, callbackQuery, 'todos', 0);
+                    break;
+                case 'catalogo_animes_dublados':
+                    await this.handleCatalogoAnimes(chatId, userId, callbackQuery, 'dublado', 0);
+                    break;
+                case 'catalogo_animes_legendados':
+                    await this.handleCatalogoAnimes(chatId, userId, callbackQuery, 'legendado', 0);
+                    break;
+                case 'catalogo_doramas':
+                    await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'todos', 0);
+                    break;
+                case 'catalogo_doramas_dublados':
+                    await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'dublado', 0);
+                    break;
+                case 'catalogo_doramas_legendados':
+                    await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'legendado', 0);
+                    break;
                 case 'catalogo_categorias':
                     await this.handleCatalogoCategorias(chatId, userId, callbackQuery);
                     break;
@@ -1703,6 +1893,16 @@ class CommandHandler {
                 case data.match(/^series_pagina_(\d+)$/)?.input: {
                     const pag = parseInt(data.match(/^series_pagina_(\d+)$/)?.[1] || 0, 10);
                     await this.handleCatalogoSeries(chatId, userId, callbackQuery, 'todos', pag);
+                    break;
+                }
+                case data.match(/^animes_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^animes_pagina_(\d+)$/)?.[1] || 0, 10);
+                    await this.handleCatalogoAnimes(chatId, userId, callbackQuery, 'todos', pag);
+                    break;
+                }
+                case data.match(/^doramas_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^doramas_pagina_(\d+)$/)?.[1] || 0, 10);
+                    await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'todos', pag);
                     break;
                 }
                 case data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/)?.input: {
@@ -2171,17 +2371,23 @@ class CommandHandler {
         
         const mensagem = `📚 *Catálogo BrasilFlix*\n\n` +
                         `🎬 *Filmes:* ${stats.totalFilmes}\n` +
-                        `📺 *Séries & Doramas:* ${stats.totalSeries}\n` +
+                        `📺 *Séries:* ${stats.totalSeries}\n` +
+                        `⛩️ *Animes:* ${stats.totalAnimes}\n` +
+                        `🌸 *Doramas:* ${stats.totalDoramas}\n` +
                         `📊 *Total de Títulos:* ${stats.total}\n\n` +
                         `💡 [D] Dublado  •  [L] Legendado\n` +
                         `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
-                        `Escolha uma opção para navegar:`;
+                        `Escolha uma categoria para navegar:`;
 
         const keyboard = {
             inline_keyboard: [
                 [
                     { text: `🎬 Filmes (${stats.totalFilmes})`, callback_data: 'catalogo_filmes' },
                     { text: `📺 Séries (${stats.totalSeries})`, callback_data: 'catalogo_series' }
+                ],
+                [
+                    { text: `⛩️ Animes (${stats.totalAnimes})`, callback_data: 'catalogo_animes' },
+                    { text: `🌸 Doramas (${stats.totalDoramas})`, callback_data: 'catalogo_doramas' }
                 ],
                 [
                     { text: '🎭 Explorar por Categorias', callback_data: 'catalogo_categorias' }

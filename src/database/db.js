@@ -97,6 +97,8 @@ async function createTables() {
         -- Garantir tipo BIGINT caso tabela tenha sido criada anteriormente com INTEGER
         ALTER TABLE filmes ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
 
         CREATE TABLE IF NOT EXISTS series (
             id BIGSERIAL PRIMARY KEY,
@@ -113,6 +115,7 @@ async function createTables() {
             total_temporadas INTEGER DEFAULT 1,
             total_episodios INTEGER DEFAULT 0,
             is_dorama BOOLEAN DEFAULT false,
+            is_anime BOOLEAN DEFAULT false,
             is_dublado BOOLEAN DEFAULT true,
             is_legendado BOOLEAN DEFAULT false,
             is_cam BOOLEAN DEFAULT false,
@@ -121,6 +124,19 @@ async function createTables() {
         );
 
         ALTER TABLE series ALTER COLUMN id TYPE BIGINT;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
+
+        // Migração de reclassificação automática de animes e doramas
+        try {
+            // Animes: Bleach, One Piece, Naruto, Dragon Ball, Attack on Titan, Solo Leveling, etc. ou com gênero Animação e origem oriental
+            await query(`UPDATE series SET is_anime = true, is_dorama = false WHERE nome ILIKE '%Bleach%' OR nome ILIKE '%One Piece%' OR nome ILIKE '%Dragon Ball%' OR nome ILIKE '%Naruto%' OR nome ILIKE '%Attack on Titan%' OR nome ILIKE '%Solo Leveling%' OR nome ILIKE '%Demon Slayer%' OR nome ILIKE '%Jujutsu Kaisen%' OR nome ILIKE '%Spy x Family%' OR (generos::text ILIKE '%Animação%' AND is_dorama = true)`);
+            
+            // Doramas: Produções asiáticas de live action
+            await query(`UPDATE series SET is_dorama = true, is_anime = false WHERE (nome ILIKE '%Loja Para Assassinos%' OR nome ILIKE '%Grude de Amor%' OR nome ILIKE '%Advogada Extraordinária%' OR nome ILIKE '%Pousando no Amor%' OR is_dorama = true) AND NOT (is_anime = true)`);
+        } catch (migErr) {
+            console.warn('⚠️ Aviso migração de classificação:', migErr.message);
+        }
 
         CREATE TABLE IF NOT EXISTS episodios (
             id BIGSERIAL PRIMARY KEY,

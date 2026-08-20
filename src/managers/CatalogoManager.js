@@ -93,14 +93,32 @@ class CatalogoManager {
                     backdropUrl: s.backdrop_url,
                     ano: s.ano || '',
                     nota: parseFloat(s.nota || 8.0),
-                    generos: Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos) : []),
-                    isDorama: s.is_dorama,
+                const generosArr = Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos) : []);
+                const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
+                const isAnime = s.is_anime || (hasAnimeGenre && s.is_dorama) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
+                const isDorama = !isAnime && (s.is_dorama || false);
+
+                return {
+                    id: s.id,
+                    tmdbId: s.tmdb_id,
+                    imdbId: s.imdb_id,
+                    nome: s.nome,
+                    nomeOriginal: s.nome_original,
+                    descricao: s.sinopse || '',
+                    sinopse: s.sinopse || '',
+                    posterUrl: s.poster_url,
+                    backdropUrl: s.backdrop_url,
+                    ano: s.ano || '',
+                    nota: parseFloat(s.nota || 8.0),
+                    generos: generosArr,
+                    isDorama: isDorama,
+                    isAnime: isAnime,
                     isDublado: hasDub,
                     isLegendado: hasLeg,
                     isCam: s.is_cam,
                     totalTemporadas: temporadas.length,
                     totalEpisodios: totalEps,
-                    tipo: 'serie',
+                    tipo: isAnime ? 'anime' : (isDorama ? 'dorama' : 'serie'),
                     temporadas: temporadas,
                     dataAdicionado: s.created_at,
                     tags: this.extrairTags(s.nome + ' ' + (s.sinopse || '') + ' ' + (s.generos || []).toString())
@@ -122,6 +140,10 @@ class CatalogoManager {
                 const hasDub = f.is_dublado || !!versoes.dublado;
                 const hasLeg = f.is_legendado || !!versoes.legendado;
 
+                const generosArr = Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []);
+                const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
+                const isAnime = f.is_anime || (hasAnimeGenre && /anime|dragon ball|one piece|bleach|naruto|demon slayer|jujutsu|suzume|ghibli|your name/i.test(f.nome));
+
                 return {
                     id: f.id,
                     tmdbId: f.tmdb_id,
@@ -134,16 +156,18 @@ class CatalogoManager {
                     backdropUrl: f.backdrop_url,
                     ano: f.ano || '',
                     nota: parseFloat(f.nota || 8.0),
-                    generos: Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []),
+                    generos: generosArr,
                     qualidade: f.qualidade || '1080p',
                     isCam: f.is_cam,
+                    isAnime: isAnime,
+                    isDorama: f.is_dorama || false,
                     isDublado: hasDub,
                     isLegendado: hasLeg,
                     audio: f.audio || (hasDub && hasLeg ? 'Dual Áudio (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
                     versoes: versoes,
                     messageId: f.message_id ? Number(f.message_id) : null,
                     fileId: f.file_id,
-                    tipo: 'filme',
+                    tipo: isAnime ? 'anime' : 'filme',
                     dataAdicionado: f.created_at,
                     tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
                 };
@@ -835,32 +859,77 @@ class CatalogoManager {
             });
         });
 
+        const animes = this.getAnimes();
+        const doramas = this.getDoramas();
+        const filmes = this.getFilmesNormais();
+        const series = this.getSeriesNormais();
+
         return {
-            totalFilmes: this.catalogo.filmes.length,
-            totalFilmesDublados: this.getFilmesDublados().length,
-            totalFilmesLegendados: this.getFilmesLegendados().length,
-            totalSeries: this.catalogo.series.length,
-            totalSeriesDubladas: this.getSeriesDubladas().length,
-            totalSeriesLegendadas: this.getSeriesLegendadas().length,
+            totalFilmes: filmes.length,
+            totalFilmesDublados: filmes.filter(f => f.isDublado || !!f.versoes?.dublado).length,
+            totalFilmesLegendados: filmes.filter(f => f.isLegendado || !!f.versoes?.legendado).length,
+            totalSeries: series.length,
+            totalSeriesDubladas: series.filter(s => s.isDublado).length,
+            totalSeriesLegendadas: series.filter(s => s.isLegendado).length,
+            totalAnimes: animes.length,
+            totalAnimesDublados: animes.filter(a => a.isDublado || !!a.versoes?.dublado).length,
+            totalAnimesLegendados: animes.filter(a => a.isLegendado || !!a.versoes?.legendado).length,
+            totalDoramas: doramas.length,
+            totalDoramasDublados: doramas.filter(d => d.isDublado).length,
+            totalDoramasLegendados: doramas.filter(d => d.isLegendado).length,
             totalEpisodios: totalEpisodios,
             total: this.catalogo.filmes.length + this.catalogo.series.length
         };
     }
 
+    getFilmesNormais() {
+        return (this.catalogo.filmes || []).filter(f => !f.isAnime);
+    }
+
+    getSeriesNormais() {
+        return (this.catalogo.series || []).filter(s => !s.isAnime && !s.isDorama);
+    }
+
+    getAnimes() {
+        const seriesAnimes = (this.catalogo.series || []).filter(s => s.isAnime);
+        const filmesAnimes = (this.catalogo.filmes || []).filter(f => f.isAnime);
+        return [...seriesAnimes, ...filmesAnimes];
+    }
+
+    getDoramas() {
+        return (this.catalogo.series || []).filter(s => s.isDorama && !s.isAnime);
+    }
+
     getFilmesDublados() {
-        return this.catalogo.filmes.filter(f => !f.audio || f.audio.toLowerCase().includes('dublado') || f.isDublado);
+        return this.getFilmesNormais().filter(f => !f.audio || f.audio.toLowerCase().includes('dublado') || f.isDublado || !!f.versoes?.dublado);
     }
 
     getFilmesLegendados() {
-        return this.catalogo.filmes.filter(f => f.audio && f.audio.toLowerCase().includes('legendado'));
+        return this.getFilmesNormais().filter(f => (f.audio && f.audio.toLowerCase().includes('legendado')) || f.isLegendado || !!f.versoes?.legendado);
     }
 
     getSeriesDubladas() {
-        return this.catalogo.series.filter(s => s.isDublado);
+        return this.getSeriesNormais().filter(s => s.isDublado);
     }
 
     getSeriesLegendadas() {
-        return this.catalogo.series.filter(s => s.isLegendado);
+        return this.getSeriesNormais().filter(s => s.isLegendado);
+    }
+
+    getAnimesDublados() {
+        return this.getAnimes().filter(a => a.isDublado || !!a.versoes?.dublado);
+    }
+
+    getAnimesLegendados() {
+        return this.getAnimes().filter(a => a.isLegendado || !!a.versoes?.legendado);
+    }
+
+    getDoramasDublados() {
+        return this.getDoramas().filter(d => d.isDublado);
+    }
+
+    getDoramasLegendados() {
+        return this.getDoramas().filter(d => d.isLegendado);
     }
 
     getPublicCatalogo() {
@@ -876,6 +945,8 @@ class CatalogoManager {
                 backdropUrl: f.backdropUrl,
                 nota: f.nota,
                 qualidade: f.qualidade,
+                isAnime: f.isAnime || false,
+                isDorama: f.isDorama || false,
                 isDublado: f.isDublado,
                 isLegendado: f.isLegendado,
                 isCam: f.isCam,
@@ -893,7 +964,8 @@ class CatalogoManager {
                 nota: s.nota,
                 isDublado: s.isDublado,
                 isLegendado: s.isLegendado,
-                isDorama: s.isDorama,
+                isAnime: s.isAnime || false,
+                isDorama: s.isDorama || false,
                 totalTemporadas: s.totalTemporadas,
                 totalEpisodios: s.totalEpisodios,
                 audioBadge: this.getAudioBadge(s),

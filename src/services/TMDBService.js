@@ -393,13 +393,33 @@ class TMDBService {
         const nomeOriginal = raw.original_title || raw.original_name || '';
         const dataLancamento = raw.release_date || raw.first_air_date || '';
         const ano = dataLancamento ? dataLancamento.substring(0, 4) : '';
-        const generos = raw.genres ? raw.genres.map(g => g.name) : [];
-        const isDorama = raw.original_language === 'ko' || raw.original_language === 'zh' || raw.original_language === 'ja';
+        const generos = raw.genres ? raw.genres.map(g => g.name || g) : (Array.isArray(raw.genre_ids) ? [] : []);
+        const lang = (raw.original_language || '').toLowerCase();
+        const originCountries = raw.origin_country || [];
+
+        // Detecção precisa de Animação
+        const hasAnimacao = generos.some(g => String(g).toLowerCase().includes('anim') || String(g).toLowerCase().includes('anime'));
+        const isJapanese = lang === 'ja' || originCountries.includes('JP');
+        const isKoreanOrChinese = lang === 'ko' || lang === 'zh' || originCountries.includes('KR') || originCountries.includes('CN') || originCountries.includes('TW');
+
+        // 1. Anime: Produção de animação japonesa ou com características claras de anime
+        const isAnime = (hasAnimacao && (isJapanese || isKoreanOrChinese || /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball/i.test(nome + ' ' + (raw.overview || '')))) ||
+                        (isJapanese && hasAnimacao);
+
+        // 2. Dorama (K-Drama, C-Drama, J-Drama Live-Action):
+        const isDorama = !isAnime && (isKoreanOrChinese || isJapanese) && !isMovie;
+
+        // 3. Categoria principal
+        let tipo = isMovie ? 'filme' : 'serie';
+        if (isAnime) tipo = 'anime';
+        else if (isDorama) tipo = 'dorama';
 
         return {
             tmdbId: raw.id,
             imdbId: raw.external_ids?.imdb_id || raw.imdb_id || null,
-            tipo: isMovie ? 'filme' : 'serie',
+            tipo: tipo,
+            isMovie,
+            isAnime,
             isDorama,
             nome: nome.trim(),
             nomeOriginal: nomeOriginal.trim(),
@@ -410,7 +430,7 @@ class TMDBService {
             votos: raw.vote_count || 0,
             posterUrl: this.getPosterUrl(raw.poster_path),
             backdropUrl: this.getPosterUrl(raw.backdrop_path, 'original'),
-            idiomaOriginal: raw.original_language || '',
+            idiomaOriginal: lang,
             duracaoMinutos: raw.runtime || (Array.isArray(raw.episode_run_time) && raw.episode_run_time[0]) || 0,
             generos: generos
         };
