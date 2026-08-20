@@ -218,6 +218,30 @@ class DownloaderManager extends EventEmitter {
         return videoFiles[0];
     }
 
+    mapAllEpisodeFilesInTorrent(files, season, maxEps = 50) {
+        if (!files || files.length === 0) return {};
+        const seasonNum = parseInt(season || 1, 10);
+        const videoFiles = files.filter(f => {
+            const ext = path.extname(f.name).toLowerCase();
+            const lower = f.name.toLowerCase();
+            const isSample = lower.includes('sample') || lower.includes('amostra') || lower.includes('trailer') || lower.includes('teaser');
+            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSample;
+        });
+
+        const epMap = {};
+        const usedPaths = new Set();
+
+        for (let ep = 1; ep <= maxEps; ep++) {
+            const found = this.findEpisodeFileInTorrent(videoFiles, seasonNum, ep);
+            if (found && !usedPaths.has(found.path)) {
+                // Evita que arquivos com faixas múltiplas ou nomes genéricos ocupem múltiplos episódios se for arquivo único
+                usedPaths.add(found.path);
+                epMap[ep] = found;
+            }
+        }
+        return epMap;
+    }
+
     extractCleanHash(magnetOrTorrent) {
         if (typeof magnetOrTorrent === 'string') {
             const hashMatch = magnetOrTorrent.match(/([a-fA-F0-9]{40})/);
@@ -347,7 +371,10 @@ class DownloaderManager extends EventEmitter {
                 console.log(`🔗 [Swarm Torrent: "${displayTitle}"] Peer conectado (${pAddr}). Solicitando blocos de dados... (Peers ativos: ${torrent.numPeers})`);
             });
 
-            torrent.on('metadata', () => {
+            let isSeasonPack = false;
+            let detectedEpisodeMap = {};
+
+            torrent.on('metadata', async () => {
                 // Proteção contra arquivos gigantes (4K / 20GB): aborta na hora para filmes
                 if (!options.episode && torrent.length > 5.8 * 1024 * 1024 * 1024) {
                     console.log(`⚠️ Arquivo de filme muito pesado (${this.formatBytes(torrent.length)} > 5.5 GB). Abortando para priorizar 1080p leve...`);
@@ -360,33 +387,62 @@ class DownloaderManager extends EventEmitter {
                     const seasonNum = parseInt(options.season || 1, 10);
                     const epNum = parseInt(options.episode, 10);
 
-                    // Desmarca o torrent inteiro para NÃO puxar blocos de outros episódios
-                    try {
-                        torrent.deselect(0, torrent.pieces.length - 1, false);
-                        torrent.files.forEach(f => {
-                            try { f.deselect(); } catch (e) {}
-                        });
-                    } catch (e) {}
+                    // Mapeia todos os episódios disponíveis no torrent
+                    detectedEpisodeMap = this.mapAllEpisodeFilesInTorrent(torrent.files, seasonNum);
+                    const matchedCount = Object.keys(detectedEpisodeMap).length;
 
-                    const found = this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
-                    if (found) {
-                        targetEpisodeFile = found;
+                    // Trava estrita de disco (100GB máximo):
+                    // Permite pack completo apenas se o pack for <= 40 GB e não estourar o limite de 75% dos 100GB
+                    const maxPackBytes = (config.MAX_PACK_DISK_GB || 40) * 1024 * 1024 * 1024;
+                    const maxDiskBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
+                    const currentTempBytes = await this.getTempDirSizeBytes().catch(() => 0);
+                    const isSafePack = matchedCount > 1 && torrent.length <= maxPackBytes && (currentTempBytes + torrent.length * 1.3 <= maxDiskBytes * 0.75);
+
+                    if (isSafePack) {
+                        isSeasonPack = true;
+                        targetEpisodeFile = detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+
+                        // Desmarca arquivos irrelevantes (samples, nfo, txt) e seleciona todos os episódios do pack
                         try {
-                            found.select();
-                            found.on('done', () => checkAndComplete());
-                            console.log(`🎯 [Multi-Pack] Otimização: baixando SOMENTE o episódio solicitado: ${found.name} (${this.formatBytes(found.length)})`);
-                        } catch (e) {
-                            console.warn('⚠️ Erro ao selecionar arquivo alvo no pack:', e.message);
-                        }
+                            torrent.deselect(0, torrent.pieces.length - 1, false);
+                            torrent.files.forEach(f => {
+                                try { f.deselect(); } catch (e) {}
+                            });
+                            Object.values(detectedEpisodeMap).forEach(vf => {
+                                try { vf.select(); } catch (e) {}
+                            });
+                        } catch (e) {}
+
+                        console.log(`📦 [SEASON PACK] Baixando temporada completa com ${matchedCount} episódios no SSD (${this.formatBytes(torrent.length)})!`);
                     } else {
-                        console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
-                        const videoFiles = torrent.files.filter(f => {
-                            const ext = path.extname(f.name).toLowerCase();
-                            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
-                        });
-                        videoFiles.forEach(vf => {
-                            try { vf.select(); } catch (e) {}
-                        });
+                        // Desmarca o torrent inteiro para puxar SOMENTE o episódio específico
+                        try {
+                            torrent.deselect(0, torrent.pieces.length - 1, false);
+                            torrent.files.forEach(f => {
+                                try { f.deselect(); } catch (e) {}
+                            });
+                        } catch (e) {}
+
+                        const found = detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+                        if (found) {
+                            targetEpisodeFile = found;
+                            try {
+                                found.select();
+                                found.on('done', () => checkAndComplete());
+                                console.log(`🎯 [Episódio Avulso] Baixando somente o episódio ${epNum}: ${found.name} (${this.formatBytes(found.length)})`);
+                            } catch (e) {
+                                console.warn('⚠️ Erro ao selecionar arquivo alvo no pack:', e.message);
+                            }
+                        } else {
+                            console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
+                            const videoFiles = torrent.files.filter(f => {
+                                const ext = path.extname(f.name).toLowerCase();
+                                return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
+                            });
+                            videoFiles.forEach(vf => {
+                                try { vf.select(); } catch (e) {}
+                            });
+                        }
                     }
                 }
             });
@@ -450,12 +506,29 @@ class DownloaderManager extends EventEmitter {
                     }
 
                     // 3.1 Verificação de duração mínima (evita arquivos corrompidos com metadados falsos)
-                    // Um episódio ou filme válido deve ter pelo menos 3 minutos de conteúdo real
                     const MIN_DURATION_SEC = 180;
                     if (videoInfo.duration < MIN_DURATION_SEC) {
                         console.warn(`⚠️ [DOWNLOAD] Arquivo suspeito: ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Pode ser um arquivo corrompido ou preview. Ignorando até ter mais dados...`);
                         isCompleting = false;
                         return;
+                    }
+
+                    // 4. Se for Season Pack, monta o mapa completo dos arquivos físicos válidos baixados no SSD
+                    const fullEpisodeMap = {};
+                    if (isSeasonPack && detectedEpisodeMap) {
+                        for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
+                            const epFullPath = path.join(this.downloadDir, f.path);
+                            if (fs.existsSync(epFullPath)) {
+                                const epStat = fs.statSync(epFullPath);
+                                if (epStat.size > 20 * 1024 * 1024) {
+                                    fullEpisodeMap[parseInt(epStr, 10)] = {
+                                        filePath: epFullPath,
+                                        fileName: f.name,
+                                        sizeBytes: epStat.size
+                                    };
+                                }
+                            }
+                        }
                     }
 
                     finished = true;
@@ -466,7 +539,9 @@ class DownloaderManager extends EventEmitter {
                         filePath: fullPath,
                         fileName: selectedFile.name,
                         sizeBytes: stat.size,
-                        totalTorrentFiles: torrent.files.length
+                        totalTorrentFiles: torrent.files.length,
+                        episodeMap: fullEpisodeMap,
+                        isPack: Object.keys(fullEpisodeMap).length > 1
                     };
 
                     safeCleanup();

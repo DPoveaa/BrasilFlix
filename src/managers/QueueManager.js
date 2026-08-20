@@ -1064,6 +1064,48 @@ class QueueManager extends EventEmitter {
             job.bestSource = bestSource;
             await this.saveJob(job);
 
+            // Se for um Season Pack com múltiplos episódios indexados, enfileira e vincula os outros episódios ao SSD local
+            if (job.type === 'serie' && downloadedMedia?.isPack && downloadedMedia?.episodeMap) {
+                const epMap = downloadedMedia.episodeMap;
+                const totalPackEps = Object.keys(epMap).length;
+                console.log(`📦 [PACK DE TEMPORADA] ${totalPackEps} episódios baixados e indexados localmente no SSD para "${job.title}" (T${job.season || 1})!`);
+
+                for (const [epNumStr, epInfo] of Object.entries(epMap)) {
+                    const epNum = parseInt(epNumStr, 10);
+                    if (epNum !== (job.episode || 1) && fs.existsSync(epInfo.filePath)) {
+                        const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                        const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
+                        if (!jaCatalogado) {
+                            try {
+                                const existingJob = this.queue.find(q => (q.title || '').toLowerCase() === (job.title || '').toLowerCase() && q.season === (job.season || 1) && q.episode === epNum);
+                                if (existingJob) {
+                                    existingJob.rawFilePath = epInfo.filePath;
+                                    existingJob.expectedSize = epInfo.sizeBytes;
+                                    existingJob.bestSource = bestSource;
+                                    existingJob.status = 'queued';
+                                    await this.saveJob(existingJob);
+                                } else {
+                                    this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                                        tmdbId: metadata.tmdbId,
+                                        season: job.season || 1,
+                                        episode: epNum,
+                                        userId: job.userId,
+                                        username: job.username,
+                                        audioPreference: job.audioPreference || 'dublado',
+                                        rawFilePath: epInfo.filePath,
+                                        expectedSize: epInfo.sizeBytes,
+                                        bestSource: bestSource,
+                                        queueOrder: epNum
+                                    });
+                                }
+                            } catch (ePack) {
+                                console.warn(`⚠️ Erro ao registrar episódio T${job.season || 1}E${epNum} do pack na fila:`, ePack.message);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Validação de tamanho físico do arquivo
             if (fs.existsSync(rawFilePath)) {
                 const stat = fs.statSync(rawFilePath);
