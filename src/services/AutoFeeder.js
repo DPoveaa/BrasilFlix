@@ -50,39 +50,47 @@ class AutoFeeder {
             // 0. Checa sementes de itens monitorados na watchlist
             await SwarmWatcher.checkWatchlist();
 
-            // 1. Reprocessar Pedidos Pendentes de Clientes (ex: The Rookie, pedidos que ainda não foram concluídos)
+            // 1. Reprocessar Pedidos Pendentes de Clientes (Prioridade máxima)
             await this.checkPendingPedidos();
 
-            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB...');
+            // 2. Prioridade Total: Preencher episódios faltantes e novas temporadas de Séries já iniciadas no Catálogo
+            console.log('📺 AutoFeeder: Verificando episódios pendentes de séries já no catálogo...');
+            await this.checkSeriesUpdates();
 
-            // 2. Filmes em alta
-            const trendingMovies = await TMDBService.getTrendingMovies('week');
-            for (const movie of trendingMovies.slice(0, 15)) {
-                await this.considerItem(movie, 'filme');
-            }
-
-            // 3. Séries em alta
-            const trendingTV = await TMDBService.getTrendingTV('week');
-            for (const tv of trendingTV.slice(0, 10)) {
-                await this.considerItem(tv, 'serie');
-            }
-
-            // 4. Doramas populares (K-Dramas)
-            const popularDoramas = await TMDBService.getPopularKDramas();
-            for (const dorama of popularDoramas.slice(0, 10)) {
-                await this.considerItem(dorama, 'serie', true);
-            }
-
-            // 5. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
+            // 3. Auto-Upgrade: Verificar se filmes de cinema já possuem versão oficial WEB-DL/BluRay
             if (config.AUTO_UPGRADE_CAM) {
                 await this.checkCamUpgrades();
             }
 
-            // 6. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
+            // 4. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
             await this.checkLegendadoUpgrades();
 
-            // 7. Monitor de Lançamentos Semanais / Novas Temporadas de Séries do Catálogo
-            await this.checkSeriesUpdates();
+            // 5. Se a fila já estiver com séries pendentes em andamento, não sobrecarrega com novos títulos
+            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && j.status === 'queued');
+            if (seriesInQueue.length >= 6) {
+                console.log(`ℹ️ AutoFeeder: Existem ${seriesInQueue.length} episódios de séries prioritárias na esteira. Focando na conclusão antes de introduzir novos títulos.`);
+                return;
+            }
+
+            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento controlado...');
+
+            // 6. Filmes em alta
+            const trendingMovies = await TMDBService.getTrendingMovies('week');
+            for (const movie of trendingMovies.slice(0, 8)) {
+                await this.considerItem(movie, 'filme');
+            }
+
+            // 7. Séries em alta (apenas 3 por ciclo para não afogar a esteira)
+            const trendingTV = await TMDBService.getTrendingTV('week');
+            for (const tv of trendingTV.slice(0, 3)) {
+                await this.considerItem(tv, 'serie');
+            }
+
+            // 8. Doramas populares (K-Dramas)
+            const popularDoramas = await TMDBService.getPopularKDramas();
+            for (const dorama of popularDoramas.slice(0, 3)) {
+                await this.considerItem(dorama, 'serie', true);
+            }
 
         } catch (error) {
             console.error('❌ Erro no ciclo do AutoFeeder:', error.message);
@@ -217,12 +225,13 @@ class AutoFeeder {
 
                         if (!jaNaFila) {
                             console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${sNum}E${proximoEpFaltante.numero} ("${proximoEpFaltante.nome}")! Enfileirando download...`);
-                            this.queueManager.addJob(serie.nome, 'serie', PRIORITIES.FEEDER, {
+                            this.queueManager.addJob(serie.nome, 'serie', PRIORITIES.SERIES, {
                                 tmdbId: tmdbData.tmdbId,
                                 season: sNum,
                                 episode: proximoEpFaltante.numero,
                                 nomeOriginal: serie.nomeOriginal,
-                                isDorama: serie.isDorama
+                                isDorama: serie.isDorama,
+                                queueOrder: -1
                             });
                             break;
                         }

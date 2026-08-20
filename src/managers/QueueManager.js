@@ -15,8 +15,8 @@ const PRIORITIES = {
     VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila)
     USER: 1,      // Compatibilidade
     FREE_USER: 2, // Pedido de Usuário Gratuito (Fila normal)
-    SERIES: 3,    // Continuação de série/dorama em andamento
-    FEEDER: 4     // Auto-Feeder (população em background)
+    SERIES: 2,    // Continuação / Finalização de série/dorama do catálogo (Alta prioridade)
+    FEEDER: 5     // Auto-Feeder (novo título em background)
 };
 
 class QueueManager extends EventEmitter {
@@ -689,13 +689,10 @@ class QueueManager extends EventEmitter {
             const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
                                   this.catalogoManager.buscarItemExato(job.title, 'serie');
             if (serieExistente) {
-                const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
-                
-                // Busca de forma estritamente cronológica o PRIMEIRO episódio faltante desde a Temporada 1
                 let nextTargetSeason = null;
                 let nextTargetEp = null;
 
-                // 1º Passo: Encontrar o primeiro episódio totalmente faltante no catálogo
+                // Busca de forma estritamente cronológica o PRIMEIRO episódio faltante ou pendente de Dublado por temporada
                 for (let s = 1; s <= totalTemporadas; s++) {
                     const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
                     
@@ -714,6 +711,7 @@ class QueueManager extends EventEmitter {
                         }
                     } catch (e) {}
 
+                    // Passo A: Encontra o primeiro episódio totalmente faltante na Temporada S
                     for (let ep = 1; ep <= totalEpsInS; ep++) {
                         const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
                         if (!epItem) {
@@ -722,29 +720,28 @@ class QueueManager extends EventEmitter {
                             break;
                         }
                     }
-
                     if (nextTargetSeason !== null) break;
-                }
 
-                // 2º Passo: Se todos os episódios já existem no catálogo, verifica se algum pode receber upgrade de áudio para Dublado
-                if (nextTargetSeason === null && pref === 'dublado') {
-                    for (let s = 1; s <= totalTemporadas; s++) {
-                        const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
-                        for (const epItem of (tempS?.episodios || [])) {
-                            const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
-                            if (!epDub) {
-                                nextTargetSeason = s;
-                                nextTargetEp = epItem.numero;
-                                break;
+                    // Passo B: Se todos os episódios da Temporada S já existem, verifica se algum precisa de upgrade para Dublado
+                    if (pref === 'dublado') {
+                        for (let ep = 1; ep <= totalEpsInS; ep++) {
+                            const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
+                            if (epItem) {
+                                const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
+                                if (!epDub) {
+                                    nextTargetSeason = s;
+                                    nextTargetEp = ep;
+                                    break;
+                                }
                             }
                         }
-                        if (nextTargetSeason !== null) break;
                     }
+                    if (nextTargetSeason !== null) break;
                 }
 
                 if (nextTargetSeason !== null && nextTargetEp !== null) {
                     if (job.season !== nextTargetSeason || job.episode !== nextTargetEp) {
-                        console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
+                        console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente/upgrade na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
                         job.season = nextTargetSeason;
                         job.episode = nextTargetEp;
                         await this.saveJob(job);
