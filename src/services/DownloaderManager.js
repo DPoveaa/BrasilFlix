@@ -449,6 +449,15 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
+                    // 3.1 Verificação de duração mínima (evita arquivos corrompidos com metadados falsos)
+                    // Um episódio ou filme válido deve ter pelo menos 3 minutos de conteúdo real
+                    const MIN_DURATION_SEC = 180;
+                    if (videoInfo.duration < MIN_DURATION_SEC) {
+                        console.warn(`⚠️ [DOWNLOAD] Arquivo suspeito: ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Pode ser um arquivo corrompido ou preview. Ignorando até ter mais dados...`);
+                        isCompleting = false;
+                        return;
+                    }
+
                     finished = true;
                     process.stdout.write('\n');
                     console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
