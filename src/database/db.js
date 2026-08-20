@@ -127,17 +127,6 @@ async function createTables() {
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
 
-        // Migração de reclassificação automática de animes e doramas
-        try {
-            // Animes: Bleach, One Piece, Naruto, Dragon Ball, Attack on Titan, Solo Leveling, etc. ou com gênero Animação e origem oriental
-            await query(`UPDATE series SET is_anime = true, is_dorama = false WHERE nome ILIKE '%Bleach%' OR nome ILIKE '%One Piece%' OR nome ILIKE '%Dragon Ball%' OR nome ILIKE '%Naruto%' OR nome ILIKE '%Attack on Titan%' OR nome ILIKE '%Solo Leveling%' OR nome ILIKE '%Demon Slayer%' OR nome ILIKE '%Jujutsu Kaisen%' OR nome ILIKE '%Spy x Family%' OR (generos::text ILIKE '%Animação%' AND is_dorama = true)`);
-            
-            // Doramas: Produções asiáticas de live action
-            await query(`UPDATE series SET is_dorama = true, is_anime = false WHERE (nome ILIKE '%Loja Para Assassinos%' OR nome ILIKE '%Grude de Amor%' OR nome ILIKE '%Advogada Extraordinária%' OR nome ILIKE '%Pousando no Amor%' OR is_dorama = true) AND NOT (is_anime = true)`);
-        } catch (migErr) {
-            console.warn('⚠️ Aviso migração de classificação:', migErr.message);
-        }
-
         CREATE TABLE IF NOT EXISTS episodios (
             id BIGSERIAL PRIMARY KEY,
             serie_id BIGINT REFERENCES series(id) ON DELETE CASCADE,
@@ -282,6 +271,24 @@ async function createTables() {
     `);
 
     console.log('✅ Esquemas e tabelas PostgreSQL prontos com chaves BIGINT!');
+
+    // Migração de reclassificação automática de animes e doramas (executa após criação das tabelas)
+    try {
+        await query(`UPDATE series SET is_anime = true, is_dorama = false
+            WHERE nome ILIKE '%Bleach%' OR nome ILIKE '%One Piece%' OR nome ILIKE '%Dragon Ball%'
+            OR nome ILIKE '%Naruto%' OR nome ILIKE '%Attack on Titan%' OR nome ILIKE '%Solo Leveling%'
+            OR nome ILIKE '%Demon Slayer%' OR nome ILIKE '%Jujutsu Kaisen%' OR nome ILIKE '%Spy x Family%'
+            OR (generos::text ILIKE '%Anima%' AND (nome ILIKE '%Sword Art%' OR nome ILIKE '%Fullmetal%' OR nome ILIKE '%Death Note%'))`);
+
+        await query(`UPDATE series SET is_dorama = true, is_anime = false
+            WHERE (nome ILIKE '%Loja Para Assassinos%' OR nome ILIKE '%Grude de Amor%'
+            OR nome ILIKE '%Advogada Extraordinária%' OR nome ILIKE '%Pousando no Amor%')
+            AND is_anime = false`);
+
+        console.log('✅ Reclassificação anime/dorama aplicada no banco.');
+    } catch (migErr) {
+        console.warn('⚠️ Aviso migração de classificação:', migErr.message);
+    }
 }
 
 async function migrateJsonData() {
