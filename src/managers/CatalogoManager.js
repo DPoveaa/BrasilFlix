@@ -3,6 +3,7 @@ const path = require('path');
 const config = require('../../config');
 const db = require('../database/db');
 const telegramUploader = require('../services/TelegramUploader');
+const TMDBService = require('../services/TMDBService');
 
 class CatalogoManager {
     constructor() {
@@ -163,6 +164,11 @@ class CatalogoManager {
 
             this.catalogo = { filmes, series };
             console.log(`📚 Catálogo carregado do PostgreSQL: ${filmes.length} filmes, ${series.length} séries.`);
+
+            // Executa enriquecimento automático em segundo plano se houver itens sem poster
+            setTimeout(() => {
+                this.autoEnrichMissingMetadata().catch(() => {});
+            }, 3000);
         } catch (error) {
             console.error('❌ Erro ao carregar catálogo do PostgreSQL:', error.message);
             // Fallback para arquivo JSON caso BD esteja temporariamente offline
@@ -170,6 +176,92 @@ class CatalogoManager {
                 try {
                     this.catalogo = fs.readJsonSync(config.CATALOGO_FILE);
                 } catch (e) {}
+            }
+        }
+    }
+
+    async autoEnrichMissingMetadata() {
+        if (!this.catalogo) return;
+
+        // 1. Varre séries sem poster ou sem tmdbId
+        for (const s of (this.catalogo.series || [])) {
+            if (!s.posterUrl || !s.tmdbId) {
+                try {
+                    const results = await TMDBService.searchTV(s.nome);
+                    if (results && results.length > 0) {
+                        const details = (await TMDBService.getTVDetails(results[0].tmdbId)) || results[0];
+                        if (details && details.posterUrl) {
+                            s.tmdbId = details.tmdbId;
+                            s.posterUrl = details.posterUrl;
+                            s.backdropUrl = details.backdropUrl || s.backdropUrl;
+                            s.sinopse = s.sinopse || details.sinopse || '';
+                            s.descricao = s.descricao || details.sinopse || '';
+                            s.ano = s.ano || details.ano || '';
+                            s.generos = details.generos && details.generos.length > 0 ? details.generos : s.generos;
+                            s.nomeOriginal = s.nomeOriginal || details.nomeOriginal || s.nome;
+
+                            await db.query(`
+                                UPDATE series SET
+                                    tmdb_id = $1,
+                                    poster_url = $2,
+                                    backdrop_url = $3,
+                                    sinopse = $4,
+                                    ano = $5,
+                                    generos = $6,
+                                    nome_original = $7,
+                                    updated_at = NOW()
+                                WHERE id = $8
+                            `, [
+                                s.tmdbId, s.posterUrl, s.backdropUrl, s.sinopse,
+                                s.ano, JSON.stringify(s.generos || []), s.nomeOriginal, s.id
+                            ]);
+                            console.log(`🎨 [AUTO-ENRICH] Capa recuperada com sucesso para série: "${s.nome}"`);
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ [AUTO-ENRICH] Falha ao buscar metadados para série "${s.nome}":`, err.message);
+                }
+            }
+        }
+
+        // 2. Varre filmes sem poster ou sem tmdbId
+        for (const f of (this.catalogo.filmes || [])) {
+            if (!f.posterUrl || !f.tmdbId) {
+                try {
+                    const results = await TMDBService.searchMovie(f.nome);
+                    if (results && results.length > 0) {
+                        const details = (await TMDBService.getMovieDetails(results[0].tmdbId)) || results[0];
+                        if (details && details.posterUrl) {
+                            f.tmdbId = details.tmdbId;
+                            f.posterUrl = details.posterUrl;
+                            f.backdropUrl = details.backdropUrl || f.backdropUrl;
+                            f.sinopse = f.sinopse || details.sinopse || '';
+                            f.descricao = f.descricao || details.sinopse || '';
+                            f.ano = f.ano || details.ano || '';
+                            f.generos = details.generos && details.generos.length > 0 ? details.generos : f.generos;
+                            f.nomeOriginal = f.nomeOriginal || details.nomeOriginal || f.nome;
+
+                            await db.query(`
+                                UPDATE filmes SET
+                                    tmdb_id = $1,
+                                    poster_url = $2,
+                                    backdrop_url = $3,
+                                    sinopse = $4,
+                                    ano = $5,
+                                    generos = $6,
+                                    nome_original = $7,
+                                    updated_at = NOW()
+                                WHERE id = $8
+                            `, [
+                                f.tmdbId, f.posterUrl, f.backdropUrl, f.sinopse,
+                                f.ano, JSON.stringify(f.generos || []), f.nomeOriginal, f.id
+                            ]);
+                            console.log(`🎨 [AUTO-ENRICH] Capa recuperada com sucesso para filme: "${f.nome}"`);
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ [AUTO-ENRICH] Falha ao buscar metadados para filme "${f.nome}":`, err.message);
+                }
             }
         }
     }
@@ -219,6 +311,23 @@ class CatalogoManager {
 
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
         const existente = this.buscarItemExato(nome, tipo);
+
+        // Se metadados de poster ou TMDB estiverem ausentes, busca no TMDB proativamente
+        if (!metadadosExtras.posterUrl || !metadadosExtras.tmdbId) {
+            try {
+                const tmdbRes = await TMDBService.searchMovie(nome);
+                if (tmdbRes && tmdbRes.length > 0) {
+                    const det = (await TMDBService.getMovieDetails(tmdbRes[0].tmdbId)) || tmdbRes[0];
+                    metadadosExtras.tmdbId = metadadosExtras.tmdbId || det.tmdbId;
+                    metadadosExtras.posterUrl = metadadosExtras.posterUrl || det.posterUrl;
+                    metadadosExtras.backdropUrl = metadadosExtras.backdropUrl || det.backdropUrl;
+                    metadadosExtras.sinopse = metadadosExtras.sinopse || det.sinopse;
+                    metadadosExtras.ano = metadadosExtras.ano || det.ano;
+                    metadadosExtras.generos = metadadosExtras.generos || det.generos;
+                    metadadosExtras.nomeOriginal = metadadosExtras.nomeOriginal || det.nomeOriginal;
+                }
+            } catch (e) {}
+        }
 
         const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? !metadadosExtras.audio.toLowerCase().includes('legendado') : true);
         const isLegendado = metadadosExtras.isLegendado ?? (metadadosExtras.audio ? metadadosExtras.audio.toLowerCase().includes('legendado') : false);
@@ -380,6 +489,23 @@ class CatalogoManager {
             (s.tmdbId && metadados.tmdbId && s.tmdbId === metadados.tmdbId)
         );
 
+        // Se metadados de poster ou TMDB estiverem ausentes, busca no TMDB proativamente
+        if (!metadados.posterUrl || !metadados.tmdbId) {
+            try {
+                const tmdbRes = await TMDBService.searchTV(serieNome);
+                if (tmdbRes && tmdbRes.length > 0) {
+                    const det = (await TMDBService.getTVDetails(tmdbRes[0].tmdbId)) || tmdbRes[0];
+                    metadados.tmdbId = metadados.tmdbId || det.tmdbId;
+                    metadados.posterUrl = metadados.posterUrl || det.posterUrl;
+                    metadados.backdropUrl = metadados.backdropUrl || det.backdropUrl;
+                    metadados.sinopse = metadados.sinopse || det.sinopse;
+                    metadados.ano = metadados.ano || det.ano;
+                    metadados.generos = metadados.generos || det.generos;
+                    metadados.nomeOriginal = metadados.nomeOriginal || det.nomeOriginal;
+                }
+            } catch (e) {}
+        }
+
         const isDub = metadados.isDublado ?? (metadados.audio ? !metadados.audio.toLowerCase().includes('legendado') : true);
         const isLeg = metadados.isLegendado ?? (metadados.audio ? metadados.audio.toLowerCase().includes('legendado') : false);
 
@@ -431,6 +557,19 @@ class CatalogoManager {
         } else {
             if (isDub) serie.isDublado = true;
             if (isLeg) serie.isLegendado = true;
+
+            // Se a série existente não tinha poster mas agora temos, atualiza
+            if (!serie.posterUrl && metadados.posterUrl) {
+                serie.posterUrl = metadados.posterUrl;
+                serie.backdropUrl = metadados.backdropUrl || serie.backdropUrl;
+                serie.tmdbId = metadados.tmdbId || serie.tmdbId;
+                serie.sinopse = metadados.sinopse || serie.sinopse;
+                serie.ano = metadados.ano || serie.ano;
+                serie.generos = metadados.generos || serie.generos;
+                db.query(`UPDATE series SET poster_url = $1, backdrop_url = $2, tmdb_id = $3, sinopse = $4, ano = $5, generos = $6, updated_at = NOW() WHERE id = $7`, [
+                    serie.posterUrl, serie.backdropUrl, serie.tmdbId, serie.sinopse, serie.ano, JSON.stringify(serie.generos || []), serie.id
+                ]).catch(() => {});
+            }
         }
 
         // Encontrar ou criar temporada no cache
