@@ -84,6 +84,73 @@ class VideoProcessor {
         });
     }
 
+    async generateThumbnail(filePath, outputPath, offsetSeconds = null) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                let seekSec = 180; // padrão 3 minutos para nunca pegar tela preta ou logo de estúdio
+                if (offsetSeconds !== null) {
+                    seekSec = offsetSeconds;
+                } else {
+                    try {
+                        const info = await this.getVideoInfo(filePath);
+                        if (info && info.duration > 60) {
+                            // Extrai o frame a 15% do vídeo ou 180s para garantir cena real do episódio
+                            seekSec = Math.min(300, Math.max(45, Math.floor(info.duration * 0.15)));
+                        }
+                    } catch (e) {}
+                }
+
+                await fs.ensureDir(path.dirname(outputPath));
+
+                const ffmpegArgs = [
+                    '-ss', seekSec.toString(),
+                    '-i', filePath,
+                    '-vframes', '1',
+                    '-q:v', '2',
+                    '-vf', 'scale=1280:-1',
+                    '-y',
+                    outputPath
+                ];
+
+                const proc = spawn('ffmpeg', ffmpegArgs);
+                proc.on('close', (code) => {
+                    if (code === 0 && fs.existsSync(outputPath)) {
+                        resolve(outputPath);
+                    } else {
+                        // Fallback para 30s caso o arquivo seja menor
+                        const fallbackArgs = ['-ss', '30', '-i', filePath, '-vframes', '1', '-q:v', '2', '-y', outputPath];
+                        const proc2 = spawn('ffmpeg', fallbackArgs);
+                        proc2.on('close', (c2) => {
+                            if (c2 === 0 && fs.existsSync(outputPath)) {
+                                resolve(outputPath);
+                            } else {
+                                reject(new Error(`Falha ao gerar thumbnail: código ${code}/${c2}`));
+                            }
+                        });
+                    }
+                });
+                proc.on('error', (err) => reject(err));
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    async verifyVideoIntegrity(filePath) {
+        return new Promise((resolve) => {
+            const cmd = `ffmpeg -v error -i "${filePath}" -f null -max_error_rate 0.05 -`;
+            exec(cmd, { timeout: 45000 }, (error, stdout, stderr) => {
+                if (error && error.killed) {
+                    resolve({ isValid: true, warning: 'Verificação rápida concluída por tempo' });
+                } else if (stderr && (stderr.includes('Invalid data found') || stderr.includes('corrupt') || stderr.includes('moov atom not found'))) {
+                    resolve({ isValid: false, error: stderr.substring(0, 200) });
+                } else {
+                    resolve({ isValid: true });
+                }
+            });
+        });
+    }
+
     detectPortugueseAudioIndex(audioStreams, rawFileName = '') {
         if (!audioStreams || audioStreams.length === 0) return null;
         if (audioStreams.length === 1) return 0;

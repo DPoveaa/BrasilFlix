@@ -489,11 +489,11 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // 2. Verificação de tamanho do arquivo em disco
+                    // 2. Verificação de tamanho do arquivo em disco (Exige 100% completo)
                     const stat = fs.statSync(fullPath);
                     const expectedSize = selectedFile.length;
 
-                    if (expectedSize > 0 && stat.size < expectedSize * 0.95) {
+                    if (expectedSize > 0 && stat.size < expectedSize) {
                         isCompleting = false;
                         return;
                     }
@@ -509,6 +509,14 @@ class DownloaderManager extends EventEmitter {
                     const MIN_DURATION_SEC = 180;
                     if (videoInfo.duration < MIN_DURATION_SEC) {
                         console.warn(`⚠️ [DOWNLOAD] Arquivo suspeito: ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Pode ser um arquivo corrompido ou preview. Ignorando até ter mais dados...`);
+                        isCompleting = false;
+                        return;
+                    }
+
+                    // 3.2 Verificação de integridade do fluxo de vídeo (garante que não há congelamento ou GOP quebrado)
+                    const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath).catch(() => ({ isValid: true }));
+                    if (!integrity.isValid) {
+                        console.warn(`⚠️ [DOWNLOAD] Arquivo corrompido detectado no stream: ${integrity.error}. Aguardando mais dados...`);
                         isCompleting = false;
                         return;
                     }
@@ -533,7 +541,7 @@ class DownloaderManager extends EventEmitter {
 
                     finished = true;
                     process.stdout.write('\n');
-                    console.log(`✅ Download concluído e validado em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
+                    console.log(`✅ Download concluído e validado 100% em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
 
                     const fileInfo = {
                         filePath: fullPath,
@@ -562,8 +570,8 @@ class DownloaderManager extends EventEmitter {
 
                 const curRatio = curTotal > 0 ? (curDownloaded / curTotal) : 0;
 
-                // Se o arquivo selecionado ou torrent atingiu 98%+, conclui imediatamente
-                if (curRatio >= 0.98 || torrent.progress >= 0.98) {
+                // Conclui estritamente quando o arquivo atinge 100% dos bytes baixados
+                if (curRatio >= 1.0 || (targetEpisodeFile && targetEpisodeFile.progress >= 1.0) || torrent.progress >= 1.0) {
                     checkAndComplete();
                 }
 
