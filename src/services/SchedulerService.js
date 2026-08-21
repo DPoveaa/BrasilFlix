@@ -2,20 +2,44 @@ const fs = require('fs-extra');
 const path = require('path');
 const EventEmitter = require('events');
 
-// Fuso horário de Brasília (BRT = UTC-3)
-const BRT_OFFSET_HOURS = -3;
+// Utilitários para conversão de tempo flexível (horas cheias ou HH:mm como 05:30)
+function timeToMinutes(val, defaultMin = 0) {
+    if (val === null || val === undefined) return defaultMin;
+    if (typeof val === 'number') {
+        return val <= 24 ? Math.round(val * 60) : val;
+    }
+    if (typeof val === 'string') {
+        if (val.includes(':')) {
+            const parts = val.split(':');
+            const h = parseInt(parts[0], 10) || 0;
+            const m = parseInt(parts[1], 10) || 0;
+            return (h * 60) + m;
+        }
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+            return num <= 24 ? Math.round(num * 60) : Math.round(num);
+        }
+    }
+    return defaultMin;
+}
+
+function minutesToTimeStr(min) {
+    const h = Math.floor(min / 60) % 24;
+    const m = min % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 class SchedulerService extends EventEmitter {
     constructor() {
         super();
         this.dataPath = path.join(__dirname, '../../data/scheduler.json');
 
-        // Grade padrão: Seg-Sex (1-5), 01h-05h no horário de Brasília
+        // Grade padrão: Seg-Sex (1-5), 01:00 às 05:00 no horário de Brasília
         this.defaultConfig = {
             ativo: true,             // Se o scheduler está habilitado. false = roda 24h
             diasSemana: [1, 2, 3, 4, 5], // 0=Dom, 1=Seg, ..., 6=Sab
-            horaInicio: 1,           // hora de início (0-23, BRT)
-            horaFim: 5               // hora de fim (0-23, BRT) — exclusivo (para às 05:00:00)
+            horaInicio: '01:00',     // hora de início (HH:mm ou número)
+            horaFim: '05:00'         // hora de término (HH:mm ou número)
         };
 
         // Overrides por data: chave = "YYYY-MM-DD", valor = { horaInicio, horaFim } ou false (desabilitar)
@@ -50,7 +74,7 @@ class SchedulerService extends EventEmitter {
                 console.log(`⏱️  [Scheduler] Configuração carregada: ${JSON.stringify(this._config)} | Overrides: ${Object.keys(this.overrides).length} | ForceState: ${this.forceState || 'nenhum'} | Expira: ${this.forceExpiresAtDesc || 'n/a'}`);
             } else {
                 this._save();
-                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão Seg-Sex 01h-05h (Horário de SP).');
+                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão Seg-Sex 01:00-05:00 (Horário de SP).');
             }
         } catch (e) {
             console.warn('⚠️  [Scheduler] Erro ao carregar configuração:', e.message);
@@ -129,21 +153,26 @@ class SchedulerService extends EventEmitter {
             return true;
         }
 
-        const { diaSemana, hora, dataKey } = this._getSaoPauloTime();
+        const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime();
+        const currentMinutes = (hora * 60) + minuto;
 
         // Verifica override da data de hoje
         if (this.overrides.hasOwnProperty(dataKey)) {
             const ov = this.overrides[dataKey];
             if (ov === false) return false; // Dia bloqueado por override
             if (typeof ov === 'object' && ov !== null) {
-                const { horaInicio, horaFim } = ov;
-                return hora >= horaInicio && hora < horaFim;
+                const iniMin = timeToMinutes(ov.horaInicio, 60);
+                const fimMin = timeToMinutes(ov.horaFim, 300);
+                return currentMinutes >= iniMin && currentMinutes < fimMin;
             }
         }
 
         // Aplica a grade padrão
         if (!this._config.diasSemana.includes(diaSemana)) return false;
-        return hora >= this._config.horaInicio && hora < this._config.horaFim;
+
+        const iniMin = timeToMinutes(this._config.horaInicio, 60);
+        const fimMin = timeToMinutes(this._config.horaFim, 300);
+        return currentMinutes >= iniMin && currentMinutes < fimMin;
     }
 
     /**
@@ -202,7 +231,8 @@ class SchedulerService extends EventEmitter {
         // Verifica os próximos 8 dias no fuso horário de São Paulo
         for (let delta = 0; delta <= 8; delta++) {
             const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
-            const { diaSemana: diaCandidato, hora: horaCandidato, dataKey: dataCandidato } = this._getSaoPauloTime(candidato);
+            const { diaSemana: diaCandidato, hora: horaCandidato, minuto: minutoCandidato, dataKey: dataCandidato } = this._getSaoPauloTime(candidato);
+            const currentMin = (horaCandidato * 60) + minutoCandidato;
 
             let hIni, hFim;
             if (this.overrides.hasOwnProperty(dataCandidato)) {
@@ -215,14 +245,18 @@ class SchedulerService extends EventEmitter {
                 hFim = this._config.horaFim;
             }
 
-            if (delta === 0 && horaCandidato >= hFim) continue;
+            const fimMin = timeToMinutes(hFim, 300);
+            if (delta === 0 && currentMin >= fimMin) continue;
+
+            const hIniStr = typeof hIni === 'number' && hIni <= 24 ? minutesToTimeStr(hIni * 60) : String(hIni);
+            const hFimStr = typeof hFim === 'number' && hFim <= 24 ? minutesToTimeStr(hFim * 60) : String(hFim);
 
             return {
                 data: dataCandidato,
                 dia: diasNomes[diaCandidato],
-                horaInicio: hIni,
-                horaFim: hFim,
-                descricao: `${diasNomes[diaCandidato]} (${dataCandidato}) das ${hIni}h às ${hFim}h (Horário de SP)`
+                horaInicio: hIniStr,
+                horaFim: hFimStr,
+                descricao: `${diasNomes[diaCandidato]} (${dataCandidato}) das ${hIniStr} às ${hFimStr} (Horário de SP)`
             };
         }
 
@@ -231,7 +265,6 @@ class SchedulerService extends EventEmitter {
 
     /**
      * Calcula o próximo horário de encerramento agendado (timestamp e texto) no Horário de São Paulo.
-     * Exemplo: se iniciado às 18h de terça, a próxima janela fecha às 05h de quarta.
      */
     _calcNextScheduledStopTime() {
         const now = new Date();
@@ -239,7 +272,8 @@ class SchedulerService extends EventEmitter {
 
         for (let delta = 0; delta <= 8; delta++) {
             const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
-            const { diaSemana, hora, dataKey } = this._getSaoPauloTime(candidato);
+            const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime(candidato);
+            const currentMin = (hora * 60) + minuto;
 
             let hFim = null;
             if (this.overrides.hasOwnProperty(dataKey)) {
@@ -252,21 +286,24 @@ class SchedulerService extends EventEmitter {
             }
 
             if (hFim !== null) {
+                const fimMin = timeToMinutes(hFim, 300);
                 // Se for hoje e já passou do horário de encerramento, procura o próximo dia
-                if (delta === 0 && hora >= hFim) {
+                if (delta === 0 && currentMin >= fimMin) {
                     continue;
                 }
 
                 // Cria o timestamp exato do encerramento (no fuso de SP: UTC-3)
                 const [year, month, day] = dataKey.split('-').map(Number);
-                const stopDateUtc = new Date(Date.UTC(year, month - 1, day, hFim + 3, 0, 0));
-                const hFimStr = hFim < 10 ? `0${hFim}:00` : `${hFim}:00`;
+                const fimHour = Math.floor(fimMin / 60);
+                const fimMinute = fimMin % 60;
+                const stopDateUtc = new Date(Date.UTC(year, month - 1, day, fimHour + 3, fimMinute, 0));
+                const hFimStr = minutesToTimeStr(fimMin);
 
                 return {
                     iso: stopDateUtc.toISOString(),
                     timestamp: stopDateUtc.getTime(),
                     data: dataKey,
-                    horaFim: hFim,
+                    horaFim: hFimStr,
                     descricao: `${diasNomes[diaSemana]} (${dataKey}) às ${hFimStr} (Horário de SP)`
                 };
             }
@@ -318,12 +355,18 @@ class SchedulerService extends EventEmitter {
 
     updateConfig(newConfig) {
         const diasValidos = (newConfig.diasSemana || []).map(Number).filter(d => d >= 0 && d <= 6);
-        const horaInicio = parseInt(newConfig.horaInicio ?? this._config.horaInicio, 10);
-        const horaFim = parseInt(newConfig.horaFim ?? this._config.horaFim, 10);
+        const rawIni = newConfig.horaInicio ?? this._config.horaInicio;
+        const rawFim = newConfig.horaFim ?? this._config.horaFim;
 
-        if (horaInicio < 0 || horaInicio > 23 || horaFim < 0 || horaFim > 23) {
-            throw new Error('Horas devem estar entre 0 e 23.');
+        const iniMin = timeToMinutes(rawIni, 60);
+        const fimMin = timeToMinutes(rawFim, 300);
+
+        if (iniMin < 0 || iniMin > 1440 || fimMin < 0 || fimMin > 1440) {
+            throw new Error('Horários devem ser válidos.');
         }
+
+        const horaInicio = minutesToTimeStr(iniMin);
+        const horaFim = minutesToTimeStr(fimMin);
 
         this._config = {
             ativo: newConfig.ativo !== undefined ? Boolean(newConfig.ativo) : this._config.ativo,
@@ -339,16 +382,17 @@ class SchedulerService extends EventEmitter {
     // ─── Overrides de Data ────────────────────────────────────────────────────
 
     setOverride(data, config) {
-        // data = "YYYY-MM-DD", config = { horaInicio, horaFim } ou false
         if (config === false || config === null) {
             this.overrides[data] = false;
         } else {
-            const horaInicio = parseInt(config.horaInicio, 10);
-            const horaFim = parseInt(config.horaFim, 10);
-            if (isNaN(horaInicio) || isNaN(horaFim) || horaInicio < 0 || horaInicio > 23 || horaFim < 0 || horaFim > 23) {
-                throw new Error('Horas do override devem estar entre 0 e 23.');
-            }
-            this.overrides[data] = { horaInicio, horaFim };
+            const rawIni = config.horaInicio;
+            const rawFim = config.horaFim;
+            const iniMin = timeToMinutes(rawIni, 60);
+            const fimMin = timeToMinutes(rawFim, 300);
+            this.overrides[data] = { 
+                horaInicio: minutesToTimeStr(iniMin), 
+                horaFim: minutesToTimeStr(fimMin) 
+            };
         }
         this._save();
         console.log(`📅 [Scheduler] Override configurado para ${data}:`, this.overrides[data]);

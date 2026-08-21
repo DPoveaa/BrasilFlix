@@ -5368,25 +5368,30 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
         let currentSchedulerData = null;
 
-        function populateHourSelect(selectId, defaultHour = 0) {
+        function populateHourSelect(selectId, defaultVal = '00:00') {
             const el = document.getElementById(selectId);
             if (!el) return;
             el.innerHTML = '';
-            for (let h = 0; h < 24; h++) {
+            for (let m = 0; m <= 24 * 60; m += 30) {
+                const h = Math.floor(m / 60) % 24;
+                const min = m % 60;
+                const valStr = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
                 const opt = document.createElement('option');
-                opt.value = h;
-                const hStr = h < 10 ? `0${h}` : `${h}`;
-                opt.text = `${hStr}:00 (${h}h)`;
-                if (h === defaultHour) opt.selected = true;
+                opt.value = valStr;
+                opt.text = `${valStr} (${h}h${min > 0 ? min + 'm' : ''})`;
                 el.appendChild(opt);
+            }
+            if (defaultVal) {
+                const defStr = typeof defaultVal === 'number' ? (defaultVal < 10 ? `0${defaultVal}:00` : `${defaultVal}:00`) : defaultVal;
+                el.value = defStr;
             }
         }
 
         function initSchedulerHourSelects() {
-            populateHourSelect('sched-cfg-inicio', 1);
-            populateHourSelect('sched-cfg-fim', 5);
-            populateHourSelect('sched-ov-inicio', 1);
-            populateHourSelect('sched-ov-fim', 5);
+            populateHourSelect('sched-cfg-inicio', '01:00');
+            populateHourSelect('sched-cfg-fim', '05:00');
+            populateHourSelect('sched-ov-inicio', '01:00');
+            populateHourSelect('sched-ov-fim', '05:00');
             const dateInput = document.getElementById('sched-ov-date');
             if (dateInput && !dateInput.value) {
                 // Seta para amanhã como padrão
@@ -5423,7 +5428,8 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
                 if (horaAtual) {
                     const h = data.horaAtualBRT ?? '--';
-                    const hStr = typeof h === 'number' ? (h < 10 ? `0${h}:00` : `${h}:00`) : '--:--';
+                    const m = data.minutoAtualBRT ?? 0;
+                    const hStr = typeof h === 'number' ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : '--:--';
                     const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
                     const diaNome = typeof data.diaAtualBRT === 'number' ? dias[data.diaAtualBRT] : '';
                     horaAtual.innerText = `${hStr} (${diaNome})`;
@@ -5478,8 +5484,14 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
                     const selIni = document.getElementById('sched-cfg-inicio');
                     const selFim = document.getElementById('sched-cfg-fim');
-                    if (selIni) selIni.value = data.config.horaInicio ?? 1;
-                    if (selFim) selFim.value = data.config.horaFim ?? 5;
+                    if (selIni) {
+                        const rawIni = data.config.horaInicio ?? '01:00';
+                        selIni.value = typeof rawIni === 'number' ? (rawIni < 10 ? `0${rawIni}:00` : `${rawIni}:00`) : rawIni;
+                    }
+                    if (selFim) {
+                        const rawFim = data.config.horaFim ?? '05:00';
+                        selFim.value = typeof rawFim === 'number' ? (rawFim < 10 ? `0${rawFim}:00` : `${rawFim}:00`) : rawFim;
+                    }
                 }
 
                 // 3. Renderiza tabela de Overrides por Data
@@ -5494,7 +5506,9 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                             if (ov === false) {
                                 desc = '<span style="color: #f87171; font-weight: 700;">🚫 Bloqueado o dia inteiro</span>';
                             } else if (typeof ov === 'object' && ov !== null) {
-                                desc = `<span style="color: #34d399; font-weight: 700;">🕒 Das ${ov.horaInicio}h às ${ov.horaFim}h (BRT)</span>`;
+                                const hIni = typeof ov.horaInicio === 'number' ? `${ov.horaInicio}h` : ov.horaInicio;
+                                const hFim = typeof ov.horaFim === 'number' ? `${ov.horaFim}h` : ov.horaFim;
+                                desc = `<span style="color: #34d399; font-weight: 700;">🕒 Das ${hIni} às ${hFim} (BRT)</span>`;
                             }
                             return `
                                 <tr>
@@ -5547,8 +5561,8 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
             const ativo = document.getElementById('sched-cfg-ativo')?.checked ?? true;
             const dias = Array.from(document.querySelectorAll('input[name="sched-dias"]:checked')).map(cb => parseInt(cb.value, 10));
-            const horaInicio = parseInt(document.getElementById('sched-cfg-inicio')?.value || '1', 10);
-            const horaFim = parseInt(document.getElementById('sched-cfg-fim')?.value || '5', 10);
+            const horaInicio = document.getElementById('sched-cfg-inicio')?.value || '01:00';
+            const horaFim = document.getElementById('sched-cfg-fim')?.value || '05:00';
 
             if (dias.length === 0) {
                 showToast('Selecione ao menos 1 dia da semana para a grade.', 'error');
@@ -5576,8 +5590,8 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
             const data = document.getElementById('sched-ov-date')?.value;
             const tipo = document.getElementById('sched-ov-tipo')?.value;
-            const horaInicio = parseInt(document.getElementById('sched-ov-inicio')?.value || '1', 10);
-            const horaFim = parseInt(document.getElementById('sched-ov-fim')?.value || '5', 10);
+            const horaInicio = document.getElementById('sched-ov-inicio')?.value || '01:00';
+            const horaFim = document.getElementById('sched-ov-fim')?.value || '05:00';
 
             if (!data) {
                 showToast('Informe a data para a programação especial.', 'error');
