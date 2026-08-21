@@ -89,6 +89,12 @@ class AutoFeeder {
             // 4.1 Auto-Upgrade: Verificar se episódios de séries apenas Legendados já ganharam versão Dublada (PT-BR)
             await this.checkSeriesDubladoUpgrades();
 
+            // 4.2 Auto-Upgrade: Verificar se episódios de séries apenas Dublados também ganham versão Legendada oficial
+            await this.checkSeriesLegendadoUpgrades();
+
+            // 4.3 Auto-Upgrade: Verificar se filmes apenas Dublados também ganham versão Legendada oficial
+            await this.checkFilmesDubladosSemLegenda();
+
             // 5. Se a fila já estiver com séries pendentes em andamento, não sobrecarrega com novos títulos
             const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && j.status === 'queued');
             if (seriesInQueue.length >= 6) {
@@ -377,6 +383,90 @@ class AutoFeeder {
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de dublagem para séries no AutoFeeder:', e.message);
+        }
+    }
+
+    async checkSeriesLegendadoUpgrades() {
+        try {
+            const pendentes = this.catalogoManager.buscarEpisodiosApenasDublados();
+            if (pendentes.length === 0) return;
+
+            // Agrupa por série e temporada para processar na ordem cronológica (E1, E2, E3...)
+            const seriesMap = {};
+            for (const p of pendentes) {
+                const key = `${p.serieNome}_s${p.season}`;
+                if (!seriesMap[key]) seriesMap[key] = [];
+                seriesMap[key].push(p);
+            }
+
+            console.log(`💬 AutoFeeder: Verificando upgrades para LEGENDADO em ${Object.keys(seriesMap).length} temporada(s) com episódios sem legenda...`);
+
+            for (const [key, epsList] of Object.entries(seriesMap)) {
+                epsList.sort((a, b) => a.episode - b.episode);
+                const primeiroPendente = epsList[0];
+
+                const jaNaFila = (this.queueManager.queue || []).some(j =>
+                    j.type === 'serie' &&
+                    j.title.toLowerCase() === primeiroPendente.serieNome.toLowerCase() &&
+                    j.season === primeiroPendente.season &&
+                    j.episode === primeiroPendente.episode &&
+                    j.status !== 'failed'
+                );
+
+                if (!jaNaFila) {
+                    console.log(`🔄 [UPGRADE LEGENDADO] Enfileirando busca de versão Legendada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} (atualmente apenas Dublado)...`);
+                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', PRIORITIES.SERIES, {
+                        tmdbId: primeiroPendente.tmdbId,
+                        imdbId: primeiroPendente.imdbId,
+                        season: primeiroPendente.season,
+                        episode: primeiroPendente.episode,
+                        audioPreference: 'legendado',
+                        isUpgrade: true,
+                        nomeOriginal: primeiroPendente.nomeOriginal,
+                        isDorama: primeiroPendente.isDorama,
+                        isAnime: primeiroPendente.isAnime
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao verificar upgrades de legendas para séries no AutoFeeder:', e.message);
+        }
+    }
+
+    async checkFilmesDubladosSemLegenda() {
+        try {
+            const apenasDublados = this.catalogoManager.buscarFilmesApenasDublados();
+            if (apenasDublados.length === 0) return;
+
+            for (const filme of apenasDublados.slice(0, 3)) {
+                const jaNaFila = (this.queueManager.queue || []).some(j =>
+                    j.type === 'filme' &&
+                    j.title.toLowerCase() === filme.nome.toLowerCase() &&
+                    j.status !== 'failed'
+                );
+
+                if (!jaNaFila && filme.imdbId) {
+                    const sources = await MediaSearchService.search(filme.nome, 'filme', {
+                        nomeOriginal: filme.nomeOriginal,
+                        ano: filme.ano,
+                        imdbId: filme.imdbId,
+                        audioPreference: 'legendado'
+                    });
+
+                    const legSource = sources.find(s => s.isLegendado && s.seeders > 0);
+                    if (legSource) {
+                        console.log(`🌟 VERSÃO LEGENDADA ENCONTRADA para "${filme.nome}"! Fonte: ${legSource.title}`);
+                        this.queueManager.addJob(filme.nome, 'filme', PRIORITIES.SERIES, {
+                            tmdbId: filme.tmdbId,
+                            imdbId: filme.imdbId,
+                            audioPreference: 'legendado',
+                            isUpgrade: true
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao verificar upgrades de filmes para legendado:', e.message);
         }
     }
 

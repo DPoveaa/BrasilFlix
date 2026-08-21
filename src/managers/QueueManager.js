@@ -848,6 +848,19 @@ class QueueManager extends EventEmitter {
                                 }
                             }
                         }
+                    } else if (pref === 'legendado') {
+                        // Passo C: Se o pedido for Legendado, verifica se algum episódio ainda não tem a opção Legendada
+                        for (let ep = 1; ep <= totalEpsInS; ep++) {
+                            const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
+                            if (epItem) {
+                                const epLeg = epItem.isLegendado || !!epItem.versoes?.legendado;
+                                if (!epLeg) {
+                                    nextTargetSeason = s;
+                                    nextTargetEp = ep;
+                                    break;
+                                }
+                            }
+                        }
                     }
                     if (nextTargetSeason !== null) break;
                 }

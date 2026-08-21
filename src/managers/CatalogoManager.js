@@ -308,12 +308,19 @@ class CatalogoManager {
         });
     }
 
+    buscarFilmesApenasDublados() {
+        return (this.catalogo.filmes || []).filter(f => {
+            const temDub = f.isDublado === true || !!f.versoes?.dublado || (f.audio && f.audio.toLowerCase().includes('dublado'));
+            const temLeg = f.isLegendado === true || !!f.versoes?.legendado;
+            return temDub && !temLeg && !f.isCam;
+        });
+    }
+
     buscarEpisodiosApenasLegendados() {
         const pendentes = [];
         for (const serie of (this.catalogo.series || [])) {
             for (const temp of (serie.temporadas || [])) {
                 const eps = temp.episodios || [];
-                const temAlgumDublado = eps.some(e => e.isDublado || !!e.versoes?.dublado || (e.audio && e.audio.toLowerCase().includes('dublado')));
                 const temAlgumLegendado = eps.some(e => !e.isDublado && (e.isLegendado || !!e.versoes?.legendado || (e.audio && e.audio.toLowerCase().includes('legendado'))));
 
                 // Se houver episódios na temporada que não possuem versão Dublada
@@ -331,10 +338,38 @@ class CatalogoManager {
                                 episode: ep.numero,
                                 epNome: ep.nome,
                                 isDorama: serie.isDorama,
-                                isAnime: serie.isAnime,
-                                temAlgumDublado
+                                isAnime: serie.isAnime
                             });
                         }
+                    }
+                }
+            }
+        }
+        return pendentes;
+    }
+
+    buscarEpisodiosApenasDublados() {
+        const pendentes = [];
+        for (const serie of (this.catalogo.series || [])) {
+            for (const temp of (serie.temporadas || [])) {
+                const eps = temp.episodios || [];
+                for (const ep of eps) {
+                    const isDub = ep.isDublado || !!ep.versoes?.dublado || (ep.audio && ep.audio.toLowerCase().includes('dublado'));
+                    const isLeg = ep.isLegendado || !!ep.versoes?.legendado;
+                    // Se tem dublado mas ainda NÃO tem a versão legendada disponível
+                    if (isDub && !isLeg) {
+                        pendentes.push({
+                            serieId: serie.id,
+                            serieNome: serie.nome,
+                            nomeOriginal: serie.nomeOriginal,
+                            tmdbId: serie.tmdbId,
+                            imdbId: serie.imdbId,
+                            season: temp.numero,
+                            episode: ep.numero,
+                            epNome: ep.nome,
+                            isDorama: serie.isDorama,
+                            isAnime: serie.isAnime
+                        });
                     }
                 }
             }
