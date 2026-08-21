@@ -2120,6 +2120,9 @@
                     <button class="admin-sub-btn" id="admin-sub-btn-queue" onclick="switchAdminSubTab('queue')">
                         📥 Fila & Processamento
                     </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-scheduler" onclick="switchAdminSubTab('scheduler')">
+                        ⏱️ Horários & Agendador
+                    </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
                         💎 Assinaturas & VIPs
                     </button>
@@ -2399,6 +2402,169 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                <!-- SUB-TAB 6: HORÁRIOS & AGENDADOR -->
+                <div id="admin-subtab-scheduler" class="admin-subtab-content" style="display: none;">
+                    
+                    <!-- BANNER DE STATUS DO AGENDADOR -->
+                    <div class="panel-box" style="margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02);">
+                        <div class="panel-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 14px; margin-bottom: 16px;">
+                            <div>
+                                <h3 style="font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+                                    <span>⏱️</span> Status do Agendador de Horários
+                                </h3>
+                                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="adm-sched-motivo">Carregando status do agendador...</p>
+                            </div>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button class="btn-action" onclick="loadAdminScheduler()">🔄 Atualizar</button>
+                            </div>
+                        </div>
+
+                        <!-- CARDS DE ESTADO -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                            <div style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04);">
+                                <div style="color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase;">ESTADO ATUAL</div>
+                                <div id="adm-sched-badge" style="font-size: 14px; font-weight: 800; margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: rgba(52, 211, 153, 0.15); color: #34d399;">
+                                    🟢 Em Execução
+                                </div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04);">
+                                <div style="color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase;">HORA ATUAL (BRT)</div>
+                                <div id="adm-sched-hora-atual" style="font-size: 16px; font-weight: 800; color: #fff; margin-top: 6px;">--:--</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04);">
+                                <div style="color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase;">PRÓXIMA JANELA</div>
+                                <div id="adm-sched-proxima-janela" style="font-size: 13px; font-weight: 700; color: #60a5fa; margin-top: 6px;">Calculando...</div>
+                            </div>
+                        </div>
+
+                        <!-- CONTROLES MANUAIS IMEDIATOS -->
+                        <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 800; color: #fff;">Controles Imediatos Manuais</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Inicie ou pause o robô a qualquer momento pelo botão, ou volte à grade automática.</div>
+                            </div>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button class="btn-action btn-action-primary" style="background: #10b981; border-color: #059669;" onclick="handleSchedulerForce('start')">
+                                    ▶️ Iniciar Agora
+                                </button>
+                                <button class="btn-action btn-action-danger" onclick="handleSchedulerForce('stop')">
+                                    ⏹️ Pausar Agora
+                                </button>
+                                <button class="btn-action" style="background: rgba(255,255,255,0.08);" onclick="handleSchedulerForce('clear')">
+                                    🔄 Seguir Grade Padrão
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GRADE PADRÃO E DATAS ESPECIAIS (2 COLUNAS) -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px;">
+                        
+                        <!-- COLUNA 1: GRADE SEMANAL PADRÃO -->
+                        <div class="panel-box">
+                            <div class="panel-header">
+                                <h3>📅 Grade Semanal Padrão</h3>
+                            </div>
+                            <form onsubmit="handleSaveSchedulerConfig(event)">
+                                <div style="margin-bottom: 14px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer;">
+                                        <input type="checkbox" id="sched-cfg-ativo" checked style="width: 16px; height: 16px;">
+                                        Ativar agendador de horários (se desmarcado, roda 24h sem parar)
+                                    </label>
+                                </div>
+
+                                <div style="margin-bottom: 14px;">
+                                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">DIAS DA SEMANA ATIVOS:</label>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(75px, 1fr)); gap: 8px; font-size: 12px;">
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="1" checked> Seg</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="2" checked> Ter</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="3" checked> Qua</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="4" checked> Qui</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="5" checked> Sex</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="6"> Sáb</label>
+                                        <label style="display: flex; align-items: center; gap: 4px; color: #fff; cursor: pointer;"><input type="checkbox" name="sched-dias" value="0"> Dom</label>
+                                    </div>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">HORA DE INÍCIO (BRT):</label>
+                                        <select id="sched-cfg-inicio" class="search-input" style="width: 100%;"></select>
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">HORA DE FIM (BRT):</label>
+                                        <select id="sched-cfg-fim" class="search-input" style="width: 100%;"></select>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn-primary" style="width: 100%; padding: 10px; font-size: 13px;">
+                                    💾 Salvar Grade Padrão
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- COLUNA 2: PROGRAMAÇÃO ESPECIAL POR DATA (OVERRIDES) -->
+                        <div class="panel-box">
+                            <div class="panel-header">
+                                <h3>🎯 Programação Especial por Data (Exceções)</h3>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                                Quer que o robô funcione num dia específico fora da grade (ex: <em>"Nesta terça-feira rodar até 13h da tarde"</em>) ou bloquear um dia específico?
+                            </p>
+
+                            <!-- FORMULÁRIO DE ADICIONAR OVERRIDE -->
+                            <form onsubmit="handleAddSchedulerOverride(event)" style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">DATA:</label>
+                                        <input type="date" id="sched-ov-date" class="search-input" style="width: 100%;" required>
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">TIPO DE EXCEÇÃO:</label>
+                                        <select id="sched-ov-tipo" class="search-input" style="width: 100%;" onchange="toggleOverrideHours()">
+                                            <option value="custom">Horário Customizado</option>
+                                            <option value="blocked">Bloquear Dia Inteiro</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div id="sched-ov-hours-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">HORA INÍCIO:</label>
+                                        <select id="sched-ov-inicio" class="search-input" style="width: 100%;"></select>
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">HORA FIM:</label>
+                                        <select id="sched-ov-fim" class="search-input" style="width: 100%;"></select>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn-action btn-action-primary" style="width: 100%; padding: 8px; font-size: 12px;">
+                                    ➕ Salvar Data Especial
+                                </button>
+                            </form>
+
+                            <!-- TABELA DE OVERRIDES ATIVOS -->
+                            <div style="font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 8px;">Datas Especiais Cadastradas:</div>
+                            <div class="admin-table-container">
+                                <div style="overflow-x: auto;">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Data</th>
+                                                <th>Programação Especial</th>
+                                                <th style="text-align: right;">Ação</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adm-sched-overrides-tbody">
+                                            <tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Nenhuma exceção cadastrada.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 
@@ -3692,6 +3858,7 @@
 
             if (subTabId === 'overview') loadAdminStats();
             else if (subTabId === 'queue') loadAdminQueue();
+            else if (subTabId === 'scheduler') loadAdminScheduler();
             else if (subTabId === 'subs') { loadAdminSubs(); loadAdminTokens(); }
             else if (subTabId === 'requests') loadAdminRequests();
             else if (subTabId === 'catalog') loadAdminCatalog();
@@ -5119,6 +5286,261 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
         function closeAdminModalOnClick(e, modalId) {
             if (e.target.id === modalId) {
                 closeAdminModal(modalId);
+            }
+        }
+
+        // ─── AGENDADOR DE HORÁRIOS (SCHEDULER) ──────────────────────────────────
+
+        let currentSchedulerData = null;
+
+        function populateHourSelect(selectId, defaultHour = 0) {
+            const el = document.getElementById(selectId);
+            if (!el) return;
+            el.innerHTML = '';
+            for (let h = 0; h < 24; h++) {
+                const opt = document.createElement('option');
+                opt.value = h;
+                const hStr = h < 10 ? `0${h}` : `${h}`;
+                opt.text = `${hStr}:00 (${h}h)`;
+                if (h === defaultHour) opt.selected = true;
+                el.appendChild(opt);
+            }
+        }
+
+        function initSchedulerHourSelects() {
+            populateHourSelect('sched-cfg-inicio', 1);
+            populateHourSelect('sched-cfg-fim', 5);
+            populateHourSelect('sched-ov-inicio', 1);
+            populateHourSelect('sched-ov-fim', 5);
+            const dateInput = document.getElementById('sched-ov-date');
+            if (dateInput && !dateInput.value) {
+                // Seta para amanhã como padrão
+                const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                dateInput.value = tomorrow.toISOString().slice(0, 10);
+            }
+        }
+
+        function toggleOverrideHours() {
+            const tipo = document.getElementById('sched-ov-tipo')?.value;
+            const hoursRow = document.getElementById('sched-ov-hours-row');
+            if (hoursRow) {
+                hoursRow.style.display = tipo === 'blocked' ? 'none' : 'grid';
+            }
+        }
+
+        async function loadAdminScheduler() {
+            if (!adminToken) return;
+            initSchedulerHourSelects();
+
+            try {
+                const res = await fetch('/api/admin/scheduler', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                currentSchedulerData = data;
+
+                // 1. Atualiza Banner de Status
+                const badge = document.getElementById('adm-sched-badge');
+                const motivo = document.getElementById('adm-sched-motivo');
+                const horaAtual = document.getElementById('adm-sched-hora-atual');
+                const proxJanela = document.getElementById('adm-sched-proxima-janela');
+
+                if (motivo) motivo.innerText = data.motivo || 'Agendador de horários ativo';
+
+                if (horaAtual) {
+                    const h = data.horaAtualBRT ?? '--';
+                    const hStr = typeof h === 'number' ? (h < 10 ? `0${h}:00` : `${h}:00`) : '--:--';
+                    const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                    const diaNome = typeof data.diaAtualBRT === 'number' ? dias[data.diaAtualBRT] : '';
+                    horaAtual.innerText = `${hStr} (${diaNome})`;
+                }
+
+                if (badge) {
+                    if (!data.config?.ativo) {
+                        badge.style.background = 'rgba(59, 130, 246, 0.15)';
+                        badge.style.color = '#60a5fa';
+                        badge.innerHTML = '🌐 24 Horas Ativo (Sem Pausa)';
+                    } else if (data.forceState === 'start') {
+                        badge.style.background = 'rgba(52, 211, 153, 0.2)';
+                        badge.style.color = '#34d399';
+                        badge.innerHTML = '▶️ Forçado Ligado Manualmente';
+                    } else if (data.forceState === 'stop') {
+                        badge.style.background = 'rgba(239, 68, 68, 0.2)';
+                        badge.style.color = '#f87171';
+                        badge.innerHTML = '⏹️ Pausado Manualmente';
+                    } else if (data.allowed) {
+                        badge.style.background = 'rgba(52, 211, 153, 0.15)';
+                        badge.style.color = '#34d399';
+                        badge.innerHTML = '🟢 Em Janela Ativa (Processando)';
+                    } else {
+                        badge.style.background = 'rgba(245, 158, 11, 0.15)';
+                        badge.style.color = '#fbbf24';
+                        badge.innerHTML = '⏸️ Fora do Horário (Pausado)';
+                    }
+                }
+
+                if (proxJanela) {
+                    if (data.allowed) {
+                        proxJanela.innerText = '✅ Janela em andamento agora!';
+                        proxJanela.style.color = '#34d399';
+                    } else if (data.proximaJanela?.descricao) {
+                        proxJanela.innerText = `Próxima: ${data.proximaJanela.descricao}`;
+                        proxJanela.style.color = '#60a5fa';
+                    } else {
+                        proxJanela.innerText = 'Nenhuma janela prevista';
+                        proxJanela.style.color = 'var(--text-muted)';
+                    }
+                }
+
+                // 2. Preenche formulário de Grade Padrão
+                if (data.config) {
+                    const ativoEl = document.getElementById('sched-cfg-ativo');
+                    if (ativoEl) ativoEl.checked = data.config.ativo !== false;
+
+                    const dias = data.config.diasSemana || [1, 2, 3, 4, 5];
+                    document.querySelectorAll('input[name="sched-dias"]').forEach(cb => {
+                        cb.checked = dias.includes(parseInt(cb.value, 10));
+                    });
+
+                    const selIni = document.getElementById('sched-cfg-inicio');
+                    const selFim = document.getElementById('sched-cfg-fim');
+                    if (selIni) selIni.value = data.config.horaInicio ?? 1;
+                    if (selFim) selFim.value = data.config.horaFim ?? 5;
+                }
+
+                // 3. Renderiza tabela de Overrides por Data
+                const tbody = document.getElementById('adm-sched-overrides-tbody');
+                if (tbody) {
+                    const entries = Object.entries(data.overrides || {});
+                    if (entries.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Nenhuma exceção cadastrada.</td></tr>';
+                    } else {
+                        tbody.innerHTML = entries.sort(([a], [b]) => a.localeCompare(b)).map(([dt, ov]) => {
+                            let desc = '';
+                            if (ov === false) {
+                                desc = '<span style="color: #f87171; font-weight: 700;">🚫 Bloqueado o dia inteiro</span>';
+                            } else if (typeof ov === 'object' && ov !== null) {
+                                desc = `<span style="color: #34d399; font-weight: 700;">🕒 Das ${ov.horaInicio}h às ${ov.horaFim}h (BRT)</span>`;
+                            }
+                            return `
+                                <tr>
+                                    <td style="font-weight: 800; color: #fff;">${dt}</td>
+                                    <td>${desc}</td>
+                                    <td style="text-align: right;">
+                                        <button class="btn-action btn-action-danger" style="padding: 4px 8px; font-size: 11px;" onclick="handleDeleteSchedulerOverride('${dt}')">
+                                            🗑️ Excluir
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                }
+
+            } catch (e) {
+                console.warn('Erro ao carregar scheduler:', e);
+            }
+        }
+
+        async function handleSchedulerForce(action) {
+            if (!adminToken) return;
+            const endpoints = {
+                start: '/api/admin/scheduler/force-start',
+                stop: '/api/admin/scheduler/force-stop',
+                clear: '/api/admin/scheduler/clear-force'
+            };
+            const endpoint = endpoints[action];
+            if (!endpoint) return;
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ reason: `Acionado manualmente no painel web (${action})` })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao executar ação.');
+                showToast(data.message || 'Comando executado com sucesso!', 'success');
+                loadAdminScheduler();
+            } catch (err) {
+                showToast(err.message || 'Erro na requisição.', 'error');
+            }
+        }
+
+        async function handleSaveSchedulerConfig(e) {
+            e.preventDefault();
+            if (!adminToken) return;
+
+            const ativo = document.getElementById('sched-cfg-ativo')?.checked ?? true;
+            const dias = Array.from(document.querySelectorAll('input[name="sched-dias"]:checked')).map(cb => parseInt(cb.value, 10));
+            const horaInicio = parseInt(document.getElementById('sched-cfg-inicio')?.value || '1', 10);
+            const horaFim = parseInt(document.getElementById('sched-cfg-fim')?.value || '5', 10);
+
+            if (dias.length === 0) {
+                showToast('Selecione ao menos 1 dia da semana para a grade.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/scheduler/config', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ ativo, diasSemana: dias, horaInicio, horaFim })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao salvar grade.');
+                showToast(data.message || 'Grade padrão salva com sucesso!', 'success');
+                loadAdminScheduler();
+            } catch (err) {
+                showToast(err.message || 'Erro ao salvar.', 'error');
+            }
+        }
+
+        async function handleAddSchedulerOverride(e) {
+            e.preventDefault();
+            if (!adminToken) return;
+
+            const data = document.getElementById('sched-ov-date')?.value;
+            const tipo = document.getElementById('sched-ov-tipo')?.value;
+            const horaInicio = parseInt(document.getElementById('sched-ov-inicio')?.value || '1', 10);
+            const horaFim = parseInt(document.getElementById('sched-ov-fim')?.value || '5', 10);
+
+            if (!data) {
+                showToast('Informe a data para a programação especial.', 'error');
+                return;
+            }
+
+            const payloadConfig = tipo === 'blocked' ? false : { horaInicio, horaFim };
+
+            try {
+                const res = await fetch('/api/admin/scheduler/override', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ data, config: payloadConfig })
+                });
+                const resData = await res.json();
+                if (!res.ok) throw new Error(resData.error || 'Erro ao salvar exceção.');
+                showToast(resData.message || 'Data especial configurada com sucesso!', 'success');
+                loadAdminScheduler();
+            } catch (err) {
+                showToast(err.message || 'Erro ao salvar.', 'error');
+            }
+        }
+
+        async function handleDeleteSchedulerOverride(dt) {
+            if (!adminToken) return;
+            if (!confirm(`Remover a programação especial do dia ${dt}?`)) return;
+
+            try {
+                const res = await fetch(`/api/admin/scheduler/override/${dt}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao remover exceção.');
+                showToast(data.message || 'Exceção removida com sucesso!', 'success');
+                loadAdminScheduler();
+            } catch (err) {
+                showToast(err.message || 'Erro ao remover.', 'error');
             }
         }
     </script>

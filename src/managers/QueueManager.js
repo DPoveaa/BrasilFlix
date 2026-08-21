@@ -10,6 +10,7 @@ const VideoProcessor = require('../services/VideoProcessor');
 const TelegramUploader = require('../services/TelegramUploader');
 const DiskCleaner = require('../services/DiskCleaner');
 const SwarmWatcher = require('../services/SwarmWatcher');
+const SchedulerService = require('../services/SchedulerService');
 
 const PRIORITIES = {
     VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila Máxima)
@@ -33,6 +34,14 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
+
+        // Notificação em tempo real quando o agendador autorizar o início dos downloads
+        SchedulerService.on('stateChange', ({ allowed }) => {
+            if (allowed) {
+                console.log('⏰ [Scheduler -> Queue] Janela aberta ou force-start acionado. Despertando fila de downloads...');
+                setImmediate(() => this.processNext());
+            }
+        });
 
         // Inicializa banco e carrega fila de forma assíncrona
         this._init();
@@ -72,7 +81,8 @@ class QueueManager extends EventEmitter {
             queued: queuedJobs.length,
             total: this.queue.length + activeTasks.length,
             completed: 0,
-            queue: queuedJobs
+            queue: queuedJobs,
+            scheduler: SchedulerService.getStatus()
         };
     }
 
@@ -113,7 +123,8 @@ class QueueManager extends EventEmitter {
             maxConcurrentTranscodes: config.MAX_CONCURRENT_TRANSCODES || 2,
             maxConcurrentUploads: this.maxConcurrentUploads || 4,
             totalQueued: queued.length,
-            queue: queued
+            queue: queued,
+            scheduler: SchedulerService.getStatus()
         };
     }
 
@@ -601,7 +612,12 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
-        // Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
+        // 1. Verifica se o processamento está autorizado pelo agendador de horários (SchedulerService)
+        if (!SchedulerService.isAllowedToRun()) {
+            return;
+        }
+
+        // 2. Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
         const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
         if (diskCrowded) {
             console.log('⏳ [Guarda de Disco] Espaço temporário atingiu margem de segurança. Segurando novos downloads até uploads concluírem.');

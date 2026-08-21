@@ -7,6 +7,7 @@ const StremioService = require('./StremioService');
 const telegramUploader = require('./TelegramUploader');
 const authService = require('./AuthService');
 const TMDBService = require('./TMDBService');
+const schedulerService = require('./SchedulerService');
 const db = require('../database/db');
 
 class StremioServer {
@@ -252,6 +253,73 @@ class StremioServer {
             try {
                 const result = await this.queueManager.clearFailed();
                 res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 3.1 Gerenciamento do Agendador de Horários (Scheduler)
+        this.app.get('/api/admin/scheduler', auth, (req, res) => {
+            try {
+                res.json(schedulerService.getStatus());
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/config', auth, (req, res) => {
+            try {
+                schedulerService.updateConfig(req.body);
+                res.json({ success: true, message: 'Grade padrão do agendador atualizada com sucesso!', scheduler: schedulerService.getStatus() });
+            } catch (e) {
+                res.status(400).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/override', auth, (req, res) => {
+            try {
+                const { data, config } = req.body;
+                if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+                    return res.status(400).json({ error: 'Data deve estar no formato YYYY-MM-DD.' });
+                }
+                schedulerService.setOverride(data, config);
+                res.json({ success: true, message: `Programação especial salva para ${data}!`, scheduler: schedulerService.getStatus() });
+            } catch (e) {
+                res.status(400).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/scheduler/override/:data', auth, (req, res) => {
+            try {
+                schedulerService.removeOverride(req.params.data);
+                res.json({ success: true, message: `Programação especial de ${req.params.data} removida!`, scheduler: schedulerService.getStatus() });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/force-start', auth, (req, res) => {
+            try {
+                schedulerService.forceStart(req.body?.reason || 'Acionado via Painel Admin');
+                res.json({ success: true, message: 'Processamento iniciado imediatamente!', scheduler: schedulerService.getStatus() });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/force-stop', auth, (req, res) => {
+            try {
+                schedulerService.forceStop(req.body?.reason || 'Pausado via Painel Admin');
+                res.json({ success: true, message: 'Processamento pausado imediatamente!', scheduler: schedulerService.getStatus() });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/clear-force', auth, (req, res) => {
+            try {
+                schedulerService.clearForce();
+                res.json({ success: true, message: 'Controle manual removido! Bot voltou à grade agendada.', scheduler: schedulerService.getStatus() });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
