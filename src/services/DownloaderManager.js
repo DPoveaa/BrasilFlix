@@ -355,6 +355,7 @@ class DownloaderManager extends EventEmitter {
                 try {
                     if (torrent) {
                         torrent.removeAllListeners();
+                        try { torrent.destroy(() => {}); } catch (e) {}
                     }
                     client.destroy(() => {});
                 } catch (e) {

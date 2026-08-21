@@ -502,6 +502,7 @@ class MediaSearchService {
 
                 if (tipo === 'filme' && parseFloat(sizeMB) > 5500) continue;
                 if (tipo === 'filme' && parseFloat(sizeMB) < 400) continue;
+                if (tipo === 'serie' && parseFloat(sizeMB) > 0 && parseFloat(sizeMB) < 150) continue;
 
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio 1080p';
