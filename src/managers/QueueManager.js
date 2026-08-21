@@ -51,24 +51,47 @@ class QueueManager extends EventEmitter {
         // Notificação em tempo real quando o agendador autorizar ou encerrar a janela de downloads
         SchedulerService.on('stateChange', async ({ allowed, reason }) => {
             if (allowed) {
-                console.log('⏰ [Scheduler -> Queue] Janela aberta ou force-start acionado. Despertando fila de downloads...');
+                console.log('⏰ [Scheduler -> Queue] Janela aberta ou force-start acionado. Despertando fila de downloads e uploads pendentes...');
                 setImmediate(() => this.processNext());
             } else {
-                console.log(`⏰ [Scheduler -> Queue] Janela encerrada (${reason}). Cancelando downloads em andamento e liberando SSD...`);
+                console.log(`⏰ [Scheduler -> Queue] Janela encerrada (${reason}). Aplicando estratégia inteligente: tolerância 80%+ e cancelamento do restante...`);
                 try {
-                    // Cancela downloads que estavam em progresso para não gastar banda nem SSD
                     for (const job of this.activeJobs.values()) {
+                        const isOptimizing = job.progressDetails && job.progressDetails.includes('Otimizando');
+                        const hasRawFile = job.rawFilePath && fs.existsSync(job.rawFilePath);
+                        const hasOptimizedFile = job.optimizedPath && fs.existsSync(job.optimizedPath);
+
+                        // 1. Se já estiver otimizando/processando vídeo localmente (CPU/GPU), deixa terminar!
+                        if (isOptimizing || (hasRawFile && !hasOptimizedFile)) {
+                            console.log(`🎬 [Scheduler SP] Job "${job.title}" já está em processamento de vídeo local (CPU/GPU). Permitindo conclusão do remux sem uso de rede.`);
+                            continue;
+                        }
+
+                        // 2. Se for download em andamento:
                         if (job.status === 'downloading' || job.status === 'searching' || job.status === 'processing') {
-                            if (!job.rawFilePath || !fs.existsSync(job.rawFilePath)) {
-                                console.log(`🛑 [Scheduler SP] Pausando job "${job.title}" e devolvendo à fila para a próxima janela.`);
+                            const prog = typeof job.progress === 'number' ? job.progress : 0;
+                            if (prog >= 80) {
+                                console.log(`⚡ [Tolerância 80%+] Job "${job.title}" atingiu ${prog}% de download. Permitindo conclusão final do arquivo para posterior processamento.`);
+                                continue;
+                            } else {
+                                console.log(`🛑 [Scheduler SP] Job "${job.title}" estava em ${prog}% (< 80%). Cancelando download e devolvendo à fila com sementes limpas para a próxima janela.`);
                                 job.status = 'queued';
                                 job.progress = 0;
                                 job.progressDetails = 'Aguardando próxima janela de download (SP)...';
                                 await this.saveJob(job);
                             }
                         }
+
+                        // 3. Se for upload para o Telegram fora da janela, segura o upload
+                        if (job.status === 'uploading') {
+                            console.log(`⏸️ [Scheduler SP] Segurando upload de "${job.title}" para não usar banda de rede. Será enviado na próxima janela.`);
+                            job.status = 'queued';
+                            job.progress = 100;
+                            job.progressDetails = '100% Otimizado. Aguardando janela de upload (SP)...';
+                            await this.saveJob(job);
+                        }
                     }
-                    // Executa limpeza de resíduos temporários
+                    // Executa limpeza de arquivos temporários órfãos de downloads descartados
                     await DiskCleaner.cleanTempFiles().catch(() => {});
                 } catch (e) {
                     console.warn('⚠️ Aviso ao pausar fila no encerramento da janela:', e.message);
