@@ -82,13 +82,19 @@ class QueueManager extends EventEmitter {
                             }
                         }
 
-                        // 3. Se for upload para o Telegram fora da janela, segura o upload
+                        // 3. Se for upload para o Telegram fora da janela:
                         if (job.status === 'uploading') {
-                            console.log(`⏸️ [Scheduler SP] Segurando upload de "${job.title}" para não usar banda de rede. Será enviado na próxima janela.`);
-                            job.status = 'queued';
-                            job.progress = 100;
-                            job.progressDetails = '100% Otimizado. Aguardando janela de upload (SP)...';
-                            await this.saveJob(job);
+                            const upProg = typeof job.progress === 'number' ? job.progress : 0;
+                            if (upProg >= 80) {
+                                console.log(`⚡ [Tolerância Upload 80%+] Job "${job.title}" já atingiu ${upProg}% de upload. Permitindo conclusão final do envio.`);
+                                continue;
+                            } else {
+                                console.log(`⏸️ [Scheduler SP] Upload de "${job.title}" estava em ${upProg}% (< 80%). Segurando envio para liberar banda de rede. Arquivo otimizado preservado para a próxima janela.`);
+                                job.status = 'queued';
+                                job.progress = 100;
+                                job.progressDetails = '100% Otimizado. Aguardando janela de upload (SP)...';
+                                await this.saveJob(job);
+                            }
                         }
                     }
                     // Executa limpeza de arquivos temporários órfãos de downloads descartados

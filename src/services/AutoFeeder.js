@@ -52,17 +52,45 @@ class AutoFeeder {
             }
         }, 30 * 60 * 1000);
 
-        // Agendamento periódico clássico a cada 4 horas
-        cron.schedule('0 */4 * * *', () => {
-            console.log('⏰ AutoFeeder: Iniciando ciclo de varredura periódica...');
-            this.runCheck();
+        // Agendamento leve a cada 2 horas (mesmo fora do horário, apenas checa metadados leves no TMDB)
+        cron.schedule('0 */2 * * *', () => {
+            if (SchedulerService.isAllowedToRun()) {
+                console.log('⏰ AutoFeeder: Ciclo de varredura completa...');
+                this.runCheck();
+            } else {
+                console.log('🔍 [AutoFeeder Off-Hours] Varredura leve de metadados (TMDB/Pedidos/Upgrades) em segundo plano...');
+                this.runLightweightBackgroundCheck();
+            }
         });
+    }
+
+    async runLightweightBackgroundCheck() {
+        if (this.isRunningCheck) return;
+        this.isRunningCheck = true;
+        try {
+            // 1. Reprocessar Pedidos Pendentes de Clientes (coloca na fila para quando abrir a janela)
+            await this.checkPendingPedidos();
+
+            // 2. Verificar se filmes de cinema (CAM) ganharam versão oficial WEB-DL no TMDB
+            if (config.AUTO_UPGRADE_CAM) {
+                await this.checkCamUpgrades();
+            }
+
+            // 3. Checar upgrades de dublagens e legendas para deixar na fila
+            await this.checkLegendadoUpgrades();
+            await this.checkSeriesDubladoUpgrades();
+            await this.checkSeriesLegendadoUpgrades();
+        } catch (e) {
+            console.warn('⚠️ Erro na checagem leve de metadados:', e.message);
+        } finally {
+            this.isRunningCheck = false;
+        }
     }
 
     async runCheck() {
         if (this.isRunningCheck) return;
         if (!SchedulerService.isAllowedToRun()) {
-            console.log('⏰ [Scheduler SP] AutoFeeder em repouso: fora da janela de download das 01h às 05h (Horário de SP).');
+            console.log('⏰ [Scheduler SP] AutoFeeder em repouso: fora da janela de download (Horário de SP).');
             return;
         }
         this.isRunningCheck = true;
