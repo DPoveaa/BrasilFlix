@@ -665,9 +665,61 @@ class VideoProcessor {
                 await fs.remove(finalPath).catch(() => {});
                 throw new Error(`Inconsistência severa de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem apenas ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
             }
+
+            // Teste de integridade de decodificação no meio do vídeo (Anti-Freeze / Anti-Corrupção)
+            const isValidStream = await this.checkVideoDecodeIntegrity(finalPath, outInfo.duration);
+            if (!isValidStream) {
+                await fs.remove(finalPath).catch(() => {});
+                throw new Error(`Arquivo de vídeo gerado falhou no teste de decodificação no meio do arquivo (vídeo congelado ou corrompido). Conversão descartada.`);
+            }
         }
 
         return finalPath;
+    }
+
+    async checkVideoDecodeIntegrity(filePath, durationSec) {
+        if (!filePath || !fs.existsSync(filePath)) return false;
+        try {
+            const checkPointSec = Math.max(10, Math.floor(durationSec * 0.5));
+            return await new Promise((resolve) => {
+                const check = spawn('ffmpeg', [
+                    '-nostdin',
+                    '-y',
+                    '-ss', `${checkPointSec}`,
+                    '-i', filePath,
+                    '-frames:v', '15',
+                    '-f', 'null',
+                    '-'
+                ]);
+
+                let isDone = false;
+                const timer = setTimeout(() => {
+                    if (!isDone) {
+                        isDone = true;
+                        try { check.kill('SIGKILL'); } catch (e) {}
+                        resolve(false);
+                    }
+                }, 10000);
+
+                check.on('close', code => {
+                    if (!isDone) {
+                        isDone = true;
+                        clearTimeout(timer);
+                        resolve(code === 0);
+                    }
+                });
+
+                check.on('error', () => {
+                    if (!isDone) {
+                        isDone = true;
+                        clearTimeout(timer);
+                        resolve(false);
+                    }
+                });
+            });
+        } catch (e) {
+            return false;
+        }
     }
 
     async encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex = null, onProgress = null, metadata = {}) {

@@ -141,8 +141,8 @@ class DownloaderManager extends EventEmitter {
         const videoFiles = files.filter(f => {
             const ext = path.extname(f.name).toLowerCase();
             const lower = f.name.toLowerCase();
-            const isSample = lower.includes('sample') || lower.includes('amostra') || lower.includes('trailer') || lower.includes('teaser');
-            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSample;
+            const isSampleOrPromo = /\b(sample|amostra|trailer|teaser|promo|promocao|1xbet|mostbet|bet\b|cassino|casino|dinheiro[._-]?livre|ganhe[._-]?dinheiro|bonus)\b/i.test(lower);
+            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSampleOrPromo;
         });
 
         if (videoFiles.length === 0) return null;
@@ -238,8 +238,8 @@ class DownloaderManager extends EventEmitter {
         const videoFiles = files.filter(f => {
             const ext = path.extname(f.name).toLowerCase();
             const lower = f.name.toLowerCase();
-            const isSample = lower.includes('sample') || lower.includes('amostra') || lower.includes('trailer') || lower.includes('teaser');
-            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSample;
+            const isSampleOrPromo = /\b(sample|amostra|trailer|teaser|promo|promocao|1xbet|mostbet|bet\b|cassino|casino|dinheiro[._-]?livre|ganhe[._-]?dinheiro|bonus)\b/i.test(lower);
+            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSampleOrPromo;
         });
 
         const epMap = {};
