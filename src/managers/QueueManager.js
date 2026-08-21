@@ -665,6 +665,17 @@ class QueueManager extends EventEmitter {
     }
 
     async executeJob(job) {
+        // Se o job não tem arquivo local em disco e estamos fora da janela de download (01h-05h SP), pausa imediatamente
+        const hasLocalFile = (job.rawFilePath && fs.existsSync(job.rawFilePath)) || (job.optimizedPath && fs.existsSync(job.optimizedPath));
+        if (!hasLocalFile && !SchedulerService.isAllowedToRun()) {
+            console.log(`⏰ [Scheduler SP] Job "${job.title}" aguardando abertura da janela de download das 01h às 05h (Horário de SP).`);
+            job.status = 'queued';
+            job.progress = 0;
+            job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+            await this.saveJob(job);
+            return;
+        }
+
         // 1. Obter metadados TMDB
         let metadata = { nome: job.title, tipo: job.type };
         try {

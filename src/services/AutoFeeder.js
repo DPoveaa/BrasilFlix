@@ -4,6 +4,7 @@ const TMDBService = require('./TMDBService');
 const MediaSearchService = require('./MediaSearchService');
 const SwarmWatcher = require('./SwarmWatcher');
 const DiskCleaner = require('./DiskCleaner');
+const SchedulerService = require('./SchedulerService');
 const { PRIORITIES } = require('../managers/QueueManager');
 
 class AutoFeeder {
@@ -30,7 +31,7 @@ class AutoFeeder {
         // Inicializa o Auto-Cleaner de Disco (remove arquivos órfãos > 30 min)
         DiskCleaner.startAutoCleanup(() => this.queueManager.getActiveFiles(), 45 * 60 * 1000);
 
-        // Executa uma verificação inicial após 8 segundos de inicialização
+        // Executa uma verificação inicial após 8 segundos de inicialização se estiver no horário permitido
         setTimeout(() => {
             this.runCheck();
         }, 8000);
@@ -44,6 +45,10 @@ class AutoFeeder {
 
     async runCheck() {
         if (this.isRunningCheck) return;
+        if (!SchedulerService.isAllowedToRun()) {
+            console.log('⏰ [Scheduler SP] AutoFeeder em repouso: fora da janela de download das 01h às 05h (Horário de SP).');
+            return;
+        }
         this.isRunningCheck = true;
 
         try {

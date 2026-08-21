@@ -1,5 +1,6 @@
 const db = require('../database/db');
 const MediaSearchService = require('./MediaSearchService');
+const SchedulerService = require('./SchedulerService');
 const PRIORITIES = {
     VIP_USER: 1,
     USER: 2,
@@ -58,9 +59,10 @@ class SwarmWatcher {
             } else {
                 // Insere novo monitoramento
                 await db.query(`
-                    INSERT INTO swarm_watchlist (title, type, tmdb_id, imdb_id, season, episode, audio_preference, user_id, username, reason, last_checked, check_count, created_at)
+                    INSERT INTO swarm_watchlist 
+                        (title, type, season, episode, audio_preference, tmdb_id, imdb_id, user_id, username, reason, last_checked, check_count, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), 1, NOW())
-                `, [title, type, tmdbId, imdbId, season, episode, audioPreference, userId, username, reason]);
+                `, [title, type, season, episode, audioPreference, tmdbId, imdbId, userId, username, reason]);
 
                 const epTag = type === 'serie' && season && episode ? ` (T${season}E${episode})` : '';
                 console.log(`👀 [SWARM WATCHER] Adicionado ao monitoramento de seeders: "${title}"${epTag} [Áudio: ${audioPreference}, Motivo: ${reason}]`);
@@ -105,6 +107,7 @@ class SwarmWatcher {
      */
     async checkWatchlist() {
         if (this.isChecking || !this.queueManager) return;
+        if (!SchedulerService.isAllowedToRun()) return;
         this.isChecking = true;
 
         try {
