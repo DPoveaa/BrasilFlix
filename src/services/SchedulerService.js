@@ -377,6 +377,10 @@ class SchedulerService extends EventEmitter {
         this._save();
         console.log(`⚙️  [Scheduler] Configuração atualizada: ${JSON.stringify(this._config)}`);
         this.emit('configChange', this._config);
+        
+        const allowed = this.isAllowedToRun();
+        this._lastAllowed = allowed;
+        this.emit('stateChange', { allowed, reason: 'Configuração da grade atualizada pelo usuário' });
     }
 
     // ─── Overrides de Data ────────────────────────────────────────────────────
@@ -396,6 +400,10 @@ class SchedulerService extends EventEmitter {
         }
         this._save();
         console.log(`📅 [Scheduler] Override configurado para ${data}:`, this.overrides[data]);
+        
+        const allowed = this.isAllowedToRun();
+        this._lastAllowed = allowed;
+        this.emit('stateChange', { allowed, reason: `Exceção de data (${data}) atualizada` });
     }
 
     removeOverride(data) {
@@ -403,6 +411,10 @@ class SchedulerService extends EventEmitter {
             delete this.overrides[data];
             this._save();
             console.log(`🗑️  [Scheduler] Override removido para ${data}`);
+            
+            const allowed = this.isAllowedToRun();
+            this._lastAllowed = allowed;
+            this.emit('stateChange', { allowed, reason: `Exceção de data (${data}) removida` });
         }
     }
 
