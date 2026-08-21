@@ -20,6 +20,16 @@ const PRIORITIES = {
     FEEDER: 5     // Auto-Feeder (Sugestão do sistema em background)
 };
 
+function normalizeTitle(title) {
+    if (!title) return '';
+    return String(title)
+        .toLowerCase()
+        .replace(/\s*\(\d{4}\)|\b\d{4}\b/g, '') // remove anos como (2018), 2023
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+        .replace(/[^a-z0-9]/g, '') // remove pontuacao e espacos
+        .trim();
+}
+
 class QueueManager extends EventEmitter {
     constructor(bot, catalogoManager, pedidosManager = null, favoritosManager = null) {
         super();
@@ -363,14 +373,28 @@ class QueueManager extends EventEmitter {
             job.progressDetails = 'Arquivo local pronto para processamento';
         }
 
-        // Verifica se já existe um trabalho igual na fila com a mesma preferência de áudio
-        const existing = this.queue.find(j => 
-            j.title.toLowerCase() === title.toLowerCase() && 
-            j.season === job.season && 
-            j.episode === job.episode &&
-            (j.audioPreference || 'dublado') === job.audioPreference &&
-            j.status !== 'failed'
-        );
+        // Verifica se já existe um trabalho para este mesmo episódio ou filme na fila ou em processamento ativo
+        const normNewTitle = normalizeTitle(title);
+        const newSeason = type === 'serie' ? (job.season || 1) : null;
+        const newEpisode = type === 'serie' ? (job.episode || 1) : null;
+        const newTmdbId = extraData.tmdbId || null;
+
+        const allCurrentJobs = [...this.queue, ...Array.from(this.activeJobs.values())];
+        const existing = allCurrentJobs.find(j => {
+            if (j.type !== type) return false;
+            if (j.status === 'completed' || j.status === 'failed') return false;
+
+            const normExistingTitle = normalizeTitle(j.title);
+            const isSameTitle = normExistingTitle === normNewTitle || (newTmdbId && j.tmdbId && j.tmdbId === newTmdbId);
+            if (!isSameTitle) return false;
+
+            if (type === 'serie') {
+                const s = j.season || 1;
+                const e = j.episode || 1;
+                return s === newSeason && e === newEpisode;
+            }
+            return true;
+        });
 
         if (existing) {
             // Se foi enviado um arquivo via upload manual, atualiza o existing imediatamente com o arquivo local
@@ -400,6 +424,8 @@ class QueueManager extends EventEmitter {
                 this.sortQueue();
                 this.saveJob(existing).catch(() => {});
             }
+
+            console.log(`ℹ️ [Fila] Trabalho para "${job.title}" ${type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já existe na esteira (ID: ${existing.id}, Status: ${existing.status}). Evitando duplicata.`);
             return existing;
         }
 
@@ -424,18 +450,6 @@ class QueueManager extends EventEmitter {
                     return null;
                 }
             }
-        }
-
-        // Evita jobs duplicados idênticos já presentes na fila
-        const existingInQueue = this.queue.find(j => 
-            j.type === type &&
-            j.title.toLowerCase() === job.title.toLowerCase() &&
-            (type !== 'serie' || (j.season === job.season && j.episode === job.episode)) &&
-            (j.audioPreference === job.audioPreference || (!j.audioPreference && !job.audioPreference))
-        );
-        if (existingInQueue) {
-            console.log(`ℹ️ [Fila] Trabalho para "${job.title}" ${type === 'serie' ? `T${job.season}E${job.episode}` : ''} [${job.audioPreference}] já está na fila.`);
-            return existingInQueue;
         }
 
         // Se for série e o episódio já existir no catálogo com o áudio desejado, busca o próximo episódio pendente
@@ -555,17 +569,34 @@ class QueueManager extends EventEmitter {
         const queuedJobs = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id));
         if (queuedJobs.length === 0) return null;
 
-        // Constrói um set de chaves de episódios ATIVOS para evitar processar o mesmo episódio em paralelo
-        const activeEpisodeKeys = new Set();
+        // Constrói um set de chaves de títulos / episódios ATIVOS para evitar qualquer concorrência sobre o mesmo item
+        const activeKeys = new Set();
         for (const active of this.activeJobs.values()) {
-            const key = `${(active.title || '').toLowerCase().trim()}|${active.type}|${active.season ?? ''}|${active.episode ?? ''}`;
-            activeEpisodeKeys.add(key);
+            const normTitle = normalizeTitle(active.title);
+            if (active.type === 'serie') {
+                const s = active.season ?? 1;
+                const e = active.episode ?? 1;
+                activeKeys.add(`serie_${normTitle}_s${s}_e${e}`);
+                if (active.tmdbId) activeKeys.add(`serie_tmdb_${active.tmdbId}_s${s}_e${e}`);
+            } else {
+                activeKeys.add(`filme_${normTitle}`);
+                if (active.tmdbId) activeKeys.add(`filme_tmdb_${active.tmdbId}`);
+            }
         }
 
-        // Filtra jobs cujo episódio já está sendo processado por outra trilha
+        // Filtra jobs cujo episódio ou filme já está sendo processado ativamente
         let eligibleJobs = queuedJobs.filter(j => {
-            const key = `${(j.title || '').toLowerCase().trim()}|${j.type}|${j.season ?? ''}|${j.episode ?? ''}`;
-            return !activeEpisodeKeys.has(key);
+            const normTitle = normalizeTitle(j.title);
+            if (j.type === 'serie') {
+                const s = j.season ?? 1;
+                const e = j.episode ?? 1;
+                if (activeKeys.has(`serie_${normTitle}_s${s}_e${e}`)) return false;
+                if (j.tmdbId && activeKeys.has(`serie_tmdb_${j.tmdbId}_s${s}_e${e}`)) return false;
+            } else {
+                if (activeKeys.has(`filme_${normTitle}`)) return false;
+                if (j.tmdbId && activeKeys.has(`filme_tmdb_${j.tmdbId}`)) return false;
+            }
+            return true;
         });
         if (eligibleJobs.length === 0) return null;
 
@@ -637,6 +668,25 @@ class QueueManager extends EventEmitter {
     }
 
     async runJobWorker(nextJob) {
+        // Guarda de segurança atômica: se outro worker já pegou este mesmo episódio em paralelo, cancela imediatamente
+        const normTitle = normalizeTitle(nextJob.title);
+        const s = nextJob.season ?? 1;
+        const e = nextJob.episode ?? 1;
+        for (const active of this.activeJobs.values()) {
+            if (active.id !== nextJob.id && active.type === nextJob.type) {
+                const sameTitle = normalizeTitle(active.title) === normTitle || (active.tmdbId && nextJob.tmdbId && active.tmdbId === nextJob.tmdbId);
+                if (sameTitle) {
+                    if (nextJob.type === 'serie' && (active.season ?? 1) === s && (active.episode ?? 1) === e) {
+                        console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para "${nextJob.title}" T${s}E${e} (já em execução pelo worker do job ${active.id}).`);
+                        return;
+                    } else if (nextJob.type === 'filme') {
+                        console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para o filme "${nextJob.title}" (já em execução).`);
+                        return;
+                    }
+                }
+            }
+        }
+
         this.activeJobs.set(nextJob.id, nextJob);
         nextJob.status = 'processing';
         await this.saveJob(nextJob);
