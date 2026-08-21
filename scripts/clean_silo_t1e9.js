@@ -53,10 +53,11 @@ async function cleanSilo() {
         console.log('✅ Registro corrompido de Silo T1E9 removido do PostgreSQL.');
 
         // Re-enfileira na fila do PostgreSQL para baixar fonte legítima
+        const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         await db.query(`
-            INSERT INTO fila_jobs (titulo, tipo, prioridade, status, tmdb_id, season, episode, audio_preference, created_at, updated_at)
-            VALUES ($1, 'serie', 1, 'queued', $2, 1, 9, 'dublado', NOW(), NOW())
-        `, [serie.nome, serie.tmdb_id]);
+            INSERT INTO queue_jobs (id, title, type, priority, status, tmdb_id, season, episode, audio_preference, created_at, updated_at)
+            VALUES ($1, $2, 'serie', 1, 'queued', $3, 1, 9, 'dublado', NOW(), NOW())
+        `, [jobId, serie.nome, serie.tmdb_id]);
         console.log('📥 Silo T1E9 re-enfileirado com Prioridade 1 para download de fonte legítima!');
     }
 
