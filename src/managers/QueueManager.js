@@ -708,10 +708,7 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
-        // Se estiver fora do horário permitido de download (SP), não dispara novos downloads da fila
-        if (!SchedulerService.isAllowedToRun()) {
-            return;
-        }
+        const isNetworkAllowed = SchedulerService.isAllowedToRun();
 
         // Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
         const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
@@ -720,10 +717,22 @@ class QueueManager extends EventEmitter {
             return;
         }
 
-        // Dispara jobs em paralelo enquanto houver slots livres e o limite global não for atingido
-        while (this.activeJobs.size < this.maxConcurrentJobs && this.getActiveDownloadsCount() < this.maxConcurrentDownloads) {
+        // Dispara jobs em paralelo enquanto houver slots livres
+        while (this.activeJobs.size < this.maxConcurrentJobs) {
             const nextJob = this.findNextJobToProcess();
             if (!nextJob) break;
+
+            const hasLocalFile = (nextJob.rawFilePath && fs.existsSync(nextJob.rawFilePath)) || (nextJob.optimizedPath && fs.existsSync(nextJob.optimizedPath));
+
+            // Se for novo download de rede e a janela estiver fechada, não dispara
+            if (!hasLocalFile && !isNetworkAllowed) {
+                break;
+            }
+
+            // Limite de downloads simultâneos na rede
+            if (!hasLocalFile && this.getActiveDownloadsCount() >= this.maxConcurrentDownloads) {
+                break;
+            }
 
             this.runJobWorker(nextJob);
         }

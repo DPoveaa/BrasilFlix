@@ -618,12 +618,25 @@ class VideoProcessor {
 
                 ffmpeg.stdout.on('data', () => {});
 
-                ffmpeg.on('close', (code) => {
+                ffmpeg.on('close', async (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
-                        process.stdout.write('\n');
-                        console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso e áudio AAC estéreo 100% garantido!\x1b[0m`);
-                        if (onProgress) onProgress(100, 'Remux Concluído');
-                        resolve(outputPath);
+                        try {
+                            const remuxInfo = await this.getVideoInfo(outputPath).catch(() => null);
+                            const minDuration = Math.max(300, totalDuration * 0.50);
+                            if (remuxInfo && remuxInfo.duration >= minDuration) {
+                                process.stdout.write('\n');
+                                console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso e áudio AAC estéreo 100% garantido!\x1b[0m`);
+                                if (onProgress) onProgress(100, 'Remux Concluído');
+                                return resolve(outputPath);
+                            } else {
+                                process.stdout.write('\n');
+                                console.warn(`⚠️ [Remux Incompleto] Remux gerou apenas ${remuxInfo?.durationFormatted || 'incompleto'} (< ${this.formatDuration(totalDuration)}). Fazendo fallback automático para codificação completa 1080p...`);
+                                await fs.remove(outputPath).catch(() => {});
+                                return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                            }
+                        } catch (e) {
+                            return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                        }
                     } else {
                         process.stdout.write('\n');
                         console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
