@@ -140,11 +140,30 @@ class DownloaderManager extends EventEmitter {
 
         const videoFiles = files.filter(f => {
             const ext = path.extname(f.name).toLowerCase();
-            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
+            const lower = f.name.toLowerCase();
+            const isSample = lower.includes('sample') || lower.includes('amostra') || lower.includes('trailer') || lower.includes('teaser');
+            return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && !isSample;
         });
 
         if (videoFiles.length === 0) return null;
-        if (videoFiles.length === 1) return videoFiles[0];
+
+        // Se houver apenas 1 arquivo de vídeo no torrent:
+        if (videoFiles.length === 1) {
+            const single = videoFiles[0];
+            // Verifica se o arquivo único explicita outro número de episódio divergente (ex: One Piece 892.mkv quando buscamos 3)
+            const clean = single.name
+                .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+            const otherEpMatch = clean.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || clean.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+            if (otherEpMatch) {
+                const foundEp = parseInt(otherEpMatch[1], 10);
+                if (foundEp !== epNum && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720) {
+                    console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é o episódio ${foundEp}, mas solicitamos ${epNum}. Rejeitando.`);
+                    return null;
+                }
+            }
+            return single;
+        }
 
         // 1. Padrões estritos de Temporada + Episódio (S01E01, S1E1, 1x01, T01E01, Season 1 Episode 1)
         const strictPatterns = [
@@ -188,7 +207,7 @@ class DownloaderManager extends EventEmitter {
             }
         }
 
-        // 4. Animes e Séries sem temporada no nome do arquivo (ex: "Bleach - 01", "Bleach 001", "01.mkv", "Episodio 01")
+        // 4. Animes e Séries sem temporada no nome do arquivo (ex: "One Piece - 03", "One Piece 003", "03.mkv", "Episodio 03")
         const cleanName = (str) => {
             return str
                 .replace(/\b(1080p|720p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
@@ -199,9 +218,9 @@ class DownloaderManager extends EventEmitter {
         const animePatterns = [
             new RegExp(`(?:ep|episodio|episode|e)[._ -]*0*${epNum}(?:\\D|$)`, 'i'),
             new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
-            new RegExp(`(?:^|[._ -])0*${epPad2}(?:[._ -]|$)`),
-            new RegExp(`(?:^|[._ -])0*${epPad3}(?:[._ -]|$)`),
-            new RegExp(`\\b${epNum}\\b`)
+            new RegExp(`(?:^|[._ -])(?:-\\s*)?0*${epPad2}(?:[._ -]|$)`),
+            new RegExp(`(?:^|[._ -])(?:-\\s*)?0*${epPad3}(?:[._ -]|$)`),
+            new RegExp(`(?:^|[._ -])(?:-\\s*)?0*${epNum}(?:[._ -]|$)`)
         ];
 
         for (const regex of animePatterns) {
@@ -209,13 +228,8 @@ class DownloaderManager extends EventEmitter {
             if (match) return match;
         }
 
-        // 5. Fallback por ordenação alfanumérica se a lista tiver exatamente os episódios indexados
-        const sortedFiles = [...videoFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        if (sortedFiles.length >= epNum && epNum > 0) {
-            return sortedFiles[epNum - 1];
-        }
-
-        return videoFiles[0];
+        // Não aceita arquivo aleatório se o episódio não existir no pack!
+        return null;
     }
 
     mapAllEpisodeFilesInTorrent(files, season, maxEps = 50) {
@@ -454,6 +468,17 @@ class DownloaderManager extends EventEmitter {
 
                 try {
                     let selectedFile = targetEpisodeFile;
+                    if (!selectedFile && isSerie) {
+                        selectedFile = this.findEpisodeFileInTorrent(torrent.files, options.season, options.episode);
+                    }
+
+                    if (!selectedFile && isSerie) {
+                        console.warn(`❌ [DOWNLOAD] Episódio S${options.season || 1}E${options.episode || 1} não localizado entre os arquivos do torrent "${torrent.name}".`);
+                        finished = true;
+                        safeCleanup();
+                        return reject(new Error(`Episódio ${options.episode} não localizado na estrutura de arquivos do torrent.`));
+                    }
+
                     if (!selectedFile) {
                         const videoFiles = torrent.files.filter(f => {
                             const ext = path.extname(f.name).toLowerCase();

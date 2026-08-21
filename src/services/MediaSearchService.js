@@ -352,19 +352,26 @@ class MediaSearchService {
                 }
 
                 if (tipo === 'serie' && episode) {
-                    const rangeMatch = title.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,3})\b/i);
-                    const epMatch = title.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,3})\b/i);
+                    const epInt = parseInt(episode, 10);
+                    // Match de faixa de episódios com ou sem prefixo "e/ep" (ex: "0892 ~ 1089", "E01-E24", "01-12", "0892-1089")
+                    const cleanTitleForEp = title
+                        .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                        .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+
+                    const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
+                    const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
+                                    cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
 
                     if (rangeMatch) {
                         const startEp = parseInt(rangeMatch[1], 10);
                         const endEp = parseInt(rangeMatch[2], 10);
-                        if (episode < startEp || episode > endEp) {
-                            continue;
+                        if (epInt < startEp || epInt > endEp) {
+                            continue; // Rejeita lotes que não contêm o episódio desejado
                         }
                     } else if (epMatch) {
                         const foundEp = parseInt(epMatch[1], 10);
-                        if (foundEp !== episode) {
-                            continue; // Rejeita episódios divergentes (ex: E17 quando buscamos E02)
+                        if (foundEp !== epInt && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                            continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
                         }
                     }
                 }
