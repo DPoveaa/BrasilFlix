@@ -308,6 +308,40 @@ class CatalogoManager {
         });
     }
 
+    buscarEpisodiosApenasLegendados() {
+        const pendentes = [];
+        for (const serie of (this.catalogo.series || [])) {
+            for (const temp of (serie.temporadas || [])) {
+                const eps = temp.episodios || [];
+                const temAlgumDublado = eps.some(e => e.isDublado || !!e.versoes?.dublado || (e.audio && e.audio.toLowerCase().includes('dublado')));
+                const temAlgumLegendado = eps.some(e => !e.isDublado && (e.isLegendado || !!e.versoes?.legendado || (e.audio && e.audio.toLowerCase().includes('legendado'))));
+
+                // Se houver episódios na temporada que não possuem versão Dublada
+                if (temAlgumLegendado) {
+                    for (const ep of eps) {
+                        const isDub = ep.isDublado || !!ep.versoes?.dublado || (ep.audio && ep.audio.toLowerCase().includes('dublado'));
+                        if (!isDub) {
+                            pendentes.push({
+                                serieId: serie.id,
+                                serieNome: serie.nome,
+                                nomeOriginal: serie.nomeOriginal,
+                                tmdbId: serie.tmdbId,
+                                imdbId: serie.imdbId,
+                                season: temp.numero,
+                                episode: ep.numero,
+                                epNome: ep.nome,
+                                isDorama: serie.isDorama,
+                                isAnime: serie.isAnime,
+                                temAlgumDublado
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return pendentes;
+    }
+
 
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
         const existente = this.buscarItemExato(nome, tipo);

@@ -86,6 +86,9 @@ class AutoFeeder {
             // 4. Auto-Upgrade: Verificar se filmes apenas Legendados já ganharam versão Dublada (PT-BR)
             await this.checkLegendadoUpgrades();
 
+            // 4.1 Auto-Upgrade: Verificar se episódios de séries apenas Legendados já ganharam versão Dublada (PT-BR)
+            await this.checkSeriesDubladoUpgrades();
+
             // 5. Se a fila já estiver com séries pendentes em andamento, não sobrecarrega com novos títulos
             const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && j.status === 'queued');
             if (seriesInQueue.length >= 6) {
@@ -326,6 +329,54 @@ class AutoFeeder {
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de dublagem:', e.message);
+        }
+    }
+
+    async checkSeriesDubladoUpgrades() {
+        try {
+            const pendentes = this.catalogoManager.buscarEpisodiosApenasLegendados();
+            if (pendentes.length === 0) return;
+
+            // Agrupa por série e temporada para processar na ordem cronológica (E1, E2, E3...)
+            const seriesMap = {};
+            for (const p of pendentes) {
+                const key = `${p.serieNome}_s${p.season}`;
+                if (!seriesMap[key]) seriesMap[key] = [];
+                seriesMap[key].push(p);
+            }
+
+            console.log(`🎙️ AutoFeeder: Verificando upgrades para DUBLADO em ${Object.keys(seriesMap).length} temporada(s) com episódios apenas legendados...`);
+
+            for (const [key, epsList] of Object.entries(seriesMap)) {
+                // Ordena por número do episódio
+                epsList.sort((a, b) => a.episode - b.episode);
+                const primeiroPendente = epsList[0];
+
+                const jaNaFila = (this.queueManager.queue || []).some(j =>
+                    j.type === 'serie' &&
+                    j.title.toLowerCase() === primeiroPendente.serieNome.toLowerCase() &&
+                    j.season === primeiroPendente.season &&
+                    j.episode === primeiroPendente.episode &&
+                    j.status !== 'failed'
+                );
+
+                if (!jaNaFila) {
+                    console.log(`🔄 [UPGRADE DUBLADO] Enfileirando busca de versão Dublada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} (atualmente apenas Legendado)...`);
+                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', PRIORITIES.SERIES, {
+                        tmdbId: primeiroPendente.tmdbId,
+                        imdbId: primeiroPendente.imdbId,
+                        season: primeiroPendente.season,
+                        episode: primeiroPendente.episode,
+                        audioPreference: 'dublado',
+                        isUpgrade: true,
+                        nomeOriginal: primeiroPendente.nomeOriginal,
+                        isDorama: primeiroPendente.isDorama,
+                        isAnime: primeiroPendente.isAnime
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ Erro ao verificar upgrades de dublagem para séries no AutoFeeder:', e.message);
         }
     }
 
