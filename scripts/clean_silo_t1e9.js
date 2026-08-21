@@ -54,7 +54,7 @@ async function cleanSilo() {
 
         // Re-enfileira na fila do PostgreSQL para baixar fonte legítima
         await db.query(`
-            INSERT INTO queue (title, type, priority, status, tmdb_id, season, episode, audio_preference, created_at, updated_at)
+            INSERT INTO fila_jobs (titulo, tipo, prioridade, status, tmdb_id, season, episode, audio_preference, created_at, updated_at)
             VALUES ($1, 'serie', 1, 'queued', $2, 1, 9, 'dublado', NOW(), NOW())
         `, [serie.nome, serie.tmdb_id]);
         console.log('📥 Silo T1E9 re-enfileirado com Prioridade 1 para download de fonte legítima!');
