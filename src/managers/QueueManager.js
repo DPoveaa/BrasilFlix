@@ -40,6 +40,7 @@ class QueueManager extends EventEmitter {
         this.uploader = new TelegramUploader(bot);
         this.queue = []; // cache em memória sincronizado com o banco
         this.activeJobs = new Map(); // Mapa de jobs ativos em paralelo: id -> job
+        this.transcodeLocks = new Set(); // Lock de transcode por chave única (tipo_title_s_e) para evitar remux duplicado
         this.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 10;
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
@@ -672,22 +673,32 @@ class QueueManager extends EventEmitter {
         const normTitle = normalizeTitle(nextJob.title);
         const s = nextJob.season ?? 1;
         const e = nextJob.episode ?? 1;
+
+        // Registra o job em activeJobs PRIMEIRO para fechar a janela de corrida antes de qualquer verificação
+        if (this.activeJobs.has(nextJob.id)) {
+            console.log(`🛡️ [Bloqueio Anti-Duplicata] Job ${nextJob.id} já está em activeJobs. Ignorando lançamento duplicado.`);
+            return;
+        }
+        this.activeJobs.set(nextJob.id, nextJob);
+
+        // Agora verifica se outro worker com ID diferente está processando o mesmo título/episódio
         for (const active of this.activeJobs.values()) {
             if (active.id !== nextJob.id && active.type === nextJob.type) {
                 const sameTitle = normalizeTitle(active.title) === normTitle || (active.tmdbId && nextJob.tmdbId && active.tmdbId === nextJob.tmdbId);
                 if (sameTitle) {
                     if (nextJob.type === 'serie' && (active.season ?? 1) === s && (active.episode ?? 1) === e) {
                         console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para "${nextJob.title}" T${s}E${e} (já em execução pelo worker do job ${active.id}).`);
+                        this.activeJobs.delete(nextJob.id);
                         return;
                     } else if (nextJob.type === 'filme') {
                         console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para o filme "${nextJob.title}" (já em execução).`);
+                        this.activeJobs.delete(nextJob.id);
                         return;
                     }
                 }
             }
         }
 
-        this.activeJobs.set(nextJob.id, nextJob);
         nextJob.status = 'processing';
         await this.saveJob(nextJob);
 
@@ -1312,9 +1323,22 @@ class QueueManager extends EventEmitter {
             job.optimizedPath = optimizedPath;
             await this.saveJob(job);
 
+            // Adquire lock de transcode para este episódio/filme antes de chamar FFmpeg
+            const normT = normalizeTitle(job.title);
+            const transcodeKey = job.type === 'serie'
+                ? `serie_${normT}_s${job.season ?? 1}_e${job.episode ?? 1}`
+                : `filme_${normT}`;
+
+            if (this.transcodeLocks.has(transcodeKey)) {
+                console.log(`🛡️ [Transcode Lock] Abortando transcode duplicado: "${job.title}" ${job.type === 'serie' ? `T${job.season ?? 1}E${job.episode ?? 1}` : ''} — outro worker já está otimizando este mesmo conteúdo.`);
+                throw new Error(`Transcode duplicado bloqueado: ${transcodeKey}`);
+            }
+            this.transcodeLocks.add(transcodeKey);
+
             // Dispara imediatamente o próximo download da fila enquanto este otimiza em paralelo
             setImmediate(() => this.processNext());
-            
+
+            try {
             await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
                 job.progress = percent;
                 job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
@@ -1341,6 +1365,10 @@ class QueueManager extends EventEmitter {
                 rawFilePath = null;
                 job.rawFilePath = null;
                 await this.saveJob(job);
+            }
+            } finally {
+                // Libera o lock de transcode independente de sucesso ou falha
+                this.transcodeLocks.delete(transcodeKey);
             }
         }
 
