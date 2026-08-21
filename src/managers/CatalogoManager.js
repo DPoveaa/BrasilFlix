@@ -430,6 +430,17 @@ class CatalogoManager {
 
         if (!filme.versoes) filme.versoes = {};
 
+        const oldMsgIdsToDelete = [];
+        if (isNovaDub && filme.versoes?.dublado?.messageId && Number(filme.versoes.dublado.messageId) !== Number(novaMidia.messageId)) {
+            oldMsgIdsToDelete.push(filme.versoes.dublado.messageId);
+        }
+        if (isNovaLeg && filme.versoes?.legendado?.messageId && Number(filme.versoes.legendado.messageId) !== Number(novaMidia.messageId)) {
+            oldMsgIdsToDelete.push(filme.versoes.legendado.messageId);
+        }
+        if (oldMsgIdsToDelete.length > 0) {
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
+        }
+
         if (isNovaDub) {
             filme.isDublado = true;
             filme.versoes.dublado = {
@@ -589,6 +600,19 @@ class CatalogoManager {
         const finalIsLeg = isLeg || (existingEp ? existingEp.isLegendado : false);
 
         const existingVersoes = existingEp?.versoes || {};
+        
+        // Se uma versão de mesmo áudio já existia com outro messageId, apaga a versão antiga do Telegram
+        const oldMsgIdsToDelete = [];
+        if (isDub && existingVersoes.dublado?.messageId && existingVersoes.dublado.messageId !== Number(messageId)) {
+            oldMsgIdsToDelete.push(existingVersoes.dublado.messageId);
+        }
+        if (isLeg && existingVersoes.legendado?.messageId && existingVersoes.legendado.messageId !== Number(messageId)) {
+            oldMsgIdsToDelete.push(existingVersoes.legendado.messageId);
+        }
+        if (oldMsgIdsToDelete.length > 0) {
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
+        }
+
         const versoes = {
             dublado: isDub
                 ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
