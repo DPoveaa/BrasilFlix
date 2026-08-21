@@ -530,10 +530,18 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // 3.1 Verificação de duração mínima (evita arquivos corrompidos com metadados falsos)
+                    // 3.1 Verificação de duração mínima (evita arquivos corrompidos ou trailers/samples falsos)
                     const MIN_DURATION_SEC = 180;
                     if (videoInfo.duration < MIN_DURATION_SEC) {
-                        console.warn(`⚠️ [DOWNLOAD] Arquivo suspeito: ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Pode ser um arquivo corrompido ou preview. Ignorando até ter mais dados...`);
+                        const isFullyDownloaded = stat.size >= expectedSize || (torrent.progress && torrent.progress >= 0.99) || (torrent.downloaded >= torrent.length * 0.95);
+                        if (isFullyDownloaded) {
+                            console.warn(`❌ [DOWNLOAD] Arquivo descartado: download concluído a 100%, mas ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Trata-se de uma amostra/trailer falso. Descartando fonte para tentar a próxima...`);
+                            finished = true;
+                            safeCleanup();
+                            await this.cleanupFile(fullPath).catch(() => {});
+                            return reject(new Error(`Amostra/trailer detectado (${videoInfo.duration.toFixed(1)}s). Arquivo inválido.`));
+                        }
+                        console.warn(`⚠️ [DOWNLOAD] Arquivo parcial: ffprobe detectou ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s). Aguardando mais blocos...`);
                         isCompleting = false;
                         return;
                     }
@@ -541,7 +549,15 @@ class DownloaderManager extends EventEmitter {
                     // 3.2 Verificação de integridade do fluxo de vídeo (garante que não há congelamento ou GOP quebrado)
                     const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath).catch(() => ({ isValid: true }));
                     if (!integrity.isValid) {
-                        console.warn(`⚠️ [DOWNLOAD] Arquivo corrompido detectado no stream: ${integrity.error}. Aguardando mais dados...`);
+                        const isFullyDownloaded = stat.size >= expectedSize || (torrent.progress && torrent.progress >= 0.99);
+                        if (isFullyDownloaded) {
+                            console.warn(`❌ [DOWNLOAD] Arquivo corrompido descartado: stream com erro (${integrity.error}). Tentando próxima fonte...`);
+                            finished = true;
+                            safeCleanup();
+                            await this.cleanupFile(fullPath).catch(() => {});
+                            return reject(new Error(`Arquivo corrompido no stream: ${integrity.error}`));
+                        }
+                        console.warn(`⚠️ [DOWNLOAD] Arquivo com stream parcial: ${integrity.error}. Aguardando mais dados...`);
                         isCompleting = false;
                         return;
                     }

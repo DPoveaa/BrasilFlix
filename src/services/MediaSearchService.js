@@ -185,7 +185,7 @@ class MediaSearchService {
             if (targetCount >= 3) break;
         }
 
-        // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p e arquivos incompatíveis
+        // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p, amostras/trailers e arquivos de tamanho inválido
         let ptBrResults = allResults.filter(r => {
             if (!r.isPtBr) return false;
 
@@ -193,10 +193,18 @@ class MediaSearchService {
             const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(r.title);
             if (is4k) return false;
 
-            // 2. Se for filme, limita o tamanho a no máximo 5.5 GB (padrão 1080p leve e nítido). Para séries, aceita season packs até 80 GB
+            // 2. Bloqueia amostras / trailers explícitos
+            const isSampleOrTrailer = /\b(sample|amostra|trailer|teaser|preview)\b/i.test(r.title);
+            if (isSampleOrTrailer) return false;
+
+            // 3. Validação de tamanho físico mínimo e máximo
+            const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
             if (tipo === 'filme') {
-                const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
-                if (sizeMB > 5500) return false;
+                if (sizeMB > 5500) return false; // Máximo 5.5 GB para filmes
+                if (sizeMB > 0 && sizeMB < 150) return false; // Mínimo 150 MB para filmes
+            } else if (tipo === 'serie') {
+                // Se não for season pack (tamanho < 3GB), o episódio avulso deve ter ao menos 40 MB
+                if (sizeMB > 0 && sizeMB < 40) return false;
             }
 
             return true;
