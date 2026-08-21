@@ -683,7 +683,7 @@ class VideoProcessor {
                 let vfFilter = "scale='min(1920,iw)':-2";
                 if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                     const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=0.8,Shadow=0,MarginV=30,Alignment=2,Bold=0'`;
+                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=12,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=1.0,Shadow=0,MarginV=24,Alignment=2,Bold=0'`;
                 }
 
                 const args = [

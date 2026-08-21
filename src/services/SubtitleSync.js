@@ -33,7 +33,7 @@ sys.argv = [
     sys.argv[1],
     '-i', sys.argv[2],
     '-o', sys.argv[3],
-    '--max-offset-seconds', '180',
+    '--max-offset-seconds', '15',
     '--vad', 'subs_then_webrtc'
 ]
 sys.exit(main())

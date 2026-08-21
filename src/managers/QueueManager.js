@@ -12,13 +12,15 @@ const DiskCleaner = require('../services/DiskCleaner');
 const SwarmWatcher = require('../services/SwarmWatcher');
 const SchedulerService = require('../services/SchedulerService');
 
-const PRIORITIES = {
-    VIP_USER: 1,  // Pedido de Assinante VIP (Fura-fila Máxima)
-    USER: 1,      // Compatibilidade
-    SERIES: 2,    // Continuação / Finalização de série do catálogo
-    FREE_USER: 3, // Pedido de Usuário Gratuito / Normal
-    FEEDER: 5     // Auto-Feeder (Sugestão do sistema em background)
-};
+const PriorityService = require('../services/PriorityService');
+
+// Proxy dinâmico: os valores são sempre lidos do PriorityService (podem ser alterados em runtime via painel admin)
+const PRIORITIES = new Proxy({}, {
+    get(_, key) {
+        return PriorityService.get(key);
+    }
+});
+
 
 function normalizeTitle(title) {
     if (!title) return '';
@@ -54,7 +56,7 @@ class QueueManager extends EventEmitter {
             }
         });
 
-        // Inicializa banco e carrega fila de forma assíncrona
+        // Inicializa banco, prioridades e carrega fila de forma assíncrona
         this._init();
     }
 
@@ -215,6 +217,11 @@ class QueueManager extends EventEmitter {
     }
 
     async _init() {
+        try {
+            await PriorityService.load();
+        } catch (e) {
+            console.warn('⚠️ Falha ao carregar prioridades, usando padrões:', e.message);
+        }
         try {
             await this.loadQueue();
         } catch (e) {
@@ -2010,4 +2017,4 @@ class QueueManager extends EventEmitter {
     }
 }
 
-module.exports = { QueueManager, PRIORITIES };
+module.exports = { QueueManager, PRIORITIES, PriorityService };

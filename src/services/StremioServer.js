@@ -8,6 +8,7 @@ const telegramUploader = require('./TelegramUploader');
 const authService = require('./AuthService');
 const TMDBService = require('./TMDBService');
 const schedulerService = require('./SchedulerService');
+const PriorityService = require('./PriorityService');
 const db = require('../database/db');
 
 class StremioServer {
@@ -322,6 +323,36 @@ class StremioServer {
                 res.json({ success: true, message: 'Controle manual removido! Bot voltou à grade agendada.', scheduler: schedulerService.getStatus() });
             } catch (e) {
                 res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 3.2 Gerenciamento Dinâmico de Prioridades da Fila (VIP, Séries, Grátis, Animes, Auto-Feeder)
+        this.app.get('/api/admin/priorities', auth, (req, res) => {
+            try {
+                res.json({
+                    priorities: PriorityService.get(),
+                    items: PriorityService.getForUI()
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/priorities', auth, async (req, res) => {
+            try {
+                const updated = await PriorityService.save(req.body);
+                // Se o QueueManager estiver instanciado, reordena a fila em memória com as novas prioridades
+                if (this.queueManager && typeof this.queueManager.reorderQueue === 'function') {
+                    this.queueManager.reorderQueue();
+                }
+                res.json({
+                    success: true,
+                    message: 'Pesos e prioridades da esteira salvos com sucesso!',
+                    priorities: updated,
+                    items: PriorityService.getForUI()
+                });
+            } catch (e) {
+                res.status(400).json({ error: e.message });
             }
         });
 

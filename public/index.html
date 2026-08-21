@@ -2123,6 +2123,9 @@
                     <button class="admin-sub-btn" id="admin-sub-btn-scheduler" onclick="switchAdminSubTab('scheduler')">
                         ⏱️ Horários & Agendador
                     </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-priorities" onclick="switchAdminSubTab('priorities')">
+                        🎯 Pesos & Prioridades
+                    </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
                         💎 Assinaturas & VIPs
                     </button>
@@ -2569,6 +2572,56 @@
 
                     </div>
                 </div>
+
+                <!-- SUB-TAB 7: PESOS & PRIORIDADES DA ESTEIRA -->
+                <div id="admin-subtab-priorities" class="admin-subtab-content" style="display: none;">
+                    
+                    <div class="panel-box" style="margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02);">
+                        <div class="panel-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 14px; margin-bottom: 16px;">
+                            <div>
+                                <h3 style="font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+                                    <span>🎯</span> Pesos & Prioridades de Processamento
+                                </h3>
+                                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                                    Configure a hierarquia de execução da esteira. <strong style="color: #60a5fa;">Menor número = Maior prioridade</strong> (ex: 1 executa antes de 2, 3, 4 e 5).
+                                </p>
+                            </div>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button class="btn-action" onclick="loadAdminPriorities()">🔄 Atualizar</button>
+                                <button class="btn-action" style="background: rgba(255,255,255,0.08);" onclick="handleResetPriorities()">↺ Restaurar Padrões</button>
+                            </div>
+                        </div>
+
+                        <!-- REGRAS DE HIERARQUIA & GUIA -->
+                        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 12px;">
+                            <div style="font-size: 20px;">💡</div>
+                            <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+                                <strong style="color: #fff;">Como a fila decide a ordem de download e envio:</strong><br>
+                                1. O robô sempre busca itens com <strong>menor número de prioridade</strong> primeiro.<br>
+                                2. Se dois itens tiverem a mesma prioridade, a ordem de chegada (mais antigo primeiro) ou a ordem cronológica de episódios é respeitada.<br>
+                                3. Alterações salvas aqui passam a valer <strong>imediatamente em tempo real</strong> para toda a esteira.
+                            </div>
+                        </div>
+
+                        <!-- FORMULÁRIO DE PRIORIDADES -->
+                        <form id="form-admin-priorities" onsubmit="handleSavePriorities(event)">
+                            <div id="admin-priorities-cards-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 20px;">
+                                <!-- Cards gerados dinamicamente via JS -->
+                                <div style="text-align: center; color: var(--text-muted); padding: 20px; grid-column: 1 / -1;">
+                                    Carregando prioridades...
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06);">
+                                <button type="submit" class="btn-action btn-action-primary" style="padding: 10px 24px; font-size: 13px; font-weight: 800;">
+                                    💾 Salvar Configurações de Prioridade
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                </div>
+
 
             </div>
 
@@ -3880,6 +3933,7 @@
             if (subTabId === 'overview') loadAdminStats();
             else if (subTabId === 'queue') loadAdminQueue();
             else if (subTabId === 'scheduler') loadAdminScheduler();
+            else if (subTabId === 'priorities') loadAdminPriorities();
             else if (subTabId === 'subs') { loadAdminSubs(); loadAdminTokens(); }
             else if (subTabId === 'requests') loadAdminRequests();
             else if (subTabId === 'catalog') loadAdminCatalog();
@@ -5562,6 +5616,124 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 loadAdminScheduler();
             } catch (err) {
                 showToast(err.message || 'Erro ao remover.', 'error');
+            }
+        }
+
+        // ─── PESOS & PRIORIDADES DA FILA ──────────────────────────────────────────
+        const PRIORITY_META = {
+            VIP_USER:  { icon: '👑', desc: 'Pedidos feitos por clientes com assinatura VIP ativa (Fura-Fila Máximo).', color: '#eab308' },
+            SERIES:    { icon: '📺', desc: 'Próximos episódios de séries ocidentais e doramas já presentes no catálogo.', color: '#3b82f6' },
+            FREE_USER: { icon: '🍿', desc: 'Pedidos de filmes e séries feitos por usuários do plano gratuito.', color: '#10b981' },
+            ANIME:     { icon: '⛩️', desc: 'Séries e episódios de anime (Bleach, One Piece, etc).', color: '#a855f7' },
+            FEEDER:    { icon: '🤖', desc: 'Sugestões automáticas do Auto-Feeder e títulos em alta no TMDB.', color: '#64748b' }
+        };
+
+        async function loadAdminPriorities() {
+            if (!adminToken) return;
+            const container = document.getElementById('admin-priorities-cards-container');
+            if (!container) return;
+
+            try {
+                const res = await fetch('/api/admin/priorities', { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error('Falha ao carregar prioridades.');
+                const data = await res.json();
+
+                const items = data.items || [];
+                if (items.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-muted); text-align: center;">Nenhuma prioridade encontrada.</div>';
+                    return;
+                }
+
+                container.innerHTML = items.map(item => {
+                    const meta = PRIORITY_META[item.key] || { icon: '📌', desc: 'Item da esteira', color: '#60a5fa' };
+                    return `
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; border-left: 4px solid ${meta.color};">
+                            <div>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                                    <div style="font-size: 14px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+                                        <span>${meta.icon}</span> ${item.label}
+                                    </div>
+                                    <span style="font-size: 11px; font-weight: 700; color: ${meta.color}; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 6px;">
+                                        Nível ${item.value}
+                                    </span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                                    ${meta.desc}
+                                </div>
+                            </div>
+
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.04);">
+                                <label style="font-size: 12px; font-weight: 700; color: #cbd5e1;">Peso (1 a 10):</label>
+                                <select id="prio-val-${item.key}" name="${item.key}" class="search-input" style="width: 110px; font-weight: 800; font-size: 13px; text-align: center;">
+                                    ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `
+                                        <option value="${n}" ${n === item.value ? 'selected' : ''}>
+                                            ${n} ${n === 1 ? '⚡ Mais Alto' : (n === 10 ? '💤 Mais Baixo' : '')}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.warn('Erro ao carregar prioridades:', err);
+                container.innerHTML = `<div style="color: #f87171; text-align: center;">Erro ao carregar prioridades: ${err.message}</div>`;
+            }
+        }
+
+        async function handleSavePriorities(e) {
+            e.preventDefault();
+            if (!adminToken) return;
+
+            const payload = {};
+            const keys = ['VIP_USER', 'SERIES', 'FREE_USER', 'ANIME', 'FEEDER'];
+            for (const key of keys) {
+                const el = document.getElementById(`prio-val-${key}`);
+                if (el) {
+                    payload[key] = parseInt(el.value, 10);
+                }
+            }
+
+            try {
+                const res = await fetch('/api/admin/priorities', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao salvar prioridades.');
+                showToast(data.message || 'Pesos de prioridade atualizados com sucesso!', 'success');
+                loadAdminPriorities();
+            } catch (err) {
+                showToast(err.message || 'Erro ao salvar.', 'error');
+            }
+        }
+
+        async function handleResetPriorities() {
+            if (!adminToken) return;
+            if (!confirm('Deseja restaurar as prioridades para os valores padrão de fábrica?\n\n- VIP: 1\n- Séries: 2\n- Grátis: 3\n- Animes: 4\n- Auto-Feeder: 5')) return;
+
+            const defaults = {
+                VIP_USER: 1,
+                SERIES: 2,
+                FREE_USER: 3,
+                ANIME: 4,
+                FEEDER: 5
+            };
+
+            try {
+                const res = await fetch('/api/admin/priorities', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(defaults)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao restaurar padrões.');
+                showToast('Prioridades restauradas aos valores de fábrica!', 'success');
+                loadAdminPriorities();
+            } catch (err) {
+                showToast(err.message || 'Erro ao restaurar.', 'error');
             }
         }
     </script>

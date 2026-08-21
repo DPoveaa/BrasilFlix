@@ -6,7 +6,7 @@ async function deployToServer() {
 
     conn.on('ready', () => {
         console.log('🔌 Conectado via SSH (192.168.68.56:22). Executando deploy seguro (preservando catálogo)...');
-        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git reset --hard HEAD && git pull origin main && npm install --omit=dev && node clear_queue.js && (pip install ffsubsync --break-system-packages 2>/dev/null || pip install ffsubsync 2>/dev/null || true) && pm2 restart brasilflix && pm2 status';
+        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git reset --hard HEAD && git pull origin main && npm install --omit=dev && node scripts/remove_bleach.js && (pip install ffsubsync --break-system-packages 2>/dev/null || pip install ffsubsync 2>/dev/null || true) && pm2 restart brasilflix && pm2 status';
 
         conn.exec(cmd, (err, stream) => {
             if (err) {
