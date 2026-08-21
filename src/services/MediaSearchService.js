@@ -201,10 +201,10 @@ class MediaSearchService {
             const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
             if (tipo === 'filme') {
                 if (sizeMB > 5500) return false; // Máximo 5.5 GB para filmes
-                if (sizeMB > 0 && sizeMB < 150) return false; // Mínimo 150 MB para filmes
+                if (sizeMB > 0 && sizeMB < 200) return false; // Mínimo 200 MB para filmes
             } else if (tipo === 'serie') {
-                // Se não for season pack (tamanho < 3GB), o episódio avulso deve ter ao menos 40 MB
-                if (sizeMB > 0 && sizeMB < 40) return false;
+                // Se não for season pack (tamanho < 3GB), o episódio avulso deve ter ao menos 80 MB
+                if (sizeMB > 0 && sizeMB < 80) return false;
             }
 
             return true;

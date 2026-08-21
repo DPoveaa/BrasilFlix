@@ -523,6 +523,16 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
+                    // 2.1 Verificação de tamanho mínimo absoluto (amostras/trailers/fakes de 10-30MB)
+                    const isMinSizeInsufficient = isSerie ? (stat.size < 50 * 1024 * 1024) : (stat.size < 150 * 1024 * 1024);
+                    if (isMinSizeInsufficient) {
+                        console.warn(`❌ [DOWNLOAD] Arquivo descartado: tamanho físico insuficiente (${this.formatBytes(stat.size)} para ${isSerie ? 'episódio' : 'filme'}). Trata-se de uma amostra/fake. Descartando fonte...`);
+                        finished = true;
+                        safeCleanup();
+                        await this.cleanupFile(fullPath).catch(() => {});
+                        return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(stat.size)}). Amostra descartada.`));
+                    }
+
                     // 3. Verificação de integridade estrutural via ffprobe
                     const videoInfo = await VideoProcessor.getVideoInfo(fullPath).catch(() => null);
                     if (!videoInfo || !videoInfo.duration || videoInfo.duration <= 0) {
