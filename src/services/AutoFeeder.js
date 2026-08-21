@@ -36,7 +36,23 @@ class AutoFeeder {
             this.runCheck();
         }, 8000);
 
-        // Agendamento periódico: roda a cada 4 horas
+        // Notificação em tempo real quando o agendador autorizar o início dos downloads (01h ou force-start)
+        SchedulerService.on('stateChange', ({ allowed }) => {
+            if (allowed) {
+                console.log('⏰ [Scheduler -> AutoFeeder] Janela aberta ou force-start acionado! Disparando busca de novos episódios e pedidos...');
+                setTimeout(() => this.runCheck(), 3000);
+            }
+        });
+
+        // Verificação periódica a cada 30 minutos enquanto estiver dentro da janela permitida
+        setInterval(() => {
+            if (SchedulerService.isAllowedToRun()) {
+                console.log('⏰ [AutoFeeder] Varredura periódica da janela ativa...');
+                this.runCheck();
+            }
+        }, 30 * 60 * 1000);
+
+        // Agendamento periódico clássico a cada 4 horas
         cron.schedule('0 */4 * * *', () => {
             console.log('⏰ AutoFeeder: Iniciando ciclo de varredura periódica...');
             this.runCheck();
