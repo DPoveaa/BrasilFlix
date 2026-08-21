@@ -3,8 +3,24 @@
  * Remove todos os episódios de Bleach do catálogo PostgreSQL, da fila de jobs e das mensagens Telegram.
  */
 
+const axios = require('axios');
 const db = require('../src/database/db');
 const config = require('../config');
+
+async function deleteTelegramMessage(messageId) {
+    if (!config.TELEGRAM_BOT_TOKEN || !messageId) return false;
+    const targets = [config.STORAGE_GROUP_ID, config.TELEGRAM_CHANNEL_ID].filter(Boolean);
+    for (const chatId of targets) {
+        try {
+            await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/deleteMessage`, {
+                chat_id: chatId,
+                message_id: messageId
+            }, { timeout: 5000 });
+            return true;
+        } catch (e) {}
+    }
+    return false;
+}
 
 async function removeBleach() {
     console.log('\n🔴 [remove_bleach] Iniciando limpeza total de Bleach...\n');
@@ -31,20 +47,12 @@ async function removeBleach() {
 
             // 3. Deletar mensagens do Telegram
             if (msgIds.length > 0) {
-                const { Telegraf } = require('telegraf');
-                const bot = new Telegraf(config.TELEGRAM_BOT_TOKEN);
-                const channelId = config.TELEGRAM_CHANNEL_ID;
-
                 let deleted = 0, failed = 0;
                 for (const msgId of msgIds) {
-                    try {
-                        await bot.telegram.deleteMessage(channelId, msgId);
-                        deleted++;
-                        process.stdout.write(`\r🗑️ Deletando mensagens Telegram: ${deleted + failed}/${msgIds.length}...`);
-                    } catch (e) {
-                        failed++;
-                    }
-                    await new Promise(r => setTimeout(r, 150));
+                    const ok = await deleteTelegramMessage(msgId);
+                    if (ok) deleted++; else failed++;
+                    process.stdout.write(`\r🗑️ Deletando mensagens Telegram: ${deleted + failed}/${msgIds.length}...`);
+                    await new Promise(r => setTimeout(r, 100));
                 }
                 console.log(`\n✅ Mensagens Telegram: ${deleted} deletadas, ${failed} já não existiam.`);
             }
@@ -76,7 +84,7 @@ async function removeBleach() {
         console.log(`🗑️ ${swarmRes.rowCount} entradas de Bleach removidas do Swarm Watcher.`);
     }
 
-    console.log('\n✅ [remove_bleach] Limpeza concluída!\n');
+    console.log('\n✅ [remove_bleach] Limpeza de Bleach concluída com sucesso!\n');
 }
 
 db.initDb()
