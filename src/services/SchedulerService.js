@@ -68,23 +68,38 @@ class SchedulerService extends EventEmitter {
         }
     }
 
-    // ─── Utilitários de Tempo (BRT) ──────────────────────────────────────────
+    // ─── Utilitários de Tempo (Horário de São Paulo - America/Sao_Paulo) ───
 
-    _nowBRT() {
-        const now = new Date();
-        // Ajusta para BRT (UTC-3)
-        return new Date(now.getTime() + (BRT_OFFSET_HOURS * 60 * 60 * 1000));
-    }
+    _getSaoPauloTime(customDate = null) {
+        const targetDate = customDate || new Date();
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            weekday: 'short'
+        });
+        const parts = formatter.formatToParts(targetDate);
+        const map = {};
+        parts.forEach(p => map[p.type] = p.value);
 
-    _todayKey() {
-        const brt = this._nowBRT();
-        return brt.toISOString().slice(0, 10); // "YYYY-MM-DD"
+        const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const diaSemana = weekdayMap[map.weekday] ?? 0;
+        const hora = parseInt(map.hour, 10) % 24;
+        const minuto = parseInt(map.minute, 10);
+        const dataKey = `${map.year}-${map.month}-${map.day}`;
+
+        return { diaSemana, hora, minuto, dataKey };
     }
 
     // ─── Lógica Principal ─────────────────────────────────────────────────────
 
     /**
-     * Retorna true se o processamento está autorizado neste momento.
+     * Retorna true se download/upload pela rede está autorizado neste momento no Horário de São Paulo.
      */
     isAllowedToRun() {
         // Scheduler desabilitado globalmente = sempre roda
@@ -96,14 +111,11 @@ class SchedulerService extends EventEmitter {
         // Force start manual permite rodar independente da grade
         if (this.forceState === 'start') return true;
 
-        const brt = this._nowBRT();
-        const diaSemana = brt.getUTCDay(); // 0=Dom, 1=Seg, ..., 6=Sab
-        const hora = brt.getUTCHours();
-        const hoje = this._todayKey();
+        const { diaSemana, hora, dataKey } = this._getSaoPauloTime();
 
         // Verifica override da data de hoje
-        if (this.overrides.hasOwnProperty(hoje)) {
-            const ov = this.overrides[hoje];
+        if (this.overrides.hasOwnProperty(dataKey)) {
+            const ov = this.overrides[dataKey];
             if (ov === false) return false; // Dia bloqueado por override
             if (typeof ov === 'object' && ov !== null) {
                 const { horaInicio, horaFim } = ov;
@@ -120,11 +132,8 @@ class SchedulerService extends EventEmitter {
      * Retorna detalhes do estado atual para a API.
      */
     getStatus() {
-        const brt = this._nowBRT();
-        const hoje = this._todayKey();
+        const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime();
         const allowed = this.isAllowedToRun();
-        const diaSemana = brt.getUTCDay();
-        const hora = brt.getUTCHours();
 
         let motivo = '';
         if (!this._config.ativo) {
@@ -133,14 +142,14 @@ class SchedulerService extends EventEmitter {
             motivo = `⏹ Parado manualmente: ${this.forceReason || 'via painel admin'}`;
         } else if (this.forceState === 'start') {
             motivo = `▶️ Iniciado manualmente: ${this.forceReason || 'via painel admin'}`;
-        } else if (this.overrides.hasOwnProperty(hoje)) {
-            const ov = this.overrides[hoje];
-            if (ov === false) motivo = `Override: dia ${hoje} bloqueado`;
-            else motivo = `Override: hoje das ${ov.horaInicio}h às ${ov.horaFim}h`;
+        } else if (this.overrides.hasOwnProperty(dataKey)) {
+            const ov = this.overrides[dataKey];
+            if (ov === false) motivo = `Override: dia ${dataKey} bloqueado`;
+            else motivo = `Override SP: hoje das ${ov.horaInicio}h às ${ov.horaFim}h (Horário de São Paulo)`;
         } else {
             const diasNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
             const diasAtivos = this._config.diasSemana.map(d => diasNomes[d]).join(', ');
-            motivo = `Grade padrão: ${diasAtivos} das ${this._config.horaInicio}h às ${this._config.horaFim}h (BRT)`;
+            motivo = `Grade padrão: ${diasAtivos} das ${this._config.horaInicio}h às ${this._config.horaFim}h (Horário de São Paulo)`;
         }
 
         // Próxima janela de execução
@@ -151,9 +160,11 @@ class SchedulerService extends EventEmitter {
             forceState: this.forceState,
             forceReason: this.forceReason,
             motivo,
-            agora: brt.toISOString(),
+            dataAtualSP: dataKey,
             horaAtualBRT: hora,
+            minutoAtualBRT: minuto,
             diaAtualBRT: diaSemana,
+            timezone: 'America/Sao_Paulo (Horário de Brasília/SP)',
             config: this._config,
             overrides: this.overrides,
             proximaJanela
@@ -164,15 +175,13 @@ class SchedulerService extends EventEmitter {
         if (!this._config.ativo) return null;
         if (this.forceState === 'start') return { tipo: 'ativa agora (forçado)' };
 
-        const brt = this._nowBRT();
         const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        const now = new Date();
 
-        // Verifica os próximos 8 dias
+        // Verifica os próximos 8 dias no fuso horário de São Paulo
         for (let delta = 0; delta <= 8; delta++) {
-            const candidato = new Date(brt.getTime() + delta * 24 * 60 * 60 * 1000);
-            const dataCandidato = candidato.toISOString().slice(0, 10);
-            const diaCandidato = candidato.getUTCDay();
-            const horaCandidato = delta === 0 ? candidato.getUTCHours() : 0;
+            const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
+            const { diaSemana: diaCandidato, hora: horaCandidato, dataKey: dataCandidato } = this._getSaoPauloTime(candidato);
 
             let hIni, hFim;
             if (this.overrides.hasOwnProperty(dataCandidato)) {
@@ -187,13 +196,12 @@ class SchedulerService extends EventEmitter {
 
             if (delta === 0 && horaCandidato >= hFim) continue;
 
-            const startHora = delta === 0 ? Math.max(horaCandidato, hIni) : hIni;
             return {
                 data: dataCandidato,
                 dia: diasNomes[diaCandidato],
                 horaInicio: hIni,
                 horaFim: hFim,
-                descricao: `${diasNomes[diaCandidato]} (${dataCandidato}) das ${hIni}h às ${hFim}h`
+                descricao: `${diasNomes[diaCandidato]} (${dataCandidato}) das ${hIni}h às ${hFim}h (Horário de SP)`
             };
         }
 

@@ -563,11 +563,19 @@ class QueueManager extends EventEmitter {
         }
 
         // Filtra jobs cujo episódio já está sendo processado por outra trilha
-        const eligibleJobs = queuedJobs.filter(j => {
+        let eligibleJobs = queuedJobs.filter(j => {
             const key = `${(j.title || '').toLowerCase().trim()}|${j.type}|${j.season ?? ''}|${j.episode ?? ''}`;
             return !activeEpisodeKeys.has(key);
         });
         if (eligibleJobs.length === 0) return null;
+
+        // Se estiver fora do horário de São Paulo (01h-05h):
+        // Downloads e uploads pela rede ficam pausados, mas a otimização de arquivos brutos já presentes em disco roda 24h!
+        const isNetworkAllowed = SchedulerService.isAllowedToRun();
+        if (!isNetworkAllowed) {
+            eligibleJobs = eligibleJobs.filter(j => (j.rawFilePath && fs.existsSync(j.rawFilePath)) && (!j.optimizedPath || !fs.existsSync(j.optimizedPath)));
+            if (eligibleJobs.length === 0) return null;
+        }
 
         // 1. Sempre prioriza jobs VIP / Express (prioridade <= 2)
         const expressJob = eligibleJobs.find(j => Number(j.priority || 4) <= 2);
@@ -596,7 +604,7 @@ class QueueManager extends EventEmitter {
         }
 
         // Se todas as trilhas já têm 1 job ou os itens são do mesmo tipo, pega o mais prioritário da fila (work-stealing)
-        return queuedJobs[0];
+        return eligibleJobs[0];
     }
 
     getActiveDownloadsCount() {
@@ -612,19 +620,14 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
-        // 1. Verifica se o processamento está autorizado pelo agendador de horários (SchedulerService)
-        if (!SchedulerService.isAllowedToRun()) {
-            return;
-        }
-
-        // 2. Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
+        // Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
         const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
         if (diskCrowded) {
             console.log('⏳ [Guarda de Disco] Espaço temporário atingiu margem de segurança. Segurando novos downloads até uploads concluírem.');
             return;
         }
 
-        // Dispara jobs em paralelo enquanto houver slots de download livres e o limite global não for atingido
+        // Dispara jobs em paralelo enquanto houver slots livres e o limite global não for atingido
         while (this.activeJobs.size < this.maxConcurrentJobs && this.getActiveDownloadsCount() < this.maxConcurrentDownloads) {
             const nextJob = this.findNextJobToProcess();
             if (!nextJob) break;
@@ -903,6 +906,16 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
+            // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
+            if (!SchedulerService.isAllowedToRun()) {
+                console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
+                job.status = 'queued';
+                job.progress = 0;
+                job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                await this.saveJob(job);
+                return;
+            }
+
             if (job.customMagnet) {
                 console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
                 sources = [{
@@ -1271,6 +1284,17 @@ class QueueManager extends EventEmitter {
         }
 
         // 5. Envio ao Telegram com Barra de Upload em Tempo Real
+        // Se estiver fora do horário de São Paulo (01h-05h), pausa antes do envio pela rede
+        if (!SchedulerService.isAllowedToRun()) {
+            console.log(`⏰ [Scheduler SP] Otimização 1080p concluída com sucesso para "${job.title}"! Pausando envio: aguardando janela de upload das 01h às 05h (Horário de SP)...`);
+            job.status = 'queued';
+            job.progress = 100;
+            job.progressDetails = '100% Otimizado 1080p. Aguardando janela de upload (01h-05h SP)...';
+            job.optimizedPath = optimizedPath;
+            await this.saveJob(job);
+            return;
+        }
+
         job.status = 'uploading';
         job.progress = 0;
         job.progressDetails = 'Iniciando envio ao Telegram...';
