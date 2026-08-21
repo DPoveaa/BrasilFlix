@@ -48,11 +48,31 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
 
-        // Notificação em tempo real quando o agendador autorizar o início dos downloads
-        SchedulerService.on('stateChange', ({ allowed }) => {
+        // Notificação em tempo real quando o agendador autorizar ou encerrar a janela de downloads
+        SchedulerService.on('stateChange', async ({ allowed, reason }) => {
             if (allowed) {
                 console.log('⏰ [Scheduler -> Queue] Janela aberta ou force-start acionado. Despertando fila de downloads...');
                 setImmediate(() => this.processNext());
+            } else {
+                console.log(`⏰ [Scheduler -> Queue] Janela encerrada (${reason}). Cancelando downloads em andamento e liberando SSD...`);
+                try {
+                    // Cancela downloads que estavam em progresso para não gastar banda nem SSD
+                    for (const job of this.activeJobs.values()) {
+                        if (job.status === 'downloading' || job.status === 'searching' || job.status === 'processing') {
+                            if (!job.rawFilePath || !fs.existsSync(job.rawFilePath)) {
+                                console.log(`🛑 [Scheduler SP] Pausando job "${job.title}" e devolvendo à fila para a próxima janela.`);
+                                job.status = 'queued';
+                                job.progress = 0;
+                                job.progressDetails = 'Aguardando próxima janela de download (SP)...';
+                                await this.saveJob(job);
+                            }
+                        }
+                    }
+                    // Executa limpeza de resíduos temporários
+                    await DiskCleaner.cleanTempFiles().catch(() => {});
+                } catch (e) {
+                    console.warn('⚠️ Aviso ao pausar fila no encerramento da janela:', e.message);
+                }
             }
         });
 
@@ -659,6 +679,11 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
+        // Se estiver fora do horário permitido de download (SP), não dispara novos downloads da fila
+        if (!SchedulerService.isAllowedToRun()) {
+            return;
+        }
+
         // Se o disco estiver acima de 75GB, aguarda uploads liberarem espaço antes de iniciar novos downloads
         const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
         if (diskCrowded) {
