@@ -2403,6 +2403,8 @@
                             </table>
                         </div>
                     </div>
+                </div>
+
                 <!-- SUB-TAB 6: HORÁRIOS & AGENDADOR -->
                 <div id="admin-subtab-scheduler" class="admin-subtab-content" style="display: none;">
                     
@@ -3239,9 +3241,28 @@
                         const admPct = document.getElementById('adm-live-pct');
                         if (admPct) admPct.innerText = `${progVal}%`;
                     } else {
-                        if (idleMessage) idleMessage.style.display = 'block';
+                        const sched = data.queue?.scheduler;
+                        const isSchedActive = sched && sched.config?.ativo !== false;
+                        const isOutsideHours = isSchedActive && !sched.allowed;
+                        
+                        let idleHtml = '<span style="font-size: 24px;">🛰️</span> Esteira ociosa. Nenhum download ou otimização ativa no momento.';
+                        let admIdleHtml = '<span style="font-size: 20px;">🛰️</span> Esteira ociosa. Nenhum download ativo no momento.';
+
+                        if (isOutsideHours) {
+                            const prox = sched.proximaJanela?.descricao ? `Próxima janela: <strong>${sched.proximaJanela.descricao}</strong>` : 'Janela: <strong>Seg–Sex 01h–05h (SP)</strong>';
+                            idleHtml = `<span style="font-size: 24px;">⏰</span> <strong>Downloads e uploads pausados fora do horário</strong> (Seg–Sex 01h–05h SP). ${prox}`;
+                            admIdleHtml = `<span style="font-size: 20px;">⏰</span> <strong>Downloads e uploads pausados fora do horário de SP (01h–05h).</strong> ${prox}`;
+                        }
+
+                        if (idleMessage) {
+                            idleMessage.innerHTML = idleHtml;
+                            idleMessage.style.display = 'block';
+                        }
                         if (activeContainer) activeContainer.style.display = 'none';
-                        if (admIdleMsg) admIdleMsg.style.display = 'block';
+                        if (admIdleMsg) {
+                            admIdleMsg.innerHTML = admIdleHtml;
+                            admIdleMsg.style.display = 'block';
+                        }
                         if (admActiveContainer) admActiveContainer.style.display = 'none';
                     }
 
