@@ -24,6 +24,8 @@ class SchedulerService extends EventEmitter {
         // Controle manual: null = seguir grade, 'start' = forçar ligado, 'stop' = forçar parado
         this.forceState = null;
         this.forceReason = null;
+        this.forceExpiresAt = null;
+        this.forceExpiresAtDesc = null;
 
         this._config = { ...this.defaultConfig };
         this._schedulerTickInterval = null;
@@ -43,10 +45,12 @@ class SchedulerService extends EventEmitter {
                 if (saved.overrides) this.overrides = saved.overrides || {};
                 if (saved.forceState !== undefined) this.forceState = saved.forceState || null;
                 if (saved.forceReason !== undefined) this.forceReason = saved.forceReason || null;
-                console.log(`⏱️  [Scheduler] Configuração carregada: ${JSON.stringify(this._config)} | Overrides: ${Object.keys(this.overrides).length} | ForceState: ${this.forceState || 'nenhum'}`);
+                if (saved.forceExpiresAt !== undefined) this.forceExpiresAt = saved.forceExpiresAt || null;
+                if (saved.forceExpiresAtDesc !== undefined) this.forceExpiresAtDesc = saved.forceExpiresAtDesc || null;
+                console.log(`⏱️  [Scheduler] Configuração carregada: ${JSON.stringify(this._config)} | Overrides: ${Object.keys(this.overrides).length} | ForceState: ${this.forceState || 'nenhum'} | Expira: ${this.forceExpiresAtDesc || 'n/a'}`);
             } else {
                 this._save();
-                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão Seg-Sex 01h-05h (BRT).');
+                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão Seg-Sex 01h-05h (Horário de SP).');
             }
         } catch (e) {
             console.warn('⚠️  [Scheduler] Erro ao carregar configuração:', e.message);
@@ -61,6 +65,8 @@ class SchedulerService extends EventEmitter {
                 overrides: this.overrides,
                 forceState: this.forceState,
                 forceReason: this.forceReason,
+                forceExpiresAt: this.forceExpiresAt,
+                forceExpiresAtDesc: this.forceExpiresAtDesc,
                 updatedAt: new Date().toISOString()
             }, { spaces: 2 });
         } catch (e) {
@@ -108,8 +114,20 @@ class SchedulerService extends EventEmitter {
         // Force stop manual tem prioridade máxima
         if (this.forceState === 'stop') return false;
 
-        // Force start manual permite rodar independente da grade
-        if (this.forceState === 'start') return true;
+        // Force start manual: permite rodar até atingir o próximo encerramento agendado
+        if (this.forceState === 'start') {
+            if (this.forceExpiresAt && Date.now() >= this.forceExpiresAt) {
+                console.log(`⏰ [Scheduler SP] Horário de encerramento agendado atingido (${this.forceExpiresAtDesc || '05:00'}). Início manual expirado com sucesso — pausando robô conforme a programação.`);
+                this.forceState = null;
+                this.forceReason = null;
+                this.forceExpiresAt = null;
+                this.forceExpiresAtDesc = null;
+                this._save();
+                this.emit('stateChange', { allowed: false, reason: 'Horário de término agendado atingido' });
+                return false;
+            }
+            return true;
+        }
 
         const { diaSemana, hora, dataKey } = this._getSaoPauloTime();
 
@@ -141,7 +159,8 @@ class SchedulerService extends EventEmitter {
         } else if (this.forceState === 'stop') {
             motivo = `⏹ Parado manualmente: ${this.forceReason || 'via painel admin'}`;
         } else if (this.forceState === 'start') {
-            motivo = `▶️ Iniciado manualmente: ${this.forceReason || 'via painel admin'}`;
+            const expStr = this.forceExpiresAtDesc ? ` (pausará automaticamente às ${this.forceExpiresAtDesc})` : '';
+            motivo = `▶️ Iniciado manualmente${expStr}`;
         } else if (this.overrides.hasOwnProperty(dataKey)) {
             const ov = this.overrides[dataKey];
             if (ov === false) motivo = `Override: dia ${dataKey} bloqueado`;
@@ -159,6 +178,8 @@ class SchedulerService extends EventEmitter {
             allowed,
             forceState: this.forceState,
             forceReason: this.forceReason,
+            forceExpiresAt: this.forceExpiresAt,
+            forceExpiresAtDesc: this.forceExpiresAtDesc,
             motivo,
             dataAtualSP: dataKey,
             horaAtualBRT: hora,
@@ -173,7 +194,7 @@ class SchedulerService extends EventEmitter {
 
     _calcProximaJanela() {
         if (!this._config.ativo) return null;
-        if (this.forceState === 'start') return { tipo: 'ativa agora (forçado)' };
+        if (this.forceState === 'start') return { tipo: 'ativa agora (forçado)', expiraEm: this.forceExpiresAtDesc };
 
         const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
         const now = new Date();
@@ -208,19 +229,76 @@ class SchedulerService extends EventEmitter {
         return null;
     }
 
+    /**
+     * Calcula o próximo horário de encerramento agendado (timestamp e texto) no Horário de São Paulo.
+     * Exemplo: se iniciado às 18h de terça, a próxima janela fecha às 05h de quarta.
+     */
+    _calcNextScheduledStopTime() {
+        const now = new Date();
+        const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+        for (let delta = 0; delta <= 8; delta++) {
+            const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
+            const { diaSemana, hora, dataKey } = this._getSaoPauloTime(candidato);
+
+            let hFim = null;
+            if (this.overrides.hasOwnProperty(dataKey)) {
+                const ov = this.overrides[dataKey];
+                if (ov && typeof ov === 'object') {
+                    hFim = ov.horaFim;
+                }
+            } else if (this._config.diasSemana.includes(diaSemana)) {
+                hFim = this._config.horaFim;
+            }
+
+            if (hFim !== null) {
+                // Se for hoje e já passou do horário de encerramento, procura o próximo dia
+                if (delta === 0 && hora >= hFim) {
+                    continue;
+                }
+
+                // Cria o timestamp exato do encerramento (no fuso de SP: UTC-3)
+                const [year, month, day] = dataKey.split('-').map(Number);
+                const stopDateUtc = new Date(Date.UTC(year, month - 1, day, hFim + 3, 0, 0));
+                const hFimStr = hFim < 10 ? `0${hFim}:00` : `${hFim}:00`;
+
+                return {
+                    iso: stopDateUtc.toISOString(),
+                    timestamp: stopDateUtc.getTime(),
+                    data: dataKey,
+                    horaFim: hFim,
+                    descricao: `${diasNomes[diaSemana]} (${dataKey}) às ${hFimStr} (Horário de SP)`
+                };
+            }
+        }
+
+        // Fallback: 12 horas
+        const fallbackStop = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+        return {
+            iso: fallbackStop.toISOString(),
+            timestamp: fallbackStop.getTime(),
+            descricao: `em 12h (${fallbackStop.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })})`
+        };
+    }
+
     // ─── Controles Manuais ────────────────────────────────────────────────────
 
     forceStart(reason = 'Manual via painel admin') {
         this.forceState = 'start';
         this.forceReason = reason;
+        const nextStop = this._calcNextScheduledStopTime();
+        this.forceExpiresAt = nextStop ? nextStop.timestamp : null;
+        this.forceExpiresAtDesc = nextStop ? nextStop.descricao : null;
         this._save();
-        console.log(`▶️  [Scheduler] Force Start ativado: ${reason}`);
+        console.log(`▶️  [Scheduler] Início manual ativado: ${reason}. O robô operará e pausará automaticamente no próximo horário agendado de término (${this.forceExpiresAtDesc || '05:00 SP'}).`);
         this.emit('stateChange', { allowed: true, reason });
     }
 
     forceStop(reason = 'Manual via painel admin') {
         this.forceState = 'stop';
         this.forceReason = reason;
+        this.forceExpiresAt = null;
+        this.forceExpiresAtDesc = null;
         this._save();
         console.log(`⏹  [Scheduler] Force Stop ativado: ${reason}`);
         this.emit('stateChange', { allowed: false, reason });
@@ -229,6 +307,8 @@ class SchedulerService extends EventEmitter {
     clearForce() {
         this.forceState = null;
         this.forceReason = null;
+        this.forceExpiresAt = null;
+        this.forceExpiresAtDesc = null;
         this._save();
         console.log('🔄 [Scheduler] Controle manual removido — voltando à grade padrão.');
         this.emit('stateChange', { allowed: this.isAllowedToRun(), reason: 'Grade padrão restaurada' });
