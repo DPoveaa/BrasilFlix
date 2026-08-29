@@ -2260,15 +2260,24 @@ class StremioServer {
                 return res.status(503).send('Serviço de streaming do Telegram temporariamente indisponível.');
             }
 
-            const storageChannel = config.STORAGE_GROUP_ID;
             let doc = null;
-
+            let isConfirmedMissing = false;
             const rawMsgId = Number(midia.messageId);
+
             if (!isNaN(rawMsgId) && rawMsgId > 0) {
                 try {
-                    const messages = await client.getMessages(storageChannel, { ids: [rawMsgId] });
-                    if (messages && messages.length > 0 && messages[0].media && messages[0].media.document) {
-                        doc = messages[0].media.document;
+                    const resMessages = await client.invoke(new Api.messages.GetMessages({
+                        id: [new Api.InputMessageID({ id: rawMsgId })]
+                    }));
+                    if (resMessages && resMessages.messages && resMessages.messages.length > 0) {
+                        const m = resMessages.messages[0];
+                        if (m.className === 'MessageEmpty') {
+                            isConfirmedMissing = true;
+                        } else if (m.media && m.media.document && Number(m.media.document.size) > 0) {
+                            doc = m.media.document;
+                        } else {
+                            isConfirmedMissing = true;
+                        }
                     }
                 } catch (e) {
                     console.warn(`Aviso ao buscar mensagem ${rawMsgId}:`, e.message);
@@ -2276,6 +2285,9 @@ class StremioServer {
             }
 
             if (!doc) {
+                if (isConfirmedMissing) {
+                    this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                }
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
 
@@ -2402,6 +2414,94 @@ class StremioServer {
             if (!res.headersSent) {
                 res.status(500).send('Erro ao transmitir vídeo.');
             }
+        }
+    }
+
+    async autoHealMissingMedia(rawMsgId) {
+        try {
+            const msgId = Number(rawMsgId);
+            if (isNaN(msgId) || msgId <= 0) return;
+
+            console.warn(`🩺 [Auto-Healing] Invalidando versão ausente no PostgreSQL para messageId ${msgId}...`);
+
+            // 1. Filmes
+            const filmesRes = await db.query(`SELECT * FROM filmes WHERE message_id = $1 OR (versoes::text LIKE $2)`, [msgId, `%"messageId":${msgId}%`]);
+            for (const f of filmesRes.rows) {
+                let versoes = f.versoes || {};
+                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
+
+                if (versoes.dublado && Number(versoes.dublado.messageId) === msgId) {
+                    versoes.dublado = null;
+                }
+                if (versoes.legendado && Number(versoes.legendado.messageId) === msgId) {
+                    versoes.legendado = null;
+                }
+
+                const finalIsDub = !!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId));
+                const finalIsLeg = !!(versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId));
+                const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || null;
+                const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+                const primaryAudio = (finalIsDub && finalIsLeg)
+                    ? 'Dub/Leg (Dublado + Legendado)'
+                    : (finalIsDub ? 'Dublado (Áudio PT-BR)' : (finalIsLeg ? 'Legendado (PT-BR)' : null));
+
+                await db.query(`
+                    UPDATE filmes SET 
+                        versoes = $1, is_dublado = $2, is_legendado = $3, message_id = $4, file_id = $5, audio = $6, updated_at = NOW()
+                    WHERE id = $7
+                `, [JSON.stringify(versoes), finalIsDub, finalIsLeg, primaryMessageId, primaryFileId, primaryAudio, f.id]);
+            }
+
+            // 2. Episódios
+            const epsRes = await db.query(`SELECT * FROM episodios WHERE message_id = $1 OR (versoes::text LIKE $2)`, [msgId, `%"messageId":${msgId}%`]);
+            const affectedSerieIds = new Set();
+            for (const ep of epsRes.rows) {
+                affectedSerieIds.add(ep.serie_id);
+                let versoes = ep.versoes || {};
+                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
+
+                if (versoes.dublado && Number(versoes.dublado.messageId) === msgId) {
+                    versoes.dublado = null;
+                }
+                if (versoes.legendado && Number(versoes.legendado.messageId) === msgId) {
+                    versoes.legendado = null;
+                }
+
+                const finalIsDub = !!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId));
+                const finalIsLeg = !!(versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId));
+                const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || null;
+                const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+                const primaryAudio = (finalIsDub && finalIsLeg)
+                    ? 'Dub/Leg (Dublado + Legendado)'
+                    : (finalIsDub ? 'Dublado (Áudio PT-BR)' : (finalIsLeg ? 'Legendado (PT-BR)' : null));
+
+                await db.query(`
+                    UPDATE episodios SET 
+                        versoes = $1, is_dublado = $2, is_legendado = $3, message_id = $4, file_id = $5, audio = $6
+                    WHERE id = $7
+                `, [JSON.stringify(versoes), finalIsDub, finalIsLeg, primaryMessageId, primaryFileId, primaryAudio, ep.id]);
+            }
+
+            // 3. Atualiza as estatísticas e flags de áudio das séries afetadas
+            for (const sId of affectedSerieIds) {
+                await db.query(`
+                    UPDATE series SET 
+                        total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1 AND (is_dublado = true OR is_legendado = true)),
+                        total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1 AND (is_dublado = true OR is_legendado = true)),
+                        is_dublado = COALESCE((SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1), false),
+                        is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                        updated_at = NOW()
+                    WHERE id = $1
+                `, [sId]);
+            }
+
+            // 4. Recarrega o catálogo em memória
+            if (this.catalogoManager) {
+                await this.catalogoManager.loadCatalogo();
+            }
+            console.log(`🩺 [Auto-Healing] Auto-correção concluída com sucesso para messageId ${msgId}.`);
+        } catch (e) {
+            console.error('❌ Erro no auto-healing:', e.message);
         }
     }
 

@@ -1,6 +1,7 @@
 const path = require('path');
 const CatalogoManager = require('./src/managers/CatalogoManager');
 const StremioService = require('./src/services/StremioService');
+const db = require('./src/database/db');
 
 function assert(condition, message) {
     if (!condition) {
@@ -306,8 +307,80 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         assert(registeredConsumptions.length === 1, 'Filme valido DEVE consumir cota');
         assert(registeredConsumptions[0].mediaKey === 'filme_100', 'mediaKey do filme deve estar correto');
 
+        // Teste 13: Segurança na Deleção de Mensagens no Armazém (Eliminação do bug id + 1)
+        console.log('\n--- Teste 13: Segurança de Deleção no Telegram (Sem Deletar id + 1) ---');
+        const TelegramUploader = require('./src/services/TelegramUploader');
+        const uploader = new TelegramUploader();
+
+        let deletedIdsInMock = [];
+        uploader.getClient = async () => ({
+            deleteMessages: async (groupId, ids) => {
+                deletedIdsInMock = ids;
+                return true;
+            }
+        });
+
+        // 13.1 Deletando mensagem 100 deve deletar APENAS 100, NUNCA 101
+        await uploader.deleteStorageMessages([100]);
+        assert(deletedIdsInMock.length === 1 && deletedIdsInMock[0] === 100, 'Deletar mensagem 100 deve deletar apenas [100]');
+        assert(!deletedIdsInMock.includes(101), 'Deletar mensagem 100 NUNCA deve incluir 101');
+
+        // 13.2 Substituição de episódio: antigo=100, novo=101 -> ao remover antigo, 101 permanece intacto
+        await uploader.deleteStorageMessages([100]);
+        assert(deletedIdsInMock.includes(100) && !deletedIdsInMock.includes(101), 'Ao substituir episódio antigo 100 por novo 101, 101 deve permanecer intacto');
+
+        // 13.3 Deletando múltiplos IDs explícitos ([100, 200]) -> não deve deletar 101 nem 201
+        await uploader.deleteStorageMessages([100, 200]);
+        assert(deletedIdsInMock.length === 2 && deletedIdsInMock.includes(100) && deletedIdsInMock.includes(200), 'Deletar [100, 200] deve conter exatamente [100, 200]');
+        assert(!deletedIdsInMock.includes(101) && !deletedIdsInMock.includes(201), 'Deletar [100, 200] NUNCA deve incluir vizinhos 101 ou 201');
+
+        // Teste 14: Auto-Healing de Mídia Ausente e Invalidação Parcial
+        console.log('\n--- Teste 14: Auto-Healing de Mídia e Invalidação Parcial ---');
+        let healedCalls = [];
+        const mockHealCatMgr = {
+            loadCatalogo: async () => { healedCalls.push('loadCatalogo'); }
+        };
+        const mockHealServer = new StremioServer(mockHealCatMgr, mockAssinaturaMgr, null, null, 9998);
+
+        let queryLogs = [];
+        const originalDbQuery = db.query;
+        db.query = async (sql, params) => {
+            queryLogs.push({ sql, params });
+            if (sql.includes('SELECT * FROM filmes')) {
+                return { rows: [] };
+            }
+            if (sql.includes('SELECT * FROM episodios')) {
+                return {
+                    rows: [{
+                        id: 55,
+                        serie_id: 17,
+                        temporada_numero: 4,
+                        numero: 7,
+                        is_dublado: true,
+                        is_legendado: true,
+                        versoes: { dublado: { messageId: 8888 }, legendado: { messageId: 315641 } }
+                    }]
+                };
+            }
+            return { rows: [] };
+        };
+
+        try {
+            await mockHealServer.autoHealMissingMedia(315641);
+            assert(healedCalls.includes('loadCatalogo'), 'Auto-healing deve recarregar o catalogo');
+            const updateEpQuery = queryLogs.find(q => q.sql.includes('UPDATE episodios SET'));
+            assert(updateEpQuery, 'Auto-healing deve atualizar episodios no banco');
+            const updatedVersoes = JSON.parse(updateEpQuery.params[0]);
+            assert(updatedVersoes.legendado === null, 'Versao legendada ausente deve ser definida como null');
+            assert(updatedVersoes.dublado !== null && updatedVersoes.dublado.messageId === 8888, 'Versao dublada valida deve ser preservada');
+            assert(updateEpQuery.params[1] === true, 'is_dublado deve permanecer true');
+            assert(updateEpQuery.params[2] === false, 'is_legendado deve se tornar false');
+        } finally {
+            db.query = originalDbQuery;
+        }
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS TESTES DE REGRESSÃO, STREAMING E COTAS PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS TESTES DE REGRESSÃO, INTEGRIDADE E STREAMING PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {

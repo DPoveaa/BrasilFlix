@@ -57,10 +57,36 @@ class TelegramUploader {
                 await client.connect();
                 console.log('✅ Cliente MTProto autenticado via Sessão Premium (Uploads de até 4GB desbloqueados)!');
             } else {
-                await client.start({
-                    botAuthToken: config.BOT_TOKEN
-                });
-                console.log('✅ Cliente MTProto autenticado via Bot Token!');
+                const savedSessionFile = path.resolve(__dirname, '../../data/telegram_bot_session.txt');
+                let savedSession = '';
+                try {
+                    if (fs.existsSync(savedSessionFile)) {
+                        savedSession = fs.readFileSync(savedSessionFile, 'utf8').trim();
+                    }
+                } catch (e) {}
+
+                if (savedSession) {
+                    try {
+                        client.session = new StringSession(savedSession);
+                        await client.connect();
+                        console.log('✅ Cliente MTProto autenticado via Sessão Salva!');
+                    } catch (e) {
+                        console.warn('⚠️ Sessão salva expirada/inválida, reconectando via Bot Token...');
+                        await client.start({ botAuthToken: config.BOT_TOKEN });
+                        try {
+                            const sessStr = client.session.save();
+                            if (sessStr) fs.writeFileSync(savedSessionFile, sessStr, 'utf8');
+                        } catch (e) {}
+                        console.log('✅ Cliente MTProto autenticado via Bot Token e sessão renovada!');
+                    }
+                } else {
+                    await client.start({ botAuthToken: config.BOT_TOKEN });
+                    try {
+                        const sessStr = client.session.save();
+                        if (sessStr) fs.writeFileSync(savedSessionFile, sessStr, 'utf8');
+                    } catch (e) {}
+                    console.log('✅ Cliente MTProto autenticado via Bot Token!');
+                }
             }
 
             // Desativa o loop de updates em segundo plano (o GramJS é usado apenas como uploader/sender de arquivos pesados)
@@ -94,14 +120,11 @@ class TelegramUploader {
 
     async deleteStorageMessages(messageIds) {
         if (!messageIds) return false;
-        const baseIds = (Array.isArray(messageIds) ? messageIds : [messageIds])
+        const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [messageIds])
             .map(id => Number(id))
-            .filter(id => !isNaN(id) && id > 0);
+            .filter(id => !isNaN(id) && id > 0))];
 
-        if (baseIds.length === 0) return false;
-
-        // Inclui baseIds e baseIds + 1 para limpar eventuais mensagens de confirmação adjacentes
-        const ids = [...new Set([...baseIds, ...baseIds.map(id => id + 1)])];
+        if (ids.length === 0) return false;
 
         try {
             const client = await this.getClient();
@@ -404,33 +427,38 @@ class TelegramUploader {
      */
     async verifyCatalogIntegrity(catalogo) {
         const client = await this.getClient();
-        const itemsToCheck = [];
 
-        // 1. Mapeia todos os messageIds dos filmes
-        for (const filme of (catalogo.filmes || [])) {
-            if (filme.messageId) {
-                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.messageId), ano: filme.ano, tmdbId: filme.tmdbId });
-            }
-            if (filme.versoes?.dublado?.messageId) {
-                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.dublado.messageId), versao: 'dublado', ano: filme.ano, tmdbId: filme.tmdbId });
-            }
-            if (filme.versoes?.legendado?.messageId && filme.versoes?.legendado?.messageId !== filme.versoes?.dublado?.messageId) {
-                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.legendado.messageId), versao: 'legendado', ano: filme.ano, tmdbId: filme.tmdbId });
-            }
-        }
+        // Se foi passado um array direto de items
+        let itemsList = Array.isArray(catalogo) ? catalogo : [];
 
-        // 2. Mapeia todos os messageIds dos episódios de séries
-        for (const serie of (catalogo.series || [])) {
-            for (const temp of (serie.temporadas || [])) {
-                for (const ep of (temp.episodios || [])) {
-                    if (ep.messageId) {
-                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.messageId), tmdbId: serie.tmdbId });
-                    }
-                    if (ep.versoes?.dublado?.messageId) {
-                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.dublado.messageId), versao: 'dublado', tmdbId: serie.tmdbId });
-                    }
-                    if (ep.versoes?.legendado?.messageId && ep.versoes?.legendado?.messageId !== ep.versoes?.dublado?.messageId) {
-                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.legendado.messageId), versao: 'legendado', tmdbId: serie.tmdbId });
+        // Se foi passado o objeto de catálogo { filmes, series }
+        if (!Array.isArray(catalogo) && catalogo) {
+            // 1. Mapeia todos os messageIds dos filmes
+            for (const filme of (catalogo.filmes || [])) {
+                if (filme.messageId) {
+                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.messageId), fileId: filme.fileId, ano: filme.ano, tmdbId: filme.tmdbId });
+                }
+                if (filme.versoes?.dublado?.messageId) {
+                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.dublado.messageId), fileId: filme.versoes.dublado.fileId, versao: 'dublado', ano: filme.ano, tmdbId: filme.tmdbId });
+                }
+                if (filme.versoes?.legendado?.messageId && filme.versoes?.legendado?.messageId !== filme.versoes?.dublado?.messageId) {
+                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.legendado.messageId), fileId: filme.versoes.legendado.fileId, versao: 'legendado', ano: filme.ano, tmdbId: filme.tmdbId });
+                }
+            }
+
+            // 2. Mapeia todos os messageIds dos episódios de séries
+            for (const serie of (catalogo.series || [])) {
+                for (const temp of (serie.temporadas || [])) {
+                    for (const ep of (temp.episodios || [])) {
+                        if (ep.messageId) {
+                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.messageId), fileId: ep.fileId, tmdbId: serie.tmdbId });
+                        }
+                        if (ep.versoes?.dublado?.messageId) {
+                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.dublado.messageId), fileId: ep.versoes.dublado.fileId, versao: 'dublado', tmdbId: serie.tmdbId });
+                        }
+                        if (ep.versoes?.legendado?.messageId && ep.versoes?.legendado?.messageId !== ep.versoes?.dublado?.messageId) {
+                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.legendado.messageId), fileId: ep.versoes.legendado.fileId, versao: 'legendado', tmdbId: serie.tmdbId });
+                        }
                     }
                 }
             }
@@ -438,8 +466,10 @@ class TelegramUploader {
 
         // Remove duplicados de messageId na lista de checagem
         const uniqueMap = new Map();
-        for (const item of itemsToCheck) {
-            if (!uniqueMap.has(item.messageId)) uniqueMap.set(item.messageId, item);
+        for (const item of itemsList) {
+            if (item && item.messageId && !isNaN(item.messageId) && Number(item.messageId) > 0) {
+                if (!uniqueMap.has(Number(item.messageId))) uniqueMap.set(Number(item.messageId), item);
+            }
         }
         const uniqueItems = Array.from(uniqueMap.values());
 
@@ -447,43 +477,55 @@ class TelegramUploader {
             total: uniqueItems.length,
             validos: [],
             ausentes: [],
-            corrompidos: []
+            corrompidos: [],
+            unverified: []
         };
 
-        const batchSize = 50;
+        const batchSize = 100;
         for (let i = 0; i < uniqueItems.length; i += batchSize) {
             const batch = uniqueItems.slice(i, i + batchSize);
             const msgIds = batch.map(b => b.messageId);
 
             try {
-                const messages = await client.getMessages(this.storageGroupId, { ids: msgIds });
+                const resMessages = await client.invoke(new Api.messages.GetMessages({
+                    id: msgIds.map(id => new Api.InputMessageID({ id }))
+                }));
+                const messages = resMessages.messages || [];
+
                 for (let j = 0; j < batch.length; j++) {
                     const item = batch[j];
-                    const msg = messages[j];
+                    const msg = messages.find(m => m && m.id === item.messageId) || messages[j];
 
-                    if (!msg || !msg.media || !msg.media.document) {
+                    if (!msg || msg.className === 'MessageEmpty' || !msg.media || !msg.media.document) {
                         results.ausentes.push(item);
                     } else {
                         const doc = msg.media.document;
+                        const docSize = Number(doc.size);
                         const videoAttr = (doc.attributes || []).find(a => a.className === 'DocumentAttributeVideo');
                         const duration = videoAttr?.duration || 0;
-                        const sizeMB = (doc.size / (1024 * 1024)).toFixed(1);
+                        const sizeMB = (docSize / (1024 * 1024)).toFixed(1);
 
-                        if (doc.size === 0) {
+                        if (docSize === 0) {
                             results.corrompidos.push({ ...item, motivo: 'Tamanho 0 bytes' });
                         } else {
+                            const fnAttr = doc.attributes?.find(a => a.fileName);
                             results.validos.push({
                                 ...item,
+                                docId: doc.id.toString(),
                                 sizeMB: parseFloat(sizeMB),
                                 durationSec: duration,
                                 width: videoAttr?.w,
-                                height: videoAttr?.h
+                                height: videoAttr?.h,
+                                fileName: fnAttr?.fileName
                             });
                         }
                     }
                 }
             } catch (err) {
                 console.error(`⚠️ Erro ao verificar lote de mensagens no Telegram:`, err.message);
+                for (const item of batch) {
+                    results.unverified.push({ ...item, erro: err.message });
+                }
             }
         }
 
