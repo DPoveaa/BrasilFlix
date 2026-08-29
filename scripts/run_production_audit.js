@@ -1,5 +1,6 @@
 const db = require('../src/database/db');
 const TelegramUploader = require('../src/services/TelegramUploader');
+const CatalogoManager = require('../src/managers/CatalogoManager');
 
 async function main() {
     console.log('======================================================');
@@ -12,6 +13,34 @@ async function main() {
     try {
         const report = await uploader.verifyDatabaseIntegrity(db);
         const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        // Alimenta o cache de verificação de mídia do CatalogoManager
+        for (const item of report.telegramAudit.validos) {
+            if (item.messageId) {
+                CatalogoManager.mediaVerificationCache.set(item.messageId, 'VERIFIED_PLAYABLE', {
+                    docId: item.docId,
+                    fileName: item.fileName
+                });
+            }
+        }
+        for (const item of report.telegramAudit.ausentes) {
+            if (item.messageId) {
+                CatalogoManager.mediaVerificationCache.set(item.messageId, 'MISSING', { error: item.motivo });
+            }
+        }
+        for (const item of report.telegramAudit.corrompidos) {
+            if (item.messageId) {
+                CatalogoManager.mediaVerificationCache.set(item.messageId, 'INVALID_MEDIA', { error: item.motivo });
+            }
+        }
+        for (const item of report.telegramAudit.fileIdMismatches) {
+            if (item.messageId) {
+                CatalogoManager.mediaVerificationCache.set(item.messageId, 'FILE_ID_MISMATCH', {
+                    docId: item.actualDocId,
+                    storedFileId: item.storedFileId
+                });
+            }
+        }
 
         console.log('\n======================================================');
         console.log('📊 RESULTADO DA AUDITORIA DIRETA DE INTEGRIDADE');

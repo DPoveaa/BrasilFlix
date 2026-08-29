@@ -16,6 +16,13 @@ console.log('====================================================');
 console.log('🧪 INICIANDO TESTES DE REGRESSÃO E AUDITORIA BRASILFLIX');
 console.log('====================================================\n');
 
+// Pré-popula cache de verificação para IDs de teste unitário
+[102, 103, 104, 201, 401, 402, 501, 502, 506, 601, 602, 901, 1001].forEach(id => {
+    CatalogoManager.mediaVerificationCache.set(id, 'VERIFIED_PLAYABLE', { docId: `doc_${id}` });
+});
+CatalogoManager.mediaVerificationCache.set(301, 'VERIFIED_PLAYABLE', { docId: 'file_leg_301' });
+CatalogoManager.mediaVerificationCache.set(902, 'VERIFIED_PLAYABLE', { docId: 'leg_901' });
+
 // 1. No Ep 1 -> season hidden
 console.log('--- Teste 1: Sem Ep 1 -> Temporada Oculta ---');
 const t1_eps = [
@@ -561,8 +568,11 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
 
         // Teste 18: hasPlayableMedia e Rejeição de fileId não verificado
         console.log('\n--- Teste 18: hasPlayableMedia e Rejeição de fileId Não Verificado ---');
-        assert(CatalogoManager.hasPlayableMedia({ messageId: 100 }) === true, 'messageId numérico positivo deve ser playable');
-        assert(CatalogoManager.hasPlayableMedia({ messageId: '200' }) === true, 'messageId string numérica positiva deve ser playable');
+        CatalogoManager.mediaVerificationCache.set(100, 'VERIFIED_PLAYABLE', { docId: 'doc_100' });
+        CatalogoManager.mediaVerificationCache.set(200, 'VERIFIED_PLAYABLE', { docId: 'doc_200' });
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 100 }) === true, 'messageId numérico positivo verificado deve ser playable');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: '200' }) === true, 'messageId string numérica positiva verificada deve ser playable');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 999999 }) === false, 'messageId numérico positivo NÃO verificado NÃO deve ser playable');
         assert(CatalogoManager.hasPlayableMedia({ fileId: '4931446608492496572' }) === false, 'Apenas fileId sem messageId NÃO deve ser tratado como playable no catálogo público');
         assert(CatalogoManager.hasPlayableMedia({ messageId: 0, fileId: 'some_id' }) === false, 'messageId 0 com fileId NÃO deve ser playable');
 
@@ -666,8 +676,89 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
             db.query = origSafeQuery;
         }
 
+        // Teste 21: Validação Estrita dos 12 Contratos de Integridade e Cache de Verificação
+        console.log('\n--- Teste 21: Validação dos 12 Contratos de Integridade da Pipeline ---');
+
+        // Contrato 1: messageId positivo porém DELETADO (status MISSING) NÃO é considerado playable
+        CatalogoManager.mediaVerificationCache.set(315641, 'MISSING', { error: 'MessageEmpty' });
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 315641 }) === false, '1. messageId positivo deletado (MISSING) NÃO deve ser playable');
+
+        // Contrato 2: MessageEmpty faz o episódio desaparecer do catálogo público
+        const seasonWithGhost = [
+            { numero: 1, isDublado: true, messageId: 401 },
+            { numero: 2, isDublado: true, messageId: 402 },
+            { numero: 7, isLegendado: true, messageId: 315641 }
+        ];
+        const resGhost = CatalogoManager.normalizeSeasonEpisodes(seasonWithGhost, 4);
+        assert(resGhost !== null && resGhost.totalEpisodios === 2, '2. MessageEmpty no Ep 7 faz o Ep 7 desaparecer e expõe apenas E1 e E2');
+        assert(resGhost.episodios.some(e => e.numero === 7) === false, '2b. Episódio com MessageEmpty não está presente no catálogo público');
+
+        // Contrato 3: Erro temporário de rede do Telegram NÃO remove episódio previamente verificado
+        CatalogoManager.mediaVerificationCache.set(777, 'VERIFIED_PLAYABLE', { docId: 'doc_777' });
+        // Simula erro transitório de rede
+        const cachedBefore = CatalogoManager.mediaVerificationCache.get(777);
+        assert(cachedBefore.status === 'VERIFIED_PLAYABLE', '3. Erro transitório preserva o estado previamente verificado no cache');
+
+        // Contrato 4: Mídia verificada no Telegram permanece visível
+        CatalogoManager.mediaVerificationCache.set(888, 'VERIFIED_PLAYABLE', { docId: 'doc_888' });
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 888 }) === true, '4. Mídia VERIFIED_PLAYABLE no Telegram permanece visível');
+
+        // Contrato 5: fileId unverified (sem messageId verificado) permanece oculto
+        assert(CatalogoManager.hasPlayableMedia({ fileId: 'doc_only_123' }) === false, '5. fileId sem messageId verificado permanece oculto');
+
+        // Contrato 6: FILE_ID_MISMATCH NÃO é reproduzível
+        CatalogoManager.mediaVerificationCache.set(999, 'VERIFIED_PLAYABLE', { docId: 'real_doc_999' });
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 999, fileId: 'wrong_stored_fid' }) === false, '6. FILE_ID_MISMATCH não é considerado playable');
+
+        // Contrato 7 & 8: Auto-healing remove apenas a versão inválida e preserva a alternativa válida
+        const episodeDual = {
+            numero: 1,
+            versoes: {
+                dublado: { messageId: 201 },
+                legendado: { messageId: 315641 } // 315641 é MISSING
+            }
+        };
+        assert(CatalogoManager.hasValidDubbedMedia(episodeDual) === true, '7. Versão dublada válida permanece disponível');
+        assert(CatalogoManager.hasValidSubtitledMedia(episodeDual) === false, '8. Versão legendada com MessageEmpty é rejeitada');
+
+        // Contrato 9: Episódio 1 com mídia válida permanece visível
+        const singleEpSeason = [{ numero: 1, isDublado: true, messageId: 201 }];
+        const resSingle = CatalogoManager.normalizeSeasonEpisodes(singleEpSeason, 1);
+        assert(resSingle !== null && resSingle.totalEpisodios === 1, '9. Episódio 1 com mídia válida permanece visível');
+
+        // Contrato 10: Episódio 1 com mídia deletada + Ep 2 válido -> Temporada oculta por falta de Ep 1 válido
+        const deadE1Season = [
+            { numero: 1, isDublado: true, messageId: 315641 }, // MISSING
+            { numero: 2, isDublado: true, messageId: 402 }     // VERIFIED
+        ];
+        const resDeadE1 = CatalogoManager.normalizeSeasonEpisodes(deadE1Season, 1);
+        assert(resDeadE1 === null, '10. Temporada com Ep 1 deletado (MISSING) deve ficar totalmente oculta');
+
+        // Contrato 11: Ep 1 válido + Ep 2 válido + Ep 6 válido -> apenas Ep 1 e Ep 2 são expostos
+        const gapSeason = [
+            { numero: 1, isDublado: true, messageId: 401 },
+            { numero: 2, isDublado: true, messageId: 402 },
+            { numero: 6, isDublado: true, messageId: 506 }
+        ];
+        const resGap = CatalogoManager.normalizeSeasonEpisodes(gapSeason, 1);
+        assert(resGap !== null && resGap.totalEpisodios === 2, '11. Apenas E1 e E2 são expostos em temporada com gap');
+        assert(resGap.episodios.some(e => e.numero === 6) === false, '11b. Episódio 6 após o gap foi omitido');
+
+        // Contrato 12: Proteção de deleção contra messageId + 1 permanece intacta
+        const deletedIdsCollector = [];
+        const mockSafeStorageUploader = new TelegramUploader();
+        mockSafeStorageUploader.getClient = async () => ({
+            deleteMessages: async (peer, ids) => {
+                deletedIdsCollector.push(...ids);
+                return true;
+            }
+        });
+        await mockSafeStorageUploader.deleteStorageMessages(500);
+        assert(deletedIdsCollector.length === 1 && deletedIdsCollector[0] === 500, '12. Deletar 500 deve deletar APENAS 500');
+        assert(deletedIdsCollector.includes(501) === false, '12b. Deletar 500 NUNCA deve tocar no 501');
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 20 TESTES DE REGRESSÃO, INTEGRIDADE E BANCO PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 21 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {

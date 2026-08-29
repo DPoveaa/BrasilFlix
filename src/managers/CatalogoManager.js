@@ -5,7 +5,49 @@ const db = require('../database/db');
 const TelegramUploader = require('../services/TelegramUploader');
 const TMDBService = require('../services/TMDBService');
 
+class MediaVerificationCache {
+    constructor() {
+        this.cache = new Map(); // messageId -> { status, docId, docSize, isVideo, duration, fileName, timestamp }
+        this.defaultTtl = 60 * 60 * 1000; // 1 hora de TTL
+    }
+
+    get(messageId) {
+        const id = Number(messageId);
+        if (isNaN(id) || id <= 0) return null;
+        const entry = this.cache.get(id);
+        if (!entry) return null;
+        if (Date.now() - entry.timestamp > this.defaultTtl) {
+            return null; // Expirado
+        }
+        return entry;
+    }
+
+    set(messageId, status, details = {}) {
+        const id = Number(messageId);
+        if (isNaN(id) || id <= 0) return;
+        this.cache.set(id, {
+            status, // 'VERIFIED_PLAYABLE' | 'MISSING' | 'INVALID_MEDIA' | 'FILE_ID_MISMATCH' | 'UNVERIFIED'
+            ...details,
+            timestamp: Date.now()
+        });
+    }
+
+    invalidate(messageId) {
+        const id = Number(messageId);
+        if (!isNaN(id)) {
+            this.cache.delete(id);
+        }
+    }
+
+    clear() {
+        this.cache.clear();
+    }
+}
+
 class CatalogoManager {
+    static mediaVerificationCache = new MediaVerificationCache();
+    static allowUnverifiedPlayback = false;
+
     constructor() {
         this.catalogo = {
             filmes: [],
@@ -37,6 +79,31 @@ class CatalogoManager {
     }
 
     /**
+     * Retorna o estado de verificação atual de um messageId:
+     * - 'VERIFIED_PLAYABLE': Mídia confirmada e reproduzível no Telegram
+     * - 'MISSING': Mensagem confirmadamente deletada ou vazia
+     * - 'INVALID_MEDIA': Mídia com 0 bytes ou formato não-vídeo
+     * - 'FILE_ID_MISMATCH': storedFileId difere do documentId real do Telegram
+     * - 'UNVERIFIED': Mídia ainda não verificada ou com erro temporário de rede
+     */
+    static getMediaVerificationState(messageId, storedFileId = null) {
+        const id = Number(messageId);
+        if (isNaN(id) || id <= 0) return 'MISSING';
+        const cached = CatalogoManager.mediaVerificationCache.get(id);
+        if (!cached) return 'UNVERIFIED';
+
+        if (cached.status === 'VERIFIED_PLAYABLE') {
+            if (storedFileId && typeof storedFileId === 'string' && storedFileId.trim().length > 0) {
+                if (cached.docId && cached.docId !== storedFileId.trim()) {
+                    return 'FILE_ID_MISMATCH';
+                }
+            }
+            return 'VERIFIED_PLAYABLE';
+        }
+        return cached.status;
+    }
+
+    /**
      * Valida se um par (messageId, fileId) possui ao menos um identificador real e utilizável:
      * - messageId deve ser um número positivo válido (> 0)
      * - fileId deve ser uma string não-vazia após trim()
@@ -54,17 +121,32 @@ class CatalogoManager {
     }
 
     /**
-     * Verifica se a referência de mídia possui identificador de armazenamento direto e reproduzível
-     * (messageId numérico positivo > 0 no Telegram). Referências que contêm apenas fileId sem messageId
-     * são classificadas como UNVERIFIED e não são expostas como reproduzíveis no catálogo público.
+     * Verifica se a referência de mídia possui identificador verificado e reproduzível.
+     * Mídias com status MISSING, INVALID_MEDIA, FILE_ID_MISMATCH ou UNVERIFIED (sem messageId verificado)
+     * NÃO são expostas como reproduzíveis no catálogo público.
      */
     static hasPlayableMedia(mediaObj) {
         if (!mediaObj) return false;
         const msgId = mediaObj.messageId ?? mediaObj.message_id;
-        if (msgId !== null && msgId !== undefined && msgId !== '') {
-            const num = Number(msgId);
-            if (!isNaN(num) && num > 0) return true;
+        if (msgId === null || msgId === undefined || msgId === '') {
+            return false;
         }
+        const num = Number(msgId);
+        if (isNaN(num) || num <= 0) return false;
+
+        const state = CatalogoManager.getMediaVerificationState(num, mediaObj.fileId || mediaObj.file_id);
+        if (state === 'VERIFIED_PLAYABLE') {
+            return true;
+        }
+        if (state === 'MISSING' || state === 'INVALID_MEDIA' || state === 'FILE_ID_MISMATCH') {
+            return false;
+        }
+
+        // Se o cache estiver desabilitado/unverified permitido (apenas em cenários explícitos)
+        if (CatalogoManager.allowUnverifiedPlayback) {
+            return true;
+        }
+
         return false;
     }
 
@@ -320,6 +402,54 @@ class CatalogoManager {
                     });
                 }
 
+                // Coleta todos os messageIds referenciados para verificação preventiva com cache
+                const allMessageIds = [];
+                for (const f of filmesRes.rows) {
+                    let versoes = f.versoes || {};
+                    if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                    if (f.message_id) allMessageIds.push(Number(f.message_id));
+                    if (versoes.dublado?.messageId) allMessageIds.push(Number(versoes.dublado.messageId));
+                    if (versoes.legendado?.messageId) allMessageIds.push(Number(versoes.legendado.messageId));
+                }
+                for (const ep of epsRes.rows) {
+                    let versoes = ep.versoes || {};
+                    if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                    if (ep.message_id) allMessageIds.push(Number(ep.message_id));
+                    if (versoes.dublado?.messageId) allMessageIds.push(Number(versoes.dublado.messageId));
+                    if (versoes.legendado?.messageId) allMessageIds.push(Number(versoes.legendado.messageId));
+                }
+
+                // Identifica messageIds pendentes de verificação no cache
+                const unverifiedIds = [...new Set(allMessageIds)]
+                    .filter(id => !isNaN(id) && id > 0 && !CatalogoManager.mediaVerificationCache.get(id));
+
+                if (unverifiedIds.length > 0) {
+                    try {
+                        const TelegramUploader = require('../services/TelegramUploader');
+                        const uploader = TelegramUploader.getInstance();
+                        const tgResults = await uploader.getStorageMessages(unverifiedIds);
+                        for (const [mid, info] of tgResults.entries()) {
+                            if (info.status === 'FOUND') {
+                                CatalogoManager.mediaVerificationCache.set(mid, 'VERIFIED_PLAYABLE', {
+                                    docId: info.docId,
+                                    docSize: info.docSize,
+                                    isVideo: info.isVideo,
+                                    duration: info.duration,
+                                    fileName: info.fileName
+                                });
+                            } else if (info.status === 'NOT_FOUND') {
+                                CatalogoManager.mediaVerificationCache.set(mid, 'MISSING', { error: 'MessageEmpty' });
+                            } else if (info.status === 'INVALID_MEDIA') {
+                                CatalogoManager.mediaVerificationCache.set(mid, 'INVALID_MEDIA', { error: info.error });
+                            } else if (info.status === 'ERROR') {
+                                CatalogoManager.mediaVerificationCache.set(mid, 'UNVERIFIED', { error: info.error });
+                            }
+                        }
+                    } catch (tgErr) {
+                        console.warn('⚠️ Aviso ao verificar status das mídias no Telegram durante carga do catálogo:', tgErr.message);
+                    }
+                }
+
                 // Mapeia Séries aplicando a Fonte Única de Verdade (Continuidade Sequencial & Ponto de Entrada)
                 const series = seriesRes.rows.map(s => {
                     const serieObj = CatalogoManager.processSerie(s, epsPorSerie[s.id] || {});
@@ -341,8 +471,14 @@ class CatalogoManager {
                     if (!versoes.legendado && f.is_legendado) {
                         versoes.legendado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
                     }
-                    const hasDub = f.is_dublado || !!versoes.dublado;
-                    const hasLeg = f.is_legendado || !!versoes.legendado;
+
+                    const hasPlayableDub = versoes.dublado ? CatalogoManager.hasPlayableMedia(versoes.dublado) : (f.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
+                    const hasPlayableLeg = versoes.legendado ? CatalogoManager.hasPlayableMedia(versoes.legendado) : (f.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
+                    const hasAnyPlayable = hasPlayableDub || hasPlayableLeg || CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id });
+
+                    if (!hasAnyPlayable) {
+                        return null; // Oculta filme se não possuir nenhuma mídia verificada reproduzível
+                    }
 
                     const generosArr = Array.isArray(f.generos) ? f.generos : (typeof f.generos === 'string' ? JSON.parse(f.generos) : []);
                     const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
@@ -365,16 +501,16 @@ class CatalogoManager {
                         isCam: f.is_cam === true || (f.qualidade && f.qualidade.toUpperCase().includes('CAM')) || false,
                         isAnime: isAnime,
                         isDorama: f.is_dorama || false,
-                        isDublado: hasDub,
-                        isLegendado: hasLeg,
-                        audio: f.audio || (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
+                        isDublado: hasPlayableDub,
+                        isLegendado: hasPlayableLeg,
+                        audio: f.audio || (hasPlayableDub && hasPlayableLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasPlayableDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
                         versoes: versoes,
                         messageId: f.message_id ? Number(f.message_id) : null,
                         fileId: f.file_id,
                         dataAdicionado: f.created_at,
                         tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
                     };
-                });
+                }).filter(Boolean);
 
                 this.catalogo = { filmes, series };
                 this.saveCatalogoBackup();
