@@ -92,11 +92,22 @@ const t7_eps = [
 const res7 = CatalogoManager.normalizeSeasonEpisodes(t7_eps, 1);
 assert(res7 === null, 'Sem messageId/fileId real, versao dublada nao deve estar disponivel (temporada oculta)');
 
+// 7b. Teste estrito de identificadores inválidos (0, whitespace, strings vazias, negativos)
+console.log('\n--- Teste 7b: Validação Estrita de Identificadores Inválidos (0, "", "   ", negativo) ---');
+assert(CatalogoManager.isValidMediaIdentifier(0, null) === false, 'messageId 0 deve ser invalido');
+assert(CatalogoManager.isValidMediaIdentifier(-5, null) === false, 'messageId negativo deve ser invalido');
+assert(CatalogoManager.isValidMediaIdentifier(null, "") === false, 'fileId vazio deve ser invalido');
+assert(CatalogoManager.isValidMediaIdentifier(null, "   ") === false, 'fileId com apenas espacos deve ser invalido');
+assert(CatalogoManager.isValidMediaIdentifier(undefined, undefined) === false, 'undefined deve ser invalido');
+assert(CatalogoManager.isValidMediaIdentifier(12345, null) === true, 'messageId positivo deve ser valido');
+assert(CatalogoManager.isValidMediaIdentifier(null, "valid_file_id") === true, 'fileId preenchido deve ser valido');
+assert(CatalogoManager.isValidMediaIdentifier("54321", "  ") === true, 'messageId em string numerica positiva deve ser valido');
+
 // 8. No valid media for either language -> season hidden
 console.log('\n--- Teste 8: Sem mídia válida para nenhum idioma -> Temporada Oculta ---');
 const t8_eps = [
-    { numero: 1, isDublado: true, isLegendado: true, messageId: null, fileId: null, versoes: {} },
-    { numero: 2, isDublado: true, isLegendado: true, messageId: null, fileId: null, versoes: {} }
+    { numero: 1, isDublado: true, isLegendado: true, messageId: 0, fileId: "   ", versoes: {} },
+    { numero: 2, isDublado: true, isLegendado: true, messageId: null, fileId: "", versoes: {} }
 ];
 const res8 = CatalogoManager.normalizeSeasonEpisodes(t8_eps, 1);
 assert(res8 === null, 'Temporada sem midia real para dublado nem legendado deve retornar null (oculta)');

@@ -1,5 +1,6 @@
 const config = require('../../config');
 const telegramUploader = require('./TelegramUploader');
+const CatalogoManager = require('../managers/CatalogoManager');
 
 class StremioService {
     constructor(catalogoManager, assinaturaManager) {
@@ -204,8 +205,14 @@ class StremioService {
 
             if (!filme) return { streams: [] };
 
-            const temDub = !!(filme.versoes?.dublado?.messageId || filme.versoes?.dublado?.fileId || ((filme.isDublado || filme.is_dublado) && (filme.messageId || filme.message_id || filme.fileId || filme.file_id)));
-            const temLeg = !!(filme.versoes?.legendado?.messageId || filme.versoes?.legendado?.fileId || ((filme.isLegendado || filme.is_legendado) && (filme.messageId || filme.message_id || filme.fileId || filme.file_id)));
+            const temDub = CatalogoManager.isValidMediaIdentifier(
+                filme.versoes?.dublado?.messageId || (filme.isDublado || filme.is_dublado ? (filme.messageId || filme.message_id) : null),
+                filme.versoes?.dublado?.fileId || (filme.isDublado || filme.is_dublado ? (filme.fileId || filme.file_id) : null)
+            );
+            const temLeg = CatalogoManager.isValidMediaIdentifier(
+                filme.versoes?.legendado?.messageId || (filme.isLegendado || filme.is_legendado ? (filme.messageId || filme.message_id) : null),
+                filme.versoes?.legendado?.fileId || (filme.isLegendado || filme.is_legendado ? (filme.fileId || filme.file_id) : null)
+            );
 
             if (temDub) {
                 streams.push({
@@ -244,8 +251,8 @@ class StremioService {
 
             if (!ep) return { streams: [] };
 
-            const temDub = !!(ep.versoes?.dublado?.messageId || ep.versoes?.dublado?.fileId || ((ep.isDublado || ep.is_dublado) && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)));
-            const temLeg = !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId || ((ep.isLegendado || ep.is_legendado) && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)));
+            const temDub = CatalogoManager.hasValidDubbedMedia(ep);
+            const temLeg = CatalogoManager.hasValidSubtitledMedia(ep);
 
             if (temDub) {
                 streams.push({

@@ -2085,16 +2085,6 @@ class StremioServer {
                 res.status(500).send('Erro interno');
             }
         });
-
-        // Rota de status de saude
-        this.app.get('/health', (req, res) => {
-            res.json({
-                status: 'online',
-                service: 'BrasilFlix Stremio Addon Server',
-                version: '2.0.0',
-                uptime: process.uptime()
-            });
-        });
     }
 
     parseExtra(extraStr) {

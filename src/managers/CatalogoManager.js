@@ -25,33 +25,58 @@ class CatalogoManager {
     }
 
     /**
+     * Valida se um par (messageId, fileId) possui ao menos um identificador real e utilizável:
+     * - messageId deve ser um número positivo válido (> 0)
+     * - fileId deve ser uma string não-vazia após trim()
+     * Valores como null, undefined, 0, "", strings vazias ou apenas espaços retornam false.
+     */
+    static isValidMediaIdentifier(messageId, fileId) {
+        if (messageId !== null && messageId !== undefined && messageId !== '') {
+            const num = Number(messageId);
+            if (!isNaN(num) && num > 0) return true;
+        }
+        if (fileId !== null && fileId !== undefined) {
+            if (typeof fileId === 'string' && fileId.trim().length > 0) return true;
+        }
+        return false;
+    }
+
+    /**
      * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Dublada
-     * (requer messageId numérico válido ou fileId string não vazio).
+     * (requer messageId numérico positivo válido ou fileId string não vazia).
      */
     static hasValidDubbedMedia(ep) {
         if (!ep) return false;
         if (ep.versoes?.dublado) {
-            if (ep.versoes.dublado.messageId || ep.versoes.dublado.fileId) return true;
+            if (CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
+                return true;
+            }
         }
         const isDub = !!(ep.isDublado || ep.is_dublado);
-        if (isDub && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)) {
-            return true;
+        if (isDub) {
+            if (CatalogoManager.isValidMediaIdentifier(ep.messageId || ep.message_id, ep.fileId || ep.file_id)) {
+                return true;
+            }
         }
         return false;
     }
 
     /**
      * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Legendada
-     * (requer messageId numérico válido ou fileId string não vazio).
+     * (requer messageId numérico positivo válido ou fileId string não vazia).
      */
     static hasValidSubtitledMedia(ep) {
         if (!ep) return false;
         if (ep.versoes?.legendado) {
-            if (ep.versoes.legendado.messageId || ep.versoes.legendado.fileId) return true;
+            if (CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
+                return true;
+            }
         }
         const isLeg = !!(ep.isLegendado || ep.is_legendado);
-        if (isLeg && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)) {
-            return true;
+        if (isLeg) {
+            if (CatalogoManager.isValidMediaIdentifier(ep.messageId || ep.message_id, ep.fileId || ep.file_id)) {
+                return true;
+            }
         }
         return false;
     }
@@ -662,9 +687,6 @@ class CatalogoManager {
         if (isNovaLeg && filme.versoes?.legendado?.messageId && Number(filme.versoes.legendado.messageId) !== Number(novaMidia.messageId)) {
             oldMsgIdsToDelete.push(filme.versoes.legendado.messageId);
         }
-        if (oldMsgIdsToDelete.length > 0) {
-            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
-        }
 
         if (isNovaDub) {
             filme.isDublado = true;
@@ -710,7 +732,12 @@ class CatalogoManager {
                 filme.isDublado, filme.isLegendado, filme.isCam, JSON.stringify(filme.versoes), filme.id
             ]);
         } catch (e) {
-            console.warn('⚠️ Erro ao atualizar filme no PostgreSQL:', e.message);
+            console.error('❌ Erro ao atualizar filme no PostgreSQL:', e.message);
+            return false;
+        }
+
+        if (oldMsgIdsToDelete.length > 0) {
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
         }
 
         filme.dataAtualizado = new Date().toISOString();
@@ -832,9 +859,6 @@ class CatalogoManager {
         if (isLeg && existingVersoes.legendado?.messageId && existingVersoes.legendado.messageId !== Number(messageId)) {
             oldMsgIdsToDelete.push(existingVersoes.legendado.messageId);
         }
-        if (oldMsgIdsToDelete.length > 0) {
-            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
-        }
 
         const versoes = {
             dublado: isDub
@@ -914,6 +938,11 @@ class CatalogoManager {
             return { success: false, error: e.message };
         }
 
+        // Apaga mensagens do Telegram apenas após sucesso na persistência do PostgreSQL
+        if (oldMsgIdsToDelete.length > 0) {
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
+        }
+
         // Recarrega o catálogo em memória usando a regra estrita de continuidade
         await this.loadCatalogo();
 
@@ -987,7 +1016,8 @@ class CatalogoManager {
             await db.query(`DELETE FROM filmes WHERE id = $1`, [numId]);
             await db.query(`DELETE FROM series WHERE id = $1`, [numId]);
         } catch (e) {
-            console.warn('⚠️ Erro ao remover do PostgreSQL:', e.message);
+            console.error('❌ Erro ao remover do PostgreSQL:', e.message);
+            return false;
         }
 
         // 3. Remove do array em memória
@@ -1003,7 +1033,7 @@ class CatalogoManager {
 
         this.saveCatalogo();
 
-        // 4. Apaga fisicamente do grupo de Armazenamento do Telegram
+        // 4. Apaga fisicamente do grupo de Armazenamento do Telegram apenas se o PostgreSQL removeu com sucesso
         if (messagesToDelete.length > 0) {
             const uniqueMsgIds = [...new Set(messagesToDelete)];
             await this.deleteStorageMessages(uniqueMsgIds);
@@ -1044,7 +1074,8 @@ class CatalogoManager {
                 }
             }
         } catch (e) {
-            console.warn('⚠️ Erro ao remover episódio do PostgreSQL:', e.message);
+            console.error('❌ Erro ao remover episódio do PostgreSQL:', e.message);
+            return false;
         }
 
         await this.loadCatalogo();
