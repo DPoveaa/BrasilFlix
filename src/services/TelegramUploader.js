@@ -814,7 +814,8 @@ class TelegramUploader {
             orphanedEpisodes: [],
             duplicateEpisodes: [],
             conflictingPrimaryIds: [],
-            malformedJson: []
+            malformedJson: [],
+            legacyAmbiguous: []
         };
 
         // 1. Audita tabela de Filmes
@@ -827,6 +828,18 @@ class TelegramUploader {
                     anomalousDbRecords.malformedJson.push({ tabela: 'filmes', id: f.id, nome: f.nome, erro: e.message });
                     versoes = {};
                 }
+            }
+
+            const hasExplicitVersoes = !!(versoes && (versoes.dublado || versoes.legendado));
+            if (!hasExplicitVersoes && f.is_dublado && f.is_legendado && (f.message_id || f.file_id)) {
+                anomalousDbRecords.legacyAmbiguous.push({
+                    tabela: 'filmes',
+                    id: f.id,
+                    nome: f.nome,
+                    messageId: f.message_id ? Number(f.message_id) : null,
+                    fileId: f.file_id || null,
+                    motivo: 'Registro legado com is_dublado e is_legendado simultâneos compartilhando uma única mídia'
+                });
             }
 
             const dubMsgId = versoes.dublado?.messageId ? Number(versoes.dublado.messageId) : null;
@@ -912,6 +925,21 @@ class TelegramUploader {
 
             const serieNome = serie ? serie.nome : `Série #${ep.serie_id}`;
             const epTitulo = `${serieNome} T${ep.temporada_numero}E${ep.numero} (${ep.nome || ''})`;
+
+            const hasExplicitVersoes = !!(versoes && (versoes.dublado || versoes.legendado));
+            if (!hasExplicitVersoes && ep.is_dublado && ep.is_legendado && (ep.message_id || ep.file_id)) {
+                anomalousDbRecords.legacyAmbiguous.push({
+                    tabela: 'episodios',
+                    id: ep.id,
+                    serieId: ep.serie_id,
+                    nome: epTitulo,
+                    season: ep.temporada_numero,
+                    episode: ep.numero,
+                    messageId: ep.message_id ? Number(ep.message_id) : null,
+                    fileId: ep.file_id || null,
+                    motivo: 'Registro legado com is_dublado e is_legendado simultâneos compartilhando uma única mídia'
+                });
+            }
 
             if (ep.is_dublado && !versoes.dublado && !ep.message_id && !ep.file_id) {
                 anomalousDbRecords.staleFlags.push({ tabela: 'episodios', id: ep.id, nome: epTitulo, flag: 'is_dublado sem mídia' });

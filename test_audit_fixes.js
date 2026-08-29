@@ -866,8 +866,64 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
             catMgrInstance.stopPeriodicRevalidation();
         }
 
+        // Teste 23: Detecção de Ambiguidade Legada (LEGACY_AMBIGUOUS) vs Registros Explícitos
+        console.log('\n--- Teste 23: Detecção de Ambiguidade Legada (LEGACY_AMBIGUOUS) ---');
+
+        // 23.1 Registro legado exclusivo Dublado
+        const legacyDubOnly = { isDublado: true, isLegendado: false, messageId: 500 };
+        assert(CatalogoManager.hasValidDubbedMedia(legacyDubOnly) === true, '23.1 Legado apenas Dublado: Dublado deve ser true');
+        assert(CatalogoManager.hasValidSubtitledMedia(legacyDubOnly) === false, '23.1b Legado apenas Dublado: Legendado deve ser false');
+
+        // 23.2 Registro legado exclusivo Legendado
+        const legacyLegOnly = { isDublado: false, isLegendado: true, messageId: 501 };
+        assert(CatalogoManager.hasValidDubbedMedia(legacyLegOnly) === false, '23.2 Legado apenas Legendado: Dublado deve ser false');
+        assert(CatalogoManager.hasValidSubtitledMedia(legacyLegOnly) === true, '23.2b Legado apenas Legendado: Legendado deve ser true');
+
+        // 23.3 Detecção de LEGACY_AMBIGUOUS na auditoria do banco
+        const mockDbWithAmbiguity = {
+            query: async (sql) => {
+                if (sql.includes('FROM filmes')) {
+                    return {
+                        rows: [
+                            // Registro legado ambíguo (Dub+Leg com mídia única sem objeto versoes)
+                            { id: 1, nome: 'Filme Ambíguo', is_dublado: true, is_legendado: true, message_id: 500, file_id: 'fid_500', versoes: null },
+                            // Registro explícito (não-ambíguo)
+                            { id: 2, nome: 'Filme Explícito', is_dublado: true, is_legendado: true, message_id: 500, file_id: null, versoes: { dublado: { messageId: 500 }, legendado: { messageId: 501 } } }
+                        ]
+                    };
+                }
+                if (sql.includes('FROM series')) return { rows: [{ id: 1, nome: 'Série 1' }] };
+                if (sql.includes('FROM episodios')) {
+                    return {
+                        rows: [
+                            // Episódio legado ambíguo
+                            { id: 10, serie_id: 1, temporada_numero: 1, numero: 1, nome: 'Ep Ambíguo', is_dublado: true, is_legendado: true, message_id: 500, file_id: 'fid_500', versoes: null },
+                            // Episódio explícito
+                            { id: 11, serie_id: 1, temporada_numero: 1, numero: 2, nome: 'Ep Explícito', is_dublado: true, is_legendado: false, message_id: 500, file_id: null, versoes: { dublado: { messageId: 500 } } }
+                        ]
+                    };
+                }
+                return { rows: [] };
+            }
+        };
+
+        const ambiguityAuditor = new TelegramUploader();
+        ambiguityAuditor.getStorageMessages = async (ids) => {
+            const map = new Map();
+            for (const id of ids) {
+                map.set(id, { status: 'FOUND', docId: `doc_${id}`, docSize: 1000000, isVideo: true, duration: 1000 });
+            }
+            return map;
+        };
+
+        const ambiguityAuditResult = await ambiguityAuditor.verifyDatabaseIntegrity(mockDbWithAmbiguity);
+        assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.length === 2, '23.3 Deve detectar exatamente 2 registros LEGACY_AMBIGUOUS (1 filme e 1 episódio)');
+        assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.some(r => r.tabela === 'filmes' && r.id === 1) === true, '23.3b Filme 1 legado ambíguo detectado');
+        assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.some(r => r.tabela === 'episodios' && r.id === 10) === true, '23.3c Episódio 10 legado ambíguo detectado');
+        assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.some(r => r.id === 2 || r.id === 11) === false, '23.3d Registros com versões explícitas NÃO devem ser classificados como ambíguos');
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 22 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 23 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {

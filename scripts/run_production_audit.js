@@ -66,6 +66,7 @@ async function main() {
         console.log('Episódios órfãos (serie_id inexistente):', report.anomalousDbRecords.orphanedEpisodes.length);
         console.log('Episódios com números duplicados (mesma série/temp):', report.anomalousDbRecords.duplicateEpisodes.length);
         console.log('IDs conflitantes entre primário e versões:', report.anomalousDbRecords.conflictingPrimaryIds.length);
+        console.log('Registros legados ambíguos (LEGACY_AMBIGUOUS):', (report.anomalousDbRecords.legacyAmbiguous || []).length);
         console.log('JSONs malformados:', report.anomalousDbRecords.malformedJson.length);
         console.log('======================================================\n');
 
@@ -87,6 +88,11 @@ async function main() {
         if (report.anomalousDbRecords.duplicateEpisodes.length > 0) {
             console.log('⚠️ DETALHES DE EPISÓDIOS DUPLICADOS:');
             console.log(JSON.stringify(report.anomalousDbRecords.duplicateEpisodes, null, 2));
+        }
+
+        if ((report.anomalousDbRecords.legacyAmbiguous || []).length > 0) {
+            console.log('⚠️ DETALHES DE REGISTROS LEGADOS AMBÍGUOS (LEGACY_AMBIGUOUS):');
+            console.log(JSON.stringify(report.anomalousDbRecords.legacyAmbiguous, null, 2));
         }
 
         process.exit(0);
