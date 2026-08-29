@@ -306,7 +306,7 @@ class CatalogoManager {
      * @param {number|string} tNum Número da temporada
      * @returns {Object|null} Temporada validada ou null se oculta/sem Ep 1/sem mídia real
      */
-    static normalizeSeasonEpisodes(rawEps, tNum) {
+    static normalizeSeasonEpisodes(rawEps, tNum, tMeta = null, isEmLancamento = false) {
         if (!Array.isArray(rawEps) || rawEps.length === 0) return null;
         const sortedEps = [...rawEps].sort((a, b) => Number(a.numero) - Number(b.numero));
 
@@ -334,6 +334,17 @@ class CatalogoManager {
 
         // Se nem o Episódio 1 dublado nem o Episódio 1 legendado possuem mídia real -> temporada oculta
         if (maxDubSeq === 0 && maxLegSeq === 0) return null;
+
+        // Se a temporada já foi concluída/lançada e temos a quantidade total esperada de episódios no TMDB:
+        // Exige que a temporada esteja 100% completa (Dublada completa ou Legendada completa) para ser visível
+        const expectedEps = tMeta ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : 0;
+        if (!isEmLancamento && expectedEps > 0) {
+            const isDubCompleto = maxDubSeq >= expectedEps;
+            const isLegCompleto = maxLegSeq >= expectedEps;
+            if (!isDubCompleto && !isLegCompleto) {
+                return null; // Oculta temporada incompleta até que todos os episódios estejam disponíveis
+            }
+        }
 
         // 3. Filtra apenas episódios pertencentes à sequência contínua com mídia real
         const episodiosValidos = sortedEps.map(ep => {
@@ -395,8 +406,8 @@ class CatalogoManager {
             totalEpisodios: episodiosValidos.length,
             isDublado: maxDubSeq > 0,
             isLegendado: maxLegSeq > 0,
-            isDubladoCompleto: maxDubSeq > 0,
-            isLegendadoCompleto: maxLegSeq > 0,
+            isDubladoCompleto: expectedEps > 0 ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0),
+            isLegendadoCompleto: expectedEps > 0 ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0),
             episodios: episodiosValidos
         };
     }
@@ -406,8 +417,15 @@ class CatalogoManager {
      * e sequências contínuas sejam computadas.
      */
     static processSerie(s, temporadasObj) {
+        let temporadasMeta = s.temporadas_meta || s.temporadasMeta || {};
+        if (typeof temporadasMeta === 'string') {
+            try { temporadasMeta = JSON.parse(temporadasMeta); } catch (e) { temporadasMeta = {}; }
+        }
+        const isEmLancamento = !!(s.em_lancamento || s.emLancamento);
+
         const temporadas = Object.keys(temporadasObj || {}).map(tNum => {
-            return CatalogoManager.normalizeSeasonEpisodes(temporadasObj[tNum], tNum);
+            const tMeta = temporadasMeta[tNum] || temporadasMeta[String(tNum)] || null;
+            return CatalogoManager.normalizeSeasonEpisodes(temporadasObj[tNum], tNum, tMeta, isEmLancamento);
         }).filter(Boolean).sort((a, b) => a.numero - b.numero);
 
         if (temporadas.length === 0) return null;
@@ -420,12 +438,6 @@ class CatalogoManager {
         const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
         const isAnime = s.is_anime || s.isAnime || (hasAnimeGenre && (s.is_dorama || s.isDorama)) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
         const isDorama = !isAnime && (s.is_dorama || s.isDorama || false);
-
-        let temporadasMeta = s.temporadas_meta || s.temporadasMeta || {};
-        if (typeof temporadasMeta === 'string') {
-            try { temporadasMeta = JSON.parse(temporadasMeta); } catch (e) { temporadasMeta = {}; }
-        }
-
         const tags = (s.nome || '') + ' ' + (s.sinopse || s.descricao || '') + ' ' + generosArr.toString();
 
         return {
@@ -465,10 +477,11 @@ class CatalogoManager {
 
         this._loadingPromise = (async () => {
             try {
-                // Limpa registros orfãos para manter integridade
+                // Limpa registros orfãos e sem mídia para manter integridade
                 try {
                     await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL)`);
-                    await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '')`);
+                    await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb)`);
+                    await db.query(`DELETE FROM episodios WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb OR ((versoes->'dublado' IS NULL OR (versoes->'dublado'->>'messageId' IS NULL AND versoes->'dublado'->>'fileId' IS NULL)) AND (versoes->'legendado' IS NULL OR (versoes->'legendado'->>'messageId' IS NULL AND versoes->'legendado'->>'fileId' IS NULL))))`);
                 } catch (e) {}
 
                 // Carrega Filmes do PostgreSQL (Mais recentes adicionados primeiro)
@@ -2179,46 +2192,10 @@ _${sinopseCurta}_
                 }
             }
 
-            // Recarrega o cache em memória dos episódios após enriquecimento
-            const updatedEps = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
-            const epsPorSerie = {};
-            for (const ep of updatedEps.rows) {
-                if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
-                if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
-
-                let versoes = ep.versoes || {};
-                if (typeof versoes === 'string') {
-                    try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
-                }
-                const hasDub = ep.is_dublado || !!versoes.dublado;
-                const hasLeg = ep.is_legendado || !!versoes.legendado;
-
-                epsPorSerie[ep.serie_id][ep.temporada_numero].push({
-                    numero: ep.numero,
-                    nome: ep.nome || `Episódio ${ep.numero}`,
-                    sinopse: ep.sinopse || '',
-                    stillUrl: ep.still_url || null,
-                    duracao: ep.duracao || null,
-                    messageId: ep.message_id ? Number(ep.message_id) : null,
-                    fileId: ep.file_id,
-                    qualidade: ep.qualidade || '1080p',
-                    audio: ep.audio || (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
-                    isDublado: hasDub,
-                    isLegendado: hasLeg,
-                    versoes: versoes,
-                    dataAdicionado: ep.created_at
-                });
-            }
-
-            for (const serie of this.catalogo.series) {
-                const temporadasObj = epsPorSerie[serie.id] || {};
-                serie.temporadas = Object.keys(temporadasObj).map(tNum => ({
-                    numero: parseInt(tNum, 10),
-                    nome: `Temporada ${tNum}`,
-                    episodios: temporadasObj[tNum]
-                })).sort((a, b) => a.numero - b.numero);
-            }
-            console.log(`✅ [ENRICH-EPS] Metadados de episódios atualizados com sucesso!`);
+            // Recarrega o catálogo completo respeitando a Fonte Única de Verdade e regras de integridade
+            console.log(`✅ [ENRICH-EPS] Metadados de episódios atualizados no PostgreSQL. Recarregando catálogo com integridade estrita...`);
+            this._loadingPromise = null;
+            await this.loadCatalogo();
         } catch (e) {
             console.warn('⚠️ [ENRICH-EPS] Erro geral:', e.message);
         }
