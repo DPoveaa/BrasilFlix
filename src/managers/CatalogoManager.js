@@ -150,40 +150,151 @@ class CatalogoManager {
         return false;
     }
 
+    static _periodicRevalidationTimer = null;
+    static _isPeriodicRevalidating = false;
+
+    /**
+     * Inicia o verificador periódico em lote de integridade do Telegram.
+     * Revalida as mídias em cache respeitando o TTL sem sobreposições ou requisições desnecessárias.
+     */
+    startPeriodicRevalidation(intervalMs = 10 * 60 * 1000) {
+        if (CatalogoManager._periodicRevalidationTimer) {
+            return; // Singleton: já ativo
+        }
+
+        CatalogoManager._periodicRevalidationTimer = setInterval(() => {
+            this.revalidateCachedMedia().catch(err => {
+                console.warn('⚠️ [Periodic Revalidation] Erro na revalidação periódica:', err.message);
+            });
+        }, intervalMs);
+
+        if (CatalogoManager._periodicRevalidationTimer.unref) {
+            CatalogoManager._periodicRevalidationTimer.unref();
+        }
+        console.log(`⏱️ [CatalogoManager] Verificador periódico de integridade do Telegram ativado (intervalo: ${Math.round(intervalMs / 60000)}m).`);
+    }
+
+    /**
+     * Para o verificador periódico de integridade.
+     */
+    stopPeriodicRevalidation() {
+        if (CatalogoManager._periodicRevalidationTimer) {
+            clearInterval(CatalogoManager._periodicRevalidationTimer);
+            CatalogoManager._periodicRevalidationTimer = null;
+        }
+    }
+
+    /**
+     * Revalida o lote de mídias em cache diretamente contra o Armazém do Telegram.
+     */
+    async revalidateCachedMedia() {
+        if (CatalogoManager._isPeriodicRevalidating) {
+            return; // Evita execuções sobrepostas
+        }
+        CatalogoManager._isPeriodicRevalidating = true;
+
+        try {
+            const idsToCheck = new Set();
+            for (const [mid, entry] of CatalogoManager.mediaVerificationCache.cache.entries()) {
+                if (entry && entry.status === 'VERIFIED_PLAYABLE') {
+                    idsToCheck.add(Number(mid));
+                }
+            }
+
+            if (this.catalogo) {
+                for (const f of (this.catalogo.filmes || [])) {
+                    if (f.versoes?.dublado?.messageId) idsToCheck.add(Number(f.versoes.dublado.messageId));
+                    if (f.versoes?.legendado?.messageId) idsToCheck.add(Number(f.versoes.legendado.messageId));
+                    if (f.messageId) idsToCheck.add(Number(f.messageId));
+                }
+                for (const s of (this.catalogo.series || [])) {
+                    for (const t of (s.temporadas || [])) {
+                        for (const ep of (t.episodios || [])) {
+                            if (ep.versoes?.dublado?.messageId) idsToCheck.add(Number(ep.versoes.dublado.messageId));
+                            if (ep.versoes?.legendado?.messageId) idsToCheck.add(Number(ep.versoes.legendado.messageId));
+                            if (ep.messageId) idsToCheck.add(Number(ep.messageId));
+                        }
+                    }
+                }
+            }
+
+            const uniqueIds = Array.from(idsToCheck).filter(id => !isNaN(id) && id > 0);
+            if (uniqueIds.length === 0) {
+                return;
+            }
+
+            const uploader = TelegramUploader.getInstance();
+            const results = await uploader.getStorageMessages(uniqueIds);
+            let hasDefinitiveInvalidation = false;
+
+            for (const [mid, info] of results.entries()) {
+                if (info.status === 'FOUND') {
+                    CatalogoManager.mediaVerificationCache.set(mid, 'VERIFIED_PLAYABLE', {
+                        docId: info.docId,
+                        docSize: info.docSize,
+                        isVideo: info.isVideo,
+                        duration: info.duration,
+                        fileName: info.fileName
+                    });
+                } else if (info.status === 'NOT_FOUND') {
+                    const prev = CatalogoManager.mediaVerificationCache.get(mid);
+                    CatalogoManager.mediaVerificationCache.set(mid, 'MISSING', { error: 'MessageEmpty' });
+                    if (prev && prev.status === 'VERIFIED_PLAYABLE') {
+                        console.warn(`🩺 [Periodic Revalidation] Mídia messageId ${mid} foi confirmada como DELETADA no Telegram.`);
+                        hasDefinitiveInvalidation = true;
+                    }
+                } else if (info.status === 'INVALID_MEDIA') {
+                    const prev = CatalogoManager.mediaVerificationCache.get(mid);
+                    CatalogoManager.mediaVerificationCache.set(mid, 'INVALID_MEDIA', { error: info.error });
+                    if (prev && prev.status === 'VERIFIED_PLAYABLE') {
+                        console.warn(`🩺 [Periodic Revalidation] Mídia messageId ${mid} foi confirmada como CORROMPIDA/INVÁLIDA.`);
+                        hasDefinitiveInvalidation = true;
+                    }
+                } else if (info.status === 'ERROR') {
+                    // Erro temporário de rede: PRESERVA o estado previamente verificado
+                }
+            }
+
+            // Se houve invalidação definitiva de mídia, reconstrói o catálogo público
+            if (hasDefinitiveInvalidation) {
+                console.log('🔄 [Periodic Revalidation] Reconstruindo catálogo público após invalidação definitiva de mídia...');
+                await this.loadCatalogo();
+            }
+        } finally {
+            CatalogoManager._isPeriodicRevalidating = false;
+        }
+    }
+
     /**
      * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Dublada.
+     * Regra estrita: se versoes.dublado existe explicitamente, APENAS ele determina a disponibilidade
+     * e NUNCA faz fallback para o messageId de outra versão.
      */
     static hasValidDubbedMedia(ep) {
         if (!ep) return false;
-        if (ep.versoes?.dublado) {
-            if (CatalogoManager.hasPlayableMedia(ep.versoes.dublado)) {
-                return true;
-            }
+        if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'dublado')) {
+            return CatalogoManager.hasPlayableMedia(ep.versoes.dublado);
         }
         const isDub = !!(ep.isDublado || ep.is_dublado);
         if (isDub) {
-            if (CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id })) {
-                return true;
-            }
+            return CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id });
         }
         return false;
     }
 
     /**
      * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Legendada.
+     * Regra estrita: se versoes.legendado existe explicitamente, APENAS ele determina a disponibilidade
+     * e NUNCA faz fallback para o messageId de outra versão.
      */
     static hasValidSubtitledMedia(ep) {
         if (!ep) return false;
-        if (ep.versoes?.legendado) {
-            if (CatalogoManager.hasPlayableMedia(ep.versoes.legendado)) {
-                return true;
-            }
+        if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'legendado')) {
+            return CatalogoManager.hasPlayableMedia(ep.versoes.legendado);
         }
         const isLeg = !!(ep.isLegendado || ep.is_legendado);
         if (isLeg) {
-            if (CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id })) {
-                return true;
-            }
+            return CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id });
         }
         return false;
     }
@@ -371,19 +482,29 @@ class CatalogoManager {
                     if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
                     if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
 
-                    let versoes = ep.versoes || {};
-                    if (typeof versoes === 'string') {
-                        try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                    let rawVersoes = ep.versoes;
+                    let versoes = {};
+                    if (typeof rawVersoes === 'string') {
+                        try { rawVersoes = JSON.parse(rawVersoes); } catch (e) { rawVersoes = {}; }
                     }
-                    if (!versoes.dublado && ep.is_dublado) {
-                        versoes.dublado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
-                    }
-                    if (!versoes.legendado && ep.is_legendado) {
-                        versoes.legendado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                    if (rawVersoes && typeof rawVersoes === 'object' && Object.keys(rawVersoes).length > 0) {
+                        versoes = rawVersoes;
+                    } else {
+                        // Apenas em registros legados sem objeto de versões nenhum:
+                        if (ep.is_dublado && (ep.message_id || ep.file_id)) {
+                            versoes.dublado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                        }
+                        if (ep.is_legendado && (ep.message_id || ep.file_id)) {
+                            versoes.legendado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                        }
                     }
 
-                    const hasDub = ep.is_dublado || !!versoes.dublado;
-                    const hasLeg = ep.is_legendado || !!versoes.legendado;
+                    const hasDub = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.dublado)
+                        : (ep.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
+                    const hasLeg = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.legendado)
+                        : (ep.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
 
                     epsPorSerie[ep.serie_id][ep.temporada_numero].push({
                         numero: ep.numero,
@@ -461,20 +582,35 @@ class CatalogoManager {
 
                 // Mapeia Filmes
                 const filmes = filmesRes.rows.map(f => {
-                    let versoes = f.versoes || {};
-                    if (typeof versoes === 'string') {
-                        try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+                    let rawVersoes = f.versoes;
+                    let versoes = {};
+                    if (typeof rawVersoes === 'string') {
+                        try { rawVersoes = JSON.parse(rawVersoes); } catch (e) { rawVersoes = {}; }
                     }
-                    if (!versoes.dublado && f.is_dublado) {
-                        versoes.dublado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
-                    }
-                    if (!versoes.legendado && f.is_legendado) {
-                        versoes.legendado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
+                    if (rawVersoes && typeof rawVersoes === 'object' && Object.keys(rawVersoes).length > 0) {
+                        versoes = rawVersoes;
+                    } else {
+                        // Apenas em registros legados sem objeto de versões nenhum:
+                        if (f.is_dublado && (f.message_id || f.file_id)) {
+                            versoes.dublado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
+                        }
+                        if (f.is_legendado && (f.message_id || f.file_id)) {
+                            versoes.legendado = { messageId: f.message_id ? Number(f.message_id) : null, fileId: f.file_id, qualidade: f.qualidade || '1080p', isCam: f.is_cam };
+                        }
                     }
 
-                    const hasPlayableDub = versoes.dublado ? CatalogoManager.hasPlayableMedia(versoes.dublado) : (f.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
-                    const hasPlayableLeg = versoes.legendado ? CatalogoManager.hasPlayableMedia(versoes.legendado) : (f.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
-                    const hasAnyPlayable = hasPlayableDub || hasPlayableLeg || CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id });
+                    const hasPlayableDub = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.dublado)
+                        : (f.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
+
+                    const hasPlayableLeg = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.legendado)
+                        : (f.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id }));
+
+                    const hasAnyPlayable = hasPlayableDub || hasPlayableLeg || (
+                        (!versoes || (!Object.prototype.hasOwnProperty.call(versoes, 'dublado') && !Object.prototype.hasOwnProperty.call(versoes, 'legendado')))
+                        && CatalogoManager.hasPlayableMedia({ messageId: f.message_id, fileId: f.file_id })
+                    );
 
                     if (!hasAnyPlayable) {
                         return null; // Oculta filme se não possuir nenhuma mídia verificada reproduzível
@@ -515,6 +651,9 @@ class CatalogoManager {
                 this.catalogo = { filmes, series };
                 this.saveCatalogoBackup();
                 console.log(`📦 Catálogo BrasilFlix carregado: ${filmes.length} filmes, ${series.length} séries ativas.`);
+
+                // Inicia o verificador periódico de integridade (singleton)
+                this.startPeriodicRevalidation();
 
                 // Executa enriquecimento automático em segundo plano
                 setTimeout(() => {

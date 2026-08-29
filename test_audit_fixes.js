@@ -757,8 +757,117 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         assert(deletedIdsCollector.length === 1 && deletedIdsCollector[0] === 500, '12. Deletar 500 deve deletar APENAS 500');
         assert(deletedIdsCollector.includes(501) === false, '12b. Deletar 500 NUNCA deve tocar no 501');
 
+        // Teste 22: Isolamento Estrito de Versões de Áudio e Verificador Periódico
+        console.log('\n--- Teste 22: Isolamento de Versões de Áudio e Verificador Periódico ---');
+
+        CatalogoManager.mediaVerificationCache.set(500, 'VERIFIED_PLAYABLE', { docId: 'doc_500' });
+        CatalogoManager.mediaVerificationCache.set(501, 'VERIFIED_PLAYABLE', { docId: 'doc_501' });
+
+        // 22.1 Versão dublada vazia explícita + legendada válida com ep.messageId = 500
+        const epExplicitEmptyDub = {
+            isDublado: true,
+            isLegendado: true,
+            messageId: 500,
+            versoes: {
+                dublado: {},
+                legendado: { messageId: 500 }
+            }
+        };
+        assert(CatalogoManager.hasValidDubbedMedia(epExplicitEmptyDub) === false, '22.1 Dublado explícito vazio NÃO pode herdar ep.messageId do legendado');
+        assert(CatalogoManager.hasValidSubtitledMedia(epExplicitEmptyDub) === true, '22.1b Legendado válido deve permanecer disponível');
+
+        // 22.2 Versão legendada vazia explícita + dublada válida com ep.messageId = 500
+        const epExplicitEmptyLeg = {
+            isDublado: true,
+            isLegendado: true,
+            messageId: 500,
+            versoes: {
+                dublado: { messageId: 500 },
+                legendado: {}
+            }
+        };
+        assert(CatalogoManager.hasValidDubbedMedia(epExplicitEmptyLeg) === true, '22.2 Dublado válido deve permanecer disponível');
+        assert(CatalogoManager.hasValidSubtitledMedia(epExplicitEmptyLeg) === false, '22.2b Legendado explícito vazio NÃO pode herdar ep.messageId do dublado');
+
+        // 22.3 Ambas versões válidas explicitamente
+        const epBothValid = {
+            versoes: {
+                dublado: { messageId: 500 },
+                legendado: { messageId: 501 }
+            }
+        };
+        assert(CatalogoManager.hasValidDubbedMedia(epBothValid) === true, '22.3 Ambas versões válidas: Dublado disponível');
+        assert(CatalogoManager.hasValidSubtitledMedia(epBothValid) === true, '22.3b Ambas versões válidas: Legendado disponível');
+
+        // 22.4 Registro legado sem versoes
+        const epLegacy = {
+            isDublado: true,
+            isLegendado: false,
+            messageId: 500
+        };
+        assert(CatalogoManager.hasValidDubbedMedia(epLegacy) === true, '22.4 Registro legado sem versoes deve usar fallback do messageId');
+        assert(CatalogoManager.hasValidSubtitledMedia(epLegacy) === false, '22.4b Registro legado não-legendado deve ser false');
+
+        // 22.5 Testes do Verificador Periódico (startPeriodicRevalidation e revalidateCachedMedia)
+        const catMgrInstance = new CatalogoManager();
+        catMgrInstance.startPeriodicRevalidation(60000);
+        const timer1 = CatalogoManager._periodicRevalidationTimer;
+        catMgrInstance.startPeriodicRevalidation(60000);
+        const timer2 = CatalogoManager._periodicRevalidationTimer;
+        assert(timer1 === timer2 && timer1 !== null, '22.5 startPeriodicRevalidation deve ser singleton e não criar timers duplicados');
+
+        // 22.6 Mutex contra execuções sobrepostas
+        CatalogoManager._isPeriodicRevalidating = true;
+        let queryAttemptedWhileLocked = false;
+        const origUploaderInst = TelegramUploader.getInstance();
+        const origGetStorageMsgs = origUploaderInst.getStorageMessages;
+        try {
+            origUploaderInst.getStorageMessages = async () => {
+                queryAttemptedWhileLocked = true;
+                return new Map();
+            };
+            await catMgrInstance.revalidateCachedMedia();
+            assert(queryAttemptedWhileLocked === false, '22.6 Revalidação periódica NÃO deve executar se já houver job em andamento (mutex)');
+        } finally {
+            CatalogoManager._isPeriodicRevalidating = false;
+            origUploaderInst.getStorageMessages = origGetStorageMsgs;
+        }
+
+        // 22.7 Preservação de estado em caso de erro temporário de rede
+        CatalogoManager.mediaVerificationCache.set(600, 'VERIFIED_PLAYABLE', { docId: 'doc_600' });
+        try {
+            origUploaderInst.getStorageMessages = async () => {
+                const map = new Map();
+                map.set(600, { status: 'ERROR', error: 'Network timeout' });
+                return map;
+            };
+            await catMgrInstance.revalidateCachedMedia();
+            const stateAfterNetErr = CatalogoManager.getMediaVerificationState(600);
+            assert(stateAfterNetErr === 'VERIFIED_PLAYABLE', '22.7 Erro transitório de rede DEVE preservar o estado previamente verificado');
+        } finally {
+            origUploaderInst.getStorageMessages = origGetStorageMsgs;
+        }
+
+        // 22.8 Invalidação definitiva e trigger de rebuild
+        let catalogRebuilt = false;
+        catMgrInstance.loadCatalogo = async () => { catalogRebuilt = true; };
+        try {
+            origUploaderInst.getStorageMessages = async () => {
+                const map = new Map();
+                map.set(600, { status: 'NOT_FOUND', error: 'MessageEmpty' });
+                return map;
+            };
+            await catMgrInstance.revalidateCachedMedia();
+            const stateAfterDeleted = CatalogoManager.getMediaVerificationState(600);
+            assert(stateAfterDeleted === 'MISSING', '22.8 Mídia confirmadamente deletada deve se tornar MISSING');
+            assert(catalogRebuilt === true, '22.8b Invalidação definitiva DEVE disparar reconstrução do catálogo público');
+        } finally {
+            origUploaderInst.getStorageMessages = origGetStorageMsgs;
+            catMgrInstance.stopPeriodicRevalidation();
+        }
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 21 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 22 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {

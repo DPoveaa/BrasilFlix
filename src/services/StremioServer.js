@@ -2111,26 +2111,38 @@ class StremioServer {
         // 2. Valida a versão de áudio solicitada e seu identificador de mídia estrito
         let versaoEscolhida = null;
         if (audio === 'legendado') {
-            if (filme.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
-                versaoEscolhida = filme.versoes.legendado;
+            if (filme.versoes && Object.prototype.hasOwnProperty.call(filme.versoes, 'legendado')) {
+                if (filme.versoes.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
+                    versaoEscolhida = filme.versoes.legendado;
+                }
             } else if (filme.isLegendado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
                 versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
             }
         } else if (audio === 'dublado') {
-            if (filme.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
-                versaoEscolhida = filme.versoes.dublado;
+            if (filme.versoes && Object.prototype.hasOwnProperty.call(filme.versoes, 'dublado')) {
+                if (filme.versoes.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
+                    versaoEscolhida = filme.versoes.dublado;
+                }
             } else if (filme.isDublado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
                 versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
             }
         } else {
-            if (filme.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
-                versaoEscolhida = filme.versoes.dublado;
+            if (filme.versoes && Object.prototype.hasOwnProperty.call(filme.versoes, 'dublado')) {
+                if (filme.versoes.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
+                    versaoEscolhida = filme.versoes.dublado;
+                }
             } else if (filme.isDublado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
                 versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
-            } else if (filme.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
-                versaoEscolhida = filme.versoes.legendado;
-            } else if (filme.isLegendado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
-                versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+            }
+
+            if (!versaoEscolhida) {
+                if (filme.versoes && Object.prototype.hasOwnProperty.call(filme.versoes, 'legendado')) {
+                    if (filme.versoes.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
+                        versaoEscolhida = filme.versoes.legendado;
+                    }
+                } else if (filme.isLegendado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
+                    versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+                }
             }
         }
 
@@ -2204,26 +2216,38 @@ class StremioServer {
         // 4. Valida a versão de áudio solicitada e seu identificador de mídia estrito
         let versaoEscolhida = null;
         if (audio === 'legendado') {
-            if (ep.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
-                versaoEscolhida = ep.versoes.legendado;
-            } else if (ep.isLegendado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+            if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'legendado')) {
+                if (ep.versoes.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
+                    versaoEscolhida = ep.versoes.legendado;
+                }
+            } else if ((ep.isLegendado || ep.is_legendado) && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
                 versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
             }
         } else if (audio === 'dublado') {
-            if (ep.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
-                versaoEscolhida = ep.versoes.dublado;
-            } else if (ep.isDublado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+            if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'dublado')) {
+                if (ep.versoes.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
+                    versaoEscolhida = ep.versoes.dublado;
+                }
+            } else if ((ep.isDublado || ep.is_dublado) && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
                 versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
             }
         } else {
-            if (ep.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
-                versaoEscolhida = ep.versoes.dublado;
-            } else if (ep.isDublado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+            if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'dublado')) {
+                if (ep.versoes.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
+                    versaoEscolhida = ep.versoes.dublado;
+                }
+            } else if ((ep.isDublado || ep.is_dublado) && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
                 versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
-            } else if (ep.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
-                versaoEscolhida = ep.versoes.legendado;
-            } else if (ep.isLegendado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
-                versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+            }
+
+            if (!versaoEscolhida) {
+                if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'legendado')) {
+                    if (ep.versoes.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
+                        versaoEscolhida = ep.versoes.legendado;
+                    }
+                } else if ((ep.isLegendado || ep.is_legendado) && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+                    versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+                }
             }
         }
 
