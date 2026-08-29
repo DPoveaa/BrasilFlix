@@ -204,8 +204,8 @@ class StremioService {
 
             if (!filme) return { streams: [] };
 
-            const temDub = !!(filme.isDublado || filme.versoes?.dublado);
-            const temLeg = !!(filme.isLegendado || filme.versoes?.legendado);
+            const temDub = !!(filme.versoes?.dublado?.messageId || filme.versoes?.dublado?.fileId || ((filme.isDublado || filme.is_dublado) && (filme.messageId || filme.message_id || filme.fileId || filme.file_id)));
+            const temLeg = !!(filme.versoes?.legendado?.messageId || filme.versoes?.legendado?.fileId || ((filme.isLegendado || filme.is_legendado) && (filme.messageId || filme.message_id || filme.fileId || filme.file_id)));
 
             if (temDub) {
                 streams.push({
@@ -244,8 +244,8 @@ class StremioService {
 
             if (!ep) return { streams: [] };
 
-            const temDub = !!(ep.isDublado || ep.versoes?.dublado);
-            const temLeg = !!(ep.isLegendado || ep.versoes?.legendado);
+            const temDub = !!(ep.versoes?.dublado?.messageId || ep.versoes?.dublado?.fileId || ((ep.isDublado || ep.is_dublado) && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)));
+            const temLeg = !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId || ((ep.isLegendado || ep.is_legendado) && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)));
 
             if (temDub) {
                 streams.push({

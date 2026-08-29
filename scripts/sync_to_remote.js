@@ -5,6 +5,7 @@ const path = require('path');
 const filesToSync = [
     'config.js',
     'deploy_server.js',
+    'test_audit_fixes.js',
     'src/index.js',
     'src/database/db.js',
     'src/services/AuthService.js',

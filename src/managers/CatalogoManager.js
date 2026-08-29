@@ -25,70 +25,105 @@ class CatalogoManager {
     }
 
     /**
+     * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Dublada
+     * (requer messageId numérico válido ou fileId string não vazio).
+     */
+    static hasValidDubbedMedia(ep) {
+        if (!ep) return false;
+        if (ep.versoes?.dublado) {
+            if (ep.versoes.dublado.messageId || ep.versoes.dublado.fileId) return true;
+        }
+        const isDub = !!(ep.isDublado || ep.is_dublado);
+        if (isDub && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Legendada
+     * (requer messageId numérico válido ou fileId string não vazio).
+     */
+    static hasValidSubtitledMedia(ep) {
+        if (!ep) return false;
+        if (ep.versoes?.legendado) {
+            if (ep.versoes.legendado.messageId || ep.versoes.legendado.fileId) return true;
+        }
+        const isLeg = !!(ep.isLegendado || ep.is_legendado);
+        if (isLeg && (ep.messageId || ep.message_id || ep.fileId || ep.file_id)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Normaliza e valida os episódios de uma temporada de acordo com a regra estrita de continuidade
-     * sequencial e ponto de entrada obrigatório no Episódio 1.
+     * sequencial, ponto de entrada obrigatório no Episódio 1 e disponibilidade REAL de mídia (messageId/fileId).
      * @param {Array} rawEps Lista de episódios da temporada
      * @param {number|string} tNum Número da temporada
-     * @returns {Object|null} Temporada validada ou null se oculta/sem Ep 1
+     * @returns {Object|null} Temporada validada ou null se oculta/sem Ep 1/sem mídia real
      */
     static normalizeSeasonEpisodes(rawEps, tNum) {
         if (!Array.isArray(rawEps) || rawEps.length === 0) return null;
         const sortedEps = [...rawEps].sort((a, b) => Number(a.numero) - Number(b.numero));
 
-        // 1. Sequência contínua para Dublado a partir do Episódio 1
+        // 1. Sequência contínua para Dublado a partir do Episódio 1 com mídia real utilizável
         let maxDubSeq = 0;
         for (let n = 1; ; n++) {
             const epN = sortedEps.find(e => Number(e.numero) === n);
-            if (epN && (epN.isDublado || !!epN.versoes?.dublado || epN.is_dublado)) {
+            if (epN && CatalogoManager.hasValidDubbedMedia(epN)) {
                 maxDubSeq = n;
             } else {
                 break;
             }
         }
 
-        // 2. Sequência contínua para Legendado a partir do Episódio 1
+        // 2. Sequência contínua para Legendado a partir do Episódio 1 com mídia real utilizável
         let maxLegSeq = 0;
         for (let n = 1; ; n++) {
             const epN = sortedEps.find(e => Number(e.numero) === n);
-            if (epN && (epN.isLegendado || !!epN.versoes?.legendado || epN.is_legendado)) {
+            if (epN && CatalogoManager.hasValidSubtitledMedia(epN)) {
                 maxLegSeq = n;
             } else {
                 break;
             }
         }
 
-        // Se nem o Episódio 1 dublado nem o Episódio 1 legendado existem -> temporada oculta
+        // Se nem o Episódio 1 dublado nem o Episódio 1 legendado possuem mídia real -> temporada oculta
         if (maxDubSeq === 0 && maxLegSeq === 0) return null;
 
-        // 3. Filtra apenas episódios pertencentes à sequência contínua do idioma
+        // 3. Filtra apenas episódios pertencentes à sequência contínua com mídia real
         const episodiosValidos = sortedEps.map(ep => {
             const epNum = Number(ep.numero);
-            const epHasDub = !!(ep.isDublado || ep.versoes?.dublado || ep.is_dublado);
-            const epHasLeg = !!(ep.isLegendado || ep.versoes?.legendado || ep.is_legendado);
+            const hasDub = epNum <= maxDubSeq && CatalogoManager.hasValidDubbedMedia(ep);
+            const hasLeg = epNum <= maxLegSeq && CatalogoManager.hasValidSubtitledMedia(ep);
 
-            const hasDub = epNum <= maxDubSeq && epHasDub;
-            const hasLeg = epNum <= maxLegSeq && epHasLeg;
-
-            if (!hasDub && !hasLeg) return null; // Episódio isolado/fora da sequência contínua
+            if (!hasDub && !hasLeg) return null; // Episódio isolado/fora da sequência contínua ou sem arquivo
 
             const versoesFiltradas = {};
-            if (hasDub && (ep.versoes?.dublado || ep.file_id || ep.message_id || ep.fileId || ep.messageId)) {
-                versoesFiltradas.dublado = ep.versoes?.dublado || { 
-                    messageId: ep.message_id ? Number(ep.message_id) : (ep.messageId ? Number(ep.messageId) : null), 
-                    fileId: ep.file_id || ep.fileId || null, 
-                    qualidade: ep.qualidade || '1080p' 
+            if (hasDub) {
+                const dubObj = ep.versoes?.dublado;
+                const msgId = dubObj?.messageId || (dubObj?.fileId ? null : (ep.messageId || ep.message_id || null));
+                const fId = dubObj?.fileId || (dubObj?.messageId ? null : (ep.fileId || ep.file_id || null));
+                versoesFiltradas.dublado = { 
+                    messageId: msgId ? Number(msgId) : null, 
+                    fileId: fId || null, 
+                    qualidade: dubObj?.qualidade || ep.qualidade || '1080p' 
                 };
             }
-            if (hasLeg && (ep.versoes?.legendado || ep.file_id || ep.message_id || ep.fileId || ep.messageId)) {
-                versoesFiltradas.legendado = ep.versoes?.legendado || { 
-                    messageId: ep.message_id ? Number(ep.message_id) : (ep.messageId ? Number(ep.messageId) : null), 
-                    fileId: ep.file_id || ep.fileId || null, 
-                    qualidade: ep.qualidade || '1080p' 
+            if (hasLeg) {
+                const legObj = ep.versoes?.legendado;
+                const msgId = legObj?.messageId || (legObj?.fileId ? null : (ep.messageId || ep.message_id || null));
+                const fId = legObj?.fileId || (legObj?.messageId ? null : (ep.fileId || ep.file_id || null));
+                versoesFiltradas.legendado = { 
+                    messageId: msgId ? Number(msgId) : null, 
+                    fileId: fId || null, 
+                    qualidade: legObj?.qualidade || ep.qualidade || '1080p' 
                 };
             }
 
-            const primaryMsgId = ep.message_id ? Number(ep.message_id) : (ep.messageId ? Number(ep.messageId) : (versoesFiltradas.dublado?.messageId || versoesFiltradas.legendado?.messageId || null));
-            const primaryFileId = ep.file_id || ep.fileId || versoesFiltradas.dublado?.fileId || versoesFiltradas.legendado?.fileId || null;
+            const primaryMsgId = versoesFiltradas.dublado?.messageId || versoesFiltradas.legendado?.messageId || (ep.message_id ? Number(ep.message_id) : (ep.messageId ? Number(ep.messageId) : null));
+            const primaryFileId = versoesFiltradas.dublado?.fileId || versoesFiltradas.legendado?.fileId || ep.file_id || ep.fileId || null;
 
             return {
                 numero: epNum,
@@ -787,9 +822,6 @@ class CatalogoManager {
         }
 
         const existingEp = temporada.episodios.find(e => e.numero === episodioNum);
-        const finalIsDub = isDub || (existingEp ? existingEp.isDublado : false);
-        const finalIsLeg = isLeg || (existingEp ? existingEp.isLegendado : false);
-
         const existingVersoes = existingEp?.versoes || {};
         
         // Se uma versão de mesmo áudio já existia com outro messageId, apaga a versão antiga do Telegram
@@ -807,14 +839,17 @@ class CatalogoManager {
         const versoes = {
             dublado: isDub
                 ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
-                : (existingVersoes.dublado || null),
+                : ((existingVersoes.dublado && (existingVersoes.dublado.messageId || existingVersoes.dublado.fileId)) ? existingVersoes.dublado : null),
             legendado: isLeg
                 ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
-                : (existingVersoes.legendado || null)
+                : ((existingVersoes.legendado && (existingVersoes.legendado.messageId || existingVersoes.legendado.fileId)) ? existingVersoes.legendado : null)
         };
 
-        const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || messageId;
-        const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || fileId;
+        const finalIsDub = !!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId));
+        const finalIsLeg = !!(versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId));
+
+        const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || (messageId ? Number(messageId) : null);
+        const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || fileId || null;
         const primaryAudio = (finalIsDub && finalIsLeg)
             ? 'Dub/Leg (Dublado + Legendado)'
             : (finalIsDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
@@ -845,13 +880,13 @@ class CatalogoManager {
                     sinopse = COALESCE(NULLIF(EXCLUDED.sinopse, ''), episodios.sinopse),
                     still_url = COALESCE(EXCLUDED.still_url, episodios.still_url),
                     duracao = COALESCE(EXCLUDED.duracao, episodios.duracao),
-                    message_id = COALESCE(EXCLUDED.message_id, episodios.message_id),
-                    file_id = COALESCE(EXCLUDED.file_id, episodios.file_id),
+                    message_id = EXCLUDED.message_id,
+                    file_id = EXCLUDED.file_id,
                     qualidade = EXCLUDED.qualidade,
                     audio = EXCLUDED.audio,
-                    is_dublado = (episodios.is_dublado OR EXCLUDED.is_dublado),
-                    is_legendado = (episodios.is_legendado OR EXCLUDED.is_legendado),
-                    versoes = COALESCE(episodios.versoes, '{}'::jsonb) || EXCLUDED.versoes
+                    is_dublado = EXCLUDED.is_dublado,
+                    is_legendado = EXCLUDED.is_legendado,
+                    versoes = EXCLUDED.versoes
             `, [
                 serie.id, temporadaNum, episodioNum,
                 metadados.episodioNome || `Episódio ${episodioNum}`,
@@ -869,8 +904,8 @@ class CatalogoManager {
                 UPDATE series SET 
                     total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
                     total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
-                    is_dublado = (SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1),
-                    is_legendado = (SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1),
+                    is_dublado = COALESCE((SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1), false),
+                    is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
                     updated_at = NOW()
                 WHERE id = $1
             `, [serie.id]);
@@ -996,6 +1031,16 @@ class CatalogoManager {
                 if (totalRestante === 0) {
                     console.log(`🧹 Série ID ${serieId} ficou sem episódios. Removendo série do catálogo PostgreSQL automaticamente.`);
                     await db.query(`DELETE FROM series WHERE id = $1`, [serieId]);
+                } else {
+                    await db.query(`
+                        UPDATE series SET 
+                            total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                            total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                            is_dublado = COALESCE((SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1), false),
+                            is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                            updated_at = NOW()
+                        WHERE id = $1
+                    `, [serieId]);
                 }
             }
         } catch (e) {
