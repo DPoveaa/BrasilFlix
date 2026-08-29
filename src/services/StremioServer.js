@@ -12,6 +12,7 @@ const TMDBService = require('./TMDBService');
 const schedulerService = require('./SchedulerService');
 const PriorityService = require('./PriorityService');
 const ProgressManager = require('../managers/ProgressManager');
+const CatalogoManager = require('../managers/CatalogoManager');
 const db = require('../database/db');
 
 class StremioServer {
@@ -2119,36 +2120,49 @@ class StremioServer {
 
         let versaoEscolhida = null;
         if (audio === 'legendado') {
-            if (filme.versoes?.legendado) {
+            if (filme.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
                 versaoEscolhida = filme.versoes.legendado;
-            } else if (filme.isLegendado && (filme.messageId || filme.fileId)) {
+            } else if (filme.isLegendado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
                 versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
             }
         } else if (audio === 'dublado') {
-            if (filme.versoes?.dublado) {
+            if (filme.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
                 versaoEscolhida = filme.versoes.dublado;
-            } else if (filme.isDublado && (filme.messageId || filme.fileId)) {
+            } else if (filme.isDublado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
                 versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
             }
         } else {
-            if (filme.versoes?.dublado || filme.isDublado) {
-                versaoEscolhida = filme.versoes?.dublado || { messageId: filme.messageId, fileId: filme.fileId };
-            } else if (filme.versoes?.legendado || filme.isLegendado) {
-                versaoEscolhida = filme.versoes?.legendado || { messageId: filme.messageId, fileId: filme.fileId };
+            if (filme.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(filme.versoes.dublado.messageId, filme.versoes.dublado.fileId)) {
+                versaoEscolhida = filme.versoes.dublado;
+            } else if (filme.isDublado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
+                versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+            } else if (filme.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
+                versaoEscolhida = filme.versoes.legendado;
+            } else if (filme.isLegendado && CatalogoManager.isValidMediaIdentifier(filme.messageId, filme.fileId)) {
+                versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
             }
         }
 
-        if (!versaoEscolhida || (!versaoEscolhida.messageId && !versaoEscolhida.fileId)) {
+        if (!versaoEscolhida || !CatalogoManager.isValidMediaIdentifier(versaoEscolhida.messageId, versaoEscolhida.fileId)) {
             return res.status(404).send(`Versão ${audio || 'solicitada'} do filme não disponível.`);
         }
 
-        // Se houver Cloudflare Worker configurado e a mídia possuir fileId do Telegram, redireciona para o Edge CDN
-        if (config.CLOUDFLARE_STREAM_URL && versaoEscolhida.fileId) {
-            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId)}`;
+        const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;
+        const rawMsgId = Number(versaoEscolhida.messageId);
+        const hasValidMsgId = !isNaN(rawMsgId) && rawMsgId > 0;
+
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId válido, redireciona para o Edge CDN
+        if (config.CLOUDFLARE_STREAM_URL && hasValidFileId) {
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId.trim())}`;
             return res.redirect(302, cloudflareUrl);
         }
 
-        await this.streamTelegramMedia(req, res, versaoEscolhida);
+        // Se não houver Cloudflare configurado e a mídia possuir apenas fileId (sem messageId válido), retorna 404 explícito
+        if (!hasValidMsgId) {
+            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming direto.');
+        }
+
+        await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
     }
 
     async handleStreamSerie(req, res) {
@@ -2177,36 +2191,49 @@ class StremioServer {
 
         let versaoEscolhida = null;
         if (audio === 'legendado') {
-            if (ep.versoes?.legendado) {
+            if (ep.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
                 versaoEscolhida = ep.versoes.legendado;
-            } else if (ep.isLegendado && (ep.messageId || ep.fileId)) {
+            } else if (ep.isLegendado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
                 versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
             }
         } else if (audio === 'dublado') {
-            if (ep.versoes?.dublado) {
+            if (ep.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
                 versaoEscolhida = ep.versoes.dublado;
-            } else if (ep.isDublado && (ep.messageId || ep.fileId)) {
+            } else if (ep.isDublado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
                 versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
             }
         } else {
-            if (ep.versoes?.dublado || ep.isDublado) {
-                versaoEscolhida = ep.versoes?.dublado || { messageId: ep.messageId, fileId: ep.fileId };
-            } else if (ep.versoes?.legendado || ep.isLegendado) {
-                versaoEscolhida = ep.versoes?.legendado || { messageId: ep.messageId, fileId: ep.fileId };
+            if (ep.versoes?.dublado && CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
+                versaoEscolhida = ep.versoes.dublado;
+            } else if (ep.isDublado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+                versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+            } else if (ep.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
+                versaoEscolhida = ep.versoes.legendado;
+            } else if (ep.isLegendado && CatalogoManager.isValidMediaIdentifier(ep.messageId, ep.fileId)) {
+                versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
             }
         }
 
-        if (!versaoEscolhida || (!versaoEscolhida.messageId && !versaoEscolhida.fileId)) {
+        if (!versaoEscolhida || !CatalogoManager.isValidMediaIdentifier(versaoEscolhida.messageId, versaoEscolhida.fileId)) {
             return res.status(404).send(`Versão ${audio || 'solicitada'} do episódio S${season}E${episode} não disponível.`);
         }
 
-        // Se houver Cloudflare Worker configurado e a mídia possuir fileId do Telegram, redireciona para o Edge CDN
-        if (config.CLOUDFLARE_STREAM_URL && versaoEscolhida.fileId) {
-            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId)}`;
+        const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;
+        const rawMsgId = Number(versaoEscolhida.messageId);
+        const hasValidMsgId = !isNaN(rawMsgId) && rawMsgId > 0;
+
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId válido, redireciona para o Edge CDN
+        if (config.CLOUDFLARE_STREAM_URL && hasValidFileId) {
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId.trim())}`;
             return res.redirect(302, cloudflareUrl);
         }
 
-        await this.streamTelegramMedia(req, res, versaoEscolhida);
+        // Se não houver Cloudflare configurado e a mídia possuir apenas fileId (sem messageId válido), retorna 404 explícito
+        if (!hasValidMsgId) {
+            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming direto.');
+        }
+
+        await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
     }
 
     async streamTelegramMedia(req, res, midia) {
@@ -2219,14 +2246,15 @@ class StremioServer {
             const storageChannel = config.STORAGE_GROUP_ID;
             let doc = null;
 
-            if (midia.messageId) {
+            const rawMsgId = Number(midia.messageId);
+            if (!isNaN(rawMsgId) && rawMsgId > 0) {
                 try {
-                    const messages = await client.getMessages(storageChannel, { ids: [Number(midia.messageId)] });
+                    const messages = await client.getMessages(storageChannel, { ids: [rawMsgId] });
                     if (messages && messages.length > 0 && messages[0].media && messages[0].media.document) {
                         doc = messages[0].media.document;
                     }
                 } catch (e) {
-                    console.warn(`Aviso ao buscar mensagem ${midia.messageId}:`, e.message);
+                    console.warn(`Aviso ao buscar mensagem ${rawMsgId}:`, e.message);
                 }
             }
 

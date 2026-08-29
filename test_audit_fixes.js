@@ -170,8 +170,46 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         const stEp6 = await stremio.getStreams('series', 'bf_serie_88:1:6', 'token_user');
         assert(stEp6.streams.length === 0, 'Episodio 6 fora da sequencia nao deve ter streams');
 
+        // Teste 11: StremioServer Validação e Fallback de Streaming
+        console.log('\n--- Teste 11: StremioServer Validação de Streaming e fileId explícito ---');
+        const StremioServer = require('./src/services/StremioServer');
+        const mockServerMgr = {
+            buscarFilmePorId: (id) => {
+                if (id === '10') return { id: 10, nome: 'Filme Invalido', isDublado: true, versoes: { dublado: { messageId: 0, fileId: '   ' } } };
+                if (id === '20') return { id: 20, nome: 'Filme Apenas FileId', isDublado: true, versoes: { dublado: { fileId: 'valid_telegram_file_id' } } };
+                return null;
+            },
+            buscarSeriePorId: () => null,
+            buscarEpisodio: () => null,
+            getGenerosDisponiveis: () => []
+        };
+        const serverInstance = new StremioServer(mockServerMgr, mockAssinaturaMgr, null, null, 9999);
+
+        // Teste de filme com identificadores inválidos (0 / "   ") -> deve retornar 404
+        let statusResp1 = null;
+        let bodyResp1 = null;
+        const fakeReq1 = { params: { userToken: 'token_user', id: '10', audio: 'dublado' }, headers: {} };
+        const fakeRes1 = {
+            status: (s) => { statusResp1 = s; return fakeRes1; },
+            send: (b) => { bodyResp1 = b; }
+        };
+        await serverInstance.handleStreamFilme(fakeReq1, fakeRes1);
+        assert(statusResp1 === 404, 'Mídia com messageId 0 / fileId com espaços deve retornar 404');
+
+        // Teste de filme apenas com fileId sem Cloudflare configurado -> deve retornar 404 explicito
+        let statusResp2 = null;
+        let bodyResp2 = null;
+        const fakeReq2 = { params: { userToken: 'token_user', id: '20', audio: 'dublado' }, headers: {} };
+        const fakeRes2 = {
+            status: (s) => { statusResp2 = s; return fakeRes2; },
+            send: (b) => { bodyResp2 = b; }
+        };
+        await serverInstance.handleStreamFilme(fakeReq2, fakeRes2);
+        assert(statusResp2 === 404, 'Mídia apenas com fileId sem Cloudflare deve retornar 404 explícito');
+        assert(bodyResp2.includes('sem messageId de armazenamento'), 'Mensagem de 404 deve ser explicita sobre messageId');
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 10 TESTES DE REGRESSÃO PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS TESTES DE REGRESSÃO E STREAMING PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {
