@@ -511,39 +511,72 @@ class DownloaderManager extends EventEmitter {
                     detectedEpisodeMap = this.mapAllEpisodeFilesInTorrent(torrent.files, seasonNum);
                     const matchedCount = Object.keys(detectedEpisodeMap).length;
 
+                    // Desmarca o torrent inteiro e todos os arquivos preventivamente
+                    try {
+                        torrent.deselect(0, torrent.pieces.length - 1, false);
+                        torrent.files.forEach(f => {
+                            try { f.deselect(); } catch (e) {}
+                        });
+                    } catch (e) {}
+
+                    // Determina quais episódios mapeados precisam ser baixados (faltantes/inválidos no catálogo)
+                    const neededEpisodesMap = {};
+                    for (const [epKey, fileObj] of Object.entries(detectedEpisodeMap)) {
+                        const epNumber = parseInt(epKey, 10);
+                        let isMissing = false;
+                        if (typeof options.isEpisodeMissing === 'function') {
+                            isMissing = options.isEpisodeMissing(epNumber);
+                        } else if (Array.isArray(options.missingEpisodes)) {
+                            isMissing = options.missingEpisodes.includes(epNumber);
+                        } else {
+                            // Se não informado, apenas o episódio do job é considerado pendente
+                            isMissing = (epNumber === epNum);
+                        }
+
+                        // O episódio solicitado explicitamente pelo job sempre é incluído como necessário
+                        if (epNumber === epNum) {
+                            isMissing = true;
+                        }
+
+                        if (isMissing) {
+                            neededEpisodesMap[epNumber] = fileObj;
+                        }
+                    }
+
+                    const neededCount = Object.keys(neededEpisodesMap).length;
+                    const neededTotalBytes = Object.values(neededEpisodesMap).reduce((acc, f) => acc + (f.length || 0), 0);
+
                     // Trava estrita de disco (100GB máximo):
-                    // Permite pack completo apenas se o pack for <= 40 GB e não estourar o limite de 75% dos 100GB
                     const maxPackBytes = (config.MAX_PACK_DISK_GB || 40) * 1024 * 1024 * 1024;
                     const maxDiskBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
                     const currentTempBytes = await this.getTempDirSizeBytes().catch(() => 0);
-                    const isSafePack = matchedCount > 1 && torrent.length <= maxPackBytes && (currentTempBytes + torrent.length * 1.3 <= maxDiskBytes * 0.75);
+                    const isSafeToDownloadSelected = neededTotalBytes <= maxPackBytes && (currentTempBytes + neededTotalBytes * 1.3 <= maxDiskBytes * 0.75);
 
-                    if (isSafePack) {
-                        isSeasonPack = true;
-                        targetEpisodeFile = detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+                    if (neededCount > 0 && isSafeToDownloadSelected) {
+                        // Seleciona APENAS os arquivos correspondentes aos episódios faltantes/necessários
+                        for (const [neededEpStr, neededFile] of Object.entries(neededEpisodesMap)) {
+                            try {
+                                neededFile.select();
+                                neededFile.on('done', () => checkAndComplete());
+                            } catch (e) {}
+                        }
 
-                        // Desmarca arquivos irrelevantes (samples, nfo, txt) e seleciona todos os episódios do pack
-                        try {
-                            torrent.deselect(0, torrent.pieces.length - 1, false);
-                            torrent.files.forEach(f => {
-                                try { f.deselect(); } catch (e) {}
-                            });
-                            Object.values(detectedEpisodeMap).forEach(vf => {
-                                try { vf.select(); } catch (e) {}
-                            });
-                        } catch (e) {}
+                        targetEpisodeFile = neededEpisodesMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
 
-                        console.log(`📦 [SEASON PACK] Baixando Temporada ${seasonNum} Completa com ${matchedCount} episódios no SSD (${this.formatBytes(torrent.length)})!`);
+                        if (neededCount === 1) {
+                            const singleFile = Object.values(neededEpisodesMap)[0];
+                            console.log(`🎯 [Episódio Avulso Seletivo] Baixando SOMENTE o episódio ${epNum} do Season Pack: ${singleFile.name} (${this.formatBytes(singleFile.length)}) [Total no Pack: ${matchedCount} eps]`);
+                            isSeasonPack = false;
+                            detectedEpisodeMap = neededEpisodesMap;
+                        } else {
+                            const neededEpNums = Object.keys(neededEpisodesMap).sort((a, b) => Number(a) - Number(b));
+                            console.log(`📦 [SEASON PACK SELETIVO] Baixando ${neededCount} episódios pendentes (Eps: ${neededEpNums.join(', ')}) no SSD (${this.formatBytes(neededTotalBytes)}) de um total de ${matchedCount} episódios do pack.`);
+                            isSeasonPack = true;
+                            detectedEpisodeMap = neededEpisodesMap;
+                        }
                     } else {
-                        // Desmarca o torrent inteiro para puxar SOMENTE o episódio específico
-                        try {
-                            torrent.deselect(0, torrent.pieces.length - 1, false);
-                            torrent.files.forEach(f => {
-                                try { f.deselect(); } catch (e) {}
-                            });
-                        } catch (e) {}
-
-                        const found = detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+                        // Se não for seguro baixar múltiplos ou neededCount for 0, baixa SOMENTE o episódio alvo do job
+                        const found = neededEpisodesMap[epNum] || detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
                         if (found) {
                             targetEpisodeFile = found;
                             try {
@@ -553,6 +586,8 @@ class DownloaderManager extends EventEmitter {
                             } catch (e) {
                                 console.warn('⚠️ Erro ao selecionar arquivo alvo no pack:', e.message);
                             }
+                            isSeasonPack = false;
+                            detectedEpisodeMap = { [epNum]: found };
                         } else {
                             console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
                             const videoFiles = torrent.files.filter(f => {
@@ -651,7 +686,7 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // Se for Season Pack, só finaliza quando todos os episódios do pack estiverem no disco
+                    // Se for Season Pack, só finaliza quando todos os episódios selecionados do pack estiverem no disco
                     if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
                         if (!torrent.done && torrent.progress < 0.999) {
                             let allEpsDownloaded = true;
@@ -699,24 +734,17 @@ class DownloaderManager extends EventEmitter {
                     // 3.1 Verificação de duração mínima (evita arquivos corrompidos ou trailers/samples falsos)
                     const MIN_DURATION_SEC = 180;
                     if (videoInfo.duration < MIN_DURATION_SEC) {
-                        const isFullyDownloaded = stat.size >= expectedSize || (torrent.progress && torrent.progress >= 0.99) || (torrent.downloaded >= torrent.length * 0.95);
-                        if (isFullyDownloaded) {
-                            console.warn(`❌ [DOWNLOAD] Arquivo descartado: download concluído a 100%, mas ffprobe detectou apenas ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s mínimo). Trata-se de uma amostra/trailer falso. Descartando fonte para tentar a próxima...`);
-                            finished = true;
-                            safeCleanup();
-                            await this.cleanupFile(fullPath).catch(() => {});
-                            return reject(new Error(`Amostra/trailer detectado (${videoInfo.duration.toFixed(1)}s). Arquivo inválido.`));
-                        }
-                        console.warn(`⚠️ [DOWNLOAD] Arquivo parcial: ffprobe detectou ${videoInfo.duration.toFixed(1)}s (< ${MIN_DURATION_SEC}s). Aguardando mais blocos...`);
-                        isCompleting = false;
-                        return;
+                        console.warn(`❌ [DOWNLOAD] Arquivo descartado: duração muito curta (${videoInfo.duration}s < ${MIN_DURATION_SEC}s). Trata-se de um trailer/amostra. Descartando fonte...`);
+                        finished = true;
+                        safeCleanup();
+                        await this.cleanupFile(fullPath).catch(() => {});
+                        return reject(new Error(`Duração de vídeo insuficiente (${videoInfo.duration}s). Amostra descartada.`));
                     }
 
-                    // 3.2 Verificação rápida de integridade do fluxo de vídeo (amostragem rápida)
-                    const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath).catch(() => ({ isValid: true }));
-                    if (!integrity.isValid) {
-                        const isFullyDownloaded = stat.size >= expectedSize || (torrent.progress && torrent.progress >= 0.99);
-                        if (isFullyDownloaded) {
+                    // 3.2 Validação profunda de decodificação de stream via FFmpeg
+                    const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath);
+                    if (!integrity.valid) {
+                        if (integrity.error.includes('MOOV') || integrity.error.includes('Incomplete') || integrity.error.includes('Invalid data')) {
                             console.warn(`❌ [DOWNLOAD] Arquivo corrompido descartado: stream com erro (${integrity.error}). Tentando próxima fonte...`);
                             finished = true;
                             safeCleanup();
@@ -770,28 +798,33 @@ class DownloaderManager extends EventEmitter {
             torrent.on('download', () => {
                 if (finished) return;
 
-                const curTotal = isSeasonPack ? torrent.length : (targetEpisodeFile ? targetEpisodeFile.length : torrent.length);
+                let curTotal = 0;
                 let curDownloaded = 0;
                 let curRatio = 0;
 
-                if (isSeasonPack) {
-                    curDownloaded = torrent.downloaded || 0;
-                    curRatio = torrent.progress || (curTotal > 0 ? curDownloaded / curTotal : 0);
+                if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 0) {
+                    const selectedFiles = Object.values(detectedEpisodeMap);
+                    curTotal = selectedFiles.reduce((acc, f) => acc + (f.length || 0), 0);
+                    curDownloaded = selectedFiles.reduce((acc, f) => acc + Math.round((f.progress || 0) * (f.length || 0)), 0);
+                    curRatio = curTotal > 0 ? curDownloaded / curTotal : 0;
                 } else if (targetEpisodeFile) {
+                    curTotal = targetEpisodeFile.length || torrent.length;
                     curRatio = targetEpisodeFile.progress || 0;
                     curDownloaded = Math.round(curRatio * curTotal);
                 } else {
+                    curTotal = torrent.length || 0;
                     curDownloaded = torrent.downloaded || 0;
                     curRatio = torrent.progress || (curTotal > 0 ? curDownloaded / curTotal : 0);
                 }
 
-                // Conclui estritamente quando o arquivo (ou pack completo) atinge 100% dos bytes baixados
-                if (isSeasonPack) {
-                    if (torrent.progress >= 0.999 || torrent.done) {
+                // Conclui estritamente quando os arquivos selecionados (ou episódio alvo) atingem 100% dos bytes baixados
+                if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 0) {
+                    const allSelectedDone = Object.values(detectedEpisodeMap).every(f => (f.progress || 0) >= 0.999);
+                    if (allSelectedDone || curRatio >= 0.999 || torrent.done) {
                         checkAndComplete();
                     }
                 } else {
-                    if (curRatio >= 0.999 || (targetEpisodeFile && targetEpisodeFile.progress >= 0.999) || torrent.progress >= 0.999 || torrent.done) {
+                    if (curRatio >= 0.999 || (targetEpisodeFile && (targetEpisodeFile.progress || 0) >= 0.999) || torrent.progress >= 0.999 || torrent.done) {
                         checkAndComplete();
                     }
                 }

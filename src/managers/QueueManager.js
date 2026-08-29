@@ -1366,6 +1366,30 @@ class QueueManager extends EventEmitter {
             job.status = 'downloading';
             await this.saveJob(job);
 
+            // Função auxiliar para determinar se um episódio da temporada está faltando ou sem mídia válida no catálogo
+            const isEpisodeMissing = (epNumber) => {
+                if (job.type !== 'serie') return false;
+                const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
+                    || (metadata.tmdbId ? this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId) : null);
+                if (!serieExist) return true;
+
+                const sNum = parseInt(job.season || 1, 10);
+                const temp = (serieExist.temporadas || []).find(t => t.numero === sNum);
+                if (!temp) return true;
+
+                const ep = (temp.episodios || []).find(e => Number(e.numero) === Number(epNumber));
+                if (!ep) return true;
+
+                const CatalogoManager = require('./CatalogoManager');
+                const reqPref = job.audioPreference || 'dublado';
+                if (reqPref === 'dublado') {
+                    return !CatalogoManager.hasValidDubbedMedia(ep);
+                } else if (reqPref === 'legendado') {
+                    return !CatalogoManager.hasValidSubtitledMedia(ep);
+                }
+                return !CatalogoManager.hasValidDubbedMedia(ep) && !CatalogoManager.hasValidSubtitledMedia(ep);
+            };
+
             let lastError = null;
             const maxAttempts = Math.min(8, sources.length);
             for (let i = 0; i < maxAttempts; i++) {
@@ -1388,7 +1412,8 @@ class QueueManager extends EventEmitter {
                             audioPreference: job.audioPreference || 'geral',
                             attemptIndex: i,
                             totalAttempts: maxAttempts,
-                            mode: SchedulerService.getActiveMode()
+                            mode: SchedulerService.getActiveMode(),
+                            isEpisodeMissing: isEpisodeMissing
                         });
 
                     } else if (currentSource.url) {
@@ -1459,7 +1484,8 @@ class QueueManager extends EventEmitter {
                                         audioPreference: 'legendado',
                                         attemptIndex: j,
                                         totalAttempts: totalLegAttempts,
-                                        mode: SchedulerService.getActiveMode()
+                                        mode: SchedulerService.getActiveMode(),
+                                        isEpisodeMissing: isEpisodeMissing
                                     });
                                 }
                                 if (downloadedMedia && downloadedMedia.filePath) {
@@ -1522,9 +1548,11 @@ class QueueManager extends EventEmitter {
                         const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
                         const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
                         const reqPref = job.audioPreference || 'dublado';
+                        const CatalogoManager = require('./CatalogoManager');
                         const isAlreadySatisfied = jaCatalogado && (
-                            (reqPref === 'dublado' && (jaCatalogado.isDublado || jaCatalogado.versoes?.dublado)) ||
-                            (reqPref === 'legendado' && (jaCatalogado.isLegendado || jaCatalogado.versoes?.legendado))
+                            (reqPref === 'dublado' && CatalogoManager.hasValidDubbedMedia(jaCatalogado)) ||
+                            (reqPref === 'legendado' && CatalogoManager.hasValidSubtitledMedia(jaCatalogado)) ||
+                            (reqPref === 'geral' && (CatalogoManager.hasValidDubbedMedia(jaCatalogado) || CatalogoManager.hasValidSubtitledMedia(jaCatalogado)))
                         );
 
                         if (!isAlreadySatisfied) {

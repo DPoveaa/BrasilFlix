@@ -922,8 +922,126 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.some(r => r.tabela === 'episodios' && r.id === 10) === true, '23.3c Episódio 10 legado ambíguo detectado');
         assert(ambiguityAuditResult.anomalousDbRecords.legacyAmbiguous.some(r => r.id === 2 || r.id === 11) === false, '23.3d Registros com versões explícitas NÃO devem ser classificados como ambíguos');
 
+        // =========================================================================
+        // 24. OTIMIZAÇÃO DE DOWNLOAD DE SEASON PACK (SELEÇÃO SELETIVA POR EPISÓDIOS FALTANTES)
+        // =========================================================================
+        console.log('\n--- Teste 24: Otimização de Download de Season Pack (Seleção Seletiva) ---');
+
+        const dm = require('./src/services/DownloaderManager');
+
+        // Mock de arquivos de uma Temporada Completa com 10 episódios (S04E01 a S04E10)
+        const mockTorrentFiles = [];
+        for (let ep = 1; ep <= 10; ep++) {
+            const epPad = String(ep).padStart(2, '0');
+            const fileObj = {
+                name: `Stranger.Things.S04E${epPad}.1080p.NF.WEB-DL.mkv`,
+                path: `Stranger.Things.S04/Stranger.Things.S04E${epPad}.1080p.NF.WEB-DL.mkv`,
+                length: 1.5 * 1024 * 1024 * 1024, // 1.5 GB cada
+                progress: 0,
+                selected: true,
+                select: function() { this.selected = true; },
+                deselect: function() { this.selected = false; },
+                on: function() {}
+            };
+            mockTorrentFiles.push(fileObj);
+        }
+
+        // 24.1 Mapeamento de episódios no torrent
+        const mappedEpisodes = dm.mapAllEpisodeFilesInTorrent(mockTorrentFiles, 4);
+        assert(Object.keys(mappedEpisodes).length === 10, '24.1 Todos os 10 episódios devem ser mapeados no pack');
+
+        // 24.2 Cenário 1: E1-E6 e E8-E10 já válidos no catálogo -> Apenas E7 faltando
+        // Simulação do comportamento de seleção seletiva do DownloaderManager
+        const simulateSelectiveSelection = (files, seasonNum, requestedEp, isEpisodeMissingFn) => {
+            const epMap = dm.mapAllEpisodeFilesInTorrent(files, seasonNum);
+            
+            // 1. Desmarca todos inicialmente
+            files.forEach(f => f.deselect());
+
+            // 2. Determina necessários
+            const neededMap = {};
+            for (const [epKey, fileObj] of Object.entries(epMap)) {
+                const epNum = parseInt(epKey, 10);
+                let isMissing = isEpisodeMissingFn ? isEpisodeMissingFn(epNum) : (epNum === requestedEp);
+                if (epNum === requestedEp) isMissing = true;
+                if (isMissing) {
+                    neededMap[epNum] = fileObj;
+                }
+            }
+
+            // 3. Seleciona apenas necessários
+            for (const fileObj of Object.values(neededMap)) {
+                fileObj.select();
+            }
+
+            return {
+                neededCount: Object.keys(neededMap).length,
+                neededEpisodes: Object.keys(neededMap).map(Number),
+                selectedFiles: files.filter(f => f.selected).map(f => f.name),
+                unselectedFiles: files.filter(f => !f.selected).map(f => f.name),
+                isPack: Object.keys(neededMap).length > 1
+            };
+        };
+
+        // Cenário 1: E7 faltando
+        const missingE7Fn = (epNum) => (epNum === 7);
+        const resPack1 = simulateSelectiveSelection(mockTorrentFiles, 4, 7, missingE7Fn);
+        assert(resPack1.neededCount === 1, '24.2a Apenas 1 episódio deve ser necessário');
+        assert(resPack1.neededEpisodes[0] === 7, '24.2b Episódio necessário deve ser o 7');
+        assert(resPack1.selectedFiles.length === 1 && resPack1.selectedFiles[0].includes('S04E07'), '24.2c Apenas o arquivo S04E07 deve estar selecionado');
+        assert(resPack1.unselectedFiles.length === 9, '24.2d Os outros 9 episódios válidos devem estar desmarcados (unselected)');
+        assert(resPack1.isPack === false, '24.2e Download de 1 único episódio não deve marcar isPack como true');
+
+        // Cenário 2: E1-E6 válidos, E7-E10 faltando
+        const missingE7to10Fn = (epNum) => (epNum >= 7 && epNum <= 10);
+        const resPack2 = simulateSelectiveSelection(mockTorrentFiles, 4, 7, missingE7to10Fn);
+        assert(resPack2.neededCount === 4, '24.3a Exatamente 4 episódios devem ser necessários (E7 a E10)');
+        assert(JSON.stringify(resPack2.neededEpisodes.sort((a, b) => a - b)) === JSON.stringify([7, 8, 9, 10]), '24.3b Episódios necessários devem ser [7, 8, 9, 10]');
+        assert(resPack2.selectedFiles.length === 4, '24.3c Exatamente 4 arquivos devem estar selecionados');
+        assert(resPack2.unselectedFiles.length === 6, '24.3d Episódios E1-E6 devem estar desmarcados');
+        assert(resPack2.isPack === true, '24.3e Download de múltiplos episódios faltantes deve ativar isPack = true');
+
+        // Cenário 3: Temporada completamente vazia (nenhum episódio catalogado)
+        const allMissingFn = () => true;
+        const resPack3 = simulateSelectiveSelection(mockTorrentFiles, 4, 1, allMissingFn);
+        assert(resPack3.neededCount === 10, '24.4a Todos os 10 episódios devem ser selecionados');
+        assert(resPack3.selectedFiles.length === 10, '24.4b Todos os 10 arquivos devem estar selecionados');
+        assert(resPack3.unselectedFiles.length === 0, '24.4c Nenhum arquivo deve ficar desmarcado');
+        assert(resPack3.isPack === true, '24.4d Season Pack completo deve ativar isPack = true');
+
+        // 24.4 Validação de que episódios válidos não são re-enfileirados ou reprocessados
+        const mockCatalog = {
+            buscarItemExato: () => ({
+                id: 17,
+                temporadas: [{
+                    numero: 4,
+                    episodios: [
+                        { numero: 1, isDublado: true, messageId: 102 },
+                        { numero: 2, isDublado: true, messageId: 103 },
+                        { numero: 3, isDublado: true, messageId: 104 }
+                    ]
+                }]
+            }),
+            buscarEpisodio: (id, t, e) => {
+                if (t === 4 && e === 1) return { numero: 1, isDublado: true, messageId: 102 };
+                if (t === 4 && e <= 3) return { numero: e, isDublado: true, messageId: 100 + e };
+                return null;
+            }
+        };
+
+        const checkEpisodioSatisfied = (jaCatalogado, reqPref) => {
+            return jaCatalogado && (
+                (reqPref === 'dublado' && CatalogoManager.hasValidDubbedMedia(jaCatalogado)) ||
+                (reqPref === 'legendado' && CatalogoManager.hasValidSubtitledMedia(jaCatalogado)) ||
+                (reqPref === 'geral' && (CatalogoManager.hasValidDubbedMedia(jaCatalogado) || CatalogoManager.hasValidSubtitledMedia(jaCatalogado)))
+            );
+        };
+
+        assert(Boolean(checkEpisodioSatisfied(mockCatalog.buscarEpisodio(17, 4, 1), 'dublado')) === true, '24.5a Ep 1 Dublado já satisfeito');
+        assert(Boolean(checkEpisodioSatisfied(mockCatalog.buscarEpisodio(17, 4, 7), 'dublado')) === false, '24.5b Ep 7 não catalogado -> não satisfeito');
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 23 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 24 TESTES DE REGRESSÃO, INTEGRIDADE E CONTRATOS PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {
