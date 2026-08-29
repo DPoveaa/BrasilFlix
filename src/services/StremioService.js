@@ -170,31 +170,9 @@ class StremioService {
     }
 
     async getStreams(type, id, userToken = 'public', baseUrl = 'https://brasilflix.kapsu.com.br') {
-        const streams = [];
         const isMovie = type === 'movie' || (!id.includes(':') && !id.startsWith('bf_serie_'));
-        
-        // Verifica consumo gratuito mensal (1 Filme + 2 Episódios de Séries)
-        const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(
-            userToken, 
-            isMovie ? 'filme' : 'serie'
-        );
 
-        if (!consumo.permitido) {
-            const assinarUrl = `${baseUrl}/assinar?token=${encodeURIComponent(userToken)}`;
-            return {
-                streams: [
-                    {
-                        name: '🔒 BrasilFlix VIP',
-                        title: `🚫 Limite Grátis Atingido!\n👑 Assine o VIP para Acesso Ilimitado:\n👉 ${assinarUrl}\n📱 Ou aponte a câmera para o QR Code no app!`,
-                        url: `${baseUrl}/assinar`
-                    }
-                ]
-            };
-        }
-
-        const tagCota = consumo.isVip ? '👑 VIP' : (isMovie ? `🎁 Grátis (${consumo.restanteFilmes} filme restante no mês)` : `🎁 Grátis (${consumo.restanteEpisodios} eps restantes no mês)`);
-
-        if (type === 'movie' || (!id.includes(':') && !id.startsWith('bf_serie_'))) {
+        if (isMovie) {
             let filme = null;
             if (id.startsWith('bf_movie_') || id.startsWith('bf_filme_')) {
                 const numId = id.replace(/^(bf_movie_|bf_filme_)/, '');
@@ -214,6 +192,31 @@ class StremioService {
                 filme.versoes?.legendado?.fileId || (filme.isLegendado || filme.is_legendado ? (filme.fileId || filme.file_id) : null)
             );
 
+            if (!temDub && !temLeg) return { streams: [] };
+
+            const mediaKey = `filme_${filme.id}`;
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(
+                userToken, 
+                'filme',
+                mediaKey
+            );
+
+            if (!consumo.permitido) {
+                const assinarUrl = `${baseUrl}/assinar?token=${encodeURIComponent(userToken)}`;
+                return {
+                    streams: [
+                        {
+                            name: '🔒 BrasilFlix VIP',
+                            title: `🚫 Limite Grátis Atingido!\n👑 Assine o VIP para Acesso Ilimitado:\n👉 ${assinarUrl}\n📱 Ou aponte a câmera para o QR Code no app!`,
+                            url: `${baseUrl}/assinar`
+                        }
+                    ]
+                };
+            }
+
+            const tagCota = consumo.isVip ? '👑 VIP' : `🎁 Grátis (${consumo.restanteFilmes} filme restante no mês)`;
+            const streams = [];
+
             if (temDub) {
                 streams.push({
                     name: 'BrasilFlix [1080p]',
@@ -229,7 +232,9 @@ class StremioService {
                     url: `${baseUrl}/stream/video/${userToken}/filme/${filme.id}/legendado`
                 });
             }
-        } else if (type === 'series' || id.includes(':') || id.startsWith('bf_serie_')) {
+
+            return { streams };
+        } else {
             // ID formato: bf_serie_123:1:1 ou tt12345:1:1
             const parts = id.split(':');
             const serieIdOrImdb = parts[0];
@@ -254,6 +259,31 @@ class StremioService {
             const temDub = CatalogoManager.hasValidDubbedMedia(ep);
             const temLeg = CatalogoManager.hasValidSubtitledMedia(ep);
 
+            if (!temDub && !temLeg) return { streams: [] };
+
+            const mediaKey = `serie_${serie.id}_s${seasonNum}_e${epNum}`;
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(
+                userToken, 
+                'serie',
+                mediaKey
+            );
+
+            if (!consumo.permitido) {
+                const assinarUrl = `${baseUrl}/assinar?token=${encodeURIComponent(userToken)}`;
+                return {
+                    streams: [
+                        {
+                            name: '🔒 BrasilFlix VIP',
+                            title: `🚫 Limite Grátis Atingido!\n👑 Assine o VIP para Acesso Ilimitado:\n👉 ${assinarUrl}\n📱 Ou aponte a câmera para o QR Code no app!`,
+                            url: `${baseUrl}/assinar`
+                        }
+                    ]
+                };
+            }
+
+            const tagCota = consumo.isVip ? '👑 VIP' : `🎁 Grátis (${consumo.restanteEpisodios} eps restantes no mês)`;
+            const streams = [];
+
             if (temDub) {
                 streams.push({
                     name: 'BrasilFlix [1080p]',
@@ -269,9 +299,9 @@ class StremioService {
                     url: `${baseUrl}/stream/video/${userToken}/serie/${serie.id}/${seasonNum}/${epNum}/legendado`
                 });
             }
-        }
 
-        return { streams };
+            return { streams };
+        }
     }
 }
 

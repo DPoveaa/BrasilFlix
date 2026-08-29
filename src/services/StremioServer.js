@@ -2101,23 +2101,14 @@ class StremioServer {
 
     async handleStreamFilme(req, res) {
         const { userToken, id, audio } = req.params;
-        const mediaKey = `filme_${id}`;
-        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
-        if (!auth.authorized) {
-            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme', mediaKey);
-            if (!consumo.permitido) {
-                return res.status(403).send('Limite gratuito semanal de 2 filmes atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para acesso ilimitado!');
-            }
-            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
-                await this.assinaturaManager.registrarStreamConsumido(userToken, 'filme', mediaKey);
-            }
-        }
 
+        // 1. Resolve o filme no catálogo
         const filme = this.catalogoManager.buscarFilmePorId(id);
         if (!filme) {
             return res.status(404).send('Filme não encontrado no catálogo.');
         }
 
+        // 2. Valida a versão de áudio solicitada e seu identificador de mídia estrito
         let versaoEscolhida = null;
         if (audio === 'legendado') {
             if (filme.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(filme.versoes.legendado.messageId, filme.versoes.legendado.fileId)) {
@@ -2147,6 +2138,19 @@ class StremioServer {
             return res.status(404).send(`Versão ${audio || 'solicitada'} do filme não disponível.`);
         }
 
+        // 3. APENAS após validação da mídia, verifica e consome cota gratuita
+        const mediaKey = `filme_${filme.id}`;
+        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
+        if (!auth.authorized) {
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme', mediaKey);
+            if (!consumo.permitido) {
+                return res.status(403).send('Limite gratuito semanal de 2 filmes atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para acesso ilimitado!');
+            }
+            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'filme', mediaKey);
+            }
+        }
+
         const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;
         const rawMsgId = Number(versaoEscolhida.messageId);
         const hasValidMsgId = !isNaN(rawMsgId) && rawMsgId > 0;
@@ -2167,28 +2171,28 @@ class StremioServer {
 
     async handleStreamSerie(req, res) {
         const { userToken, id, season, episode, audio } = req.params;
-        const mediaKey = `serie_${id}_s${season}_e${episode}`;
-        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
-        if (!auth.authorized) {
-            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie', mediaKey);
-            if (!consumo.permitido) {
-                return res.status(403).send('Limite gratuito semanal de 4 episódios atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
-            }
-            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
-                await this.assinaturaManager.registrarStreamConsumido(userToken, 'serie', mediaKey);
-            }
-        }
+        const seasonNum = parseInt(season, 10);
+        const epNum = parseInt(episode, 10);
 
+        // 1. Resolve a série no catálogo
         const serie = this.catalogoManager.buscarSeriePorId(id);
         if (!serie) {
             return res.status(404).send('Série não encontrada no catálogo.');
         }
 
-        const ep = this.catalogoManager.buscarEpisodio(id, parseInt(season, 10), parseInt(episode, 10));
-        if (!ep) {
-            return res.status(404).send(`Episódio S${season}E${episode} não encontrado.`);
+        // 2. Resolve a temporada (respeitando continuidade e ponto de entrada)
+        const temporada = (serie.temporadas || []).find(t => t.numero === seasonNum);
+        if (!temporada) {
+            return res.status(404).send(`Temporada ${seasonNum} da série não encontrada ou indisponível.`);
         }
 
+        // 3. Resolve o episódio na temporada (garantindo que não está em lacuna de continuidade)
+        const ep = (temporada.episodios || []).find(e => e.numero === epNum);
+        if (!ep) {
+            return res.status(404).send(`Episódio S${seasonNum}E${epNum} não encontrado ou indisponível.`);
+        }
+
+        // 4. Valida a versão de áudio solicitada e seu identificador de mídia estrito
         let versaoEscolhida = null;
         if (audio === 'legendado') {
             if (ep.versoes?.legendado && CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
@@ -2215,7 +2219,20 @@ class StremioServer {
         }
 
         if (!versaoEscolhida || !CatalogoManager.isValidMediaIdentifier(versaoEscolhida.messageId, versaoEscolhida.fileId)) {
-            return res.status(404).send(`Versão ${audio || 'solicitada'} do episódio S${season}E${episode} não disponível.`);
+            return res.status(404).send(`Versão ${audio || 'solicitada'} do episódio S${seasonNum}E${epNum} não disponível.`);
+        }
+
+        // 5. APENAS após validação da mídia, verifica e consome cota gratuita
+        const mediaKey = `serie_${serie.id}_s${seasonNum}_e${epNum}`;
+        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
+        if (!auth.authorized) {
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie', mediaKey);
+            if (!consumo.permitido) {
+                return res.status(403).send('Limite gratuito semanal de 4 episódios atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
+            }
+            if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'serie', mediaKey);
+            }
         }
 
         const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;

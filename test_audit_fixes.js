@@ -208,8 +208,106 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         assert(statusResp2 === 404, 'Mídia apenas com fileId sem Cloudflare deve retornar 404 explícito');
         assert(bodyResp2.includes('sem messageId de armazenamento'), 'Mensagem de 404 deve ser explicita sobre messageId');
 
+        // Teste 12: Teste de Consumo de Cota Gratuita (Quota Lifecycle)
+        console.log('\n--- Teste 12: Testes de Consumo de Cota Gratuita e Validação Antecipada ---');
+        let registeredConsumptions = [];
+        let checkedConsumptions = [];
+
+        const mockQuotaAssinaturaMgr = {
+            verificarAcessoStremio: () => ({ authorized: false }),
+            verificarOuRegistrarConsumoGratis: async (token, tipo, mediaKey) => {
+                checkedConsumptions.push({ token, tipo, mediaKey });
+                return { permitido: true, isVip: false, restanteFilmes: 1, restanteEpisodios: 1 };
+            },
+            registrarStreamConsumido: async (token, tipo, mediaKey) => {
+                registeredConsumptions.push({ token, tipo, mediaKey });
+            }
+        };
+
+        const mockQuotaCatMgr = {
+            buscarFilmePorId: (id) => {
+                if (id === '100') return { id: 100, nome: 'Filme Valido', isDublado: true, versoes: { dublado: { messageId: 9999 } } };
+                if (id === '101') return { id: 101, nome: 'Filme Sem Audio Leg', isDublado: true, isLegendado: false, versoes: { dublado: { messageId: 9998 } } };
+                if (id === '102') return { id: 102, nome: 'Filme Identificador Invalido', isDublado: true, versoes: { dublado: { messageId: 0, fileId: '' } } };
+                return null;
+            },
+            buscarSeriePorId: (id) => {
+                if (id === '200') {
+                    return {
+                        id: 200,
+                        nome: 'Serie Teste Cota',
+                        temporadas: [
+                            {
+                                numero: 1,
+                                episodios: [
+                                    { numero: 1, isDublado: true, isLegendado: false, versoes: { dublado: { messageId: 8881 } } },
+                                    { numero: 2, isDublado: true, isLegendado: false, versoes: { dublado: { messageId: 8882 } } }
+                                    // Ep 6 foi filtrado pela regra de continuidade e não existe na lista de episódios da temporada
+                                ]
+                            }
+                        ]
+                    };
+                }
+                return null;
+            },
+            getGenerosDisponiveis: () => []
+        };
+
+        const quotaServer = new StremioServer(mockQuotaCatMgr, mockQuotaAssinaturaMgr, null, null, 9998);
+        quotaServer.streamTelegramMedia = async () => {}; // Mock streaming
+
+        // 12.1 Episódio inexistente -> não consome cota
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        let s1 = null;
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '99', audio: 'dublado' }, headers: {} }, { status: (c) => { s1 = c; return { send: () => {} }; } });
+        assert(s1 === 404, 'Episodio inexistente deve retornar 404');
+        assert(registeredConsumptions.length === 0, 'Episodio inexistente NAO deve consumir cota');
+        assert(checkedConsumptions.length === 0, 'Episodio inexistente NAO deve verificar cota');
+
+        // 12.2 Episódio após gap de continuidade (ex: Ep 6 quando só temos 1 e 2) -> não consome cota
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        let s2 = null;
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '6', audio: 'dublado' }, headers: {} }, { status: (c) => { s2 = c; return { send: () => {} }; } });
+        assert(s2 === 404, 'Episodio apos gap de continuidade deve retornar 404');
+        assert(registeredConsumptions.length === 0, 'Episodio apos gap NAO deve consumir cota');
+        assert(checkedConsumptions.length === 0, 'Episodio apos gap NAO deve verificar cota');
+
+        // 12.3 Versão de áudio inexistente (ex: pede legendado num ep apenas dublado) -> não consome cota
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        let s3 = null;
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'legendado' }, headers: {} }, { status: (c) => { s3 = c; return { send: () => {} }; } });
+        assert(s3 === 404, 'Versao de audio inexistente deve retornar 404');
+        assert(registeredConsumptions.length === 0, 'Audio inexistente NAO deve consumir cota');
+        assert(checkedConsumptions.length === 0, 'Audio inexistente NAO deve verificar cota');
+
+        // 12.4 Identificador de mídia inválido (0 / vazio) -> não consome cota
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        let s4 = null;
+        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '102', audio: 'dublado' }, headers: {} }, { status: (c) => { s4 = c; return { send: () => {} }; } });
+        assert(s4 === 404, 'Identificador invalido deve retornar 404');
+        assert(registeredConsumptions.length === 0, 'Identificador invalido NAO deve consumir cota');
+        assert(checkedConsumptions.length === 0, 'Identificador invalido NAO deve verificar cota');
+
+        // 12.5 Episódio válido com mídia válida -> consome cota normalmente
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'dublado' }, headers: {} }, { status: () => ({ send: () => {} }) });
+        assert(registeredConsumptions.length === 1, 'Episodio valido DEVE consumir cota');
+        assert(registeredConsumptions[0].mediaKey === 'serie_200_s1_e1', 'mediaKey da serie deve estar correto');
+
+        // 12.6 Filme válido com mídia válida -> consome cota normalmente
+        registeredConsumptions = [];
+        checkedConsumptions = [];
+        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '100', audio: 'dublado' }, headers: {} }, { status: () => ({ send: () => {} }) });
+        assert(registeredConsumptions.length === 1, 'Filme valido DEVE consumir cota');
+        assert(registeredConsumptions[0].mediaKey === 'filme_100', 'mediaKey do filme deve estar correto');
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS TESTES DE REGRESSÃO E STREAMING PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS TESTES DE REGRESSÃO, STREAMING E COTAS PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {
