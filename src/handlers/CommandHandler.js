@@ -1,5 +1,6 @@
 const config = require('../../config');
 const TelegramUploader = require('../services/TelegramUploader');
+const authService = require('../services/AuthService');
 
 class CommandHandler {
     constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null, favoritosManager = null) {
@@ -32,9 +33,50 @@ class CommandHandler {
         const text = msg.text || '';
         const parts = text.split(' ');
         const param = parts.length > 1 ? parts[1].trim() : '';
+        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
 
         // Deep links vindos do site oficial
         if (param) {
+            // Login 1-Clique via Telegram
+            if (param.startsWith('login_') || param.startsWith('auth_')) {
+                const code = param.replace(/^(login_|auth_)/, '');
+                const authResult = await authService.authorizeTelegramLogin(code, msg.from, isAssinante);
+                
+                await this.bot.sendMessage(chatId,
+                    `🎉 *Login no BrasilFlix Web Autorizado!*\n\n` +
+                    `Olá, *${msg.from.first_name || msg.from.username || 'Usuário'}*! Seu navegador foi autenticado com sucesso.\n\n` +
+                    `👑 *Status:* ${isAssinante ? '✨ Assinante VIP (Acesso Ilimitado)' : '🆓 Modo Gratuito'}\n\n` +
+                    `🍿 Você já pode voltar ao site e maratonar seus filmes e séries favoritos!`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🌐 Acessar BrasilFlix Web', url: `https://brasilflix.kapsu.com.br/?token=${userId}&auth_jwt=${authResult.token}` }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
+            if (param === 'site' || param === 'web' || param === 'login' || param === 'painel') {
+                const authResult = await authService.authorizeTelegramLogin('direct_' + userId, msg.from, isAssinante);
+                await this.bot.sendMessage(chatId,
+                    `🌐 *Acesso Direto ao BrasilFlix Web*\n\n` +
+                    `Clique no botão abaixo para entrar automaticamente no site com sua conta vinculada:\n\n` +
+                    `👑 *Status VIP:* ${isAssinante ? '✨ Ativo (Ilimitado)' : '🆓 Modo Gratuito'}`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🚀 Entrar no BrasilFlix Web', url: `https://brasilflix.kapsu.com.br/?token=${userId}&auth_jwt=${authResult.token}` }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
             if (param.startsWith('serie_')) {
                 // Formato: serie_{serieId}_{seasonNum}_{epNum}
                 const [_, serieId, sNum, epNum] = param.split('_');
@@ -42,22 +84,23 @@ class CommandHandler {
                     return this.handleAssistirEpisodio(chatId, userId, serieId, sNum, epNum, callbackQuery);
                 }
             } else if (param.startsWith('ver_')) {
-                // Formato: ver_{id}
-                const id = param.replace('ver_', '');
-                const filme = this.catalogoManager.buscarFilmePorId(id);
+                // Formato: ver_{id} ou ver_filme_{id} ou ver_serie_{id}
+                const rawId = param.replace(/^ver_/, '');
+                const cleanId = rawId.replace(/^(filme_|serie_)/, '');
+
+                const filme = this.catalogoManager.buscarFilmePorId(cleanId) || this.catalogoManager.buscarFilmePorId(rawId);
                 if (filme) {
-                    return this.handleInfoFilme(chatId, userId, id, callbackQuery);
+                    return this.handleInfoFilme(chatId, userId, filme.id, callbackQuery);
                 }
-                const serie = this.catalogoManager.buscarSeriePorId(id);
+                const serie = this.catalogoManager.buscarSeriePorId(cleanId) || this.catalogoManager.buscarSeriePorId(rawId);
                 if (serie) {
-                    return this.handleInfoSerie(chatId, userId, id, callbackQuery);
+                    return this.handleInfoSerie(chatId, userId, serie.id, callbackQuery);
                 }
             } else if (param === 'stremio') {
                 return this.handleStremioCommand(msg);
             }
         }
 
-        const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
         if (isAssinante) {
             await this.handleAssinanteStart(msg, callbackQuery);
         } else {
@@ -190,6 +233,9 @@ class CommandHandler {
         const keyboard = {
             inline_keyboard: [
                 [
+                    { text: '🌐 Assistir no Web Player', url: `https://brasilflix.kapsu.com.br/?token=${userId}` }
+                ],
+                [
                     { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
                     { text: '🔍 Buscar', callback_data: 'buscar' }
                 ],
@@ -229,13 +275,16 @@ class CommandHandler {
         }
 
         const mensagem = `🍿 *BrasilFlix Oficial*\n\n` +
-                        `Olá, *${nomeUsuario}*! Assista aos melhores filmes, séries e doramas dublados em 1080p direto no Telegram.\n\n` +
+                        `Olá, *${nomeUsuario}*! Assista aos melhores filmes, séries e doramas dublados em 1080p direto no Telegram e no Web Player.\n\n` +
                         `📚 *Catálogo:* ${stats.totalFilmes} Filmes | ${stats.totalSeries} Séries\n` +
                         `${statusText}\n\n` +
                         `💡 *Navegue pelo catálogo ou busque o que deseja assistir!*`;
 
         const keyboard = {
             inline_keyboard: [
+                [
+                    { text: '🌐 Assistir no Web Player', url: `https://brasilflix.kapsu.com.br/?token=${userId}` }
+                ],
                 [
                     { text: '📚 Ver Catálogo', callback_data: 'catalogo' },
                     { text: '🔍 Buscar Título', callback_data: 'buscar' }
@@ -255,6 +304,34 @@ class CommandHandler {
             parse_mode: 'Markdown',
             reply_markup: keyboard
         }, callbackQuery);
+    }
+
+    async handleWebPlayerCommand(msg) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const isVip = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
+        const siteUrl = `https://brasilflix.kapsu.com.br/?token=${userId}`;
+        
+        const text = `🌐 *BrasilFlix Web Player Oficial*\n\n` +
+                     `Assista a todo o nosso catálogo de filmes, séries e doramas 1080p diretamente no seu navegador (PC, Celular ou Smart TV), sem precisar instalar aplicativos!\n\n` +
+                     (isVip 
+                         ? `👑 *Sua Conta VIP está Vinculada com 1 Clique!*\nVocê tem acesso ilimitado a todo o acervo sem travar.`
+                         : `🎁 *Acesso Gratuito Disponível:*\nSua conta do Telegram já está conectada para usar sua cota mensal no site.`);
+
+        await this.bot.sendMessage(chatId, text, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🚀 Abrir Web Player (Login Automático)', url: siteUrl }
+                    ],
+                    [
+                        { text: '📚 Ver Catálogo no Bot', callback_data: 'catalogo' },
+                        { text: '💎 Assinar VIP', callback_data: 'ver_planos' }
+                    ]
+                ]
+            }
+        });
     }
 
     async handleAdminStart(msg, callbackQuery = null) {
@@ -589,7 +666,7 @@ class CommandHandler {
             return;
         }
 
-        const resultados = this.catalogoManager.buscarItem(termo);
+        const resultados = await this.catalogoManager.buscarItemComTMDB(termo);
 
         if (resultados.length > 0) {
             this.resultadosBuscaTemp.set(userId, resultados);
@@ -675,7 +752,7 @@ class CommandHandler {
         const filmesPagina = filmes.slice(inicio, fim);
 
         const mensagem = `${tituloCategoria}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dub/Leg (Dublado + Legendado)\n` +
                         `📹 [CAM/D] Cinema Dublado  •  [CAM/L] Cinema Legendado (Provisório)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${filmes.length} filmes\n\n` +
                         `Selecione um filme para ver a sinopse e assistir:`;
@@ -849,7 +926,7 @@ class CommandHandler {
         const animesPagina = animes.slice(inicio, fim);
 
         const mensagem = `${tituloCategoria}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dub/Leg (Dublado + Legendado)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${animes.length} animes\n\n` +
                         `Selecione um anime para ver episódios e assistir:`;
 
@@ -937,7 +1014,7 @@ class CommandHandler {
         const doramasPagina = doramas.slice(inicio, fim);
 
         const mensagem = `${tituloCategoria}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dub/Leg (Dublado + Legendado)\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${doramas.length} doramas\n\n` +
                         `Selecione um dorama para ver episódios e assistir:`;
 
@@ -1144,9 +1221,9 @@ class CommandHandler {
     async handleAssistirFilme(chatId, userId, filmeId, callbackQuery, versaoAudio = 'dublado') {
         const username = callbackQuery?.from?.username || callbackQuery?.from?.first_name || 'Usuário';
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
-        const cota = this.getCotaGratuita(userId);
+        const cota = this.getCotaGratuita(userId, filmeId, 'filme');
 
-        if (!isAssinante && !cota.podeFilme) {
+        if (!isAssinante && !cota.podeFilme && !cota.jaDesbloqueado) {
             await this.handleVerPlanosButton(chatId, userId, callbackQuery);
             return;
         }
@@ -1182,11 +1259,19 @@ class CommandHandler {
             }
 
             if (!isAssinante) {
-                this.consumirCotaGratis(userId, username, 'filme');
-                const novaCota = this.getCotaGratuita(userId);
-                const msgTeste = `🎁 *Você utilizou seu filme gratuito deste mês!*\n\n` +
-                                `📊 *Seu saldo restante no mês:* 0 filmes e ${novaCota.epsRestantes} episódio(s) de séries.\n\n` +
-                                `💡 *Para assistir a filmes e séries ilimitados, assine por apenas R$ 15,00/mês!*`;
+                const eraDesbloqueado = cota.jaDesbloqueado;
+                this.consumirCotaGratis(userId, username, 'filme', filmeId);
+                const novaCota = this.getCotaGratuita(userId, filmeId, 'filme');
+
+                let msgTeste = '';
+                if (eraDesbloqueado) {
+                    msgTeste = `🍿 *Bom filme!*\n\n💡 _Como você já desbloqueou este filme na sua cota deste mês, nenhum saldo extra foi consumido (você pode alternar entre Dublado e Legendado livremente)._\n\n` +
+                               `📊 *Seu saldo restante:* ${novaCota.filmesRestantes} filme(s) e ${novaCota.epsRestantes} episódio(s) de séries.`;
+                } else {
+                    msgTeste = `🎁 *Você utilizou seu filme gratuito deste mês!*\n\n` +
+                               `📊 *Seu saldo restante no mês:* 0 filmes e ${novaCota.epsRestantes} episódio(s) de séries.\n\n` +
+                               `💡 *Para assistir a filmes e séries ilimitados, assine por apenas R$ 15,00/mês!*`;
+                }
 
                 const keyboard = {
                     inline_keyboard: [
@@ -1213,9 +1298,10 @@ class CommandHandler {
     async handleAssistirEpisodio(chatId, userId, serieId, tempNum, epNum, callbackQuery, versaoAudio = 'dublado') {
         const username = callbackQuery?.from?.username || callbackQuery?.from?.first_name || 'Usuário';
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
-        const cota = this.getCotaGratuita(userId);
+        const epKey = `${serieId}_${tempNum}_${epNum}`;
+        const cota = this.getCotaGratuita(userId, epKey, 'serie');
 
-        if (!isAssinante && !cota.podeSerie) {
+        if (!isAssinante && !cota.podeEpisodio && !cota.jaDesbloqueado) {
             await this.handleVerPlanosButton(chatId, userId, callbackQuery);
             return;
         }
@@ -1274,11 +1360,19 @@ class CommandHandler {
             ]);
 
             if (!isAssinante) {
-                this.consumirCotaGratis(userId, username, 'serie');
-                const novaCota = this.getCotaGratuita(userId);
-                const msgTeste = `🎁 *Você utilizou 1 episódio gratuito deste mês!*\n\n` +
-                                `📊 *Seu saldo restante:* ${novaCota.filmesRestantes} filme(s) e ${novaCota.epsRestantes} episódio(s) de série.\n\n` +
-                                `💡 *Para maratonar séries completas sem limites, assine por apenas R$ 15,00/mês!*`;
+                const eraDesbloqueado = cota.jaDesbloqueado;
+                this.consumirCotaGratis(userId, username, 'serie', epKey);
+                const novaCota = this.getCotaGratuita(userId, epKey, 'serie');
+
+                let msgTeste = '';
+                if (eraDesbloqueado) {
+                    msgTeste = `🍿 *Bom episódio!*\n\n💡 _Como você já desbloqueou este episódio na sua cota deste mês, nenhum saldo extra foi consumido (você pode alternar entre Dublado e Legendado livremente)._\n\n` +
+                               `📊 *Seu saldo restante:* ${novaCota.filmesRestantes} filme(s) e ${novaCota.epsRestantes} episódio(s) de série.`;
+                } else {
+                    msgTeste = `🎁 *Você utilizou 1 episódio gratuito deste mês!*\n\n` +
+                               `📊 *Seu saldo restante:* ${novaCota.filmesRestantes} filme(s) e ${novaCota.epsRestantes} episódio(s) de série.\n\n` +
+                               `💡 *Para maratonar séries completas sem limites, assine por apenas R$ 15,00/mês!*`;
+                }
 
                 followUpButtons.unshift([{ text: '💎 Ver Planos VIP - R$ 15', callback_data: 'ver_planos' }]);
                 await this.bot.sendMessage(chatId, msgTeste, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: followUpButtons } });
@@ -2495,7 +2589,7 @@ class CommandHandler {
         const itensPagina = itens.slice(inicio, fim);
 
         const mensagem = `🎭 *Categoria:* ${generoDecodificado}\n\n` +
-                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dual Áudio\n` +
+                        `💡 [D] Dublado  •  [L] Legendado  •  [D/L] Dub/Leg (Dublado + Legendado)\n` +
                         `📹 [CAM/D] Cinema Dublado  •  [CAM/L] Cinema Legendado\n\n` +
                         `📊 Mostrando ${inicio + 1}-${fim} de ${itens.length} título(s)\n\n` +
                         `Selecione para ver a sinopse e assistir:`;
@@ -5157,7 +5251,7 @@ class CommandHandler {
         return new Date().toISOString().substring(0, 7); // ex: '2026-08'
     }
 
-    getCotaGratuita(userId) {
+    getCotaGratuita(userId, mediaKey = null, tipo = null) {
         const idStr = userId.toString();
         const mesAtual = this.getMesAtual();
         const registro = this.testesGratuitos[idStr];
@@ -5168,14 +5262,31 @@ class CommandHandler {
                 epsRestantes: 2,
                 filmesUsados: 0,
                 epsUsados: 0,
+                filmesAssistidos: [],
+                epsAssistidos: [],
                 podeFilme: true,
                 podeEpisodio: true,
-                mes: mesAtual
+                podeSerie: true,
+                mes: mesAtual,
+                jaDesbloqueado: false
             };
         }
 
-        const filmesUsados = registro.filmesUsados || 0;
-        const epsUsados = registro.epsUsados || 0;
+        const filmesAssistidos = Array.isArray(registro.filmesAssistidos) ? registro.filmesAssistidos : [];
+        const epsAssistidos = Array.isArray(registro.epsAssistidos) ? registro.epsAssistidos : [];
+
+        let jaDesbloqueado = false;
+        if (mediaKey) {
+            const strKey = String(mediaKey);
+            if (tipo === 'filme' && filmesAssistidos.map(String).includes(strKey)) {
+                jaDesbloqueado = true;
+            } else if ((tipo === 'serie' || tipo === 'episodio') && epsAssistidos.map(String).includes(strKey)) {
+                jaDesbloqueado = true;
+            }
+        }
+
+        const filmesUsados = Math.max(registro.filmesUsados || 0, filmesAssistidos.length);
+        const epsUsados = Math.max(registro.epsUsados || 0, epsAssistidos.length);
         const filmesRestantes = Math.max(0, 1 - filmesUsados);
         const epsRestantes = Math.max(0, 2 - epsUsados);
 
@@ -5184,33 +5295,61 @@ class CommandHandler {
             epsRestantes,
             filmesUsados,
             epsUsados,
-            podeFilme: filmesRestantes > 0,
-            podeEpisodio: epsRestantes > 0,
-            mes: mesAtual
+            filmesAssistidos,
+            epsAssistidos,
+            podeFilme: jaDesbloqueado || filmesRestantes > 0,
+            podeEpisodio: jaDesbloqueado || epsRestantes > 0,
+            podeSerie: jaDesbloqueado || epsRestantes > 0,
+            mes: mesAtual,
+            jaDesbloqueado
         };
     }
 
-    consumirCotaGratis(userId, username, tipo = 'filme') {
+    consumirCotaGratis(userId, username, tipo = 'filme', mediaKey = null) {
         const idStr = userId.toString();
         const mesAtual = this.getMesAtual();
-        const cota = this.getCotaGratuita(userId);
-
-        if (tipo === 'filme') {
-            cota.filmesUsados += 1;
-        } else {
-            cota.epsUsados += 1;
-        }
-
-        this.testesGratuitos[idStr] = {
+        const registro = this.testesGratuitos[idStr] || {
             username: username || 'Usuário',
             mes: mesAtual,
-            filmesUsados: cota.filmesUsados,
-            epsUsados: cota.epsUsados,
+            filmesUsados: 0,
+            epsUsados: 0,
+            filmesAssistidos: [],
+            epsAssistidos: [],
             ultimaAtualizacao: new Date().toISOString()
         };
 
+        if (registro.mes !== mesAtual) {
+            registro.mes = mesAtual;
+            registro.filmesUsados = 0;
+            registro.epsUsados = 0;
+            registro.filmesAssistidos = [];
+            registro.epsAssistidos = [];
+        }
+
+        if (!Array.isArray(registro.filmesAssistidos)) registro.filmesAssistidos = [];
+        if (!Array.isArray(registro.epsAssistidos)) registro.epsAssistidos = [];
+
+        if (mediaKey) {
+            const strKey = String(mediaKey);
+            if (tipo === 'filme') {
+                if (!registro.filmesAssistidos.map(String).includes(strKey)) {
+                    registro.filmesAssistidos.push(strKey);
+                }
+            } else {
+                if (!registro.epsAssistidos.map(String).includes(strKey)) {
+                    registro.epsAssistidos.push(strKey);
+                }
+            }
+        }
+
+        registro.username = username || registro.username || 'Usuário';
+        registro.filmesUsados = Math.max(registro.filmesUsados || 0, registro.filmesAssistidos.length);
+        registro.epsUsados = Math.max(registro.epsUsados || 0, registro.epsAssistidos.length);
+        registro.ultimaAtualizacao = new Date().toISOString();
+
+        this.testesGratuitos[idStr] = registro;
         this.salvarTestesGratuitos();
-        console.log(`🎁 Cota gratuita consumida por ${userId} (${username}): Tipo=${tipo}, Filmes=${cota.filmesUsados}/1, Eps=${cota.epsUsados}/2`);
+        console.log(`🎁 Cota gratuita registrada para ${userId} (${username}): Tipo=${tipo}, MediaKey=${mediaKey}, Filmes=${registro.filmesUsados}/1, Eps=${registro.epsUsados}/2`);
     }
 
     verificarTesteGratuitoUsado(userId) {
@@ -5929,12 +6068,57 @@ class CommandHandler {
             await this.mostrarMensagemConversao(chatId, userId, null);
             return;
         }
+        await this.uploader.forwardFromStorage(chatId, messageId);
+    }
 
-        try {
-            await this.bot.forwardMessage(chatId, config.STORAGE_GROUP_ID, messageId);
-        } catch (e) {
-            console.error('Erro ao enviar vídeo direto:', e.message);
-            await this.bot.sendMessage(chatId, '❌ Erro ao enviar vídeo.');
+    async processarMensagemTexto(msg) {
+        const userId = msg.from.id;
+        const chatId = msg.chat.id;
+        const text = (msg.text || '').trim();
+
+        if (!text) return false;
+
+        // 1. Verifica se o usuário estava em um estado específico
+        const estado = this.estadosTemporarios[userId];
+        if (estado && estado.ativo) {
+            if (estado.tipo === 'busca') {
+                delete this.estadosTemporarios[userId];
+                await this.mostrarResultadosBusca(chatId, userId, text);
+                return true;
+            }
+        }
+
+        // 2. Se for número e tiver busca recente armazenada, seleciona o item
+        const num = parseInt(text, 10);
+        if (!isNaN(num) && num >= 1 && this.resultadosBuscaTemp.has(userId)) {
+            const resultados = this.resultadosBuscaTemp.get(userId);
+            if (resultados && num <= resultados.length) {
+                const item = resultados[num - 1];
+                if (item.tipo === 'filme') {
+                    await this.handleInfoFilme(chatId, userId, item.id, null);
+                } else {
+                    await this.handleInfoSerie(chatId, userId, item.id, null);
+                }
+                return true;
+            }
+        }
+
+        // 3. Qualquer texto digitado no chat privado é interpretado como busca inteligente automática no catálogo!
+        if (text.length >= 2 && !text.startsWith('/')) {
+            await this.mostrarResultadosBusca(chatId, userId, text);
+            return true;
+        }
+
+        return false;
+    }
+
+    limparEstadosExpirados() {
+        const now = Date.now();
+        const timeout = 10 * 60 * 1000;
+        for (const [userId, estado] of Object.entries(this.estadosTemporarios || {})) {
+            if (estado && estado.timestamp && (now - estado.timestamp > timeout)) {
+                delete this.estadosTemporarios[userId];
+            }
         }
     }
 }

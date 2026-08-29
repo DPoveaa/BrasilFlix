@@ -13,6 +13,7 @@ module.exports = {
     STORAGE_GROUP_ID: parseInt(process.env.STORAGE_GROUP_ID || '-4888890416', 10),
     ADMIN_ID: parseInt(process.env.ADMIN_ID || '1689537480', 10),
     NOTIFICATION_GROUP_ID: parseInt(process.env.NOTIFICATION_GROUP_ID || '-1002503446860', 10),
+    PUBLIC_RELEASE_GROUP_ID: process.env.PUBLIC_RELEASE_GROUP_ID || '-1003935080262',
 
     // Autenticação JWT Admin
     JWT_SECRET: process.env.JWT_SECRET || 'bf_jwt_sec_8f93a02bc91e77d5421a980e_prod_safe',
@@ -35,9 +36,10 @@ module.exports = {
     TELEGRAM_API_HASH: process.env.TELEGRAM_API_HASH || 'b18441a1ff607e10a989891a5462e627',
     TELEGRAM_SESSION: process.env.TELEGRAM_SESSION || '',
 
-    // Web & Stremio
+    // Web & Stremio & Cloudflare Edge Stream
     STREMIO_PORT: parseInt(process.env.STREMIO_PORT || '7000', 10),
     SERVER_HOST: process.env.SERVER_HOST || 'brasilflix.kapsu.com.br',
+    CLOUDFLARE_STREAM_URL: process.env.CLOUDFLARE_STREAM_URL || '',
 
     // Diretórios Locais
     DATA_DIR: './data',
@@ -60,8 +62,16 @@ module.exports = {
     MAX_CONCURRENT_JOBS: parseInt(process.env.MAX_CONCURRENT_JOBS || '10', 10),
     MAX_CONCURRENT_DOWNLOADS: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '4', 10),
     MAX_CONCURRENT_TRANSCODES: parseInt(process.env.MAX_CONCURRENT_TRANSCODES || '2', 10),
-    MAX_CONCURRENT_UPLOADS: parseInt(process.env.MAX_CONCURRENT_UPLOADS || '4', 10),
+    MAX_CONCURRENT_UPLOADS: parseInt(process.env.MAX_CONCURRENT_UPLOADS || '2', 10),
     MAX_TEMP_DISK_GB: parseInt(process.env.MAX_TEMP_DISK_GB || '100', 10),
     MIN_DOWNLOAD_SPEED_MB: parseFloat(process.env.MIN_DOWNLOAD_SPEED_MB || '1.5'),
-    FFMPEG_THREADS_PER_JOB: parseInt(process.env.FFMPEG_THREADS_PER_JOB || '6', 10)
+    FFMPEG_THREADS_PER_JOB: parseInt(process.env.FFMPEG_THREADS_PER_JOB || '6', 10),
+
+    // Otimizações de Rede, QoS e Proteção de Roteador Residencial
+    MAX_TORRENT_PEER_CONNECTIONS: parseInt(process.env.MAX_TORRENT_PEER_CONNECTIONS || '35', 10),
+    MAX_TORRENT_UPLOAD_LIMIT_KB: parseInt(process.env.MAX_TORRENT_UPLOAD_LIMIT_KB || '250', 10),
+    TELEGRAM_UPLOAD_MAX_SOCKETS: parseInt(process.env.TELEGRAM_UPLOAD_MAX_SOCKETS || '4', 10),
+    ECO_DOWNLOAD_LIMIT_MB: parseFloat(process.env.ECO_DOWNLOAD_LIMIT_MB || '3.0'),
+    ECO_UPLOAD_LIMIT_KB: parseInt(process.env.ECO_UPLOAD_LIMIT_KB || '30', 10),
+    ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10)
 };

@@ -123,31 +123,40 @@ class AutoFeeder {
             // 4.3 Auto-Upgrade: Verificar se filmes apenas Dublados também ganham versão Legendada oficial
             await this.checkFilmesDubladosSemLegenda();
 
-            // 5. Se a fila já estiver com séries pendentes em andamento, não sobrecarrega com novos títulos
-            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && j.status === 'queued');
-            if (seriesInQueue.length >= 6) {
-                console.log(`ℹ️ AutoFeeder: Existem ${seriesInQueue.length} episódios de séries prioritárias na esteira. Focando na conclusão antes de introduzir novos títulos.`);
+            // Em modo econômico residencial: não introduz grandes lotes de novos títulos do TMDB
+            const isEco = SchedulerService.getActiveMode() === 'eco';
+            if (isEco) {
                 return;
             }
 
-            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento controlado...');
+            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento equilibrado...');
 
-            // 6. Filmes em alta
-            const trendingMovies = await TMDBService.getTrendingMovies('week');
-            for (const movie of trendingMovies.slice(0, 8)) {
-                await this.considerItem(movie, 'filme');
+            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
+            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.extraData?.isDorama && j.status === 'queued');
+            const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
+
+            // 6. Filmes em alta (mantém cota independente para Faixa 1)
+            if (moviesInQueue.length < 6) {
+                const trendingMovies = await TMDBService.getTrendingMovies('week');
+                for (const movie of trendingMovies.slice(0, 8)) {
+                    await this.considerItem(movie, 'filme');
+                }
             }
 
-            // 7. Séries em alta (apenas 3 por ciclo para não afogar a esteira)
-            const trendingTV = await TMDBService.getTrendingTV('week');
-            for (const tv of trendingTV.slice(0, 3)) {
-                await this.considerItem(tv, 'serie');
+            // 7. Doramas populares (mantém cota independente para Faixa 4)
+            if (doramasInQueue.length < 6) {
+                const popularDoramas = await TMDBService.getPopularKDramas();
+                for (const dorama of popularDoramas.slice(0, 6)) {
+                    await this.considerItem(dorama, 'serie', true);
+                }
             }
 
-            // 8. Doramas populares (K-Dramas)
-            const popularDoramas = await TMDBService.getPopularKDramas();
-            for (const dorama of popularDoramas.slice(0, 3)) {
-                await this.considerItem(dorama, 'serie', true);
+            // 8. Séries ocidentais em alta (mantém cota independente para Faixa 3)
+            if (seriesInQueue.length < 6) {
+                const trendingTV = await TMDBService.getTrendingTV('week');
+                for (const tv of trendingTV.slice(0, 3)) {
+                    await this.considerItem(tv, 'serie');
+                }
             }
 
         } catch (error) {
@@ -278,7 +287,7 @@ class AutoFeeder {
                             j.title.toLowerCase() === serie.nome.toLowerCase() && 
                             j.season === sNum && 
                             j.episode === proximoEpFaltante.numero &&
-                            j.status !== 'failed'
+                            ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                         );
 
                         if (!jaNaFila) {
@@ -306,31 +315,37 @@ class AutoFeeder {
             const camMovies = this.catalogoManager.buscarFilmesCam();
             if (camMovies.length === 0) return;
 
-            console.log(`🔄 AutoFeeder: Verificando possíveis upgrades para ${camMovies.length} filme(s) em qualidade de Cinema...`);
+            console.log(`🔄 AutoFeeder: Verificando possíveis upgrades 1080p para ${camMovies.length} filme(s) em qualidade de Cinema (Prioridade: CAM Upgrade)...`);
 
             for (const filme of camMovies) {
-                // 1. Verifica no TMDB se o lançamento digital/VOD oficial já ocorreu antes de procurar upgrades
-                const relStatus = await TMDBService.checkDigitalReleaseStatus(filme.tmdbId, filme.isDublado);
-                if (relStatus.isTheatricalOnly) {
-                    continue; // Pula: filme ainda está exclusivo dos cinemas, sem lançamento digital no TMDB
-                }
+                const jaNaFila = (this.queueManager?.queue || []).some(j => 
+                    j.type === 'filme' && 
+                    j.title.toLowerCase() === filme.nome.toLowerCase() && 
+                    ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
+                );
+                if (jaNaFila) continue;
 
                 const sources = await MediaSearchService.search(filme.nome, 'filme', {
                     nomeOriginal: filme.nomeOriginal,
                     ano: filme.ano,
                     onlyWebDl: true,
-                    forcarNaoCam: true
+                    forcarNaoCam: true,
+                    audioPreference: filme.isDublado ? 'dublado' : 'legendado'
                 });
 
-                const officialSource = sources.find(s => s.isWebDl && !s.isCam && s.seeders > 0);
+                const officialSource = sources.find(s => (s.isWebDl || !s.isCam) && (s.seeders || 0) > 0);
                 if (officialSource) {
-                    console.log(`🌟 UPGRADE OFICIAL ENCONTRADO para "${filme.nome}"! Fonte: ${officialSource.title}`);
-                    this.queueManager.addJob(filme.nome, 'filme', 2, {
+                    console.log(`🌟 UPGRADE OFICIAL 1080p ENCONTRADO para "${filme.nome}"! Fonte: ${officialSource.title} (Prioridade: CAM Upgrade)`);
+                    const camPriority = PRIORITIES.CAM_UPGRADE || 2;
+                    this.queueManager.addJob(filme.nome, 'filme', camPriority, {
                         tmdbId: filme.tmdbId,
                         isUpgrade: true,
-                        allowCam: false
+                        allowCam: false,
+                        audioPreference: filme.isDublado ? 'dublado' : 'legendado',
+                        queueOrder: -1
                     });
                 }
+                await new Promise(r => setTimeout(r, 300));
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de cinema:', e.message);
@@ -345,6 +360,13 @@ class AutoFeeder {
             console.log(`🎙️ AutoFeeder: Verificando se ${apenasLegendados.length} filme(s) apenas legendado(s) já ganharam versão DUBLADA...`);
 
             for (const filme of apenasLegendados) {
+                const jaNaFila = (this.queueManager?.queue || []).some(j => 
+                    j.type === 'filme' && 
+                    j.title.toLowerCase() === filme.nome.toLowerCase() && 
+                    ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
+                );
+                if (jaNaFila) continue;
+
                 const sources = await MediaSearchService.search(filme.nome, 'filme', {
                     nomeOriginal: filme.nomeOriginal,
                     ano: filme.ano,
@@ -354,16 +376,20 @@ class AutoFeeder {
                 const dubladaSource = sources.find(s => s.isDublado && s.seeders > 0);
                 if (dubladaSource) {
                     console.log(`🌟 VERSÃO DUBLADA ENCONTRADA para "${filme.nome}"! Fonte: ${dubladaSource.title}`);
-                    this.queueManager.addJob(filme.nome, 'filme', 2, {
+                    const dubPriority = PRIORITIES.UPGRADE_DUB || 4;
+                    this.queueManager.addJob(filme.nome, 'filme', dubPriority, {
                         tmdbId: filme.tmdbId,
                         audioPreference: 'dublado',
                         isUpgrade: true
                     });
                 }
+                // Pausa suave para não congestionar requisições DNS/HTTP
+                await new Promise(r => setTimeout(r, 300));
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de dublagem:', e.message);
         }
+
     }
 
     async checkSeriesDubladoUpgrades() {
@@ -391,12 +417,13 @@ class AutoFeeder {
                     j.title.toLowerCase() === primeiroPendente.serieNome.toLowerCase() &&
                     j.season === primeiroPendente.season &&
                     j.episode === primeiroPendente.episode &&
-                    j.status !== 'failed'
+                    ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                 );
 
                 if (!jaNaFila) {
                     console.log(`🔄 [UPGRADE DUBLADO] Enfileirando busca de versão Dublada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} (atualmente apenas Legendado)...`);
-                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', PRIORITIES.SERIES, {
+                    const dubPriority = PRIORITIES.UPGRADE_DUB || 4;
+                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', dubPriority, {
                         tmdbId: primeiroPendente.tmdbId,
                         imdbId: primeiroPendente.imdbId,
                         season: primeiroPendente.season,
@@ -438,12 +465,12 @@ class AutoFeeder {
                     j.title.toLowerCase() === primeiroPendente.serieNome.toLowerCase() &&
                     j.season === primeiroPendente.season &&
                     j.episode === primeiroPendente.episode &&
-                    j.status !== 'failed'
+                    ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                 );
 
                 if (!jaNaFila) {
                     console.log(`🔄 [UPGRADE LEGENDADO] Enfileirando busca de versão Legendada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} (atualmente apenas Dublado)...`);
-                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', PRIORITIES.SERIES, {
+                    this.queueManager.addJob(primeiroPendente.serieNome, 'serie', PRIORITIES.SERIES || 3, {
                         tmdbId: primeiroPendente.tmdbId,
                         imdbId: primeiroPendente.imdbId,
                         season: primeiroPendente.season,
@@ -470,7 +497,7 @@ class AutoFeeder {
                 const jaNaFila = (this.queueManager.queue || []).some(j =>
                     j.type === 'filme' &&
                     j.title.toLowerCase() === filme.nome.toLowerCase() &&
-                    j.status !== 'failed'
+                    ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                 );
 
                 if (!jaNaFila && filme.imdbId) {
@@ -484,18 +511,20 @@ class AutoFeeder {
                     const legSource = sources.find(s => s.isLegendado && s.seeders > 0);
                     if (legSource) {
                         console.log(`🌟 VERSÃO LEGENDADA ENCONTRADA para "${filme.nome}"! Fonte: ${legSource.title}`);
-                        this.queueManager.addJob(filme.nome, 'filme', PRIORITIES.SERIES, {
+                        this.queueManager.addJob(filme.nome, 'filme', PRIORITIES.SERIES || 3, {
                             tmdbId: filme.tmdbId,
                             imdbId: filme.imdbId,
                             audioPreference: 'legendado',
                             isUpgrade: true
                         });
                     }
+                    await new Promise(r => setTimeout(r, 300));
                 }
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de filmes para legendado:', e.message);
         }
+
     }
 
     async considerItem(item, tipo, isDorama = false) {
@@ -510,13 +539,10 @@ class AutoFeeder {
             }
         }
 
-        // 2. Filtrar conteúdos futuros que ainda não estrearam em streaming/digital
+        // 2. Filtrar conteúdos futuros que ainda não estrearam (filmes antes da data de estreia mundial são 100% fakes/scams)
         const nowStr = new Date().toISOString().split('T')[0];
         if (item.dataLancamento && item.dataLancamento > nowStr) {
-            // Se for filme futuro não lançado, não enfileira
-            if (!config.ALLOW_CINEMA_CAM) {
-                return;
-            }
+            return;
         }
 
         const existing = this.catalogoManager.buscarItemExato(title, tipo);

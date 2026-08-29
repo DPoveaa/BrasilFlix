@@ -2,7 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const EventEmitter = require('events');
 
-// Utilitários para conversão de tempo flexível (horas cheias ou HH:mm como 05:30)
+// Utilitários para conversão de tempo flexível (HH:mm ou minutos como "05:30" => 330)
 function timeToMinutes(val, defaultMin = 0) {
     if (val === null || val === undefined) return defaultMin;
     if (typeof val === 'number') {
@@ -34,26 +34,40 @@ class SchedulerService extends EventEmitter {
         super();
         this.dataPath = path.join(__dirname, '../../data/scheduler.json');
 
-        // Grade padrão: Seg-Sex (1-5), 01:00 às 05:00 no horário de Brasília
+        // Grade padrão inteligente:
+        // Seg-Sex: Desempenho (01:00 às 05:30), Econômico no restante do dia (05:30 às 01:00)
+        // Sáb-Dom: Econômico 24h (não interfere na rede da família/celulares)
         this.defaultConfig = {
-            ativo: true,             // Se o scheduler está habilitado. false = roda 24h
-            diasSemana: [1, 2, 3, 4, 5], // 0=Dom, 1=Seg, ..., 6=Sab
-            horaInicio: '01:00',     // hora de início (HH:mm ou número)
-            horaFim: '05:00'         // hora de término (HH:mm ou número)
+            ativo: true,
+            modoPadraoForaHorario: 'eco', // 'eco' (padrão residencial) ou 'paused'
+            // Grade individualizada por dia da semana (0=Dom, 1=Seg, ..., 6=Sáb)
+            dias: {
+                "0": { "ativo": true, "modo": "eco", "horaInicio": "00:00", "horaFim": "23:59", "modoFora": "paused", "nome": "Domingo" },
+                "1": { "ativo": true, "modo": "performance", "horaInicio": "01:00", "horaFim": "05:30", "modoFora": "eco", "nome": "Segunda" },
+                "2": { "ativo": true, "modo": "performance", "horaInicio": "01:00", "horaFim": "05:30", "modoFora": "eco", "nome": "Terça" },
+                "3": { "ativo": true, "modo": "performance", "horaInicio": "01:00", "horaFim": "05:30", "modoFora": "eco", "nome": "Quarta" },
+                "4": { "ativo": true, "modo": "performance", "horaInicio": "01:00", "horaFim": "05:30", "modoFora": "eco", "nome": "Quinta" },
+                "5": { "ativo": true, "modo": "performance", "horaInicio": "01:00", "horaFim": "05:30", "modoFora": "eco", "nome": "Sexta" },
+                "6": { "ativo": true, "modo": "eco", "horaInicio": "00:00", "horaFim": "23:59", "modoFora": "paused", "nome": "Sábado" }
+            },
+            // Compatibilidade com UI simplificada
+            diasSemana: [1, 2, 3, 4, 5],
+            horaInicio: '01:00',
+            horaFim: '05:30'
         };
 
-        // Overrides por data: chave = "YYYY-MM-DD", valor = { horaInicio, horaFim } ou false (desabilitar)
+        // Overrides por data específica: chave = "YYYY-MM-DD", valor = { modo, horaInicio, horaFim, modoFora } ou false (desabilitar)
         this.overrides = {};
 
-        // Controle manual: null = seguir grade, 'start' = forçar ligado, 'stop' = forçar parado
+        // Controle manual: null = seguir grade, 'performance' = forçar desempenho, 'eco' = forçar econômico, 'stop' = pausar tudo
         this.forceState = null;
         this.forceReason = null;
         this.forceExpiresAt = null;
         this.forceExpiresAtDesc = null;
 
-        this._config = { ...this.defaultConfig };
+        this._config = JSON.parse(JSON.stringify(this.defaultConfig));
         this._schedulerTickInterval = null;
-        this._lastAllowed = null; // para detectar mudanças de estado e logar
+        this._lastStatusKey = null;
 
         this._load();
         this._startTick();
@@ -65,16 +79,22 @@ class SchedulerService extends EventEmitter {
         try {
             if (fs.existsSync(this.dataPath)) {
                 const saved = fs.readJsonSync(this.dataPath);
-                if (saved.config) this._config = { ...this.defaultConfig, ...saved.config };
+                if (saved.config) {
+                    this._config = {
+                        ...this.defaultConfig,
+                        ...saved.config,
+                        dias: { ...this.defaultConfig.dias, ...(saved.config.dias || {}) }
+                    };
+                }
                 if (saved.overrides) this.overrides = saved.overrides || {};
                 if (saved.forceState !== undefined) this.forceState = saved.forceState || null;
                 if (saved.forceReason !== undefined) this.forceReason = saved.forceReason || null;
                 if (saved.forceExpiresAt !== undefined) this.forceExpiresAt = saved.forceExpiresAt || null;
                 if (saved.forceExpiresAtDesc !== undefined) this.forceExpiresAtDesc = saved.forceExpiresAtDesc || null;
-                console.log(`⏱️  [Scheduler] Configuração carregada: ${JSON.stringify(this._config)} | Overrides: ${Object.keys(this.overrides).length} | ForceState: ${this.forceState || 'nenhum'} | Expira: ${this.forceExpiresAtDesc || 'n/a'}`);
+                console.log(`⏱️  [Scheduler] Configuração carregada: Modo Atual = ${this.getActiveMode()} | ForceState: ${this.forceState || 'nenhum'}`);
             } else {
                 this._save();
-                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão Seg-Sex 01:00-05:00 (Horário de SP).');
+                console.log('⏱️  [Scheduler] Arquivo de configuração criado com padrão: Desempenho (01:00-05:30) + Econômico residencial 24h.');
             }
         } catch (e) {
             console.warn('⚠️  [Scheduler] Erro ao carregar configuração:', e.message);
@@ -126,209 +146,185 @@ class SchedulerService extends EventEmitter {
         return { diaSemana, hora, minuto, dataKey };
     }
 
-    // ─── Lógica Principal ─────────────────────────────────────────────────────
+    // ─── Determinação Dinâmica do Modo de Operação ───────────────────────────
 
     /**
-     * Retorna true se download/upload pela rede está autorizado neste momento no Horário de São Paulo.
+     * Retorna o modo atual ('performance', 'eco' ou 'paused') e se a esteira está autorizada a rodar.
      */
-    isAllowedToRun() {
-        // Scheduler desabilitado globalmente = sempre roda
-        if (!this._config.ativo) return true;
+    getCurrentMode() {
+        // Scheduler desabilitado globalmente = Desempenho 24h
+        if (!this._config.ativo) {
+            return {
+                allowed: true,
+                mode: 'performance',
+                reason: 'Agendador desativado (Modo Desempenho 24h sem restrições)'
+            };
+        }
 
-        // Force stop manual tem prioridade máxima
-        if (this.forceState === 'stop') return false;
+        // Force stop manual
+        if (this.forceState === 'stop') {
+            return {
+                allowed: false,
+                mode: 'paused',
+                reason: `Pausado manualmente: ${this.forceReason || 'via painel admin'}`
+            };
+        }
 
-        // Force start manual: permite rodar até atingir o próximo encerramento agendado
-        if (this.forceState === 'start') {
+        // Force start manual (performance ou eco)
+        if (this.forceState === 'performance' || this.forceState === 'start' || this.forceState === 'eco') {
             if (this.forceExpiresAt && Date.now() >= this.forceExpiresAt) {
-                console.log(`⏰ [Scheduler SP] Horário de encerramento agendado atingido (${this.forceExpiresAtDesc || '05:00'}). Início manual expirado com sucesso — pausando robô conforme a programação.`);
+                console.log(`⏰ [Scheduler SP] Expiração do modo manual atingida (${this.forceExpiresAtDesc || 'agendada'}). Voltando à grade automática.`);
                 this.forceState = null;
                 this.forceReason = null;
                 this.forceExpiresAt = null;
                 this.forceExpiresAtDesc = null;
                 this._save();
-                this.emit('stateChange', { allowed: false, reason: 'Horário de término agendado atingido' });
-                return false;
+                this.emit('stateChange', { allowed: this.isAllowedToRun(), mode: this.getActiveMode(), reason: 'Expirou modo manual' });
+            } else {
+                const targetMode = this.forceState === 'eco' ? 'eco' : 'performance';
+                const desc = this.forceExpiresAtDesc ? ` (até ${this.forceExpiresAtDesc})` : '';
+                return {
+                    allowed: true,
+                    mode: targetMode,
+                    reason: `Forçado manualmente em ${targetMode === 'eco' ? 'Modo Econômico (Sem interferir na rede)' : 'Modo Desempenho'}${desc}`
+                };
             }
-            return true;
         }
 
         const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime();
         const currentMinutes = (hora * 60) + minuto;
 
-        // Verifica override da data de hoje
+        // 1. Verifica override/exceção por data específica (YYYY-MM-DD)
         if (this.overrides.hasOwnProperty(dataKey)) {
             const ov = this.overrides[dataKey];
-            if (ov === false) return false; // Dia bloqueado por override
+            if (ov === false) {
+                return { allowed: false, mode: 'paused', reason: `Data ${dataKey} bloqueada por exceção manual (Pausa Total)` };
+            }
             if (typeof ov === 'object' && ov !== null) {
-                const iniMin = timeToMinutes(ov.horaInicio, 60);
-                const fimMin = timeToMinutes(ov.horaFim, 300);
-                return currentMinutes >= iniMin && currentMinutes < fimMin;
-            }
-        }
-
-        // Aplica a grade padrão
-        if (!this._config.diasSemana.includes(diaSemana)) return false;
-
-        const iniMin = timeToMinutes(this._config.horaInicio, 60);
-        const fimMin = timeToMinutes(this._config.horaFim, 300);
-        return currentMinutes >= iniMin && currentMinutes < fimMin;
-    }
-
-    /**
-     * Retorna detalhes do estado atual para a API.
-     */
-    getStatus() {
-        const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime();
-        const allowed = this.isAllowedToRun();
-
-        let motivo = '';
-        if (!this._config.ativo) {
-            motivo = 'Scheduler desabilitado — rodando 24h';
-        } else if (this.forceState === 'stop') {
-            motivo = `⏹ Parado manualmente: ${this.forceReason || 'via painel admin'}`;
-        } else if (this.forceState === 'start') {
-            const expStr = this.forceExpiresAtDesc ? ` (pausará automaticamente às ${this.forceExpiresAtDesc})` : '';
-            motivo = `▶️ Iniciado manualmente${expStr}`;
-        } else if (this.overrides.hasOwnProperty(dataKey)) {
-            const ov = this.overrides[dataKey];
-            if (ov === false) motivo = `Override: dia ${dataKey} bloqueado`;
-            else motivo = `Override SP: hoje das ${ov.horaInicio}h às ${ov.horaFim}h (Horário de São Paulo)`;
-        } else {
-            const diasNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
-            const diasAtivos = this._config.diasSemana.map(d => diasNomes[d]).join(', ');
-            motivo = `Grade padrão: ${diasAtivos} das ${this._config.horaInicio}h às ${this._config.horaFim}h (Horário de São Paulo)`;
-        }
-
-        // Próxima janela de execução
-        const proximaJanela = this._calcProximaJanela();
-
-        return {
-            allowed,
-            forceState: this.forceState,
-            forceReason: this.forceReason,
-            forceExpiresAt: this.forceExpiresAt,
-            forceExpiresAtDesc: this.forceExpiresAtDesc,
-            motivo,
-            dataAtualSP: dataKey,
-            horaAtualBRT: hora,
-            minutoAtualBRT: minuto,
-            diaAtualBRT: diaSemana,
-            timezone: 'America/Sao_Paulo (Horário de Brasília/SP)',
-            config: this._config,
-            overrides: this.overrides,
-            proximaJanela
-        };
-    }
-
-    _calcProximaJanela() {
-        if (!this._config.ativo) return null;
-        if (this.forceState === 'start') return { tipo: 'ativa agora (forçado)', expiraEm: this.forceExpiresAtDesc };
-
-        const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-        const now = new Date();
-
-        // Verifica os próximos 8 dias no fuso horário de São Paulo
-        for (let delta = 0; delta <= 8; delta++) {
-            const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
-            const { diaSemana: diaCandidato, hora: horaCandidato, minuto: minutoCandidato, dataKey: dataCandidato } = this._getSaoPauloTime(candidato);
-            const currentMin = (horaCandidato * 60) + minutoCandidato;
-
-            let hIni, hFim;
-            if (this.overrides.hasOwnProperty(dataCandidato)) {
-                const ov = this.overrides[dataCandidato];
-                if (ov === false) continue;
-                if (typeof ov === 'object') { hIni = ov.horaInicio; hFim = ov.horaFim; }
-            } else {
-                if (!this._config.diasSemana.includes(diaCandidato)) continue;
-                hIni = this._config.horaInicio;
-                hFim = this._config.horaFim;
-            }
-
-            const fimMin = timeToMinutes(hFim, 300);
-            if (delta === 0 && currentMin >= fimMin) continue;
-
-            const hIniStr = typeof hIni === 'number' && hIni <= 24 ? minutesToTimeStr(hIni * 60) : String(hIni);
-            const hFimStr = typeof hFim === 'number' && hFim <= 24 ? minutesToTimeStr(hFim * 60) : String(hFim);
-
-            return {
-                data: dataCandidato,
-                dia: diasNomes[diaCandidato],
-                horaInicio: hIniStr,
-                horaFim: hFimStr,
-                descricao: `${diasNomes[diaCandidato]} (${dataCandidato}) das ${hIniStr} às ${hFimStr} (Horário de SP)`
-            };
-        }
-
-        return null;
-    }
-
-    /**
-     * Calcula o próximo horário de encerramento agendado (timestamp e texto) no Horário de São Paulo.
-     */
-    _calcNextScheduledStopTime() {
-        const now = new Date();
-        const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-        for (let delta = 0; delta <= 8; delta++) {
-            const candidato = new Date(now.getTime() + delta * 24 * 60 * 60 * 1000);
-            const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime(candidato);
-            const currentMin = (hora * 60) + minuto;
-
-            let hFim = null;
-            if (this.overrides.hasOwnProperty(dataKey)) {
-                const ov = this.overrides[dataKey];
-                if (ov && typeof ov === 'object') {
-                    hFim = ov.horaFim;
+                const iniMin = timeToMinutes(ov.horaInicio, 0);
+                const fimMin = timeToMinutes(ov.horaFim, 1439);
+                const inside = currentMinutes >= iniMin && currentMinutes < fimMin;
+                if (inside) {
+                    const mode = ov.modo || 'performance';
+                    return {
+                        allowed: mode !== 'paused',
+                        mode: mode,
+                        reason: `Exceção para hoje (${dataKey}): ${mode === 'eco' ? 'Modo Econômico' : 'Modo Desempenho'} das ${ov.horaInicio} às ${ov.horaFim}`
+                    };
                 }
-            } else if (this._config.diasSemana.includes(diaSemana)) {
-                hFim = this._config.horaFim;
+                // Se estiver fora do horário da exceção e tiver sido definido explicitamente um modoFora diferente do padrão (ex: 'paused'), aplica.
+                // Caso contrário, continua para a grade regular do dia da semana (respeita o horário padrão da madrugada).
+                if (ov.modoFora && ov.modoFora === 'paused') {
+                    return { allowed: false, mode: 'paused', reason: `Fora da janela de exceção de ${dataKey} (Pausado conforme configuração da exceção)` };
+                }
+            }
+        }
+
+        // 2. Verifica a programação por dia da semana
+        const diaConfig = (this._config.dias && this._config.dias[String(diaSemana)]) || null;
+        if (diaConfig) {
+            if (diaConfig.ativo === false) {
+                const offMode = diaConfig.modoFora || 'paused';
+                if (offMode === 'paused') {
+                    return { allowed: false, mode: 'paused', reason: `${diaConfig.nome || 'Dia'} configurado como inativo` };
+                }
+                return { allowed: true, mode: 'eco', reason: `${diaConfig.nome || 'Dia'} inativo para desempenho (Operando em Modo Econômico)` };
             }
 
-            if (hFim !== null) {
-                const fimMin = timeToMinutes(hFim, 300);
-                // Se for hoje e já passou do horário de encerramento, procura o próximo dia
-                if (delta === 0 && currentMin >= fimMin) {
-                    continue;
-                }
+            const iniMin = timeToMinutes(diaConfig.horaInicio, 60);
+            const fimMin = timeToMinutes(diaConfig.horaFim, 330);
+            const isInside = currentMinutes >= iniMin && currentMinutes < fimMin;
 
-                // Cria o timestamp exato do encerramento (no fuso de SP: UTC-3)
-                const [year, month, day] = dataKey.split('-').map(Number);
-                const fimHour = Math.floor(fimMin / 60);
-                const fimMinute = fimMin % 60;
-                const stopDateUtc = new Date(Date.UTC(year, month - 1, day, fimHour + 3, fimMinute, 0));
-                const hFimStr = minutesToTimeStr(fimMin);
-
+            if (isInside) {
+                const mode = diaConfig.modo || 'performance';
                 return {
-                    iso: stopDateUtc.toISOString(),
-                    timestamp: stopDateUtc.getTime(),
-                    data: dataKey,
-                    horaFim: hFimStr,
-                    descricao: `${diasNomes[diaSemana]} (${dataKey}) às ${hFimStr} (Horário de SP)`
+                    allowed: mode !== 'paused',
+                    mode: mode,
+                    reason: `${diaConfig.nome || 'Hoje'} (${diaConfig.horaInicio} às ${diaConfig.horaFim}): ${mode === 'eco' ? 'Modo Econômico Residencial' : 'Modo Desempenho Máximo'}`
+                };
+            } else {
+                const fallbackMode = diaConfig.modoFora || this._config.modoPadraoForaHorario || 'eco';
+                if (fallbackMode === 'paused') {
+                    return { allowed: false, mode: 'paused', reason: `Fora da janela de ${diaConfig.nome || 'hoje'} (Pausado conforme grade)` };
+                }
+                return {
+                    allowed: true,
+                    mode: 'eco',
+                    reason: `Fora da janela de ${diaConfig.nome || 'hoje'} (Operando em Modo Econômico sem interferir na rede)`
                 };
             }
         }
 
-        // Fallback: 12 horas
-        const fallbackStop = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+        // 3. Fallback legado simples
+        const isDiaSemanaAtivo = (this._config.diasSemana || [1,2,3,4,5]).includes(diaSemana);
+        const iniMin = timeToMinutes(this._config.horaInicio, 60);
+        const fimMin = timeToMinutes(this._config.horaFim, 330);
+        const isPeak = isDiaSemanaAtivo && (currentMinutes >= iniMin && currentMinutes < fimMin);
+
+        if (isPeak) {
+            return { allowed: true, mode: 'performance', reason: 'Janela de Desempenho Máximo (Madrugada)' };
+        }
+
+        const defaultOff = this._config.modoPadraoForaHorario || 'eco';
+        if (defaultOff === 'paused') {
+            return { allowed: false, mode: 'paused', reason: 'Fora do horário programado (Pausado)' };
+        }
+
+        return { allowed: true, mode: 'eco', reason: 'Fora do horário de pico: Operando em Modo Econômico sem afetar celulares' };
+    }
+
+    /**
+     * Retorna true se a esteira tem autorização para rodar agora
+     */
+    isAllowedToRun() {
+        return this.getCurrentMode().allowed;
+    }
+
+    /**
+     * Retorna o modo ativo: 'performance', 'eco' ou 'paused'
+     */
+    getActiveMode() {
+        return this.getCurrentMode().mode;
+    }
+
+    /**
+     * Retorna o status completo e detalhes para o Painel Web
+     */
+    getStatus() {
+        const { diaSemana, hora, minuto, dataKey } = this._getSaoPauloTime();
+        const current = this.getCurrentMode();
+        const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
         return {
-            iso: fallbackStop.toISOString(),
-            timestamp: fallbackStop.getTime(),
-            descricao: `em 12h (${fallbackStop.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })})`
+            allowed: current.allowed,
+            mode: current.mode, // 'performance', 'eco', 'paused'
+            motivo: current.reason,
+            forceState: this.forceState,
+            forceReason: this.forceReason,
+            forceExpiresAt: this.forceExpiresAt,
+            forceExpiresAtDesc: this.forceExpiresAtDesc,
+            dataAtualSP: dataKey,
+            horaAtualBRT: `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}`,
+            diaAtualBRT: diaSemana,
+            diaNomeAtual: diasNomes[diaSemana],
+            timezone: 'America/Sao_Paulo (Horário de Brasília/SP)',
+            config: this._config,
+            overrides: this.overrides
         };
     }
 
     // ─── Controles Manuais ────────────────────────────────────────────────────
 
-    forceStart(reason = 'Manual via painel admin') {
-        this.forceState = 'start';
+    forceStart(reason = 'Manual via painel admin', targetMode = 'performance', durationHours = 4) {
+        this.forceState = targetMode === 'eco' ? 'eco' : 'performance';
         this.forceReason = reason;
-        const nextStop = this._calcNextScheduledStopTime();
-        this.forceExpiresAt = nextStop ? nextStop.timestamp : null;
-        this.forceExpiresAtDesc = nextStop ? nextStop.descricao : null;
+        const now = new Date();
+        const expires = new Date(now.getTime() + (durationHours * 60 * 60 * 1000));
+        this.forceExpiresAt = expires.getTime();
+        this.forceExpiresAtDesc = expires.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
         this._save();
-        console.log(`▶️  [Scheduler] Início manual ativado: ${reason}. O robô operará e pausará automaticamente no próximo horário agendado de término (${this.forceExpiresAtDesc || '05:00 SP'}).`);
-        this.emit('stateChange', { allowed: true, reason });
+        console.log(`▶️  [Scheduler] Modo manual acionado: ${this.forceState} (até ${this.forceExpiresAtDesc} SP) - Motivo: ${reason}`);
+        this.emit('stateChange', { allowed: true, mode: this.forceState, reason });
     }
 
     forceStop(reason = 'Manual via painel admin') {
@@ -337,8 +333,8 @@ class SchedulerService extends EventEmitter {
         this.forceExpiresAt = null;
         this.forceExpiresAtDesc = null;
         this._save();
-        console.log(`⏹  [Scheduler] Force Stop ativado: ${reason}`);
-        this.emit('stateChange', { allowed: false, reason });
+        console.log(`⏹  [Scheduler] Pausa manual total acionada: ${reason}`);
+        this.emit('stateChange', { allowed: false, mode: 'paused', reason });
     }
 
     clearForce() {
@@ -347,102 +343,81 @@ class SchedulerService extends EventEmitter {
         this.forceExpiresAt = null;
         this.forceExpiresAtDesc = null;
         this._save();
-        console.log('🔄 [Scheduler] Controle manual removido — voltando à grade padrão.');
-        this.emit('stateChange', { allowed: this.isAllowedToRun(), reason: 'Grade padrão restaurada' });
+        const current = this.getCurrentMode();
+        console.log('🔄 [Scheduler] Controle manual removido — voltando à programação automática.');
+        this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: 'Grade automática restaurada' });
     }
 
-    // ─── Configuração da Grade ────────────────────────────────────────────────
+    // ─── Atualização de Configuração ──────────────────────────────────────────
 
-    updateConfig(newConfig) {
-        const diasValidos = (newConfig.diasSemana || []).map(Number).filter(d => d >= 0 && d <= 6);
-        const rawIni = newConfig.horaInicio ?? this._config.horaInicio;
-        const rawFim = newConfig.horaFim ?? this._config.horaFim;
+    updateConfig(newConfig = {}) {
+        if (newConfig.ativo !== undefined) this._config.ativo = Boolean(newConfig.ativo);
+        if (newConfig.modoPadraoForaHorario !== undefined) this._config.modoPadraoForaHorario = newConfig.modoPadraoForaHorario;
 
-        const iniMin = timeToMinutes(rawIni, 60);
-        const fimMin = timeToMinutes(rawFim, 300);
-
-        if (iniMin < 0 || iniMin > 1440 || fimMin < 0 || fimMin > 1440) {
-            throw new Error('Horários devem ser válidos.');
+        // Se enviou configuração individual de dias
+        if (newConfig.dias && typeof newConfig.dias === 'object') {
+            for (const [dKey, dVal] of Object.entries(newConfig.dias)) {
+                if (this._config.dias[dKey]) {
+                    this._config.dias[dKey] = {
+                        ...this._config.dias[dKey],
+                        ...dVal
+                    };
+                }
+            }
         }
 
-        const horaInicio = minutesToTimeStr(iniMin);
-        const horaFim = minutesToTimeStr(fimMin);
+        // Se enviou horários quebrados padrão
+        if (newConfig.horaInicio) this._config.horaInicio = String(newConfig.horaInicio);
+        if (newConfig.horaFim) this._config.horaFim = String(newConfig.horaFim);
+        if (Array.isArray(newConfig.diasSemana)) this._config.diasSemana = newConfig.diasSemana.map(Number);
 
-        this._config = {
-            ativo: newConfig.ativo !== undefined ? Boolean(newConfig.ativo) : this._config.ativo,
-            diasSemana: diasValidos.length > 0 ? diasValidos : this._config.diasSemana,
-            horaInicio,
-            horaFim
-        };
         this._save();
-        console.log(`⚙️  [Scheduler] Configuração atualizada: ${JSON.stringify(this._config)}`);
-        this.emit('configChange', this._config);
-        
-        const allowed = this.isAllowedToRun();
-        this._lastAllowed = allowed;
-        this.emit('stateChange', { allowed, reason: 'Configuração da grade atualizada pelo usuário' });
+        console.log('⚙️  [Scheduler] Grade de horários atualizada com sucesso!');
+        const current = this.getCurrentMode();
+        this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: 'Configuração atualizada' });
     }
-
-    // ─── Overrides de Data ────────────────────────────────────────────────────
 
     setOverride(data, config) {
         if (config === false || config === null) {
             this.overrides[data] = false;
         } else {
-            const rawIni = config.horaInicio;
-            const rawFim = config.horaFim;
-            const iniMin = timeToMinutes(rawIni, 60);
-            const fimMin = timeToMinutes(rawFim, 300);
-            this.overrides[data] = { 
-                horaInicio: minutesToTimeStr(iniMin), 
-                horaFim: minutesToTimeStr(fimMin) 
+            this.overrides[data] = {
+                modo: config.modo || 'performance',
+                horaInicio: config.horaInicio || '01:00',
+                horaFim: config.horaFim || '05:30',
+                modoFora: config.modoFora || 'eco'
             };
         }
         this._save();
-        console.log(`📅 [Scheduler] Override configurado para ${data}:`, this.overrides[data]);
-        
-        const allowed = this.isAllowedToRun();
-        this._lastAllowed = allowed;
-        this.emit('stateChange', { allowed, reason: `Exceção de data (${data}) atualizada` });
+        console.log(`📅 [Scheduler] Exceção salva para ${data}:`, this.overrides[data]);
+        const current = this.getCurrentMode();
+        this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: `Exceção de ${data}` });
     }
 
     removeOverride(data) {
         if (this.overrides.hasOwnProperty(data)) {
             delete this.overrides[data];
             this._save();
-            console.log(`🗑️  [Scheduler] Override removido para ${data}`);
-            
-            const allowed = this.isAllowedToRun();
-            this._lastAllowed = allowed;
-            this.emit('stateChange', { allowed, reason: `Exceção de data (${data}) removida` });
+            console.log(`🗑️  [Scheduler] Exceção removida para ${data}`);
+            const current = this.getCurrentMode();
+            this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: `Exceção de ${data} removida` });
         }
     }
 
-    // ─── Tick Automático ──────────────────────────────────────────────────────
+    // ─── Loop de Verificação em Tempo Real (60s) ──────────────────────────────
 
     _startTick() {
-        // Verifica a cada 60s se o estado mudou (para logar e emitir evento)
         this._schedulerTickInterval = setInterval(() => {
-            const allowed = this.isAllowedToRun();
-            if (this._lastAllowed !== null && this._lastAllowed !== allowed) {
-                const msg = allowed
-                    ? '▶️  [Scheduler] Janela de processamento aberta! Retomando downloads...'
-                    : '⏹  [Scheduler] Janela de processamento encerrada. Aguardando próxima janela...';
-                console.log(msg);
-                this.emit('stateChange', { allowed, reason: 'Mudança automática de horário' });
+            const current = this.getCurrentMode();
+            const key = `${current.allowed}_${current.mode}`;
+            if (this._lastStatusKey !== null && this._lastStatusKey !== key) {
+                console.log(`⏰ [Scheduler] Mudança de estado da esteira: ${current.reason} [Modo: ${current.mode.toUpperCase()}]`);
+                this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: current.reason });
             }
-            this._lastAllowed = allowed;
-        }, 60 * 1000);
+            this._lastStatusKey = key;
+        }, 30 * 1000);
 
-        // Garante que o intervalo não impeça o processo de encerrar
         if (this._schedulerTickInterval.unref) this._schedulerTickInterval.unref();
-    }
-
-    stop() {
-        if (this._schedulerTickInterval) {
-            clearInterval(this._schedulerTickInterval);
-            this._schedulerTickInterval = null;
-        }
     }
 }
 

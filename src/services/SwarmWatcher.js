@@ -108,22 +108,27 @@ class SwarmWatcher {
     async checkWatchlist() {
         if (this.isChecking || !this.queueManager) return;
         if (!SchedulerService.isAllowedToRun()) return;
+
+        const isEco = SchedulerService.getActiveMode() === 'eco';
+        const limitCount = isEco ? 1 : 10;
         this.isChecking = true;
 
         try {
-            // Pega até 15 itens monitorados dando prioridade máxima para pedidos de clientes
+            // Em modo eco, verifica apenas 1 item por ciclo para economizar requisições e sockets
             const res = await db.query(`
                 SELECT * FROM swarm_watchlist 
+                WHERE (last_checked IS NULL OR last_checked < NOW() - INTERVAL '${isEco ? '30 minutes' : '3 minutes'}')
                 ORDER BY 
                     CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END,
                     last_checked ASC NULLS FIRST 
-                LIMIT 15
+                LIMIT ${limitCount}
             `);
 
             const items = res.rows;
             if (items.length === 0) return;
 
             console.log(`🔍 [SWARM WATCHER] Verificando sementes (>= 1 seeder) para ${items.length} item(ns) em espera...`);
+
 
             for (const it of items) {
                 const title = it.title;

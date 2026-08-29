@@ -2,8 +2,10 @@ const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../config');
 const VideoProcessor = require('./VideoProcessor');
+const SchedulerService = require('./SchedulerService');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+
 
 class TelegramUploader {
     static getInstance() {
@@ -143,7 +145,7 @@ class TelegramUploader {
         const isDub = metadata.isDublado || (metadata.audio && metadata.audio.toLowerCase().includes('dublado'));
         const isLeg = metadata.isLegendado || (metadata.audio && metadata.audio.toLowerCase().includes('legendado'));
         let audioTexto = 'Dublado (Áudio PT-BR)';
-        if (isDub && isLeg) audioTexto = 'Dual Áudio (Dublado + Legendado)';
+        if (isDub && isLeg) audioTexto = 'Dub/Leg (Dublado + Legendado)';
         else if (isLeg) audioTexto = 'Legendado (PT-BR)';
         else if (metadata.audio) audioTexto = metadata.audio;
 
@@ -179,7 +181,7 @@ class TelegramUploader {
             const client = await this.getClient();
 
             // Determina a etiqueta de áudio resumida
-            const audioEtiqueta = isLeg ? 'Legendado' : 'Dublado';
+            const audioEtiqueta = (isDub && isLeg) ? 'Dub/Leg' : (isLeg ? '💬 Legendado' : '🔊 Dublado');
             const totalBytes = fs.statSync(filePath).size;
             const formatBytesHelper = (bytes) => {
                 const gb = bytes / (1024 * 1024 * 1024);
@@ -192,9 +194,9 @@ class TelegramUploader {
             // Upload ultrarrápido com pipeline paralelo contínuo
             const inputFile = await this.uploadBigFileFast(client, filePath, (fraction) => {
                 const now = Date.now();
-                const percent = Math.min(100, Math.max(0, fraction * 100)).toFixed(1);
-                const elapsedSec = Math.max(1, (now - uploadStartTime) / 1000);
-                const uploadedBytes = totalBytes * fraction;
+                const percent = Math.min(100, (fraction * 100).toFixed(1));
+                const elapsedSec = Math.max(1, Math.floor((now - uploadStartTime) / 1000));
+                const uploadedBytes = Math.floor(fraction * totalBytes);
                 const uploadedStr = formatBytesHelper(uploadedBytes);
 
                 const speedMBs = (uploadedBytes / (1024 * 1024) / elapsedSec).toFixed(2);
@@ -212,7 +214,7 @@ class TelegramUploader {
                     ? `${nome} (T${metadata.season || 1}E${metadata.episode || 1})`
                     : nome;
 
-                const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${uploadTitle}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | 🔊 ${audioEtiqueta}\x1b[0m`;
+                const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${uploadTitle}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | ${audioEtiqueta}\x1b[0m`;
 
                 if (process.stdout.isTTY) {
                     process.stdout.write(`\r${logLine} `);
@@ -252,7 +254,27 @@ class TelegramUploader {
             const doc = sentMessage.media?.document;
             const fileId = doc ? doc.id.toString() : null;
 
-            console.log(`✅ Vídeo enviado com sucesso ao Storage! MessageId: ${messageId}, FileId: ${fileId}...`);
+            // 🛡️ Verificação de Integridade Imediata no Telegram (Zero Mídia Quebrada)
+            // Valida o episódio que acabou de subir: se estiver quebrado/nulo, apaga na hora e aborta
+            const [checkMsg] = await client.getMessages(this.storageGroupId, { ids: [messageId] });
+            if (!checkMsg || !checkMsg.media || !checkMsg.media.document) {
+                console.error(`❌ [Upload Inválido] Telegram não indexou a mídia para MessageId ${messageId}. Removendo do storage...`);
+                await this.deleteStorageMessages([messageId]).catch(() => {});
+                throw new Error(`Upload inválido: Telegram retornou mensagem sem mídia para MessageId ${messageId}`);
+            }
+
+            const docAttr = (checkMsg.media.document.attributes || []).find(a => a.className === 'DocumentAttributeVideo');
+            const checkedDur = docAttr?.duration || 0;
+            const checkedSize = checkMsg.media.document.size;
+            const checkedSizeMB = (checkedSize / (1024 * 1024)).toFixed(1);
+
+            if (!checkedSize || checkedSize === 0) {
+                console.error(`❌ [Upload Inválido] Mídia com tamanho 0 bytes no Telegram (MessageId: ${messageId}). Removendo do storage...`);
+                await this.deleteStorageMessages([messageId]).catch(() => {});
+                throw new Error(`Upload corrompido: arquivo com 0 bytes no Telegram para MessageId ${messageId}`);
+            }
+
+            console.log(`🛡️ [Integridade Telegram] Vídeo verificado com sucesso no Storage: ${checkedSizeMB} MB, ${checkedDur}s de duração (MessageId: ${messageId}).`);
 
             return {
                 success: true,
@@ -284,12 +306,14 @@ class TelegramUploader {
         let nextPart = 0;
         let uploadedCount = 0;
         
-        // Criar pool de 8 conexões de socket TCP independentes para superar o limite de 1.6 MB/s por socket
-        const poolSize = Math.min(8, Math.max(2, Math.ceil(partCount / 10)));
+        // Pool otimizado de sockets TCP: Modo Econômico usa 1 socket com micro-espera para não afogar o upstream residencial
+        const isEcoMode = SchedulerService.getActiveMode() === 'eco';
+        const maxSockets = isEcoMode ? (config.ECO_TELEGRAM_SOCKETS || 1) : (config.TELEGRAM_UPLOAD_MAX_SOCKETS || 4);
+        const poolSize = Math.min(maxSockets, Math.max(1, Math.ceil(partCount / 25)));
         const senders = [];
         const dcId = client.session.dcId;
 
-        console.log(`\x1b[35m🔌 Abrindo ${poolSize} conexões de rede TCP paralelas com os servidores do Telegram (DC${dcId})...\x1b[0m`);
+        console.log(`\x1b[35m🔌 [QoS Upload MTProto] Modo ${isEcoMode ? '🍃 ECONÔMICO (1 canal TCP com controle de fluxo)' : '⚡ DESEMPENHO (' + poolSize + ' canais TCP)'} (DC${dcId})...\x1b[0m`);
         for (let i = 0; i < poolSize; i++) {
             try {
                 const sender = client._createExportedSender(dcId);
@@ -306,9 +330,9 @@ class TelegramUploader {
             senders.push(fallback);
         }
 
-        console.log(`\x1b[35m🚀 ${senders.length} canais TCP paralelos ativados para velocidade máxima de upload!\x1b[0m`);
+        console.log(`\x1b[35m🚀 ${senders.length} canal(is) TCP ativado(s) para upload MTProto!\x1b[0m`);
 
-        const totalWorkers = Math.min(senders.length * 2, partCount);
+        const totalWorkers = senders.length;
 
         try {
             const worker = async (workerIndex) => {
@@ -344,13 +368,21 @@ class TelegramUploader {
                     if (onProgress) {
                         onProgress(uploadedCount / partCount);
                     }
+
+                    // No modo econômico, insere um delay cooperativo de 60ms entre pacotes de 512KB para evitar saturação do buffer upstream
+                    if (isEcoMode) {
+                        await new Promise(r => setTimeout(r, 60));
+                    } else {
+                        await new Promise(r => setImmediate(r));
+                    }
                 }
             };
+
 
             await Promise.all(Array.from({ length: totalWorkers }, (_, idx) => worker(idx)));
         } finally {
             await fileHandle.close().catch(() => {});
-            // Desconectar os senders auxiliares para liberar sockets
+            // Desconectar os senders auxiliares para liberar sockets imediatamente
             for (const sender of senders) {
                 try {
                     await sender.disconnect();
@@ -358,11 +390,104 @@ class TelegramUploader {
             }
         }
 
+
         return new Api.InputFileBig({
             id: fileId,
             parts: partCount,
             name: fileName
         });
+    }
+
+    /**
+     * Varre todos os messageIds do catálogo no Telegram em lotes (batches de 50)
+     * e retorna o relatório completo de integridade (itens válidos vs ausentes/quebrados).
+     */
+    async verifyCatalogIntegrity(catalogo) {
+        const client = await this.getClient();
+        const itemsToCheck = [];
+
+        // 1. Mapeia todos os messageIds dos filmes
+        for (const filme of (catalogo.filmes || [])) {
+            if (filme.messageId) {
+                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.messageId), ano: filme.ano, tmdbId: filme.tmdbId });
+            }
+            if (filme.versoes?.dublado?.messageId) {
+                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.dublado.messageId), versao: 'dublado', ano: filme.ano, tmdbId: filme.tmdbId });
+            }
+            if (filme.versoes?.legendado?.messageId && filme.versoes?.legendado?.messageId !== filme.versoes?.dublado?.messageId) {
+                itemsToCheck.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.legendado.messageId), versao: 'legendado', ano: filme.ano, tmdbId: filme.tmdbId });
+            }
+        }
+
+        // 2. Mapeia todos os messageIds dos episódios de séries
+        for (const serie of (catalogo.series || [])) {
+            for (const temp of (serie.temporadas || [])) {
+                for (const ep of (temp.episodios || [])) {
+                    if (ep.messageId) {
+                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.messageId), tmdbId: serie.tmdbId });
+                    }
+                    if (ep.versoes?.dublado?.messageId) {
+                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.dublado.messageId), versao: 'dublado', tmdbId: serie.tmdbId });
+                    }
+                    if (ep.versoes?.legendado?.messageId && ep.versoes?.legendado?.messageId !== ep.versoes?.dublado?.messageId) {
+                        itemsToCheck.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.legendado.messageId), versao: 'legendado', tmdbId: serie.tmdbId });
+                    }
+                }
+            }
+        }
+
+        // Remove duplicados de messageId na lista de checagem
+        const uniqueMap = new Map();
+        for (const item of itemsToCheck) {
+            if (!uniqueMap.has(item.messageId)) uniqueMap.set(item.messageId, item);
+        }
+        const uniqueItems = Array.from(uniqueMap.values());
+
+        const results = {
+            total: uniqueItems.length,
+            validos: [],
+            ausentes: [],
+            corrompidos: []
+        };
+
+        const batchSize = 50;
+        for (let i = 0; i < uniqueItems.length; i += batchSize) {
+            const batch = uniqueItems.slice(i, i + batchSize);
+            const msgIds = batch.map(b => b.messageId);
+
+            try {
+                const messages = await client.getMessages(this.storageGroupId, { ids: msgIds });
+                for (let j = 0; j < batch.length; j++) {
+                    const item = batch[j];
+                    const msg = messages[j];
+
+                    if (!msg || !msg.media || !msg.media.document) {
+                        results.ausentes.push(item);
+                    } else {
+                        const doc = msg.media.document;
+                        const videoAttr = (doc.attributes || []).find(a => a.className === 'DocumentAttributeVideo');
+                        const duration = videoAttr?.duration || 0;
+                        const sizeMB = (doc.size / (1024 * 1024)).toFixed(1);
+
+                        if (doc.size === 0) {
+                            results.corrompidos.push({ ...item, motivo: 'Tamanho 0 bytes' });
+                        } else {
+                            results.validos.push({
+                                ...item,
+                                sizeMB: parseFloat(sizeMB),
+                                durationSec: duration,
+                                width: videoAttr?.w,
+                                height: videoAttr?.h
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`⚠️ Erro ao verificar lote de mensagens no Telegram:`, err.message);
+            }
+        }
+
+        return results;
     }
 }
 

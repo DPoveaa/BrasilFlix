@@ -195,23 +195,17 @@ class StremioService {
 
         if (type === 'movie' || (!id.includes(':') && !id.startsWith('bf_serie_'))) {
             let filme = null;
-            if (id.startsWith('bf_movie_')) {
-                const numId = parseInt(id.replace('bf_movie_', ''), 10);
-                filme = (this.catalogoManager.catalogo.filmes || []).find(f => f.id === numId);
+            if (id.startsWith('bf_movie_') || id.startsWith('bf_filme_')) {
+                const numId = id.replace(/^(bf_movie_|bf_filme_)/, '');
+                filme = this.catalogoManager.buscarFilmePorId(numId);
             } else {
-                filme = (this.catalogoManager.catalogo.filmes || []).find(f => 
-                    f.imdbId === id || 
-                    f.tmdbId == id || 
-                    (f.tmdbId && `tmdb:${f.tmdbId}` === id) ||
-                    f.nome?.toLowerCase() === id.toLowerCase() ||
-                    f.nomeOriginal?.toLowerCase() === id.toLowerCase()
-                );
+                filme = this.catalogoManager.buscarFilmePorId(id);
             }
 
             if (!filme) return { streams: [] };
 
-            const temDub = filme.isDublado || !!filme.versoes?.dublado;
-            const temLeg = filme.isLegendado || !!filme.versoes?.legendado;
+            const temDub = !!(filme.isDublado || filme.versoes?.dublado);
+            const temLeg = !!(filme.isLegendado || filme.versoes?.legendado);
 
             if (temDub) {
                 streams.push({
@@ -228,14 +222,6 @@ class StremioService {
                     url: `${baseUrl}/stream/video/${userToken}/filme/${filme.id}/legendado`
                 });
             }
-
-            if (!temDub && !temLeg) {
-                streams.push({
-                    name: 'BrasilFlix [1080p]',
-                    title: `▶️ ${filme.nome}\n✨ 1080p Full HD\n[${tagCota}]`,
-                    url: `${baseUrl}/stream/video/${userToken}/filme/${filme.id}/dublado`
-                });
-            }
         } else if (type === 'series' || id.includes(':') || id.startsWith('bf_serie_')) {
             // ID formato: bf_serie_123:1:1 ou tt12345:1:1
             const parts = id.split(':');
@@ -245,16 +231,10 @@ class StremioService {
 
             let serie = null;
             if (serieIdOrImdb.startsWith('bf_serie_')) {
-                const numId = parseInt(serieIdOrImdb.replace('bf_serie_', ''), 10);
-                serie = (this.catalogoManager.catalogo.series || []).find(s => s.id === numId);
+                const numId = serieIdOrImdb.replace('bf_serie_', '');
+                serie = this.catalogoManager.buscarSeriePorId(numId);
             } else {
-                serie = (this.catalogoManager.catalogo.series || []).find(s => 
-                    s.imdbId === serieIdOrImdb || 
-                    s.tmdbId == serieIdOrImdb || 
-                    (s.tmdbId && `tmdb:${s.tmdbId}` === serieIdOrImdb) ||
-                    s.nome?.toLowerCase() === serieIdOrImdb.toLowerCase() ||
-                    s.nomeOriginal?.toLowerCase() === serieIdOrImdb.toLowerCase()
-                );
+                serie = this.catalogoManager.buscarSeriePorId(serieIdOrImdb);
             }
 
             if (!serie) return { streams: [] };
@@ -264,8 +244,8 @@ class StremioService {
 
             if (!ep) return { streams: [] };
 
-            const temDub = !ep.audio?.toLowerCase().includes('legendado') || !!ep.versoes?.dublado;
-            const temLeg = ep.audio?.toLowerCase().includes('legendado') || !!ep.versoes?.legendado;
+            const temDub = !!(ep.isDublado || ep.versoes?.dublado);
+            const temLeg = !!(ep.isLegendado || ep.versoes?.legendado);
 
             if (temDub) {
                 streams.push({
@@ -280,14 +260,6 @@ class StremioService {
                     name: 'BrasilFlix [1080p]',
                     title: `📺 ${serie.nome} T${seasonNum}E${epNum}\n💬 Legendado (PT-BR) • 1080p Full HD\n[${tagCota}]`,
                     url: `${baseUrl}/stream/video/${userToken}/serie/${serie.id}/${seasonNum}/${epNum}/legendado`
-                });
-            }
-
-            if (!temDub && !temLeg) {
-                streams.push({
-                    name: 'BrasilFlix [1080p]',
-                    title: `📺 ${serie.nome} T${seasonNum}E${epNum}\n✨ 1080p Full HD\n[${tagCota}]`,
-                    url: `${baseUrl}/stream/video/${userToken}/serie/${serie.id}/${seasonNum}/${epNum}/dublado`
                 });
             }
         }

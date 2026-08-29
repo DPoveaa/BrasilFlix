@@ -183,7 +183,9 @@ class MediaSearchService {
             const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 3);
             const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
             if (targetCount >= 3) break;
+            await new Promise(r => setTimeout(r, 100));
         }
+
 
         // Filtro rigoroso: descarta categoricamente qualquer release 4K/2160p, amostras/trailers e arquivos de tamanho inválido
         let ptBrResults = allResults.filter(r => {
@@ -205,12 +207,32 @@ class MediaSearchService {
             } else if (tipo === 'serie') {
                 // Se não for season pack (tamanho < 3GB), o episódio avulso deve ter ao menos 80 MB
                 if (sizeMB > 0 && sizeMB < 80) return false;
+
+                // 4. Validação de Temporada Exata para Séries (impede que torrents de S01 sejam usados quando buscando S03/S04)
+                if (season) {
+                    const sNum = parseInt(season, 10);
+                    const titleLower = r.title.toLowerCase();
+                    const rangeMatch = titleLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/);
+                    const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})\b/) || titleLower.match(/(?:season|temporada)[._ -]*0*(\d{1,2})/);
+
+                    if (rangeMatch) {
+                        const startS = parseInt(rangeMatch[1], 10);
+                        const endS = parseInt(rangeMatch[2], 10);
+                        if (sNum < startS || sNum > endS) return false;
+                    } else if (singleSeasonMatch) {
+                        const foundS = parseInt(singleSeasonMatch[1], 10);
+                        if (foundS !== sNum) return false;
+                    }
+                }
             }
 
             return true;
         });
 
-        if (forcarNaoCam) {
+        const currentYear = new Date().getFullYear();
+        const isOldCatalogMovie = tipo === 'filme' && ano && parseInt(ano, 10) < currentYear;
+
+        if (forcarNaoCam || isOldCatalogMovie) {
             ptBrResults = ptBrResults.filter(r => !r.isCam);
         } else {
             // Se já existirem versões oficiais (WEB-DL, BluRay, HDTV) com sementes ativas, descarta categoricamente versões de Cinema (CAM)
@@ -230,7 +252,11 @@ class MediaSearchService {
                 const ptSubs = await this.getOpenSubtitlesPT(imdbId, tipo, season, episode);
                 if (ptSubs.length > 0) {
                     console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando versões 1080p e Season Packs com sementes ativas...`);
-                    const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { season, episode });
+                    const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { 
+                        season, 
+                        episode,
+                        originalLanguage: options.originalLanguage || options.idiomaOriginal
+                    });
                     for (const st of fallbackStreams) {
                         if (!ptBrResults.some(r => r.infoHash === st.infoHash)) {
                             st.isPtBr = true;
@@ -311,6 +337,12 @@ class MediaSearchService {
                 // Marcação explícita de PT-BR / Dublado
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
 
+                // Bloqueia categoricamente releases russas, scam/bookmakers e tags de áudio russo (.D., 1xbet, etc.)
+                const isRussianOrScam = /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|rus[._ -]?sub|sub[._ -]?rus|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\)|звук|лицензия|itunes[._ -]?ru|itunes\.r|hdrip-avc|web-dlrip|web-rip\.rus)\b/i.test(rawTitle) || /\b(1xbet|mostbet|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\))\b/i.test(title);
+                if (isRussianOrScam && !isBrazilianGroup && !isPtBrExplicit) {
+                    continue;
+                }
+
                 // Marcação explícita de Portugal (NUNCA aplicada a grupos brasileiros)
                 const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && (/\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title));
 
@@ -386,7 +418,12 @@ class MediaSearchService {
 
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio';
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
-                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i.test(title);
+                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(title);
+                const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|dcprip|line\.audio|line[-_ ]audio)\b/i.test(title);
+                if (isScam) continue;
+                if (isRussian && !isDublado) continue;
+
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
                 const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title);
 
@@ -446,7 +483,15 @@ class MediaSearchService {
                 const subs = res.data?.subtitles || [];
                 const ptSubs = subs.filter(s => {
                     const lang = (s.lang || s.language || '').toLowerCase();
-                    return ['pob', 'por', 'pt', 'pt-br', 'ptbr', 'brazilian'].includes(lang);
+                    const isPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt');
+                    if (isPtPt) return false;
+                    return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
+                }).sort((a, b) => {
+                    const langA = (a.lang || a.language || '').toLowerCase();
+                    const langB = (b.lang || b.language || '').toLowerCase();
+                    const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 10 : 1;
+                    const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 10 : 1;
+                    return scoreB - scoreA;
                 });
 
                 if (ptSubs.length > 0) {
@@ -481,8 +526,17 @@ class MediaSearchService {
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
 
-                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts)\b/i.test(title);
+                // Rejeita categoricamente qualquer release com CAM ou gravação de cinema
+                const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(title);
                 if (isCam) continue;
+
+                // Rejeita categoricamente releases russos (D, D1, D2, DVO, MVO, AVO, Line.Audio, LostFilm, etc.) e sites de apostas/scam
+                const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
+                const isScam = /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|1x_bet|1x-bet)\b/i.test(title);
+                const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
+                if ((isRussian || isScam) && origLang !== 'ru' && origLang !== 'rus') {
+                    continue;
+                }
 
                 const is4k = /\b(2160p|4k|uhd)\b/i.test(title);
                 if (is4k) continue;
@@ -722,7 +776,13 @@ class MediaSearchService {
             const maxAllowedBytes = opts.tipo === 'serie' ? (80 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
             if (sizeBytes > maxAllowedBytes) return;
 
-            const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp)\b/i.test(name);
+            const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(name);
+            const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|dcprip|line\.audio|line[-_ ]audio)\b/i.test(name);
+            if (isScam) return;
+            const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
+            if (isRussian && origLang !== 'ru' && origLang !== 'rus' && !isDublado) return;
+
+            const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(name);
             const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(name) && !isCam;
             const is1080p = (/\b(1080p|fhd|fullhd|bluray|web-dl|1080)\b/i.test(name)) && !isCam;
 

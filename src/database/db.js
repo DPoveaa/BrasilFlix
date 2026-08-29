@@ -37,32 +37,41 @@ function getPool() {
             database: config.DB_NAME,
             user: config.DB_USER,
             password: config.DB_PASSWORD,
-            max: 25,
-            idleTimeoutMillis: 60000,
-            connectionTimeoutMillis: 15000,
-            keepAlive: true
+            max: 30,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 20000,
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 10000
         });
 
         pool.on('error', (err) => {
-            console.error('❌ Erro inesperado no Pool PostgreSQL:', err.message);
+            console.error('❌ Erro no Pool PostgreSQL (recuperando):', err.message);
         });
     }
     return pool;
 }
 
-async function query(text, params) {
+async function query(text, params, maxRetries = 3) {
     const p = getPool();
-    try {
-        const res = await p.query(text, params);
-        return res;
-    } catch (err) {
-        if (err.message && (err.message.includes('timeout') || err.message.includes('Connection terminated') || err.message.includes('ECONNRESET'))) {
-            console.warn('⚠️ Tentando reconectar e reexecutar query PostgreSQL após timeout...');
-            await new Promise(r => setTimeout(r, 1000));
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
             const res = await p.query(text, params);
             return res;
+        } catch (err) {
+            const isTransient = err.message && (
+                err.message.includes('timeout') ||
+                err.message.includes('Connection terminated') ||
+                err.message.includes('ECONNRESET') ||
+                err.message.includes('closed') ||
+                err.message.includes('Connection refused')
+            );
+            if (isTransient && attempt < maxRetries) {
+                const delayMs = attempt * 800;
+                await new Promise(r => setTimeout(r, delayMs));
+                continue;
+            }
+            throw err;
         }
-        throw err;
     }
 }
 
@@ -126,6 +135,9 @@ async function createTables() {
         ALTER TABLE series ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS em_lancamento BOOLEAN DEFAULT false;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS status_serie VARCHAR(50) DEFAULT 'Ended';
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS temporadas_meta JSONB DEFAULT '{}';
 
         CREATE TABLE IF NOT EXISTS episodios (
             id BIGSERIAL PRIMARY KEY,
@@ -148,6 +160,8 @@ async function createTables() {
         ALTER TABLE episodios ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE episodios ALTER COLUMN serie_id TYPE BIGINT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS still_url TEXT;
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,
@@ -157,6 +171,35 @@ async function createTables() {
             tipo VARCHAR(50) DEFAULT 'filme',
             is_assinante BOOLEAN DEFAULT false,
             processado BOOLEAN DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS feedbacks (
+            id BIGSERIAL PRIMARY KEY,
+            user_id VARCHAR(100),
+            username VARCHAR(255),
+            tipo VARCHAR(50) DEFAULT 'sugestao',
+            titulo VARCHAR(255),
+            mensagem TEXT NOT NULL,
+            contato VARCHAR(255),
+            status VARCHAR(50) DEFAULT 'pendente',
+            notified BOOLEAN DEFAULT false,
+            media_id BIGINT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false;
+        ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS media_id BIGINT;
+
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id BIGSERIAL PRIMARY KEY,
+            user_id VARCHAR(100) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            media_id BIGINT,
+            media_type VARCHAR(50),
+            link TEXT,
+            read BOOLEAN DEFAULT false,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
@@ -248,10 +291,13 @@ async function createTables() {
             mes_ano VARCHAR(10) NOT NULL,
             filmes_assistidos INTEGER DEFAULT 0,
             episodios_assistidos INTEGER DEFAULT 0,
+            itens_consumidos JSONB DEFAULT '{}',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             UNIQUE(identificador, mes_ano)
         );
+
+        ALTER TABLE consumo_gratis ADD COLUMN IF NOT EXISTS itens_consumidos JSONB DEFAULT '{}';
 
         CREATE TABLE IF NOT EXISTS admin_users (
             id SERIAL PRIMARY KEY,
@@ -262,12 +308,75 @@ async function createTables() {
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            telegram_id BIGINT,
+            is_vip BOOLEAN DEFAULT false,
+            vip_expira TIMESTAMP WITH TIME ZONE,
+            favoritos JSONB DEFAULT '[]',
+            historico JSONB DEFAULT '[]',
+            notificacoes JSONB DEFAULT '[]',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        ALTER TABLE usuarios ALTER COLUMN email DROP NOT NULL;
+        ALTER TABLE usuarios ALTER COLUMN password_hash DROP NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_usuarios_telegram_id ON usuarios(telegram_id);
+
+        CREATE TABLE IF NOT EXISTS avaliacoes_comentarios (
+            id SERIAL PRIMARY KEY,
+            media_id VARCHAR(100) NOT NULL,
+            media_type VARCHAR(50) NOT NULL,
+            user_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+            username VARCHAR(100) NOT NULL,
+            rating SMALLINT DEFAULT 10,
+            comentario TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS watch_party_rooms (
+            id VARCHAR(50) PRIMARY KEY,
+            host_id VARCHAR(100),
+            host_name VARCHAR(255),
+            host_token VARCHAR(255),
+            media_info JSONB,
+            playback_time NUMERIC DEFAULT 0,
+            is_playing BOOLEAN DEFAULT false,
+            host_only_controls BOOLEAN DEFAULT true,
+            last_activity BIGINT,
+            wheel_items JSONB DEFAULT '[]',
+            members_data JSONB DEFAULT '[]',
+            created_at BIGINT
+        );
+
+        CREATE TABLE IF NOT EXISTS lancamentos_notificados (
+            id SERIAL PRIMARY KEY,
+            tipo VARCHAR(50) NOT NULL,
+            media_id VARCHAR(100) NOT NULL,
+            season_num INTEGER DEFAULT 0,
+            audio VARCHAR(50) NOT NULL,
+            notified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(tipo, media_id, season_num, audio)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_watch_party_activity ON watch_party_rooms(last_activity);
+        CREATE INDEX IF NOT EXISTS idx_lancamentos_media ON lancamentos_notificados(tipo, media_id);
+        CREATE INDEX IF NOT EXISTS idx_comentarios_media ON avaliacoes_comentarios(media_type, media_id);
+
         CREATE INDEX IF NOT EXISTS idx_filmes_nome ON filmes(nome);
         CREATE INDEX IF NOT EXISTS idx_series_nome ON series(nome);
         CREATE INDEX IF NOT EXISTS idx_episodios_serie_season ON episodios(serie_id, temporada_numero);
         CREATE INDEX IF NOT EXISTS idx_pedidos_user ON pedidos(user_id);
         CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_jobs(status, priority);
         CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
+        CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
+        CREATE INDEX IF NOT EXISTS idx_usuarios_username ON usuarios(username);
+        CREATE INDEX IF NOT EXISTS idx_usuarios_telegram ON usuarios(telegram_id);
     `);
 
     console.log('✅ Esquemas e tabelas PostgreSQL prontos com chaves BIGINT!');

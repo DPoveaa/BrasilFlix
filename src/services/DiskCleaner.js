@@ -57,10 +57,18 @@ class DiskCleaner {
     }
 
     /**
+     * Alias de conveniência para limpeza de arquivos temporários
+     */
+    async cleanTempFiles(activeFilePaths = []) {
+        return this.scanAndClean(activeFilePaths);
+    }
+
+    /**
      * Executa varredura profunda e remoção de arquivos órfãos
      * @param {Array<string>} activeFilePaths - Caminhos de arquivos atualmente em uso/download/processamento
      */
     async scanAndClean(activeFilePaths = []) {
+
         if (this.isRunning) return { cleanedCount: 0, freedBytes: 0 };
         this.isRunning = true;
 

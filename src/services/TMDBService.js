@@ -1,5 +1,8 @@
 const axios = require('axios');
+const https = require('https');
 const config = require('../../config');
+
+const httpsAgent = new https.Agent({ keepAlive: true, timeout: 25000 });
 
 class TMDBService {
     constructor() {
@@ -7,6 +10,30 @@ class TMDBService {
         this.language = config.TMDB_LANGUAGE || 'pt-BR';
         this.baseUrl = 'https://api.themoviedb.org/3';
         this.imageBaseUrl = 'https://image.tmdb.org/t/p';
+    }
+
+    async _getWithRetry(endpoint, params = {}, timeout = 15000, maxRetries = 2) {
+        const fullParams = {
+            api_key: this.apiKey,
+            language: this.language,
+            ...params
+        };
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await axios.get(`${this.baseUrl}${endpoint}`, {
+                    params: fullParams,
+                    timeout: timeout,
+                    httpsAgent: httpsAgent
+                });
+                return response.data;
+            } catch (err) {
+                if (attempt < maxRetries) {
+                    await new Promise(r => setTimeout(r, 1200 * attempt));
+                    continue;
+                }
+                throw err;
+            }
+        }
     }
 
     getPosterUrl(posterPath, size = 'w500') {
@@ -76,18 +103,11 @@ class TMDBService {
     async searchMulti(query) {
         try {
             if (!query || query.trim().length === 0) return [];
-            
-            const response = await axios.get(`${this.baseUrl}/search/multi`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language,
-                    query: query.trim(),
-                    include_adult: false
-                },
-                timeout: 10000
+            const data = await this._getWithRetry('/search/multi', {
+                query: query.trim(),
+                include_adult: false
             });
-
-            const results = response.data.results || [];
+            const results = data.results || [];
             const formatted = results
                 .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
                 .map(item => this.formatItem(item));
@@ -102,19 +122,13 @@ class TMDBService {
     async searchMovie(query, year = null) {
         try {
             const params = {
-                api_key: this.apiKey,
-                language: this.language,
                 query: query.trim(),
                 include_adult: false
             };
             if (year) params.year = year;
 
-            const response = await axios.get(`${this.baseUrl}/search/movie`, {
-                params,
-                timeout: 10000
-            });
-
-            const results = response.data.results || [];
+            const data = await this._getWithRetry('/search/movie', params);
+            const results = data.results || [];
             const formatted = results.map(item => this.formatItem({ ...item, media_type: 'movie' }));
             return this.rankSearchResults(formatted, query);
         } catch (error) {
@@ -126,19 +140,13 @@ class TMDBService {
     async searchTV(query, year = null) {
         try {
             const params = {
-                api_key: this.apiKey,
-                language: this.language,
                 query: query.trim(),
                 include_adult: false
             };
             if (year) params.first_air_date_year = year;
 
-            const response = await axios.get(`${this.baseUrl}/search/tv`, {
-                params,
-                timeout: 10000
-            });
-
-            const results = response.data.results || [];
+            const data = await this._getWithRetry('/search/tv', params);
+            const results = data.results || [];
             const formatted = results.map(item => this.formatItem({ ...item, media_type: 'tv' }));
             return this.rankSearchResults(formatted, query);
         } catch (error) {
@@ -149,15 +157,10 @@ class TMDBService {
 
     async getMovieDetails(tmdbId) {
         try {
-            const response = await axios.get(`${this.baseUrl}/movie/${tmdbId}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language,
-                    append_to_response: 'external_ids'
-                },
-                timeout: 10000
+            const data = await this._getWithRetry(`/movie/${tmdbId}`, {
+                append_to_response: 'external_ids'
             });
-            return this.formatItem({ ...response.data, media_type: 'movie' });
+            return this.formatItem({ ...data, media_type: 'movie' });
         } catch (error) {
             console.error(`❌ Erro ao obter detalhes do filme ${tmdbId}:`, error.message);
             return null;
@@ -166,15 +169,10 @@ class TMDBService {
 
     async getTVDetails(tmdbId) {
         try {
-            const response = await axios.get(`${this.baseUrl}/tv/${tmdbId}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language,
-                    append_to_response: 'external_ids'
-                },
-                timeout: 10000
+            const data = await this._getWithRetry(`/tv/${tmdbId}`, {
+                append_to_response: 'external_ids'
             });
-            return this.formatTVDetails(response.data);
+            return this.formatTVDetails(data);
         } catch (error) {
             console.error(`❌ Erro ao obter detalhes da série ${tmdbId}:`, error.message);
             return null;
@@ -183,14 +181,7 @@ class TMDBService {
 
     async getSeasonDetails(tmdbId, seasonNumber) {
         try {
-            const response = await axios.get(`${this.baseUrl}/tv/${tmdbId}/season/${seasonNumber}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language
-                },
-                timeout: 10000
-            });
-            const data = response.data;
+            const data = await this._getWithRetry(`/tv/${tmdbId}/season/${seasonNumber}`);
             return {
                 temporadaNumero: data.season_number,
                 nome: data.name || `Temporada ${data.season_number}`,
@@ -215,19 +206,13 @@ class TMDBService {
 
     async getEpisodeDetails(tmdbId, seasonNumber, episodeNumber) {
         try {
-            const response = await axios.get(`${this.baseUrl}/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language
-                },
-                timeout: 10000
-            });
-            const ep = response.data;
+            const ep = await this._getWithRetry(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`);
             return {
                 numero: ep.episode_number,
                 nome: ep.name || `Episódio ${ep.episode_number}`,
                 sinopse: ep.overview || '',
                 nota: ep.vote_average || 0,
+                stillUrl: this.getPosterUrl(ep.still_path, 'w300'),
                 runtime: ep.runtime || 0,
                 duracaoMinutos: ep.runtime || 0
             };
@@ -239,29 +224,22 @@ class TMDBService {
     async checkDigitalReleaseStatus(tmdbId, isDublado = true) {
         if (!tmdbId) return { isDigitalReleased: true, isTheatricalOnly: false };
         try {
-            const [relRes, movieRes] = await Promise.all([
-                axios.get(`${this.baseUrl}/movie/${tmdbId}/release_dates`, {
-                    params: { api_key: this.apiKey },
-                    timeout: 6000
-                }).catch(() => null),
-                axios.get(`${this.baseUrl}/movie/${tmdbId}`, {
-                    params: { api_key: this.apiKey },
-                    timeout: 6000
-                }).catch(() => null)
+            const [relData, movieData] = await Promise.all([
+                this._getWithRetry(`/movie/${tmdbId}/release_dates`, {}, 8000).catch(() => null),
+                this._getWithRetry(`/movie/${tmdbId}`, {}, 8000).catch(() => null)
             ]);
 
-            const results = relRes?.data?.results || [];
-            const originalLang = movieRes?.data?.original_language || 'en';
+            const results = relData?.results || [];
+            const originalLang = movieData?.original_language || 'en';
             const isBrazilianMovie = originalLang === 'pt';
             const now = new Date();
 
-            // Filmes de catálogo antigos (lançados há mais de 150 dias, como Interestelar 2014, Avatar, Harry Potter):
-            // Já tiveram lançamentos oficiais consolidados em Blu-ray, DVD, TV e streaming há muito tempo!
-            const primaryReleaseDateStr = movieRes?.data?.release_date;
+            const primaryReleaseDateStr = movieData?.release_date;
+            let daysDiff = 999;
             if (primaryReleaseDateStr) {
                 const pDate = new Date(primaryReleaseDateStr);
-                const daysDiff = (now - pDate) / (1000 * 60 * 60 * 24);
-                if (daysDiff > 150) {
+                daysDiff = (now - pDate) / (1000 * 60 * 60 * 24);
+                if (daysDiff > 90) {
                     return {
                         isDigitalReleased: true,
                         isTheatricalOnly: false,
@@ -283,7 +261,7 @@ class TMDBService {
                     const rDate = rd.release_date ? new Date(rd.release_date) : null;
                     if (rd.type === 2 || rd.type === 3) {
                         if (rDate && rDate <= now) hasTheatrical = true;
-                    } else if (rd.type === 4 || rd.type === 5) {
+                    } else if (rd.type === 4 || rd.type === 5 || rd.type === 6) {
                         if (rDate && rDate <= now) {
                             hasGlobalDigital = true;
                             if (isBR) hasBrazilDigital = true;
@@ -292,20 +270,9 @@ class TMDBService {
                 }
             }
 
-            // Para produções internacionais (ex: Disney/Pixar Toy Story 5, Marvel):
-            // - Legendado (áudio original em inglês) fica oficial no VOD global (hasGlobalDigital)
-            // - Dublado (áudio pt-br) SÓ tem áudio de estúdio oficial quando sai o VOD/Streaming no Brasil (hasBrazilDigital)
-            // Caso contrário, trata-se de áudio gravado no cinema sincronizado sobre imagem de WEBRip (CAM Audio)
-            let isDigitalReleased = false;
-            if (isBrazilianMovie) {
-                isDigitalReleased = hasGlobalDigital || hasBrazilDigital;
-            } else if (isDublado) {
-                isDigitalReleased = hasBrazilDigital;
-            } else {
-                isDigitalReleased = hasGlobalDigital;
-            }
-
-            const isTheatricalOnly = hasTheatrical && !isDigitalReleased;
+            // Se o filme já foi lançado em streaming/digital em qualquer lugar do mundo ou no Brasil, o master digital existe
+            const isDigitalReleased = hasGlobalDigital || hasBrazilDigital || (daysDiff > 90);
+            const isTheatricalOnly = hasTheatrical && !isDigitalReleased && (daysDiff <= 75);
 
             return {
                 isDigitalReleased: isDigitalReleased,
@@ -322,14 +289,8 @@ class TMDBService {
 
     async getTrendingMovies(timeWindow = 'week') {
         try {
-            const response = await axios.get(`${this.baseUrl}/trending/movie/${timeWindow}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language
-                },
-                timeout: 5000
-            });
-            return (response.data.results || []).map(item => this.formatItem({ ...item, media_type: 'movie' }));
+            const data = await this._getWithRetry(`/trending/movie/${timeWindow}`, {}, 15000);
+            return (data.results || []).map(item => this.formatItem({ ...item, media_type: 'movie' }));
         } catch (error) {
             console.log('ℹ️ Usando lista padrão de filmes populares (configure TMDB_API_KEY no config.js para feeds dinâmicos)');
             return [
@@ -345,14 +306,8 @@ class TMDBService {
 
     async getTrendingTV(timeWindow = 'week') {
         try {
-            const response = await axios.get(`${this.baseUrl}/trending/tv/${timeWindow}`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language
-                },
-                timeout: 5000
-            });
-            return (response.data.results || []).map(item => this.formatItem({ ...item, media_type: 'tv' }));
+            const data = await this._getWithRetry(`/trending/tv/${timeWindow}`, {}, 15000);
+            return (data.results || []).map(item => this.formatItem({ ...item, media_type: 'tv' }));
         } catch (error) {
             return [
                 { nome: 'Stranger Things', ano: '2016', tipo: 'serie', nota: 8.7, generos: ['Ficção', 'Terror'] },
@@ -365,17 +320,12 @@ class TMDBService {
 
     async getPopularKDramas() {
         try {
-            const response = await axios.get(`${this.baseUrl}/discover/tv`, {
-                params: {
-                    api_key: this.apiKey,
-                    language: this.language,
-                    sort_by: 'popularity.desc',
-                    with_original_language: 'ko',
-                    'vote_count.gte': 10
-                },
-                timeout: 5000
-            });
-            return (response.data.results || []).map(item => this.formatItem({ ...item, media_type: 'tv' }));
+            const data = await this._getWithRetry('/discover/tv', {
+                sort_by: 'popularity.desc',
+                with_original_language: 'ko',
+                'vote_count.gte': 10
+            }, 15000);
+            return (data.results || []).map(item => this.formatItem({ ...item, media_type: 'tv' }));
         } catch (error) {
             return [
                 { nome: 'Pousando no Amor', ano: '2019', tipo: 'serie', isDorama: true, nota: 8.8, generos: ['Romance', 'Drama'] },
@@ -393,7 +343,23 @@ class TMDBService {
         const nomeOriginal = raw.original_title || raw.original_name || '';
         const dataLancamento = raw.release_date || raw.first_air_date || '';
         const ano = dataLancamento ? dataLancamento.substring(0, 4) : '';
-        const generos = raw.genres ? raw.genres.map(g => g.name || g) : (Array.isArray(raw.genre_ids) ? [] : []);
+        
+        const genreDict = {
+            'action': 'Ação', 'adventure': 'Aventura', 'action & adventure': 'Ação & Aventura',
+            'animation': 'Animação', 'anime': 'Anime', 'comedy': 'Comédia', 'crime': 'Crime',
+            'documentary': 'Documentário', 'drama': 'Drama', 'family': 'Família', 'fantasy': 'Fantasia',
+            'history': 'História', 'horror': 'Terror', 'kids': 'Infantil', 'music': 'Música',
+            'mystery': 'Mistério', 'news': 'Notícias', 'reality': 'Reality Show', 'romance': 'Romance',
+            'science fiction': 'Ficção Científica', 'sci-fi': 'Ficção Científica', 'sci-fi & fantasy': 'Ficção & Fantasia',
+            'soap': 'Novela', 'talk': 'Entrevistas', 'thriller': 'Suspense', 'tv movie': 'Cinema TV',
+            'war': 'Guerra', 'war & politics': 'Guerra & Política', 'western': 'Faroeste', 'dorama': 'Dorama'
+        };
+        const rawGeneros = raw.genres ? raw.genres.map(g => g.name || g) : (Array.isArray(raw.genre_ids) ? [] : []);
+        const generos = rawGeneros.map(g => {
+            const clean = String(g).trim();
+            return genreDict[clean.toLowerCase()] || clean;
+        });
+
         const lang = (raw.original_language || '').toLowerCase();
         const originCountries = raw.origin_country || [];
 

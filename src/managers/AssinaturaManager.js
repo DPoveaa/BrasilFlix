@@ -12,11 +12,54 @@ class AssinaturaManager {
         this.setupMercadoPago();
     }
 
+    setBot(bot) {
+        this.bot = bot;
+    }
+
     setupMercadoPago() {
         if (config.mercadopago?.access_token) {
             mercadopago.configure({
                 access_token: config.mercadopago.access_token
             });
+        }
+    }
+
+    async notificarGrupoPagamento(dados = {}) {
+        if (!this.bot) return;
+
+        const groupId = config.NOTIFICATION_GROUP_ID || -1002503446860;
+        
+        try {
+            const cliente = dados.cliente || dados.username || 'Cliente';
+            const userId = dados.userId || dados.id || 'N/A';
+            const metodo = dados.metodo || 'PIX';
+            const valor = typeof dados.valor === 'number' ? dados.valor : (parseFloat(dados.valor) || (dados.plano === 'anual' ? 89.90 : (dados.plano === 'trimestral' ? 24.90 : 9.99)));
+            
+            let planoTexto = '1 meses';
+            if (dados.plano === 'trimestral') planoTexto = '3 meses';
+            else if (dados.plano === 'semestral') planoTexto = '6 meses';
+            else if (dados.plano === 'anual') planoTexto = '12 meses';
+            else if (dados.plano === 'vitalicio') planoTexto = 'Vitalício';
+            else if (dados.plano === 'mensal') planoTexto = '1 meses';
+            else if (dados.plano) planoTexto = String(dados.plano);
+
+            const agora = new Date();
+            const dataHora = agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+            const notifText = 
+`💰 *Novo Pagamento Confirmado!*
+
+👤 *Cliente:* ${cliente}
+🆔 *ID:* \`${userId}\`
+💳 *Método:* ${metodo}
+💵 *Valor:* R$ ${valor.toFixed(2)}
+⏱️ *Plano:* ${planoTexto}
+🕒 *Data:* ${dataHora}`;
+
+            await this.bot.sendMessage(groupId, notifText, { parse_mode: 'Markdown' });
+            console.log(`📢 [NOTIFICAÇÃO PAGAMENTO] Enviada para o grupo ${groupId} (Cliente: ${cliente}, Valor: R$ ${valor.toFixed(2)})`);
+        } catch (e) {
+            console.warn('⚠️ Erro ao enviar notificação de pagamento para o grupo:', e.message);
         }
     }
 
@@ -483,6 +526,17 @@ class AssinaturaManager {
                     paymentId
                 );
 
+                // Notifica grupo de pagamentos com formatação oficial
+                const paymentAmount = payment.body.transaction_amount || (plano === 'anual' ? 89.90 : (plano === 'trimestral' ? 24.90 : 9.99));
+                const paymentMethod = payment.body.payment_method_id ? payment.body.payment_method_id.toUpperCase() : 'PIX';
+                this.notificarGrupoPagamento({
+                    cliente: username,
+                    userId: userId,
+                    metodo: paymentMethod,
+                    valor: paymentAmount,
+                    plano: plano
+                }).catch(() => {});
+
                 // Gera também um Token Stremio VIP automático para o cliente
                 const token = `bf_${require('crypto').randomBytes(12).toString('hex')}`;
                 await db.query(`
@@ -586,68 +640,170 @@ class AssinaturaManager {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CONTROLE DE LIMITE GRÁTIS NO STREMIO E SITE (1 Filme + 2 Episódios / Mês)
+    // CONTROLE DE LIMITE GRÁTIS NO STREMIO E SITE (2 Filmes + 4 Episódios / Semana)
     // ─────────────────────────────────────────────────────────────────────────
 
-    async verificarOuRegistrarConsumoGratis(identificador, tipo = 'filme') {
+    getSemanaAtualInfo() {
+        const now = new Date();
+        const day = now.getDay(); // 0 = Dom, 1 = Seg, ...
+        const diffToMonday = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+        monday.setHours(0, 0, 0, 0);
+
+        const year = monday.getFullYear();
+        const month = String(monday.getMonth() + 1).padStart(2, '0');
+        const date = String(monday.getDate()).padStart(2, '0');
+        const semanaKey = `${year}-W${month}${date}`; // ex: 2026-W0824
+
+        const nextMonday = new Date(monday);
+        nextMonday.setDate(monday.getDate() + 7);
+        const renovacaoStr = `${String(nextMonday.getDate()).padStart(2, '0')}/${String(nextMonday.getMonth() + 1).padStart(2, '0')}`;
+        const renovacaoCompleta = `${String(nextMonday.getDate()).padStart(2, '0')}/${String(nextMonday.getMonth() + 1).padStart(2, '0')}/${nextMonday.getFullYear()}`;
+
+        return { semanaKey, renovacaoStr, renovacaoCompleta, nextMonday };
+    }
+
+    normalizeMediaKey(mediaKey, tipo = 'filme') {
+        if (!mediaKey) return `${tipo}_${Date.now()}`;
+        let str = String(mediaKey).trim().toLowerCase();
+        // Remove sufixos de idioma para que Dublado e Legendado compartilhem o mesmo ID
+        str = str.replace(/[_:](dublado|legendado|dub|leg)$/i, '');
+        // Normaliza formatos de séries para que serie_id_s1_e2 e serie_id_1_2 sejam idênticos
+        str = str.replace(/_s(\d+)_e(\d+)/i, '_$1_$2');
+        return str;
+    }
+
+    async verificarOuRegistrarConsumoGratis(identificador, tipo = 'filme', mediaKey = null) {
         const auth = this.verificarAcessoStremio(identificador);
+        const { semanaKey, renovacaoStr, renovacaoCompleta } = this.getSemanaAtualInfo();
+
         if (auth.authorized) {
-            return { permitido: true, isVip: true, restanteFilmes: 999, restanteEpisodios: 999 };
+            return {
+                permitido: true,
+                isVip: true,
+                restanteFilmes: 999,
+                restanteEpisodios: 999,
+                limiteFilmes: 999,
+                limiteEpisodios: 999,
+                renovacaoEm: 'Ilimitado',
+                renovacaoCompleta: 'Ilimitado'
+            };
         }
 
-        const d = new Date();
-        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const cleanId = String(identificador || 'public').trim();
+        const limiteFilmes = 2;
+        const limiteEps = 4;
 
         let registro = null;
         try {
             const res = await db.query(
                 `SELECT * FROM consumo_gratis WHERE identificador = $1 AND mes_ano = $2`,
-                [cleanId, mesAno]
+                [cleanId, semanaKey]
             );
             if (res.rows.length > 0) {
                 registro = res.rows[0];
             } else {
                 const insRes = await db.query(
-                    `INSERT INTO consumo_gratis (identificador, mes_ano, filmes_assistidos, episodios_assistidos, created_at, updated_at)
-                     VALUES ($1, $2, 0, 0, NOW(), NOW())
+                    `INSERT INTO consumo_gratis (identificador, mes_ano, filmes_assistidos, episodios_assistidos, itens_consumidos, created_at, updated_at)
+                     VALUES ($1, $2, 0, 0, '{}', NOW(), NOW())
+                     ON CONFLICT (identificador, mes_ano) DO UPDATE SET updated_at = NOW()
                      RETURNING *`,
-                    [cleanId, mesAno]
+                    [cleanId, semanaKey]
                 );
                 registro = insRes.rows[0];
             }
         } catch (e) {
             console.warn('⚠️ Erro ao consultar consumo_gratis:', e.message);
-            return { permitido: true, isVip: false, restanteFilmes: 1, restanteEpisodios: 2 };
+            return {
+                permitido: true,
+                isVip: false,
+                limiteFilmes: 2,
+                limiteEpisodios: 4,
+                restanteFilmes: 2,
+                restanteEpisodios: 4,
+                renovacaoEm: renovacaoStr,
+                renovacaoCompleta: renovacaoCompleta
+            };
         }
 
-        const limiteFilmes = 1;
-        const limiteEps = 2;
-        const filmesAssistidos = Number(registro?.filmes_assistidos || 0);
-        const epsAssistidos = Number(registro?.episodios_assistidos || 0);
+        let itens = registro?.itens_consumidos || {};
+        if (typeof itens === 'string') {
+            try { itens = JSON.parse(itens); } catch (e) { itens = {}; }
+        }
+
+        const filmesAssistidosList = Array.isArray(itens.filmes) ? itens.filmes : [];
+        const epsAssistidosList = Array.isArray(itens.episodios) ? itens.episodios : [];
+
+        const normalizedFilmes = filmesAssistidosList.map(k => this.normalizeMediaKey(k, 'filme'));
+        const normalizedEps = epsAssistidosList.map(k => this.normalizeMediaKey(k, 'serie'));
+
+        // Se já consumiu essa mídia específica na semana (mesmo filme ou episódio, Dublado ou Legendado), permite assistir/bufferizar sem gastar crédito novo
+        if (mediaKey) {
+            const strKey = this.normalizeMediaKey(mediaKey, tipo);
+            if (tipo === 'filme' && normalizedFilmes.includes(strKey)) {
+                return {
+                    permitido: true,
+                    isVip: false,
+                    filmesAssistidos: normalizedFilmes.length,
+                    episodiosAssistidos: normalizedEps.length,
+                    limiteFilmes,
+                    limiteEpisodios: limiteEps,
+                    restanteFilmes: Math.max(0, limiteFilmes - normalizedFilmes.length),
+                    restanteEpisodios: Math.max(0, limiteEps - normalizedEps.length),
+                    renovacaoEm: renovacaoStr,
+                    renovacaoCompleta
+                };
+            }
+            if (tipo === 'serie' && normalizedEps.includes(strKey)) {
+                return {
+                    permitido: true,
+                    isVip: false,
+                    filmesAssistidos: normalizedFilmes.length,
+                    episodiosAssistidos: normalizedEps.length,
+                    limiteFilmes,
+                    limiteEpisodios: limiteEps,
+                    restanteFilmes: Math.max(0, limiteFilmes - normalizedFilmes.length),
+                    restanteEpisodios: Math.max(0, limiteEps - normalizedEps.length),
+                    renovacaoEm: renovacaoStr,
+                    renovacaoCompleta
+                };
+            }
+        }
+
+        const filmesCount = normalizedFilmes.length;
+        const epsCount = normalizedEps.length;
 
         if (tipo === 'filme') {
-            if (filmesAssistidos >= limiteFilmes) {
+            if (filmesCount >= limiteFilmes) {
                 return {
                     permitido: false,
                     isVip: false,
-                    motivo: 'Você atingiu o limite gratuito mensal de 1 filme. Assine o VIP para acesso ilimitado!',
-                    filmesAssistidos,
-                    episodiosAssistidos: epsAssistidos,
+                    motivo: `Você atingiu o limite gratuito semanal de 2 filmes. Seus créditos renovam em ${renovacaoStr}. Assine o VIP para acesso ilimitado!`,
+                    filmesAssistidos: filmesCount,
+                    episodiosAssistidos: epsCount,
+                    limiteFilmes,
+                    limiteEpisodios: limiteEps,
                     restanteFilmes: 0,
-                    restanteEpisodios: Math.max(0, limiteEps - epsAssistidos)
+                    restanteEpisodios: Math.max(0, limiteEps - epsCount),
+                    renovacaoEm: renovacaoStr,
+                    renovacaoCompleta
                 };
             }
         } else {
-            if (epsAssistidos >= limiteEps) {
+            if (epsCount >= limiteEps) {
                 return {
                     permitido: false,
                     isVip: false,
-                    motivo: 'Você atingiu o limite gratuito mensal de 2 episódios de séries. Assine o VIP para maratonar!',
-                    filmesAssistidos,
-                    episodiosAssistidos: epsAssistidos,
-                    restanteFilmes: Math.max(0, limiteFilmes - filmesAssistidos),
-                    restanteEpisodios: 0
+                    motivo: `Você atingiu o limite gratuito semanal de 4 episódios. Seus créditos renovam em ${renovacaoStr}. Assine o VIP para maratonar!`,
+                    filmesAssistidos: filmesCount,
+                    episodiosAssistidos: epsCount,
+                    limiteFilmes,
+                    limiteEpisodios: limiteEps,
+                    restanteFilmes: Math.max(0, limiteFilmes - filmesCount),
+                    restanteEpisodios: 0,
+                    renovacaoEm: renovacaoStr,
+                    renovacaoCompleta
                 };
             }
         }
@@ -655,37 +811,66 @@ class AssinaturaManager {
         return {
             permitido: true,
             isVip: false,
-            filmesAssistidos,
-            episodiosAssistidos: epsAssistidos,
-            restanteFilmes: Math.max(0, limiteFilmes - filmesAssistidos),
-            restanteEpisodios: Math.max(0, limiteEps - epsAssistidos)
+            filmesAssistidos: filmesCount,
+            episodiosAssistidos: epsCount,
+            limiteFilmes,
+            limiteEpisodios: limiteEps,
+            restanteFilmes: Math.max(0, limiteFilmes - filmesCount),
+            restanteEpisodios: Math.max(0, limiteEps - epsCount),
+            renovacaoEm: renovacaoStr,
+            renovacaoCompleta
         };
     }
 
-    async registrarStreamConsumido(identificador, tipo = 'filme') {
+    async registrarStreamConsumido(identificador, tipo = 'filme', mediaKey = null) {
         const auth = this.verificarAcessoStremio(identificador);
         if (auth.authorized) return;
 
-        const d = new Date();
-        const mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const { semanaKey } = this.getSemanaAtualInfo();
         const cleanId = String(identificador || 'public').trim();
+        const strMediaKey = this.normalizeMediaKey(mediaKey, tipo);
 
         try {
-            if (tipo === 'filme') {
-                await db.query(
-                    `UPDATE consumo_gratis 
-                     SET filmes_assistidos = filmes_assistidos + 1, updated_at = NOW() 
-                     WHERE identificador = $1 AND mes_ano = $2`,
-                    [cleanId, mesAno]
-                );
-            } else {
-                await db.query(
-                    `UPDATE consumo_gratis 
-                     SET episodios_assistidos = episodios_assistidos + 1, updated_at = NOW() 
-                     WHERE identificador = $1 AND mes_ano = $2`,
-                    [cleanId, mesAno]
-                );
+            const res = await db.query(
+                `SELECT * FROM consumo_gratis WHERE identificador = $1 AND mes_ano = $2`,
+                [cleanId, semanaKey]
+            );
+
+            let itens = {};
+            if (res.rows.length > 0 && res.rows[0].itens_consumidos) {
+                itens = res.rows[0].itens_consumidos;
+                if (typeof itens === 'string') {
+                    try { itens = JSON.parse(itens); } catch (e) { itens = {}; }
+                }
             }
+
+            if (!Array.isArray(itens.filmes)) itens.filmes = [];
+            if (!Array.isArray(itens.episodios)) itens.episodios = [];
+
+            // Normaliza lista existente
+            itens.filmes = [...new Set(itens.filmes.map(k => this.normalizeMediaKey(k, 'filme')))];
+            itens.episodios = [...new Set(itens.episodios.map(k => this.normalizeMediaKey(k, 'serie')))];
+
+            if (tipo === 'filme') {
+                if (!itens.filmes.includes(strMediaKey)) {
+                    itens.filmes.push(strMediaKey);
+                }
+            } else {
+                if (!itens.episodios.includes(strMediaKey)) {
+                    itens.episodios.push(strMediaKey);
+                }
+            }
+
+            const filmesCount = itens.filmes.length;
+            const epsCount = itens.episodios.length;
+
+            await db.query(
+                `INSERT INTO consumo_gratis (identificador, mes_ano, filmes_assistidos, episodios_assistidos, itens_consumidos, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                 ON CONFLICT (identificador, mes_ano) 
+                 DO UPDATE SET filmes_assistidos = $3, episodios_assistidos = $4, itens_consumidos = $5, updated_at = NOW()`,
+                [cleanId, semanaKey, filmesCount, epsCount, JSON.stringify(itens)]
+            );
         } catch (e) {
             console.warn('⚠️ Erro ao registrar stream consumido:', e.message);
         }

@@ -5,10 +5,13 @@ const multer = require('multer');
 const config = require('../../config');
 const StremioService = require('./StremioService');
 const telegramUploader = require('./TelegramUploader');
+const { Api } = require('telegram');
+const bigInt = require('big-integer');
 const authService = require('./AuthService');
 const TMDBService = require('./TMDBService');
 const schedulerService = require('./SchedulerService');
 const PriorityService = require('./PriorityService');
+const ProgressManager = require('../managers/ProgressManager');
 const db = require('../database/db');
 
 class StremioServer {
@@ -17,16 +20,22 @@ class StremioServer {
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
         this.pedidosManager = pedidosManager;
+        this.progressManager = new ProgressManager();
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
         this.port = port;
         this.app = express();
         this.setupMiddlewares();
         this.setupRoutes();
+        this.progressManager.init().catch(() => {});
         authService.initAdminUser().catch(() => {});
     }
 
     setupMiddlewares() {
         this.app.use(express.json());
+
+        const publicDir = path.resolve(__dirname, '../../public');
+        this.app.use(express.static(publicDir));
+        this.app.use('/assets', express.static(path.join(publicDir, 'assets')));
 
         // Header CORS universal para o Stremio e Web Players
         this.app.use((req, res, next) => {
@@ -50,6 +59,14 @@ class StremioServer {
     }
 
     setupRoutes() {
+        const publicDir = path.resolve(__dirname, '../../public');
+
+        this.app.get('/favicon.ico', (req, res) => {
+            res.setHeader('Content-Type', 'image/x-icon');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.sendFile(path.join(publicDir, 'favicon.ico'));
+        });
+
         // 1. APIs Publicas Seguras (Zero dados sensiveis)
         this.app.get('/api/status', (req, res) => {
             const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
@@ -301,8 +318,26 @@ class StremioServer {
 
         this.app.post('/api/admin/scheduler/force-start', auth, (req, res) => {
             try {
-                schedulerService.forceStart(req.body?.reason || 'Acionado via Painel Admin');
-                res.json({ success: true, message: 'Processamento iniciado imediatamente!', scheduler: schedulerService.getStatus() });
+                const targetMode = req.body?.mode || 'performance';
+                const durationHours = parseInt(req.body?.durationHours || 4, 10);
+                schedulerService.forceStart(req.body?.reason || 'Acionado via Painel Admin', targetMode, durationHours);
+                res.json({ 
+                    success: true, 
+                    message: targetMode === 'eco' 
+                        ? 'Modo Econômico ativado (sem interferir na rede da casa)!' 
+                        : 'Modo Desempenho Máximo ativado!', 
+                    scheduler: schedulerService.getStatus() 
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/scheduler/force-eco', auth, (req, res) => {
+            try {
+                const durationHours = parseInt(req.body?.durationHours || 4, 10);
+                schedulerService.forceStart(req.body?.reason || 'Modo Econômico ativado via Painel Admin', 'eco', durationHours);
+                res.json({ success: true, message: 'Modo Econômico ativado (downloads controlados sem travar a rede)!', scheduler: schedulerService.getStatus() });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -320,11 +355,44 @@ class StremioServer {
         this.app.post('/api/admin/scheduler/clear-force', auth, (req, res) => {
             try {
                 schedulerService.clearForce();
-                res.json({ success: true, message: 'Controle manual removido! Bot voltou à grade agendada.', scheduler: schedulerService.getStatus() });
+                res.json({ success: true, message: 'Controle manual removido! Bot voltou à programação automática da grade.', scheduler: schedulerService.getStatus() });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
         });
+
+        // 3.1.1 Configurações Gerais do Sistema (config.js via Web UI)
+        const SettingsService = require('./SettingsService');
+        this.app.get('/api/admin/settings', auth, (req, res) => {
+            try {
+                res.json({
+                    success: true,
+                    settings: SettingsService.getEditableSettings()
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/settings', auth, (req, res) => {
+            try {
+                const updated = SettingsService.saveSettings(req.body);
+                // Se a esteira estiver ativa, notifica QueueManager sobre novos limites
+                if (this.queueManager) {
+                    this.queueManager.maxConcurrentJobs = config.MAX_CONCURRENT_JOBS || 10;
+                    this.queueManager.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 3;
+                    this.queueManager.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 2;
+                }
+                res.json({
+                    success: true,
+                    message: 'Configurações do sistema aplicadas e salvas com sucesso!',
+                    settings: updated
+                });
+            } catch (e) {
+                res.status(400).json({ error: e.message });
+            }
+        });
+
 
         // 3.2 Gerenciamento Dinâmico de Prioridades da Fila (VIP, Séries, Grátis, Animes, Auto-Feeder)
         this.app.get('/api/admin/priorities', auth, (req, res) => {
@@ -654,6 +722,584 @@ class StremioServer {
                 res.json({ success: true, season: seasonData });
             } catch (e) {
                 res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 📺 Consulta Pública de Metadados de Temporada / Episódios TMDB (Para enriquecer títulos e previews)
+        this.app.get('/api/tmdb/season/:tmdbId/:seasonNumber', async (req, res) => {
+            try {
+                const tmdbId = parseInt(req.params.tmdbId, 10);
+                const sNum = parseInt(req.params.seasonNumber, 10);
+                if (!tmdbId || isNaN(tmdbId)) return res.status(400).json({ error: 'TMDB ID inválido' });
+                const seasonData = await TMDBService.getSeasonDetails(tmdbId, sNum);
+                res.json({ success: true, season: seasonData });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 💬 Canal de Sugestões, Pedidos, Dúvidas e Reclamações de Usuários
+        this.app.post('/api/user/feedback', async (req, res) => {
+            try {
+                const { tipo, titulo, mensagem, contato } = req.body;
+                if (!mensagem || !mensagem.trim()) {
+                    return res.status(400).json({ error: 'Mensagem é obrigatória' });
+                }
+
+                let userId = null;
+                let username = 'Visitante';
+                const authHeader = req.headers['authorization'];
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const token = authHeader.split(' ')[1];
+                    const decoded = AuthService.verifyToken(token);
+                    if (decoded) {
+                        userId = String(decoded.id || decoded.telegram_id || '');
+                        username = decoded.username || decoded.email || 'Usuário';
+                    }
+                }
+
+                await db.query(`
+                    INSERT INTO feedbacks (user_id, username, tipo, titulo, mensagem, contato, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                `, [userId, username, tipo || 'sugestao', (titulo || '').trim(), mensagem.trim(), (contato || '').trim()]);
+
+                res.json({ success: true, message: 'Seu pedido/sugestão foi recebido com sucesso! Nossa equipe analisará em breve.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 👥 ASSISTIR JUNTO (WATCH PARTY) v2.0 — SSE PERSISTENTE
+        // ═══════════════════════════════════════════════════════════════════════
+
+        if (!this.watchPartyRooms) this.watchPartyRooms = new Map();
+
+        // Helper: broadcast para todos os membros conectados da sala
+        const broadcastToRoom = (room, data) => {
+            const payload = `data: ${JSON.stringify(data)}\n\n`;
+            for (const m of room.members.values()) {
+                try { if (m.res && !m.res.writableEnded) m.res.write(payload); } catch(e) {}
+            }
+        };
+
+        // Helper: lista de membros serializável
+        const serializeMembers = (room) =>
+            Array.from(room.members.values()).map(m => ({
+                id: m.id,
+                name: m.name,
+                isHost: String(m.id) === String(room.hostId) || !!m.isHost,
+                inPlayer: !!m.inPlayer,
+                isReady: !!m.isReady,
+                audio: m.audio || null
+            }));
+
+        // Persistência em PostgreSQL para salas de Watch Party
+        const saveRoomToDb = async (room) => {
+            if (!room || !room.id) return;
+            try {
+                const membersArr = Array.from(room.members.values()).map(m => ({ id: m.id, name: m.name, isHost: m.isHost }));
+                await db.query(
+                    `INSERT INTO watch_party_rooms (id, host_id, host_name, host_token, media_info, playback_time, is_playing, host_only_controls, last_activity, wheel_items, members_data, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                     ON CONFLICT (id) DO UPDATE SET
+                         host_id = EXCLUDED.host_id,
+                         host_name = EXCLUDED.host_name,
+                         host_token = EXCLUDED.host_token,
+                         media_info = EXCLUDED.media_info,
+                         playback_time = EXCLUDED.playback_time,
+                         is_playing = EXCLUDED.is_playing,
+                         host_only_controls = EXCLUDED.host_only_controls,
+                         last_activity = EXCLUDED.last_activity,
+                         wheel_items = EXCLUDED.wheel_items,
+                         members_data = EXCLUDED.members_data`,
+                    [
+                        room.id,
+                        room.hostId || null,
+                        room.hostName || 'Anfitrião',
+                        room.hostToken || null,
+                        JSON.stringify(room.mediaInfo || {}),
+                        room.currentTime || 0,
+                        !!room.isPlaying,
+                        room.hostOnlyControls !== false,
+                        room.lastActivity || Date.now(),
+                        JSON.stringify(room.wheelItems || []),
+                        JSON.stringify(membersArr),
+                        room.createdAt || Date.now()
+                    ]
+                );
+            } catch (e) {
+                // Silencioso
+            }
+        };
+
+        const deleteRoomFromDb = async (roomId) => {
+            if (!roomId) return;
+            try {
+                await db.query(`DELETE FROM watch_party_rooms WHERE id = $1`, [roomId]);
+            } catch (e) {}
+        };
+
+        // Timeout de inatividade: fecha sala se inativa por 1 hora
+        const scheduleInactivityCheck = (roomCode) => {
+            const INACTIVITY_MS = 60 * 60 * 1000; // 1 hora
+            setTimeout(async () => {
+                const r = this.watchPartyRooms && this.watchPartyRooms.get(roomCode);
+                if (!r) return;
+                const inactiveFor = Date.now() - r.lastActivity;
+                if (inactiveFor >= INACTIVITY_MS) {
+                    broadcastToRoom(r, { type: 'room_closed', reason: 'Sala encerrada por inatividade (1 hora).' });
+                    this.watchPartyRooms.delete(roomCode);
+                    await deleteRoomFromDb(roomCode);
+                } else {
+                    scheduleInactivityCheck(roomCode); // re-agenda
+                }
+            }, INACTIVITY_MS);
+        };
+
+        // Carrega salas ativas do banco no startup (última hora)
+        const loadRoomsFromDb = async () => {
+            try {
+                const oneHourAgo = Date.now() - (60 * 60 * 1000);
+                await db.query(`DELETE FROM watch_party_rooms WHERE last_activity < $1`, [oneHourAgo]);
+
+                const res = await db.query(`SELECT * FROM watch_party_rooms WHERE last_activity >= $1`, [oneHourAgo]);
+                for (const row of res.rows) {
+                    let mediaInfo = row.media_info;
+                    if (typeof mediaInfo === 'string') {
+                        try { mediaInfo = JSON.parse(mediaInfo); } catch(e) { mediaInfo = null; }
+                    }
+                    let wheelItems = row.wheel_items;
+                    if (typeof wheelItems === 'string') {
+                        try { wheelItems = JSON.parse(wheelItems); } catch(e) { wheelItems = []; }
+                    }
+
+                    const room = {
+                        id: row.id,
+                        hostId: row.host_id,
+                        hostName: row.host_name,
+                        hostToken: row.host_token,
+                        mediaInfo: mediaInfo || null,
+                        currentTime: Number(row.playback_time) || 0,
+                        isPlaying: !!row.is_playing,
+                        hostOnlyControls: row.host_only_controls !== false,
+                        lastActivity: Number(row.last_activity) || Date.now(),
+                        members: new Map(),
+                        wheelItems: Array.isArray(wheelItems) ? wheelItems : [],
+                        createdAt: Number(row.created_at) || Date.now()
+                    };
+                    this.watchPartyRooms.set(row.id, room);
+                    scheduleInactivityCheck(row.id);
+                }
+                if (res.rows.length > 0) {
+                    console.log(`[Watch Party] Restauradas ${res.rows.length} salas ativas do banco de dados.`);
+                }
+            } catch (e) {
+                console.warn('[Watch Party] Erro ao restaurar salas do banco:', e.message);
+            }
+        };
+
+        loadRoomsFromDb();
+
+        // 1. Criar sala
+        const ROOM_CHARS = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+        const generateRoomCode = () => {
+            let code = '';
+            for (let i = 0; i < 4; i++) {
+                code += ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)];
+            }
+            return code;
+        };
+
+        const normalizeRoomCode = (raw) => {
+            if (!raw) return '';
+            return String(raw).toUpperCase().replace(/^BF[-_]?/, '').replace(/[^A-Z0-9]/g, '').trim();
+        };
+
+        const getRoomByCode = (rawCode) => {
+            if (!rawCode) return null;
+            const rawStr = String(rawCode).trim().toUpperCase();
+            const norm = normalizeRoomCode(rawStr);
+            if (this.watchPartyRooms.has(norm)) return this.watchPartyRooms.get(norm);
+            if (this.watchPartyRooms.has(rawStr)) return this.watchPartyRooms.get(rawStr);
+            if (this.watchPartyRooms.has('BF-' + norm)) return this.watchPartyRooms.get('BF-' + norm);
+
+            for (const [key, room] of this.watchPartyRooms.entries()) {
+                if (normalizeRoomCode(key) === norm || key.toUpperCase() === rawStr) {
+                    return room;
+                }
+            }
+            return null;
+        };
+
+        const joinAttemptsByIp = new Map();
+        const checkJoinRateLimit = (ip) => {
+            const now = Date.now();
+            const entry = joinAttemptsByIp.get(ip);
+            if (!entry) return { allowed: true };
+
+            if (entry.blockedUntil && now < entry.blockedUntil) {
+                const remainingSec = Math.ceil((entry.blockedUntil - now) / 1000);
+                return { allowed: false, remainingSec };
+            }
+
+            if (now - entry.lastFailedTime > 60000) {
+                joinAttemptsByIp.delete(ip);
+                return { allowed: true };
+            }
+
+            return { allowed: true };
+        };
+
+        const recordJoinFailure = (ip) => {
+            const now = Date.now();
+            const entry = joinAttemptsByIp.get(ip) || { count: 0, lastFailedTime: now, blockedUntil: 0 };
+            entry.count += 1;
+            entry.lastFailedTime = now;
+
+            if (entry.count >= 5) {
+                entry.blockedUntil = now + 30000; // 30s de cooldown após 5 erros
+                entry.count = 0;
+            }
+
+            joinAttemptsByIp.set(ip, entry);
+        };
+
+        const recordJoinSuccess = (ip) => {
+            joinAttemptsByIp.delete(ip);
+        };
+
+        this.app.post('/api/party/create', async (req, res) => {
+            try {
+                const { title, sub, streamUrl, mediaInfo, hostName, token, hostUserId } = req.body;
+
+                let roomCode = generateRoomCode();
+                while (getRoomByCode(roomCode)) {
+                    roomCode = generateRoomCode();
+                }
+                const actualHostName = (hostName || 'Anfitrião').trim();
+
+                const room = {
+                    id: roomCode,
+                    hostId: hostUserId ? String(hostUserId) : null,
+                    hostName: actualHostName,
+                    hostToken: token || null,
+                    mediaInfo: streamUrl ? { title: title || 'BrasilFlix', sub: sub || '', streamUrl, ...mediaInfo } : null,
+                    currentTime: 0,
+                    isPlaying: false,
+                    hostOnlyControls: true,
+                    lastActivity: Date.now(),
+                    members: new Map(),
+                    wheelItems: [],
+                    createdAt: Date.now()
+                };
+
+                this.watchPartyRooms.set(roomCode, room);
+                await saveRoomToDb(room);
+                scheduleInactivityCheck(roomCode);
+
+                const baseUrl = this.getBaseUrl(req);
+                res.json({
+                    success: true,
+                    roomCode,
+                    roomId: roomCode,
+                    hostName: actualHostName,
+                    mediaInfo: room.mediaInfo,
+                    shareUrl: `${baseUrl}/?sala=${roomCode}`
+                });
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        // 2. Consultar sala
+        this.app.get('/api/party/room/:roomId', (req, res) => {
+            const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+            const rate = checkJoinRateLimit(ip);
+            if (!rate.allowed) {
+                return res.status(429).json({
+                    success: false,
+                    error: `Muitas tentativas incorretas. Aguarde ${rate.remainingSec}s para tentar novamente.`,
+                    cooldown: rate.remainingSec
+                });
+            }
+
+            const room = getRoomByCode(req.params.roomId);
+            if (!room) {
+                recordJoinFailure(ip);
+                return res.status(404).json({ success: false, error: 'Sala não encontrada ou expirada.' });
+            }
+
+            recordJoinSuccess(ip);
+            res.json({
+                success: true,
+                room: {
+                    id: room.id,
+                    hostId: room.hostId,
+                    hostName: room.hostName,
+                    mediaInfo: room.mediaInfo,
+                    currentTime: room.currentTime,
+                    isPlaying: room.isPlaying,
+                    hostOnlyControls: room.hostOnlyControls,
+                    members: serializeMembers(room),
+                    wheelItems: room.wheelItems || []
+                }
+            });
+        });
+
+        // 3. SSE — conexão em tempo real
+        this.app.get('/api/party/events/:roomId', (req, res) => {
+            const room = getRoomByCode(req.params.roomId);
+            if (!room) return res.status(404).send('Sala não encontrada.');
+            const roomCode = room.id;
+
+            const userId = req.query.userId || ('user_' + Math.random().toString(36).substring(2, 9));
+            const userName = decodeURIComponent(req.query.name || 'Espectador');
+
+            // O primeiro usuário a conectar ou que possui o hostToken é o host
+            if (!room.hostId) {
+                room.hostId = userId;
+                room.hostName = userName;
+            }
+
+            const isHost = String(userId) === String(room.hostId);
+
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+
+            const existing = room.members.get(userId);
+
+            room.members.set(userId, {
+                id: userId,
+                name: userName,
+                isHost,
+                inPlayer: existing ? !!existing.inPlayer : false,
+                isReady: existing ? !!existing.isReady : false,
+                audio: existing ? existing.audio : null,
+                res,
+                lastSeen: Date.now()
+            });
+
+            room.lastActivity = Date.now();
+            saveRoomToDb(room);
+
+            const membersList = serializeMembers(room);
+
+            res.write(`data: ${JSON.stringify({
+                type: 'init',
+                userId,
+                isHost,
+                room: {
+                    id: room.id,
+                    hostId: room.hostId,
+                    hostName: room.hostName,
+                    mediaInfo: room.mediaInfo,
+                    currentTime: room.currentTime,
+                    isPlaying: room.isPlaying,
+                    hostOnlyControls: room.hostOnlyControls,
+                    members: membersList,
+                    wheelItems: room.wheelItems || []
+                }
+            })}\n\n`);
+
+            // Só notifica "entrou" se não for reconexão
+            if (!isReconnect) {
+                broadcastToRoom(room, {
+                    type: 'member_joined',
+                    userId,
+                    name: userName,
+                    members: membersList
+                });
+            }
+
+            // Heartbeat
+            const heartbeat = setInterval(() => {
+                try { if (!res.writableEnded) res.write(': heartbeat\n\n'); }
+                catch(e) { clearInterval(heartbeat); }
+            }, 25000);
+
+            req.on('close', () => {
+                clearInterval(heartbeat);
+                // Dá 30s de janela para reconexão
+                setTimeout(() => {
+                    const r = getRoomByCode(roomCode);
+                    if (!r) return;
+                    const m = r.members.get(userId);
+                    // Se o objeto res for o mesmo (não reconectou), remove da lista ativa
+                    if (m && m.res === res) {
+                        r.members.delete(userId);
+                        const updatedMembers = serializeMembers(r);
+                        broadcastToRoom(r, { type: 'member_left', userId, name: userName, members: updatedMembers });
+                        saveRoomToDb(r);
+                    }
+                }, 30000);
+            });
+        });
+
+        // 4. Ações da sala
+        this.app.post('/api/party/action/:roomId', async (req, res) => {
+            try {
+                const room = getRoomByCode(req.params.roomId);
+                if (!room) return res.status(404).json({ success: false, error: 'Sala não encontrada.' });
+                const roomCode = room.id;
+
+                const { userId, action, currentTime, hostOnlyControls, mediaInfo, suggestion, suggestionId, winner, targetId, by } = req.body;
+                const isHost = String(userId) === String(room.hostId);
+                const member = room.members.get(String(userId)) || { name: by || (isHost ? room.hostName : 'Membro') };
+
+                room.lastActivity = Date.now();
+
+                // Controles restritos ao host
+                if (room.hostOnlyControls && !isHost && ['play', 'pause', 'seek', 'permissions'].includes(action)) {
+                    return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode controlar a reprodução.' });
+                }
+
+                switch (action) {
+                    case 'play':
+                        if (typeof currentTime === 'number') room.currentTime = currentTime;
+                        room.isPlaying = true;
+                        broadcastToRoom(room, { type: 'play', userId, by: member.name, currentTime: room.currentTime });
+                        break;
+
+                    case 'pause':
+                        if (typeof currentTime === 'number') room.currentTime = currentTime;
+                        room.isPlaying = false;
+                        broadcastToRoom(room, { type: 'pause', userId, by: member.name, currentTime: room.currentTime });
+                        break;
+
+                    case 'seek':
+                        if (typeof currentTime === 'number') room.currentTime = currentTime;
+                        broadcastToRoom(room, { type: 'seek', userId, by: member.name, currentTime: room.currentTime });
+                        break;
+
+                    case 'permissions':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião.' });
+                        if (typeof hostOnlyControls === 'boolean') room.hostOnlyControls = hostOnlyControls;
+                        broadcastToRoom(room, { type: 'permissions', userId, hostOnlyControls: room.hostOnlyControls });
+                        break;
+
+                    case 'change_media':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode trocar a mídia.' });
+                        if (mediaInfo) { room.mediaInfo = mediaInfo; room.currentTime = 0; room.isPlaying = false; }
+                        broadcastToRoom(room, { type: 'change_media', userId, by: member.name, mediaInfo: room.mediaInfo });
+                        saveRoomToDb(room);
+                        break;
+
+                    case 'stop_media':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode parar a mídia.' });
+                        room.mediaInfo = null;
+                        room.currentTime = 0;
+                        room.isPlaying = false;
+                        for (const m of room.members.values()) {
+                            m.inPlayer = false;
+                            m.isReady = false;
+                        }
+                        broadcastToRoom(room, { type: 'media_stopped', userId, by: member.name, members: serializeMembers(room) });
+                        saveRoomToDb(room);
+                        break;
+
+                    case 'suggest_media':
+                        if (!suggestion || !suggestion.title) break;
+                        suggestion.id = suggestion.id || (Date.now() + '_' + userId);
+                        room.wheelItems = room.wheelItems || [];
+                        room.wheelItems.push(suggestion);
+                        broadcastToRoom(room, { type: 'suggest_media', userId, by: member.name, suggestion });
+                        break;
+
+                    case 'remove_suggestion':
+                        if (room.wheelItems && suggestionId) {
+                            const item = room.wheelItems.find(i => i.id === suggestionId);
+                            const canRemove = isHost || (item && String(item.byId) === String(userId));
+                            if (canRemove) {
+                                room.wheelItems = room.wheelItems.filter(i => i.id !== suggestionId);
+                                broadcastToRoom(room, { type: 'remove_suggestion', userId, suggestionId });
+                            }
+                        }
+                        break;
+
+                    case 'spin_wheel':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode girar a roleta.' });
+                        broadcastToRoom(room, { type: 'spin_wheel', userId, by: member.name, winner, durationMs: req.body.durationMs || 3600 });
+                        break;
+
+                    case 'wheel_result':
+                        if (!winner) break;
+                        broadcastToRoom(room, { type: 'wheel_result', userId, by: member.name, winner });
+                        break;
+
+                    case 'close_room':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode encerrar a sala.' });
+                        broadcastToRoom(room, { type: 'room_closed', reason: 'O anfitrião encerrou a sala.' });
+                        this.watchPartyRooms.delete(roomCode);
+                        await deleteRoomFromDb(roomCode);
+                        break;
+
+                    case 'transfer_host':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode transferir a liderança.' });
+                        if (targetId && room.members.has(String(targetId))) {
+                            const newHostMember = room.members.get(String(targetId));
+                            room.hostId = String(targetId);
+                            room.hostName = newHostMember.name;
+                            for (const [mid, m] of room.members.entries()) {
+                                m.isHost = (mid === String(targetId));
+                            }
+                            const updatedMembers = serializeMembers(room);
+                            broadcastToRoom(room, {
+                                type: 'host_transferred',
+                                newHostId: String(targetId),
+                                newHostName: newHostMember.name,
+                                oldHostId: String(userId),
+                                members: updatedMembers
+                            });
+                            saveRoomToDb(room);
+                        }
+                        break;
+
+                    case 'member_ready_state':
+                        if (room.members.has(String(userId))) {
+                            const m = room.members.get(String(userId));
+                            if (typeof req.body.inPlayer === 'boolean') m.inPlayer = req.body.inPlayer;
+                            if (typeof req.body.isReady === 'boolean') m.isReady = req.body.isReady;
+                            if (req.body.audio) m.audio = req.body.audio;
+                            const updatedMembers = serializeMembers(room);
+                            broadcastToRoom(room, {
+                                type: 'member_ready_state_changed',
+                                userId: String(userId),
+                                inPlayer: !!m.inPlayer,
+                                isReady: !!m.isReady,
+                                audio: m.audio,
+                                members: updatedMembers
+                            });
+                            saveRoomToDb(room);
+                        }
+                        break;
+
+                    case 'kick':
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode remover membros.' });
+                        if (targetId) {
+                            broadcastToRoom(room, { type: 'kicked', userId: targetId });
+                            setTimeout(() => {
+                                const r = this.watchPartyRooms && this.watchPartyRooms.get(roomCode);
+                                if (r) {
+                                    r.members.delete(String(targetId));
+                                    broadcastToRoom(r, { type: 'member_left', userId: targetId, name: '?', members: serializeMembers(r) });
+                                    saveRoomToDb(r);
+                                }
+                            }, 1000);
+                        }
+                        break;
+
+                    default:
+                        // Ação customizada — broadcast direto
+                        broadcastToRoom(room, { type: action, userId, by: member.name, ...req.body });
+                }
+
+                res.json({ success: true });
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
             }
         });
 
@@ -1070,13 +1716,282 @@ class StremioServer {
             }
         });
 
-        this.app.get('/api/consumo/:token', async (req, res) => {
+        // APIs de Usuários Públicos (Cadastro / Login / Favoritos / Notificações)
+        this.app.post('/api/user/register', async (req, res) => {
+            const { email, username, password, telegramId } = req.body;
+            const result = await authService.registerUser(email, username, password, telegramId);
+            if (!result.success) return res.status(400).json(result);
+            res.json(result);
+        });
+
+        this.app.post('/api/user/login', async (req, res) => {
+            const { identifier, password } = req.body;
+            const result = await authService.loginUser(identifier, password);
+            if (!result.success) return res.status(401).json(result);
+            res.json(result);
+        });
+
+        this.app.get('/api/user/me', authService.userAuthMiddleware(), async (req, res) => {
+            const user = await authService.getUserProfile(req.user.id);
+            if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+            
+            // Verifica status VIP atualizado
+            const auth = this.assinaturaManager.verificarAcessoStremio(user.telegram_id || user.id);
+            const isVip = auth.authorized || user.is_vip;
+
+            // Busca notificações do usuário da tabela user_notifications
+            let notifs = [];
             try {
-                const consumoFilme = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(req.params.token, 'filme');
-                res.json({ success: true, consumo: consumoFilme });
+                const notifRes = await db.query(`
+                    SELECT id, title, message AS text, media_id AS "serieId", media_type, link, read, created_at AS "createdAt"
+                    FROM user_notifications
+                    WHERE user_id = $1 OR user_id = $2
+                    ORDER BY created_at DESC
+                    LIMIT 20
+                `, [String(user.id), String(user.telegram_id || user.id)]);
+                notifs = notifRes.rows || [];
+            } catch (e) {
+                notifs = user.notificacoes || [];
+            }
+
+            res.json({
+                success: true,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    username: user.username,
+                    is_vip: isVip,
+                    telegram_id: user.telegram_id,
+                    favoritos: user.favoritos || [],
+                    notificacoes: notifs
+                }
+            });
+        });
+
+        this.app.post('/api/user/favoritos/toggle', authService.userAuthMiddleware(), async (req, res) => {
+            const { itemId, itemType } = req.body;
+            if (!itemId) return res.status(400).json({ error: 'ID do item é obrigatório.' });
+            const result = await authService.toggleFavorite(req.user.id, itemId, itemType || 'filme');
+            res.json(result);
+        });
+
+        this.app.get('/api/user/favoritos', authService.userAuthMiddleware(), async (req, res) => {
+            const user = await authService.getUserProfile(req.user.id);
+            if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+            const favs = user.favoritos || [];
+            const resultItems = [];
+
+            for (const fav of favs) {
+                if (fav.type === 'serie' || fav.type === 'dorama') {
+                    const s = this.catalogoManager.buscarSeriePorId(fav.id);
+                    if (s) resultItems.push({ ...s, itemType: 'serie' });
+                } else {
+                    const f = this.catalogoManager.buscarFilmePorId(fav.id);
+                    if (f) resultItems.push({ ...f, itemType: 'filme' });
+                }
+            }
+
+            res.json({ success: true, favoritos: resultItems });
+        });
+
+        this.app.post('/api/user/notificacoes/read', authService.userAuthMiddleware(), async (req, res) => {
+            try {
+                await db.query(`
+                    UPDATE user_notifications SET read = true
+                    WHERE user_id = $1 OR user_id = $2
+                `, [String(req.user.id), String(req.user.telegram_id || req.user.id)]);
+
+                const user = await authService.getUserProfile(req.user.id);
+                if (user) {
+                    const notifs = (user.notificacoes || []).map(n => ({ ...n, read: true }));
+                    await db.query(`UPDATE usuarios SET notificacoes = $1 WHERE id = $2`, [JSON.stringify(notifs), req.user.id]);
+                }
+                res.json({ success: true });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ── PROGRESSO DE REPRODUÇÃO & EPISÓDIOS ASSISTIDOS ─────────────────
+        this.app.post('/api/progress/save', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const userId = req.user ? req.user.id : null;
+                const guestToken = req.headers['x-guest-token'] || req.body.guestToken || 'guest_default';
+                const { mediaId, mediaType, seasonNum, epNum, epName, currentTime, duration, completed } = req.body;
+                
+                const result = await this.progressManager.saveProgress({
+                    userId,
+                    guestToken,
+                    mediaId,
+                    mediaType,
+                    seasonNum,
+                    epNum,
+                    epName,
+                    currentTime,
+                    duration,
+                    completed
+                });
+                res.json(result);
             } catch (e) {
                 res.status(500).json({ success: false, error: e.message });
             }
+        });
+
+        this.app.post('/api/progress/toggle-watched', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const userId = req.user ? req.user.id : null;
+                const guestToken = req.headers['x-guest-token'] || req.body.guestToken || 'guest_default';
+                const { mediaId, mediaType, seasonNum, epNum, completed } = req.body;
+                
+                const result = await this.progressManager.toggleWatched({
+                    userId,
+                    guestToken,
+                    mediaId,
+                    mediaType,
+                    seasonNum,
+                    epNum,
+                    completed
+                });
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.get('/api/progress/media/:mediaId', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const userId = req.user ? req.user.id : null;
+                const guestToken = req.headers['x-guest-token'] || req.query.guestToken || 'guest_default';
+                const result = await this.progressManager.getMediaProgress(userId, guestToken, req.params.mediaId);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.get('/api/progress/all', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const userId = req.user ? req.user.id : null;
+                const guestToken = req.headers['x-guest-token'] || req.query.guestToken || 'guest_default';
+                const result = await this.progressManager.getAllUserProgress(userId, guestToken);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.post('/api/progress/dismiss', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const userId = req.user ? req.user.id : null;
+                const guestToken = req.headers['x-guest-token'] || req.body.guestToken || 'guest_default';
+                const result = await this.progressManager.dismissMediaProgress({
+                    userId,
+                    guestToken,
+                    mediaId: req.body.mediaId
+                });
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.get('/api/user/quota-check', async (req, res) => {
+            try {
+                const token = req.query.token || 'public';
+                const type = req.query.type || 'filme';
+                const mediaKey = req.query.mediaKey || null;
+                const quota = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(token, type, mediaKey);
+                res.json(quota);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/user/confirm-stream', async (req, res) => {
+            try {
+                const { token, type } = req.body;
+                if (!token) return res.status(400).json({ error: 'Token obrigatório.' });
+                
+                const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(token, type || 'filme');
+                if (!consumo.permitido) {
+                    return res.status(403).json({
+                        success: false,
+                        permitido: false,
+                        message: `Limite gratuito de ${type === 'filme' ? '2 filmes' : '4 episódios'} por semana atingido.`
+                    });
+                }
+
+                await this.assinaturaManager.registrarStreamConsumido(token, type || 'filme');
+                res.json({
+                    success: true,
+                    permitido: true,
+                    message: 'Crédito gratuito confirmado com sucesso!',
+                    consumo
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ✈️ Telegram 1-Clique Login API
+        this.app.post('/api/auth/telegram/create', (req, res) => {
+            try {
+                const session = authService.createTelegramLoginSession();
+                res.json({ success: true, ...session });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/auth/telegram/check/:code', (req, res) => {
+            try {
+                const result = authService.checkTelegramLoginSession(req.params.code);
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 💬 APIs de Avaliações & Comentários da Comunidade
+        this.app.get('/api/media/:type/:id/comentarios', async (req, res) => {
+            const { type, id } = req.params;
+            const data = await authService.getMediaReviews(type, id);
+            res.json(data);
+        });
+
+        this.app.post('/api/media/:type/:id/comentarios', authService.userAuthMiddleware(true), async (req, res) => {
+            const { type, id } = req.params;
+            const { rating, comentario, guestName } = req.body;
+            const userId = req.user ? req.user.id : null;
+            const username = req.user ? req.user.username : (guestName || 'Usuário Anônimo');
+
+            const result = await authService.addMediaReview(userId, username, type, id, rating, comentario);
+            if (!result.success) return res.status(400).json(result);
+            res.json(result);
+        });
+
+        this.app.delete('/api/media/comentarios/:reviewId', authService.userAuthMiddleware(true), async (req, res) => {
+            const { reviewId } = req.params;
+            const userId = req.user ? req.user.id : null;
+            const isAdmin = req.user && req.user.role === 'admin';
+
+            if (!userId && !isAdmin) {
+                return res.status(401).json({ error: 'Faça login para gerenciar comentários.' });
+            }
+
+            const result = await authService.deleteMediaReview(reviewId, userId, isAdmin);
+            if (!result.success) return res.status(400).json(result);
+            res.json(result);
+        });
+
+        // Rota oficial de verificação de integridade e status
+        this.app.get('/health', (req, res) => {
+            res.json({
+                status: 'healthy',
+                uptime: process.uptime(),
+                timestamp: new Date().toISOString()
+            });
         });
 
         // Rota oficial de configuração do Stremio (compatível com botão "Configure" do aplicativo Stremio)
@@ -1090,7 +2005,7 @@ class StremioServer {
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar') {
+            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health') {
                 return next();
             }
             this.renderLandingPage(req, res, token);
@@ -1195,14 +2110,15 @@ class StremioServer {
 
     async handleStreamFilme(req, res) {
         const { userToken, id, audio } = req.params;
+        const mediaKey = `filme_${id}`;
         const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
         if (!auth.authorized) {
-            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme');
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme', mediaKey);
             if (!consumo.permitido) {
-                return res.status(403).send('Limite gratuito de 1 filme por mês atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
+                return res.status(403).send('Limite gratuito semanal de 2 filmes atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para acesso ilimitado!');
             }
             if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
-                await this.assinaturaManager.registrarStreamConsumido(userToken, 'filme');
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'filme', mediaKey);
             }
         }
 
@@ -1212,16 +2128,34 @@ class StremioServer {
         }
 
         let versaoEscolhida = null;
-        if (audio === 'legendado' && filme.versoes?.legendado) {
-            versaoEscolhida = filme.versoes.legendado;
-        } else if (filme.versoes?.dublado) {
-            versaoEscolhida = filme.versoes.dublado;
+        if (audio === 'legendado') {
+            if (filme.versoes?.legendado) {
+                versaoEscolhida = filme.versoes.legendado;
+            } else if (filme.isLegendado && (filme.messageId || filme.fileId)) {
+                versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+            }
+        } else if (audio === 'dublado') {
+            if (filme.versoes?.dublado) {
+                versaoEscolhida = filme.versoes.dublado;
+            } else if (filme.isDublado && (filme.messageId || filme.fileId)) {
+                versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+            }
         } else {
-            versaoEscolhida = { messageId: filme.messageId, fileId: filme.fileId };
+            if (filme.versoes?.dublado || filme.isDublado) {
+                versaoEscolhida = filme.versoes?.dublado || { messageId: filme.messageId, fileId: filme.fileId };
+            } else if (filme.versoes?.legendado || filme.isLegendado) {
+                versaoEscolhida = filme.versoes?.legendado || { messageId: filme.messageId, fileId: filme.fileId };
+            }
         }
 
         if (!versaoEscolhida || (!versaoEscolhida.messageId && !versaoEscolhida.fileId)) {
-            return res.status(404).send('Arquivo de mídia não disponível.');
+            return res.status(404).send(`Versão ${audio || 'solicitada'} do filme não disponível.`);
+        }
+
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId do Telegram, redireciona para o Edge CDN
+        if (config.CLOUDFLARE_STREAM_URL && versaoEscolhida.fileId) {
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId)}`;
+            return res.redirect(302, cloudflareUrl);
         }
 
         await this.streamTelegramMedia(req, res, versaoEscolhida);
@@ -1229,14 +2163,15 @@ class StremioServer {
 
     async handleStreamSerie(req, res) {
         const { userToken, id, season, episode, audio } = req.params;
+        const mediaKey = `serie_${id}_s${season}_e${episode}`;
         const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
         if (!auth.authorized) {
-            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie');
+            const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie', mediaKey);
             if (!consumo.permitido) {
-                return res.status(403).send('Limite gratuito de 2 episódios por mês atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
+                return res.status(403).send('Limite gratuito semanal de 4 episódios atingido. Assine o VIP em https://brasilflix.kapsu.com.br/assinar para maratonar!');
             }
             if (!req.headers.range || req.headers.range.startsWith('bytes=0-')) {
-                await this.assinaturaManager.registrarStreamConsumido(userToken, 'serie');
+                await this.assinaturaManager.registrarStreamConsumido(userToken, 'serie', mediaKey);
             }
         }
 
@@ -1251,16 +2186,34 @@ class StremioServer {
         }
 
         let versaoEscolhida = null;
-        if (audio === 'legendado' && ep.versoes?.legendado) {
-            versaoEscolhida = ep.versoes.legendado;
-        } else if (ep.versoes?.dublado) {
-            versaoEscolhida = ep.versoes.dublado;
+        if (audio === 'legendado') {
+            if (ep.versoes?.legendado) {
+                versaoEscolhida = ep.versoes.legendado;
+            } else if (ep.isLegendado && (ep.messageId || ep.fileId)) {
+                versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+            }
+        } else if (audio === 'dublado') {
+            if (ep.versoes?.dublado) {
+                versaoEscolhida = ep.versoes.dublado;
+            } else if (ep.isDublado && (ep.messageId || ep.fileId)) {
+                versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+            }
         } else {
-            versaoEscolhida = { messageId: ep.messageId, fileId: ep.fileId };
+            if (ep.versoes?.dublado || ep.isDublado) {
+                versaoEscolhida = ep.versoes?.dublado || { messageId: ep.messageId, fileId: ep.fileId };
+            } else if (ep.versoes?.legendado || ep.isLegendado) {
+                versaoEscolhida = ep.versoes?.legendado || { messageId: ep.messageId, fileId: ep.fileId };
+            }
         }
 
         if (!versaoEscolhida || (!versaoEscolhida.messageId && !versaoEscolhida.fileId)) {
-            return res.status(404).send('Arquivo de mídia do episódio não disponível.');
+            return res.status(404).send(`Versão ${audio || 'solicitada'} do episódio S${season}E${episode} não disponível.`);
+        }
+
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId do Telegram, redireciona para o Edge CDN
+        if (config.CLOUDFLARE_STREAM_URL && versaoEscolhida.fileId) {
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId)}`;
+            return res.redirect(302, cloudflareUrl);
         }
 
         await this.streamTelegramMedia(req, res, versaoEscolhida);
@@ -1268,7 +2221,7 @@ class StremioServer {
 
     async streamTelegramMedia(req, res, midia) {
         try {
-            const client = await telegramUploader.getClient();
+            const client = await telegramUploader.getInstance().getClient();
             if (!client) {
                 return res.status(503).send('Serviço de streaming do Telegram temporariamente indisponível.');
             }
@@ -1278,7 +2231,7 @@ class StremioServer {
 
             if (midia.messageId) {
                 try {
-                    const messages = await client.getMessages(storageChannel, { ids: [midia.messageId] });
+                    const messages = await client.getMessages(storageChannel, { ids: [Number(midia.messageId)] });
                     if (messages && messages.length > 0 && messages[0].media && messages[0].media.document) {
                         doc = messages[0].media.document;
                     }
@@ -1291,6 +2244,13 @@ class StremioServer {
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
 
+            const inputFileLocation = new Api.InputDocumentFileLocation({
+                id: doc.id,
+                accessHash: doc.accessHash,
+                fileReference: doc.fileReference,
+                thumbSize: ''
+            });
+
             const totalSize = Number(doc.size);
             const mimeType = doc.mimeType || 'video/mp4';
             const range = req.headers.range;
@@ -1298,7 +2258,23 @@ class StremioServer {
             if (range) {
                 const parts = range.replace(/bytes=/, '').split('-');
                 const start = parseInt(parts[0], 10);
-                const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+                let end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+
+                if (isNaN(start) || start >= totalSize || start < 0) {
+                    res.writeHead(416, {
+                        'Content-Range': `bytes */${totalSize}`,
+                        'Accept-Ranges': 'bytes'
+                    });
+                    return res.end();
+                }
+
+                if (isNaN(end) || end >= totalSize) {
+                    end = totalSize - 1;
+                }
+                if (end < start) {
+                    end = start;
+                }
+
                 const chunkSize = (end - start) + 1;
 
                 res.writeHead(206, {
@@ -1306,38 +2282,85 @@ class StremioServer {
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunkSize,
                     'Content-Type': mimeType,
-                    'Cache-Control': 'no-cache'
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
                 });
 
                 const downloadIter = client.iterDownload({
-                    file: doc,
-                    offset: BigInt(start),
+                    file: inputFileLocation,
+                    offset: bigInt(start),
                     limit: chunkSize,
-                    chunkSize: 512 * 1024
+                    chunkSize: 512 * 1024,
+                    dcId: doc.dcId
                 });
 
-                for await (const chunk of downloadIter) {
-                    if (res.writableEnded || res.destroyed) break;
-                    res.write(chunk);
+                let isAborted = false;
+                const onClose = () => {
+                    isAborted = true;
+                    try {
+                        if (typeof downloadIter.return === 'function') downloadIter.return();
+                    } catch (e) {}
+                };
+                req.on('close', onClose);
+
+                try {
+                    for await (const chunk of downloadIter) {
+                        if (isAborted || res.writableEnded || res.destroyed) break;
+                        const canContinue = res.write(chunk);
+                        if (!canContinue && !res.writableEnded && !res.destroyed) {
+                            await new Promise(resolve => res.once('drain', resolve));
+                        }
+                    }
+                } catch (iterErr) {
+                    if (!isAborted && !res.destroyed) {
+                        console.warn('⚠️ Aviso durante iteração do stream de vídeo:', iterErr.message);
+                    }
+                } finally {
+                    req.removeListener('close', onClose);
+                    if (!res.writableEnded && !res.destroyed) {
+                        res.end();
+                    }
                 }
-                res.end();
             } else {
                 res.writeHead(200, {
                     'Content-Length': totalSize,
                     'Content-Type': mimeType,
-                    'Accept-Ranges': 'bytes'
+                    'Accept-Ranges': 'bytes',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
                 });
 
                 const downloadIter = client.iterDownload({
-                    file: doc,
-                    chunkSize: 512 * 1024
+                    file: inputFileLocation,
+                    chunkSize: 512 * 1024,
+                    dcId: doc.dcId
                 });
 
-                for await (const chunk of downloadIter) {
-                    if (res.writableEnded || res.destroyed) break;
-                    res.write(chunk);
+                let isAborted = false;
+                const onClose = () => {
+                    isAborted = true;
+                    try {
+                        if (typeof downloadIter.return === 'function') downloadIter.return();
+                    } catch (e) {}
+                };
+                req.on('close', onClose);
+
+                try {
+                    for await (const chunk of downloadIter) {
+                        if (isAborted || res.writableEnded || res.destroyed) break;
+                        const canContinue = res.write(chunk);
+                        if (!canContinue && !res.writableEnded && !res.destroyed) {
+                            await new Promise(resolve => res.once('drain', resolve));
+                        }
+                    }
+                } catch (iterErr) {
+                    if (!isAborted && !res.destroyed) {
+                        console.warn('⚠️ Aviso durante iteração do stream de vídeo:', iterErr.message);
+                    }
+                } finally {
+                    req.removeListener('close', onClose);
+                    if (!res.writableEnded && !res.destroyed) {
+                        res.end();
+                    }
                 }
-                res.end();
             }
         } catch (error) {
             console.error('Erro no streaming de vídeo Telegram:', error.message);

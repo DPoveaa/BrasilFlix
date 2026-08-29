@@ -16,7 +16,9 @@ class BrasilFlixBot {
         this.bot = new TelegramBot(config.BOT_TOKEN, { polling: true });
         this.pedidosManager = new PedidosManager();
         this.catalogoManager = new CatalogoManager();
+        this.catalogoManager.setBot(this.bot);
         this.assinaturaManager = new AssinaturaManager();
+        this.assinaturaManager.setBot(this.bot);
         this.favoritosManager = new FavoritosManager();
         this.queueManager = new QueueManager(this.bot, this.catalogoManager, this.pedidosManager, this.favoritosManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager, this.pedidosManager);
@@ -50,6 +52,9 @@ class BrasilFlixBot {
         this.bot.onText(/\/start/, (msg) => this.commandHandler.handleStart(msg));
         this.bot.onText(/\/admin/, (msg) => this.commandHandler.handleAdminStart(msg));
         this.bot.onText(/\/stremio/, (msg) => this.commandHandler.handleStremioCommand(msg));
+        this.bot.onText(/\/site/, (msg) => this.commandHandler.handleWebPlayerCommand(msg));
+        this.bot.onText(/\/webplayer/, (msg) => this.commandHandler.handleWebPlayerCommand(msg));
+        this.bot.onText(/\/player/, (msg) => this.commandHandler.handleWebPlayerCommand(msg));
         this.bot.onText(/\/favoritos/, (msg) => this.commandHandler.handleMeusFavoritos(msg.chat.id, msg.from.id, 1));
         this.bot.onText(/\/ajuda/, (msg) => this.commandHandler.handleHelp(msg));
         this.bot.onText(/\/pedido (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
@@ -81,8 +86,11 @@ class BrasilFlixBot {
         // Handler para callbacks dos botões
         this.bot.on('callback_query', (callbackQuery) => this.commandHandler.handleCallbackQuery(callbackQuery));
 
-        // Handler para mensagens de texto
-        this.bot.on('message', (msg) => this.messageHandler.handleMessage(msg));
+        // Handler para mensagens de texto e comandos (notifica admin sobre mensagens de outros usuários)
+        this.bot.on('message', (msg) => {
+            this.notifyAdminIncoming(msg);
+            this.messageHandler.handleMessage(msg);
+        });
 
         // Handler para erros
         this.bot.on('error', (error) => {
@@ -98,6 +106,58 @@ class BrasilFlixBot {
             }
             console.warn(`⚠️ Aviso de rede Telegram (${error.code || 'Desconhecido'}): ${error.message}`);
         });
+    }
+
+    async notifyAdminIncoming(msg) {
+        if (!msg || !msg.from) return;
+        const senderId = Number(msg.from.id);
+        const adminId = Number(config.ADMIN_ID);
+
+        // Ignora se for o próprio admin ou mensagem de grupos técnicos (armazenamento/notificações)
+        if (senderId === adminId) return;
+        if (msg.chat && (msg.chat.id === config.STORAGE_GROUP_ID || msg.chat.id === config.NOTIFICATION_GROUP_ID)) return;
+
+        try {
+            if (!this.botUsername) {
+                const me = await this.bot.getMe().catch(() => null);
+                this.botUsername = me?.username || 'BrasilFlix_bot';
+            }
+
+            const nome = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || (msg.from.username ? `@${msg.from.username}` : 'Usuário');
+            const idioma = msg.from.language_code || 'pt-br';
+
+            // Data formatada no fuso de São Paulo (DD/MM/AAAA HH:mm)
+            const dataHora = new Date((msg.date ? msg.date * 1000 : Date.now())).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            const textoRaw = msg.text || msg.caption || (msg.photo ? '[Foto]' : (msg.document ? `[Arquivo: ${msg.document.file_name || 'Documento'}]` : (msg.video ? '[Vídeo]' : (msg.audio ? '[Áudio]' : (msg.contact ? '[Contato]' : '[Mídia]')))));
+
+            const escapeHtml = (str) => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            const notificacao = 
+                `📩 <b>Mensagem Recebida:</b>\n` +
+                `🤖 <b>No Bot:</b> <a href="https://t.me/${this.botUsername}">@${this.botUsername}</a>\n` +
+                `👤 <b>De:</b> ${escapeHtml(nome)}\n` +
+                `🆔 <b>ID:</b> <code>${senderId}</code>\n` +
+                `🌐 <b>Idioma:</b> ${escapeHtml(idioma)}\n` +
+                `📅 <b>Data:</b> ${dataHora}\n` +
+                `💬 <b>Texto:</b> <code>${escapeHtml(textoRaw)}</code>`;
+
+            await this.bot.sendMessage(adminId, notificacao, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            }).catch(err => {
+                console.warn(`⚠️ Não foi possível notificar admin (${adminId}):`, err.message);
+            });
+        } catch (err) {
+            console.warn('⚠️ Erro ao processar notificação de mensagem para admin:', err.message);
+        }
     }
 
     setupCronJobs() {
