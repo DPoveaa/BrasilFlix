@@ -1852,10 +1852,21 @@ class QueueManager extends EventEmitter {
                 );
             }
         } else {
+            let seasonNum = job.season || 1;
+            let epNum = job.episode || 1;
+
+            // Se o arquivo possui marcação explícita de temporada e episódio no caminho/nome real do arquivo baixado (ex: S04E03), usa os números reais do arquivo
+            const filePathToCheck = metadata.rawFilePath || metadata.optimizedPath || metadata.nome || '';
+            const matchEpFile = filePathToCheck.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
+            if (matchEpFile) {
+                seasonNum = parseInt(matchEpFile[1], 10);
+                epNum = parseInt(matchEpFile[2], 10);
+            }
+
             await this.catalogoManager.adicionarEpisodioSerie(
                 metadata.nome,
-                job.season || 1,
-                job.episode || 1,
+                seasonNum,
+                epNum,
                 uploadResult.messageId,
                 uploadResult.fileId,
                 {

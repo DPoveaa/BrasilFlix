@@ -878,12 +878,12 @@ class CatalogoManager {
             ? 'Dub/Leg (Dublado + Legendado)'
             : (finalIsDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
 
-        // Se o episódio não tem metadados detalhados (nome, sinopse, stillUrl), busca no TMDB
-        if ((!metadados.episodioNome || metadados.episodioNome === `Episódio ${episodioNum}` || !metadados.episodioSinopse || !metadados.stillUrl) && (serie.tmdbId || metadados.tmdbId)) {
+        // Busca metadados detalhados no TMDB (nome oficial, sinopse, stillUrl, duracao)
+        if (serie.tmdbId || metadados.tmdbId) {
             try {
                 const epTmdb = await TMDBService.getEpisodeDetails(serie.tmdbId || metadados.tmdbId, temporadaNum, episodioNum);
                 if (epTmdb) {
-                    if (epTmdb.nome && epTmdb.nome !== `Episódio ${episodioNum}`) metadados.episodioNome = epTmdb.nome;
+                    if (epTmdb.nome) metadados.episodioNome = epTmdb.nome;
                     if (epTmdb.sinopse) metadados.episodioSinopse = epTmdb.sinopse;
                     if (epTmdb.stillUrl) metadados.stillUrl = epTmdb.stillUrl;
                     if (epTmdb.duracaoMinutos || epTmdb.runtime) metadados.duracao = epTmdb.duracaoMinutos || epTmdb.runtime;
