@@ -65,26 +65,31 @@ class TelegramUploader {
                     }
                 } catch (e) {}
 
+                let isAuthorized = false;
                 if (savedSession) {
                     try {
                         client.session = new StringSession(savedSession);
                         await client.connect();
-                        console.log('✅ Cliente MTProto autenticado via Sessão Salva!');
+                        isAuthorized = await client.checkAuthorization();
+                        if (isAuthorized) {
+                            console.log('✅ Cliente MTProto autenticado via Sessão Salva!');
+                        }
                     } catch (e) {
-                        console.warn('⚠️ Sessão salva expirada/inválida, reconectando via Bot Token...');
-                        await client.start({ botAuthToken: config.BOT_TOKEN });
-                        try {
-                            const sessStr = client.session.save();
-                            if (sessStr) fs.writeFileSync(savedSessionFile, sessStr, 'utf8');
-                        } catch (e) {}
-                        console.log('✅ Cliente MTProto autenticado via Bot Token e sessão renovada!');
+                        isAuthorized = false;
                     }
-                } else {
+                }
+
+                if (!isAuthorized) {
                     await client.start({ botAuthToken: config.BOT_TOKEN });
                     try {
                         const sessStr = client.session.save();
-                        if (sessStr) fs.writeFileSync(savedSessionFile, sessStr, 'utf8');
-                    } catch (e) {}
+                        if (sessStr) {
+                            fs.ensureDirSync(path.dirname(savedSessionFile));
+                            fs.writeFileSync(savedSessionFile, sessStr, 'utf8');
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Não foi possível persistir sessão do bot:', e.message);
+                    }
                     console.log('✅ Cliente MTProto autenticado via Bot Token!');
                 }
             }
@@ -100,6 +105,159 @@ class TelegramUploader {
         })();
 
         return this.initClientPromise;
+    }
+
+    /**
+     * Helper centralizado para buscar mensagens do storage por ID.
+     * Trata o tipo de STORAGE_GROUP_ID (Chat vs Channel/Supergroup) e distingue:
+     * - 'FOUND': Mensagem existe com mídia válida
+     * - 'NOT_FOUND': Mensagem confirmada como deletada/inexistente (MessageEmpty ou sem doc)
+     * - 'INVALID_MEDIA': Mensagem existe mas com doc 0 bytes ou formato não-vídeo
+     * - 'ERROR': Erro temporário de rede/Telegram (NÃO invalida mídia)
+     * 
+     * @param {number|number[]} messageIds ID ou lista de IDs de mensagens
+     * @returns {Promise<Map<number, { status: string, message: any, doc: any, docId: string|null, docSize: number, isVideo: boolean, duration: number, fileName: string|null, error: string|null }>>}
+     */
+    async getStorageMessages(messageIds) {
+        const resultMap = new Map();
+        const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [messageIds])
+            .map(id => Number(id))
+            .filter(id => !isNaN(id) && id > 0))];
+
+        if (ids.length === 0) return resultMap;
+
+        let client;
+        try {
+            client = await this.getClient();
+        } catch (err) {
+            for (const id of ids) {
+                resultMap.set(id, {
+                    status: 'ERROR',
+                    message: null,
+                    doc: null,
+                    docId: null,
+                    docSize: 0,
+                    isVideo: false,
+                    duration: 0,
+                    fileName: null,
+                    error: err.message
+                });
+            }
+            return resultMap;
+        }
+
+        const batchSize = 100;
+        for (let i = 0; i < ids.length; i += batchSize) {
+            const batch = ids.slice(i, i + batchSize);
+            try {
+                let entity = null;
+                try {
+                    entity = await client.getEntity(this.storageGroupId);
+                } catch (e) {}
+
+                let rawMessages = [];
+                if (entity && (entity.className === 'Channel' || entity.className === 'ChatForbidden')) {
+                    const inputChannel = await client.getInputEntity(entity);
+                    const res = await client.invoke(new Api.channels.GetMessages({
+                        channel: inputChannel,
+                        id: batch.map(id => new Api.InputMessageID({ id }))
+                    }));
+                    rawMessages = res.messages || [];
+                } else {
+                    const res = await client.invoke(new Api.messages.GetMessages({
+                        id: batch.map(id => new Api.InputMessageID({ id }))
+                    }));
+                    rawMessages = res.messages || [];
+                }
+
+                for (const requestedId of batch) {
+                    const msg = rawMessages.find(m => m && m.id === requestedId);
+                    if (!msg || msg.className === 'MessageEmpty') {
+                        resultMap.set(requestedId, {
+                            status: 'NOT_FOUND',
+                            message: null,
+                            doc: null,
+                            docId: null,
+                            docSize: 0,
+                            isVideo: false,
+                            duration: 0,
+                            fileName: null,
+                            error: null
+                        });
+                    } else if (msg.media && msg.media.document) {
+                        const doc = msg.media.document;
+                        const docSize = Number(doc.size || 0);
+                        const mimeType = String(doc.mimeType || '').toLowerCase();
+                        const videoAttr = (doc.attributes || []).find(a => a.className === 'DocumentAttributeVideo');
+                        const fnAttr = (doc.attributes || []).find(a => a.fileName);
+                        const isVideo = mimeType.startsWith('video/') || !!videoAttr;
+                        const duration = videoAttr?.duration || 0;
+
+                        if (docSize === 0 || !isVideo) {
+                            resultMap.set(requestedId, {
+                                status: 'INVALID_MEDIA',
+                                message: msg,
+                                doc: doc,
+                                docId: doc.id ? doc.id.toString() : null,
+                                docSize: docSize,
+                                isVideo: isVideo,
+                                duration: duration,
+                                fileName: fnAttr?.fileName || null,
+                                error: docSize === 0 ? 'Documento com 0 bytes' : 'Documento não é formato de vídeo'
+                            });
+                        } else {
+                            resultMap.set(requestedId, {
+                                status: 'FOUND',
+                                message: msg,
+                                doc: doc,
+                                docId: doc.id ? doc.id.toString() : null,
+                                docSize: docSize,
+                                isVideo: true,
+                                duration: duration,
+                                fileName: fnAttr?.fileName || null,
+                                error: null
+                            });
+                        }
+                    } else {
+                        resultMap.set(requestedId, {
+                            status: 'NOT_FOUND',
+                            message: msg,
+                            doc: null,
+                            docId: null,
+                            docSize: 0,
+                            isVideo: false,
+                            duration: 0,
+                            fileName: null,
+                            error: 'Mensagem sem documento de mídia'
+                        });
+                    }
+                }
+            } catch (err) {
+                console.warn(`⚠️ Erro ao consultar lote de mensagens no Telegram (${batch.join(',')}):`, err.message);
+                for (const requestedId of batch) {
+                    resultMap.set(requestedId, {
+                        status: 'ERROR',
+                        message: null,
+                        doc: null,
+                        docId: null,
+                        docSize: 0,
+                        isVideo: false,
+                        duration: 0,
+                        fileName: null,
+                        error: err.message
+                    });
+                }
+            }
+        }
+
+        return resultMap;
+    }
+
+    async getStorageMessage(messageId) {
+        const id = Number(messageId);
+        if (isNaN(id) || id <= 0) return { status: 'NOT_FOUND', message: null, doc: null, error: 'ID inválido' };
+        const map = await this.getStorageMessages([id]);
+        return map.get(id) || { status: 'NOT_FOUND', message: null, doc: null, error: 'Não encontrado' };
     }
 
     async forwardStorageMessage(targetChatId, messageId, caption = null) {
@@ -422,110 +580,202 @@ class TelegramUploader {
     }
 
     /**
-     * Varre todos os messageIds do catálogo no Telegram em lotes (batches de 50)
-     * e retorna o relatório completo de integridade (itens válidos vs ausentes/quebrados).
+     * Varre todos os registros de mídia do catálogo no Telegram utilizando o helper centralizado
+     * e retorna um relatório completo de integridade (válidos, ausentes, corrompidos, divergências de fileId, duplicados e unverified).
      */
     async verifyCatalogIntegrity(catalogo) {
-        const client = await this.getClient();
-
-        // Se foi passado um array direto de items
         let itemsList = Array.isArray(catalogo) ? catalogo : [];
 
-        // Se foi passado o objeto de catálogo { filmes, series }
         if (!Array.isArray(catalogo) && catalogo) {
-            // 1. Mapeia todos os messageIds dos filmes
+            // 1. Filmes
             for (const filme of (catalogo.filmes || [])) {
-                if (filme.messageId) {
-                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.messageId), fileId: filme.fileId, ano: filme.ano, tmdbId: filme.tmdbId });
+                if (filme.versoes?.dublado?.messageId || filme.versoes?.dublado?.fileId) {
+                    itemsList.push({
+                        tipo: 'filme',
+                        id: filme.id,
+                        nome: filme.nome,
+                        versao: 'dublado',
+                        messageId: filme.versoes.dublado.messageId ? Number(filme.versoes.dublado.messageId) : null,
+                        fileId: filme.versoes.dublado.fileId || null,
+                        ano: filme.ano,
+                        tmdbId: filme.tmdbId
+                    });
                 }
-                if (filme.versoes?.dublado?.messageId) {
-                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.dublado.messageId), fileId: filme.versoes.dublado.fileId, versao: 'dublado', ano: filme.ano, tmdbId: filme.tmdbId });
+                if (filme.versoes?.legendado?.messageId || filme.versoes?.legendado?.fileId) {
+                    itemsList.push({
+                        tipo: 'filme',
+                        id: filme.id,
+                        nome: filme.nome,
+                        versao: 'legendado',
+                        messageId: filme.versoes.legendado.messageId ? Number(filme.versoes.legendado.messageId) : null,
+                        fileId: filme.versoes.legendado.fileId || null,
+                        ano: filme.ano,
+                        tmdbId: filme.tmdbId
+                    });
                 }
-                if (filme.versoes?.legendado?.messageId && filme.versoes?.legendado?.messageId !== filme.versoes?.dublado?.messageId) {
-                    itemsList.push({ tipo: 'filme', id: filme.id, nome: filme.nome, messageId: Number(filme.versoes.legendado.messageId), fileId: filme.versoes.legendado.fileId, versao: 'legendado', ano: filme.ano, tmdbId: filme.tmdbId });
+                if (!filme.versoes?.dublado && !filme.versoes?.legendado && (filme.messageId || filme.fileId)) {
+                    itemsList.push({
+                        tipo: 'filme',
+                        id: filme.id,
+                        nome: filme.nome,
+                        versao: filme.is_dublado ? 'dublado' : (filme.is_legendado ? 'legendado' : 'principal'),
+                        messageId: filme.messageId ? Number(filme.messageId) : null,
+                        fileId: filme.fileId || null,
+                        ano: filme.ano,
+                        tmdbId: filme.tmdbId
+                    });
                 }
             }
 
-            // 2. Mapeia todos os messageIds dos episódios de séries
+            // 2. Séries e Episódios
             for (const serie of (catalogo.series || [])) {
                 for (const temp of (serie.temporadas || [])) {
                     for (const ep of (temp.episodios || [])) {
-                        if (ep.messageId) {
-                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.messageId), fileId: ep.fileId, tmdbId: serie.tmdbId });
+                        const epTitulo = `${serie.nome} T${temp.numero}E${ep.numero} (${ep.nome || ''})`;
+                        if (ep.versoes?.dublado?.messageId || ep.versoes?.dublado?.fileId) {
+                            itemsList.push({
+                                tipo: 'serie',
+                                id: serie.id,
+                                epId: ep.id,
+                                nome: epTitulo,
+                                season: temp.numero,
+                                episode: ep.numero,
+                                versao: 'dublado',
+                                messageId: ep.versoes.dublado.messageId ? Number(ep.versoes.dublado.messageId) : null,
+                                fileId: ep.versoes.dublado.fileId || null,
+                                tmdbId: serie.tmdbId
+                            });
                         }
-                        if (ep.versoes?.dublado?.messageId) {
-                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.dublado.messageId), fileId: ep.versoes.dublado.fileId, versao: 'dublado', tmdbId: serie.tmdbId });
+                        if (ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId) {
+                            itemsList.push({
+                                tipo: 'serie',
+                                id: serie.id,
+                                epId: ep.id,
+                                nome: epTitulo,
+                                season: temp.numero,
+                                episode: ep.numero,
+                                versao: 'legendado',
+                                messageId: ep.versoes.legendado.messageId ? Number(ep.versoes.legendado.messageId) : null,
+                                fileId: ep.versoes.legendado.fileId || null,
+                                tmdbId: serie.tmdbId
+                            });
                         }
-                        if (ep.versoes?.legendado?.messageId && ep.versoes?.legendado?.messageId !== ep.versoes?.dublado?.messageId) {
-                            itemsList.push({ tipo: 'serie', id: serie.id, nome: serie.nome, season: temp.numero, episode: ep.numero, messageId: Number(ep.versoes.legendado.messageId), fileId: ep.versoes.legendado.fileId, versao: 'legendado', tmdbId: serie.tmdbId });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove duplicados de messageId na lista de checagem
-        const uniqueMap = new Map();
-        for (const item of itemsList) {
-            if (item && item.messageId && !isNaN(item.messageId) && Number(item.messageId) > 0) {
-                if (!uniqueMap.has(Number(item.messageId))) uniqueMap.set(Number(item.messageId), item);
-            }
-        }
-        const uniqueItems = Array.from(uniqueMap.values());
-
-        const results = {
-            total: uniqueItems.length,
-            validos: [],
-            ausentes: [],
-            corrompidos: [],
-            unverified: []
-        };
-
-        const batchSize = 100;
-        for (let i = 0; i < uniqueItems.length; i += batchSize) {
-            const batch = uniqueItems.slice(i, i + batchSize);
-            const msgIds = batch.map(b => b.messageId);
-
-            try {
-                const resMessages = await client.invoke(new Api.messages.GetMessages({
-                    id: msgIds.map(id => new Api.InputMessageID({ id }))
-                }));
-                const messages = resMessages.messages || [];
-
-                for (let j = 0; j < batch.length; j++) {
-                    const item = batch[j];
-                    const msg = messages.find(m => m && m.id === item.messageId) || messages[j];
-
-                    if (!msg || msg.className === 'MessageEmpty' || !msg.media || !msg.media.document) {
-                        results.ausentes.push(item);
-                    } else {
-                        const doc = msg.media.document;
-                        const docSize = Number(doc.size);
-                        const videoAttr = (doc.attributes || []).find(a => a.className === 'DocumentAttributeVideo');
-                        const duration = videoAttr?.duration || 0;
-                        const sizeMB = (docSize / (1024 * 1024)).toFixed(1);
-
-                        if (docSize === 0) {
-                            results.corrompidos.push({ ...item, motivo: 'Tamanho 0 bytes' });
-                        } else {
-                            const fnAttr = doc.attributes?.find(a => a.fileName);
-                            results.validos.push({
-                                ...item,
-                                docId: doc.id.toString(),
-                                sizeMB: parseFloat(sizeMB),
-                                durationSec: duration,
-                                width: videoAttr?.w,
-                                height: videoAttr?.h,
-                                fileName: fnAttr?.fileName
+                        if (!ep.versoes?.dublado && !ep.versoes?.legendado && (ep.messageId || ep.fileId)) {
+                            itemsList.push({
+                                tipo: 'serie',
+                                id: serie.id,
+                                epId: ep.id,
+                                nome: epTitulo,
+                                season: temp.numero,
+                                episode: ep.numero,
+                                versao: ep.is_dublado ? 'dublado' : (ep.is_legendado ? 'legendado' : 'principal'),
+                                messageId: ep.messageId ? Number(ep.messageId) : null,
+                                fileId: ep.fileId || null,
+                                tmdbId: serie.tmdbId
                             });
                         }
                     }
                 }
-            } catch (err) {
-                console.error(`⚠️ Erro ao verificar lote de mensagens no Telegram:`, err.message);
-                for (const item of batch) {
-                    results.unverified.push({ ...item, erro: err.message });
+            }
+        }
+
+        // 3. Detecção de Duplicatas ANTES da deduplicação de chamadas
+        const msgIdToItems = new Map();
+        const fileIdToItems = new Map();
+        const duplicateReferences = [];
+
+        for (const item of itemsList) {
+            if (item.messageId && !isNaN(item.messageId) && Number(item.messageId) > 0) {
+                const mid = Number(item.messageId);
+                if (!msgIdToItems.has(mid)) msgIdToItems.set(mid, []);
+                msgIdToItems.get(mid).push(item);
+            }
+            if (item.fileId && typeof item.fileId === 'string' && item.fileId.trim().length > 0) {
+                const fid = item.fileId.trim();
+                if (!fileIdToItems.has(fid)) fileIdToItems.set(fid, []);
+                fileIdToItems.get(fid).push(item);
+            }
+        }
+
+        for (const [mid, list] of msgIdToItems.entries()) {
+            if (list.length > 1) {
+                duplicateReferences.push({
+                    type: 'DUPLICATE_MESSAGE_ID',
+                    identifier: mid,
+                    count: list.length,
+                    items: list
+                });
+            }
+        }
+
+        for (const [fid, list] of fileIdToItems.entries()) {
+            if (list.length > 1) {
+                duplicateReferences.push({
+                    type: 'DUPLICATE_FILE_ID',
+                    identifier: fid,
+                    count: list.length,
+                    items: list
+                });
+            }
+        }
+
+        // 4. Executa consulta em lote usando o helper centralizado
+        const allMsgIds = Array.from(msgIdToItems.keys());
+        const tgResults = await this.getStorageMessages(allMsgIds);
+
+        const results = {
+            total: itemsList.length,
+            totalUniqueMessageIds: allMsgIds.length,
+            validos: [],
+            ausentes: [],
+            corrompidos: [],
+            fileIdMismatches: [],
+            duplicates: duplicateReferences,
+            unverified: []
+        };
+
+        for (const item of itemsList) {
+            if (!item.messageId || isNaN(item.messageId) || Number(item.messageId) <= 0) {
+                if (item.fileId && typeof item.fileId === 'string' && item.fileId.trim().length > 0) {
+                    results.unverified.push({ ...item, motivo: 'Mídia apenas com fileId (sem messageId para verificação direta no Telegram)' });
+                } else {
+                    results.ausentes.push({ ...item, motivo: 'Sem messageId e sem fileId' });
                 }
+                continue;
+            }
+
+            const mid = Number(item.messageId);
+            const tgInfo = tgResults.get(mid);
+
+            if (!tgInfo) {
+                results.unverified.push({ ...item, motivo: 'Não consultado' });
+            } else if (tgInfo.status === 'ERROR') {
+                results.unverified.push({ ...item, erro: tgInfo.error });
+            } else if (tgInfo.status === 'NOT_FOUND') {
+                results.ausentes.push({ ...item, motivo: 'Mensagem deletada ou inexistente no Telegram' });
+            } else if (tgInfo.status === 'INVALID_MEDIA') {
+                results.corrompidos.push({ ...item, motivo: tgInfo.error });
+            } else if (tgInfo.status === 'FOUND') {
+                // Checa se há divergência de fileId com o documentId real do Telegram
+                if (item.fileId && typeof item.fileId === 'string' && item.fileId.trim().length > 0) {
+                    const storedFid = item.fileId.trim();
+                    if (tgInfo.docId && tgInfo.docId !== storedFid) {
+                        results.fileIdMismatches.push({
+                            ...item,
+                            storedFileId: storedFid,
+                            actualDocId: tgInfo.docId,
+                            motivo: 'fileId no banco difere do documentId real do Telegram'
+                        });
+                    }
+                }
+
+                results.validos.push({
+                    ...item,
+                    docId: tgInfo.docId,
+                    sizeMB: (tgInfo.docSize / (1024 * 1024)).toFixed(1),
+                    durationSec: tgInfo.duration,
+                    fileName: tgInfo.fileName
+                });
             }
         }
 

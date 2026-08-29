@@ -379,8 +379,188 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
             db.query = originalDbQuery;
         }
 
+        // Teste 15: Helper Centralizado getStorageMessages & getStorageMessage
+        console.log('\n--- Teste 15: Helper Centralizado getStorageMessages & getStorageMessage ---');
+        const helperUploader = new TelegramUploader();
+        let entityTypeQueried = null;
+        let lastInvokeType = null;
+
+        helperUploader.getClient = async () => ({
+            getEntity: async (id) => {
+                entityTypeQueried = id;
+                return { className: 'Chat' }; // Basic Group
+            },
+            invoke: async (request) => {
+                lastInvokeType = request.className;
+                return {
+                    messages: [
+                        {
+                            id: 100,
+                            className: 'Message',
+                            media: {
+                                document: {
+                                    id: 1234567890n,
+                                    size: 104857600, // 100MB
+                                    mimeType: 'video/mp4',
+                                    attributes: [{ className: 'DocumentAttributeVideo', duration: 3600 }]
+                                }
+                            }
+                        },
+                        {
+                            id: 101,
+                            className: 'MessageEmpty'
+                        },
+                        {
+                            id: 102,
+                            className: 'Message',
+                            media: {
+                                document: {
+                                    id: 9999999999n,
+                                    size: 0, // 0 bytes
+                                    mimeType: 'video/mp4'
+                                }
+                            }
+                        },
+                        {
+                            id: 103,
+                            className: 'Message',
+                            media: {
+                                document: {
+                                    id: 8888888888n,
+                                    size: 5000,
+                                    mimeType: 'application/pdf' // Não é vídeo
+                                }
+                            }
+                        }
+                    ]
+                };
+            }
+        });
+
+        const batchResults = await helperUploader.getStorageMessages([100, 101, 102, 103]);
+        assert(batchResults.get(100).status === 'FOUND', 'Msg 100 com vídeo válido deve ser FOUND');
+        assert(batchResults.get(100).isVideo === true, 'Msg 100 deve ser reconhecida como vídeo');
+        assert(batchResults.get(100).docId === '1234567890', 'Msg 100 docId deve ser string correto');
+        assert(batchResults.get(101).status === 'NOT_FOUND', 'Msg 101 MessageEmpty deve ser NOT_FOUND');
+        assert(batchResults.get(102).status === 'INVALID_MEDIA', 'Msg 102 tamanho 0 bytes deve ser INVALID_MEDIA');
+        assert(batchResults.get(103).status === 'INVALID_MEDIA', 'Msg 103 PDF deve ser INVALID_MEDIA');
+
+        // Teste de canal/supergroup
+        helperUploader.getClient = async () => ({
+            getEntity: async () => ({ className: 'Channel' }),
+            getInputEntity: async () => ({ className: 'InputChannel' }),
+            invoke: async (request) => {
+                lastInvokeType = request.className || request.constructor?.name;
+                return { messages: [] };
+            }
+        });
+        await helperUploader.getStorageMessages([200]);
+        assert(lastInvokeType && (lastInvokeType.includes('GetMessages') || lastInvokeType.includes('Channel')), 'Deve invocar API adequada para Channel');
+
+        // Teste de Erro de Rede -> status ERROR (não NOT_FOUND)
+        helperUploader.getClient = async () => ({
+            getEntity: async () => { throw new Error('CONNECTION_TIMEOUT'); }
+        });
+        const errResult = await helperUploader.getStorageMessage(500);
+        assert(errResult.status === 'ERROR', 'Erro de rede/timeout deve retornar status ERROR, NUNCA NOT_FOUND');
+
+        // Teste 16: verifyCatalogIntegrity Completa com Detecção de Duplicados e Divergência de fileId
+        console.log('\n--- Teste 16: verifyCatalogIntegrity com Detecção de Duplicados e Validação Real ---');
+        const auditUploader = new TelegramUploader();
+        auditUploader.getStorageMessages = async (ids) => {
+            const map = new Map();
+            for (const id of ids) {
+                if (id === 1000) {
+                    map.set(id, {
+                        status: 'FOUND',
+                        doc: { id: 777777n, size: 500000000, mimeType: 'video/mkv' },
+                        docId: '777777',
+                        docSize: 500000000,
+                        isVideo: true,
+                        duration: 7200,
+                        fileName: 'filme_a.mkv',
+                        error: null
+                    });
+                } else if (id === 2000) {
+                    map.set(id, {
+                        status: 'FOUND',
+                        doc: { id: 888888n, size: 500000000, mimeType: 'video/mp4' },
+                        docId: '888888', // No catálogo está cadastrado com fileId '999999' -> Mismatch
+                        docSize: 500000000,
+                        isVideo: true,
+                        duration: 3600,
+                        fileName: 'filme_b.mp4',
+                        error: null
+                    });
+                } else if (id === 3000) {
+                    map.set(id, { status: 'NOT_FOUND', doc: null, error: null });
+                } else if (id === 4000) {
+                    map.set(id, { status: 'INVALID_MEDIA', doc: null, error: 'Documento com 0 bytes' });
+                } else if (id === 5000) {
+                    map.set(id, { status: 'ERROR', error: 'FLOOD_WAIT_30' });
+                }
+            }
+            return map;
+        };
+
+        const mockCatalogToAudit = {
+            filmes: [
+                // 1. Válido e fileId compatível
+                { id: 1, nome: 'Filme Valido', versoes: { dublado: { messageId: 1000, fileId: '777777' } } },
+                // 2. Válido mas fileId divergente
+                { id: 2, nome: 'Filme Divergente', versoes: { dublado: { messageId: 2000, fileId: '999999' } } },
+                // 3. Ausente no Telegram
+                { id: 3, nome: 'Filme Ausente', versoes: { dublado: { messageId: 3000 } } },
+                // 4. Corrompido
+                { id: 4, nome: 'Filme Corrompido', versoes: { dublado: { messageId: 4000 } } },
+                // 5. Erro temporário de rede
+                { id: 5, nome: 'Filme Erro Rede', versoes: { dublado: { messageId: 5000 } } },
+                // 6. Duplicado com filme 1 (mesmo messageId 1000)
+                { id: 6, nome: 'Filme Duplicado', versoes: { dublado: { messageId: 1000 } } }
+            ],
+            series: []
+        };
+
+        const auditReport = await auditUploader.verifyCatalogIntegrity(mockCatalogToAudit);
+        assert(auditReport.validos.length === 3, 'Deve haver 3 mídias válidas (filmes 1, 2, 6)');
+        assert(auditReport.fileIdMismatches.length === 1, 'Deve detectar 1 divergência de fileId (filme 2)');
+        assert(auditReport.fileIdMismatches[0].storedFileId === '999999' && auditReport.fileIdMismatches[0].actualDocId === '888888', 'Detalhes da divergência de fileId devem estar corretos');
+        assert(auditReport.ausentes.length === 1, 'Deve detectar 1 mídia ausente (filme 3)');
+        assert(auditReport.corrompidos.length === 1, 'Deve detectar 1 mídia corrompida (filme 4)');
+        assert(auditReport.unverified.length === 1, 'Deve classificar erro temporário em unverified (filme 5)');
+        assert(auditReport.duplicates.length === 1, 'Deve detectar a duplicata de messageId antes da deduplicação de chamadas');
+        assert(auditReport.duplicates[0].identifier === 1000 && auditReport.duplicates[0].count === 2, 'Duplicata do messageId 1000 deve conter 2 itens');
+
+        // Teste 17: StremioServer com getStorageMessage e Auto-Healing condicional
+        console.log('\n--- Teste 17: StremioServer Proteção de Streaming e Erros de Rede ---');
+        let autoHealTriggeredFor = [];
+        const mockStreamServer = new StremioServer(mockHealCatMgr, mockAssinaturaMgr, null, null, 9997);
+        mockStreamServer.autoHealMissingMedia = async (id) => {
+            autoHealTriggeredFor.push(id);
+        };
+
+        // 17.1 Erro temporário de rede -> Retorna 503 e NÃO chama auto-healing
+        const telegramUploaderInstance = TelegramUploader.getInstance();
+        const origGetStorageMessage = telegramUploaderInstance.getStorageMessage;
+        try {
+            telegramUploaderInstance.getStorageMessage = async () => ({ status: 'ERROR', error: 'Network timeout' });
+            let respCode = null;
+            await mockStreamServer.streamTelegramMedia({}, { status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 999 });
+            assert(respCode === 503, 'Erro de rede deve retornar 503');
+            assert(autoHealTriggeredFor.length === 0, 'Erro de rede NÃO deve disparar auto-healing');
+
+            // 17.2 Mídia confirmada ausente (NOT_FOUND) -> Retorna 404 e DISPARA auto-healing
+            telegramUploaderInstance.getStorageMessage = async () => ({ status: 'NOT_FOUND', error: null });
+            respCode = null;
+            await mockStreamServer.streamTelegramMedia({}, { status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 888 });
+            assert(respCode === 404, 'Mídia NOT_FOUND deve retornar 404');
+            assert(autoHealTriggeredFor.includes(888), 'Mídia confirmada ausente DEVE disparar auto-healing');
+        } finally {
+            telegramUploaderInstance.getStorageMessage = origGetStorageMessage;
+        }
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS TESTES DE REGRESSÃO, INTEGRIDADE E STREAMING PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 17 TESTES DE REGRESSÃO, INTEGRIDADE E STREAMING PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {

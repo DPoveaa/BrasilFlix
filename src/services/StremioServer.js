@@ -2255,41 +2255,27 @@ class StremioServer {
 
     async streamTelegramMedia(req, res, midia) {
         try {
-            const client = await telegramUploader.getInstance().getClient();
-            if (!client) {
+            const uploader = telegramUploader.getInstance();
+            const rawMsgId = Number(midia.messageId);
+
+            if (isNaN(rawMsgId) || rawMsgId <= 0) {
+                return res.status(404).send('Mídia de vídeo sem messageId de armazenamento válido.');
+            }
+
+            const msgInfo = await uploader.getStorageMessage(rawMsgId);
+
+            if (msgInfo.status === 'ERROR') {
                 return res.status(503).send('Serviço de streaming do Telegram temporariamente indisponível.');
             }
 
-            let doc = null;
-            let isConfirmedMissing = false;
-            const rawMsgId = Number(midia.messageId);
-
-            if (!isNaN(rawMsgId) && rawMsgId > 0) {
-                try {
-                    const resMessages = await client.invoke(new Api.messages.GetMessages({
-                        id: [new Api.InputMessageID({ id: rawMsgId })]
-                    }));
-                    if (resMessages && resMessages.messages && resMessages.messages.length > 0) {
-                        const m = resMessages.messages[0];
-                        if (m.className === 'MessageEmpty') {
-                            isConfirmedMissing = true;
-                        } else if (m.media && m.media.document && Number(m.media.document.size) > 0) {
-                            doc = m.media.document;
-                        } else {
-                            isConfirmedMissing = true;
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`Aviso ao buscar mensagem ${rawMsgId}:`, e.message);
-                }
-            }
-
-            if (!doc) {
-                if (isConfirmedMissing) {
-                    this.autoHealMissingMedia(rawMsgId).catch(() => {});
-                }
+            if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
+                // Auto-healing ativado apenas para mídias confirmadamente ausentes ou corrompidas no Telegram
+                this.autoHealMissingMedia(rawMsgId).catch(() => {});
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
+
+            const doc = msgInfo.doc;
+            const client = await uploader.getClient();
 
             const inputFileLocation = new Api.InputDocumentFileLocation({
                 id: doc.id,
@@ -2425,7 +2411,12 @@ class StremioServer {
             console.warn(`🩺 [Auto-Healing] Invalidando versão ausente no PostgreSQL para messageId ${msgId}...`);
 
             // 1. Filmes
-            const filmesRes = await db.query(`SELECT * FROM filmes WHERE message_id = $1 OR (versoes::text LIKE $2)`, [msgId, `%"messageId":${msgId}%`]);
+            const filmesRes = await db.query(`
+                SELECT * FROM filmes 
+                WHERE message_id = $1 
+                   OR (versoes->'dublado'->>'messageId')::bigint = $1 
+                   OR (versoes->'legendado'->>'messageId')::bigint = $1
+            `, [msgId]);
             for (const f of filmesRes.rows) {
                 let versoes = f.versoes || {};
                 if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
@@ -2453,7 +2444,12 @@ class StremioServer {
             }
 
             // 2. Episódios
-            const epsRes = await db.query(`SELECT * FROM episodios WHERE message_id = $1 OR (versoes::text LIKE $2)`, [msgId, `%"messageId":${msgId}%`]);
+            const epsRes = await db.query(`
+                SELECT * FROM episodios 
+                WHERE message_id = $1 
+                   OR (versoes->'dublado'->>'messageId')::bigint = $1 
+                   OR (versoes->'legendado'->>'messageId')::bigint = $1
+            `, [msgId]);
             const affectedSerieIds = new Set();
             for (const ep of epsRes.rows) {
                 affectedSerieIds.add(ep.serie_id);
