@@ -24,6 +24,18 @@ class CatalogoManager {
         fs.ensureDirSync(this.backupDir);
     }
 
+    saveCatalogoBackup() {
+        try {
+            if (this.catalogo && (this.catalogo.filmes || this.catalogo.series)) {
+                const catalogoPath = config.CATALOGO_FILE || path.resolve(__dirname, '../../data/catalogo.json');
+                fs.ensureDirSync(path.dirname(catalogoPath));
+                fs.writeJsonSync(catalogoPath, this.catalogo, { spaces: 2 });
+            }
+        } catch (e) {
+            console.warn('⚠️ Aviso ao salvar backup local do catálogo:', e.message);
+        }
+    }
+
     /**
      * Valida se um par (messageId, fileId) possui ao menos um identificador real e utilizável:
      * - messageId deve ser um número positivo válido (> 0)
