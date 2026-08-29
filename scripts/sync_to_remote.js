@@ -43,7 +43,8 @@ const filesToSync = [
     'public/assets/logos/original_logo.jpg',
     'public/assets/telegram/bot_avatar.jpg',
     'public/assets/telegram/vip_clients_avatar.jpg',
-    'public/assets/telegram/storage_group_avatar.jpg'
+    'public/assets/telegram/storage_group_avatar.jpg',
+    'scripts/run_production_audit.js'
 ];
 
 async function sync() {

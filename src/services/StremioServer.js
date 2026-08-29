@@ -2151,19 +2151,28 @@ class StremioServer {
             }
         }
 
-        const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;
         const rawMsgId = Number(versaoEscolhida.messageId);
         const hasValidMsgId = !isNaN(rawMsgId) && rawMsgId > 0;
 
-        // Se houver Cloudflare Worker configurado e a mídia possuir fileId válido, redireciona para o Edge CDN
-        if (config.CLOUDFLARE_STREAM_URL && hasValidFileId) {
-            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId.trim())}`;
-            return res.redirect(302, cloudflareUrl);
+        if (!hasValidMsgId) {
+            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming.');
         }
 
-        // Se não houver Cloudflare configurado e a mídia possuir apenas fileId (sem messageId válido), retorna 404 explícito
-        if (!hasValidMsgId) {
-            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming direto.');
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId:
+        // Primeiro valida via Telegram Storage para confirmar integridade e correspondência do fileId
+        if (config.CLOUDFLARE_STREAM_URL && typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0) {
+            const uploader = telegramUploader.getInstance();
+            const msgInfo = await uploader.getStorageMessage(rawMsgId);
+            if (msgInfo.status === 'ERROR') {
+                return res.status(503).send('Serviço de streaming temporariamente indisponível.');
+            }
+            if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
+                this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
+            }
+            const verifiedFileId = msgInfo.docId || versaoEscolhida.fileId.trim();
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(verifiedFileId)}`;
+            return res.redirect(302, cloudflareUrl);
         }
 
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
@@ -2235,19 +2244,28 @@ class StremioServer {
             }
         }
 
-        const hasValidFileId = typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0;
         const rawMsgId = Number(versaoEscolhida.messageId);
         const hasValidMsgId = !isNaN(rawMsgId) && rawMsgId > 0;
 
-        // Se houver Cloudflare Worker configurado e a mídia possuir fileId válido, redireciona para o Edge CDN
-        if (config.CLOUDFLARE_STREAM_URL && hasValidFileId) {
-            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(versaoEscolhida.fileId.trim())}`;
-            return res.redirect(302, cloudflareUrl);
+        if (!hasValidMsgId) {
+            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming.');
         }
 
-        // Se não houver Cloudflare configurado e a mídia possuir apenas fileId (sem messageId válido), retorna 404 explícito
-        if (!hasValidMsgId) {
-            return res.status(404).send('Mídia de vídeo sem messageId de armazenamento disponível para streaming direto.');
+        // Se houver Cloudflare Worker configurado e a mídia possuir fileId:
+        // Primeiro valida via Telegram Storage para confirmar integridade e correspondência do fileId
+        if (config.CLOUDFLARE_STREAM_URL && typeof versaoEscolhida.fileId === 'string' && versaoEscolhida.fileId.trim().length > 0) {
+            const uploader = telegramUploader.getInstance();
+            const msgInfo = await uploader.getStorageMessage(rawMsgId);
+            if (msgInfo.status === 'ERROR') {
+                return res.status(503).send('Serviço de streaming temporariamente indisponível.');
+            }
+            if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
+                this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
+            }
+            const verifiedFileId = msgInfo.docId || versaoEscolhida.fileId.trim();
+            const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(verifiedFileId)}`;
+            return res.redirect(302, cloudflareUrl);
         }
 
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
@@ -2414,17 +2432,17 @@ class StremioServer {
             const filmesRes = await db.query(`
                 SELECT * FROM filmes 
                 WHERE message_id = $1 
-                   OR (versoes->'dublado'->>'messageId')::bigint = $1 
-                   OR (versoes->'legendado'->>'messageId')::bigint = $1
-            `, [msgId]);
+                   OR versoes->'dublado'->>'messageId' = $2 
+                   OR versoes->'legendado'->>'messageId' = $2
+            `, [msgId, String(msgId)]);
             for (const f of filmesRes.rows) {
                 let versoes = f.versoes || {};
                 if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
 
-                if (versoes.dublado && Number(versoes.dublado.messageId) === msgId) {
+                if (versoes.dublado && String(versoes.dublado.messageId) === String(msgId)) {
                     versoes.dublado = null;
                 }
-                if (versoes.legendado && Number(versoes.legendado.messageId) === msgId) {
+                if (versoes.legendado && String(versoes.legendado.messageId) === String(msgId)) {
                     versoes.legendado = null;
                 }
 
@@ -2447,9 +2465,9 @@ class StremioServer {
             const epsRes = await db.query(`
                 SELECT * FROM episodios 
                 WHERE message_id = $1 
-                   OR (versoes->'dublado'->>'messageId')::bigint = $1 
-                   OR (versoes->'legendado'->>'messageId')::bigint = $1
-            `, [msgId]);
+                   OR versoes->'dublado'->>'messageId' = $2 
+                   OR versoes->'legendado'->>'messageId' = $2
+            `, [msgId, String(msgId)]);
             const affectedSerieIds = new Set();
             for (const ep of epsRes.rows) {
                 affectedSerieIds.add(ep.serie_id);

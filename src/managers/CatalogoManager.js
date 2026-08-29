@@ -54,19 +54,33 @@ class CatalogoManager {
     }
 
     /**
-     * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Dublada
-     * (requer messageId numérico positivo válido ou fileId string não vazia).
+     * Verifica se a referência de mídia possui identificador de armazenamento direto e reproduzível
+     * (messageId numérico positivo > 0 no Telegram). Referências que contêm apenas fileId sem messageId
+     * são classificadas como UNVERIFIED e não são expostas como reproduzíveis no catálogo público.
+     */
+    static hasPlayableMedia(mediaObj) {
+        if (!mediaObj) return false;
+        const msgId = mediaObj.messageId ?? mediaObj.message_id;
+        if (msgId !== null && msgId !== undefined && msgId !== '') {
+            const num = Number(msgId);
+            if (!isNaN(num) && num > 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Dublada.
      */
     static hasValidDubbedMedia(ep) {
         if (!ep) return false;
         if (ep.versoes?.dublado) {
-            if (CatalogoManager.isValidMediaIdentifier(ep.versoes.dublado.messageId, ep.versoes.dublado.fileId)) {
+            if (CatalogoManager.hasPlayableMedia(ep.versoes.dublado)) {
                 return true;
             }
         }
         const isDub = !!(ep.isDublado || ep.is_dublado);
         if (isDub) {
-            if (CatalogoManager.isValidMediaIdentifier(ep.messageId || ep.message_id, ep.fileId || ep.file_id)) {
+            if (CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id })) {
                 return true;
             }
         }
@@ -74,19 +88,18 @@ class CatalogoManager {
     }
 
     /**
-     * Verifica se o episódio possui arquivo de mídia real e utilizável para a versão Legendada
-     * (requer messageId numérico positivo válido ou fileId string não vazia).
+     * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Legendada.
      */
     static hasValidSubtitledMedia(ep) {
         if (!ep) return false;
         if (ep.versoes?.legendado) {
-            if (CatalogoManager.isValidMediaIdentifier(ep.versoes.legendado.messageId, ep.versoes.legendado.fileId)) {
+            if (CatalogoManager.hasPlayableMedia(ep.versoes.legendado)) {
                 return true;
             }
         }
         const isLeg = !!(ep.isLegendado || ep.is_legendado);
         if (isLeg) {
-            if (CatalogoManager.isValidMediaIdentifier(ep.messageId || ep.message_id, ep.fileId || ep.file_id)) {
+            if (CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id })) {
                 return true;
             }
         }

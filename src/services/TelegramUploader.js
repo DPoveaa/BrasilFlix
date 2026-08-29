@@ -766,6 +766,7 @@ class TelegramUploader {
                             actualDocId: tgInfo.docId,
                             motivo: 'fileId no banco difere do documentId real do Telegram'
                         });
+                        continue; // Mídia com divergência de fileId NÃO é classificada como válida
                     }
                 }
 
@@ -780,6 +781,208 @@ class TelegramUploader {
         }
 
         return results;
+    }
+
+    /**
+     * Realiza a auditoria direta e completa das tabelas brutas do PostgreSQL (filmes, episodios, series)
+     * contra o Armazém do Telegram, sem depender de normalização do catálogo em memória.
+     * Identifica:
+     * - Mídias válidas vs ausentes/corrompidas no Telegram;
+     * - Divergências de fileId vs docId do Telegram (excluídas de válidas);
+     * - Duplicatas de messageId e fileId no banco;
+     * - Registros com flags inconsistentes/órfãos;
+     * - Episódios duplicados por (serie_id, temporada_numero, numero);
+     * - Divergências entre message_id primário e versoes.
+     */
+    async verifyDatabaseIntegrity(db) {
+        if (!db || typeof db.query !== 'function') {
+            throw new Error('Instância válida do banco de dados (db) é obrigatória para a auditoria direta.');
+        }
+
+        const filmesRes = await db.query('SELECT * FROM filmes ORDER BY id ASC');
+        const seriesRes = await db.query('SELECT * FROM series ORDER BY id ASC');
+        const epsRes = await db.query('SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC');
+
+        const seriesMap = new Map();
+        for (const s of seriesRes.rows) {
+            seriesMap.set(Number(s.id), s);
+        }
+
+        const rawMediaReferences = [];
+        const anomalousDbRecords = {
+            staleFlags: [],
+            orphanedEpisodes: [],
+            duplicateEpisodes: [],
+            conflictingPrimaryIds: [],
+            malformedJson: []
+        };
+
+        // 1. Audita tabela de Filmes
+        for (const f of filmesRes.rows) {
+            let versoes = f.versoes || {};
+            if (typeof versoes === 'string') {
+                try {
+                    versoes = JSON.parse(versoes);
+                } catch (e) {
+                    anomalousDbRecords.malformedJson.push({ tabela: 'filmes', id: f.id, nome: f.nome, erro: e.message });
+                    versoes = {};
+                }
+            }
+
+            const dubMsgId = versoes.dublado?.messageId ? Number(versoes.dublado.messageId) : null;
+            const legMsgId = versoes.legendado?.messageId ? Number(versoes.legendado.messageId) : null;
+            const primaryMsgId = f.message_id ? Number(f.message_id) : null;
+
+            if (primaryMsgId && dubMsgId && legMsgId && primaryMsgId !== dubMsgId && primaryMsgId !== legMsgId) {
+                anomalousDbRecords.conflictingPrimaryIds.push({
+                    tabela: 'filmes',
+                    id: f.id,
+                    nome: f.nome,
+                    primaryMsgId,
+                    dubMsgId,
+                    legMsgId
+                });
+            }
+
+            if (f.is_dublado && !versoes.dublado && !f.message_id && !f.file_id) {
+                anomalousDbRecords.staleFlags.push({ tabela: 'filmes', id: f.id, nome: f.nome, flag: 'is_dublado sem mídia' });
+            }
+            if (f.is_legendado && !versoes.legendado && !f.message_id && !f.file_id) {
+                anomalousDbRecords.staleFlags.push({ tabela: 'filmes', id: f.id, nome: f.nome, flag: 'is_legendado sem mídia' });
+            }
+
+            if (versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId)) {
+                rawMediaReferences.push({
+                    origem: 'filmes',
+                    id: f.id,
+                    nome: f.nome,
+                    versao: 'dublado',
+                    messageId: versoes.dublado.messageId ? Number(versoes.dublado.messageId) : null,
+                    fileId: versoes.dublado.fileId || null,
+                    tmdbId: f.tmdb_id
+                });
+            }
+            if (versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId)) {
+                rawMediaReferences.push({
+                    origem: 'filmes',
+                    id: f.id,
+                    nome: f.nome,
+                    versao: 'legendado',
+                    messageId: versoes.legendado.messageId ? Number(versoes.legendado.messageId) : null,
+                    fileId: versoes.legendado.fileId || null,
+                    tmdbId: f.tmdb_id
+                });
+            }
+            if (!versoes.dublado && !versoes.legendado && (f.message_id || f.file_id)) {
+                rawMediaReferences.push({
+                    origem: 'filmes',
+                    id: f.id,
+                    nome: f.nome,
+                    versao: f.is_dublado ? 'dublado' : (f.is_legendado ? 'legendado' : 'principal'),
+                    messageId: f.message_id ? Number(f.message_id) : null,
+                    fileId: f.file_id || null,
+                    tmdbId: f.tmdb_id
+                });
+            }
+        }
+
+        // 2. Audita tabela de Episódios
+        const epUniqueKeys = new Map();
+        for (const ep of epsRes.rows) {
+            const epKey = `${ep.serie_id}_s${ep.temporada_numero}_e${ep.numero}`;
+            if (!epUniqueKeys.has(epKey)) {
+                epUniqueKeys.set(epKey, []);
+            }
+            epUniqueKeys.get(epKey).push(ep.id);
+
+            const serie = seriesMap.get(Number(ep.serie_id));
+            if (!serie) {
+                anomalousDbRecords.orphanedEpisodes.push({ epId: ep.id, serieId: ep.serie_id, epNome: ep.nome });
+            }
+
+            let versoes = ep.versoes || {};
+            if (typeof versoes === 'string') {
+                try {
+                    versoes = JSON.parse(versoes);
+                } catch (e) {
+                    anomalousDbRecords.malformedJson.push({ tabela: 'episodios', id: ep.id, nome: ep.nome, erro: e.message });
+                    versoes = {};
+                }
+            }
+
+            const serieNome = serie ? serie.nome : `Série #${ep.serie_id}`;
+            const epTitulo = `${serieNome} T${ep.temporada_numero}E${ep.numero} (${ep.nome || ''})`;
+
+            if (ep.is_dublado && !versoes.dublado && !ep.message_id && !ep.file_id) {
+                anomalousDbRecords.staleFlags.push({ tabela: 'episodios', id: ep.id, nome: epTitulo, flag: 'is_dublado sem mídia' });
+            }
+            if (ep.is_legendado && !versoes.legendado && !ep.message_id && !ep.file_id) {
+                anomalousDbRecords.staleFlags.push({ tabela: 'episodios', id: ep.id, nome: epTitulo, flag: 'is_legendado sem mídia' });
+            }
+
+            if (versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId)) {
+                rawMediaReferences.push({
+                    origem: 'episodios',
+                    id: ep.id,
+                    serieId: ep.serie_id,
+                    nome: epTitulo,
+                    season: ep.temporada_numero,
+                    episode: ep.numero,
+                    versao: 'dublado',
+                    messageId: versoes.dublado.messageId ? Number(versoes.dublado.messageId) : null,
+                    fileId: versoes.dublado.fileId || null,
+                    tmdbId: serie?.tmdb_id
+                });
+            }
+            if (versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId)) {
+                rawMediaReferences.push({
+                    origem: 'episodios',
+                    id: ep.id,
+                    serieId: ep.serie_id,
+                    nome: epTitulo,
+                    season: ep.temporada_numero,
+                    episode: ep.numero,
+                    versao: 'legendado',
+                    messageId: versoes.legendado.messageId ? Number(versoes.legendado.messageId) : null,
+                    fileId: versoes.legendado.fileId || null,
+                    tmdbId: serie?.tmdb_id
+                });
+            }
+            if (!versoes.dublado && !versoes.legendado && (ep.message_id || ep.file_id)) {
+                rawMediaReferences.push({
+                    origem: 'episodios',
+                    id: ep.id,
+                    serieId: ep.serie_id,
+                    nome: epTitulo,
+                    season: ep.temporada_numero,
+                    episode: ep.numero,
+                    versao: ep.is_dublado ? 'dublado' : (ep.is_legendado ? 'legendado' : 'principal'),
+                    messageId: ep.message_id ? Number(ep.message_id) : null,
+                    fileId: ep.file_id || null,
+                    tmdbId: serie?.tmdb_id
+                });
+            }
+        }
+
+        for (const [key, ids] of epUniqueKeys.entries()) {
+            if (ids.length > 1) {
+                anomalousDbRecords.duplicateEpisodes.push({ key, ids, count: ids.length });
+            }
+        }
+
+        // Executa a auditoria das referências de mídia no Telegram
+        const telegramAudit = await this.verifyCatalogIntegrity(rawMediaReferences);
+
+        return {
+            databaseTotals: {
+                totalFilmes: filmesRes.rows.length,
+                totalSeries: seriesRes.rows.length,
+                totalEpisodios: epsRes.rows.length,
+                totalMediaReferences: rawMediaReferences.length
+            },
+            telegramAudit,
+            anomalousDbRecords
+        };
     }
 }
 

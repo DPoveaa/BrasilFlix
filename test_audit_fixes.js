@@ -40,7 +40,7 @@ assert(res2.totalEpisodios === 1, 'Deve ter 1 episodio');
 // 3. Ep 1 subtitled -> season visible as subtitled
 console.log('\n--- Teste 3: Ep 1 Legendado -> Temporada visível como Legendado ---');
 const t3_eps = [
-    { numero: 1, isLegendado: true, fileId: 'file_leg_301' }
+    { numero: 1, isLegendado: true, messageId: 301, fileId: 'file_leg_301' }
 ];
 const res3 = CatalogoManager.normalizeSeasonEpisodes(t3_eps, 1);
 assert(res3 !== null, 'Temporada com Ep 1 legendado deve estar visivel');
@@ -116,7 +116,7 @@ assert(res8 === null, 'Temporada sem midia real para dublado nem legendado deve 
 // 9. A valid newly released season containing only Ep 1 remains visible
 console.log('\n--- Teste 9: Temporada recém lançada com apenas Ep 1 -> Permanece Visível ---');
 const t9_eps = [
-    { numero: 1, isDublado: true, isLegendado: true, versoes: { dublado: { messageId: 901 }, legendado: { fileId: 'leg_901' } } }
+    { numero: 1, isDublado: true, isLegendado: true, versoes: { dublado: { messageId: 901 }, legendado: { messageId: 902, fileId: 'leg_901' } } }
 ];
 const res9 = CatalogoManager.normalizeSeasonEpisodes(t9_eps, 1);
 assert(res9 !== null, 'Temporada recem lancada com apenas Ep 1 deve estar visivel');
@@ -522,7 +522,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         };
 
         const auditReport = await auditUploader.verifyCatalogIntegrity(mockCatalogToAudit);
-        assert(auditReport.validos.length === 3, 'Deve haver 3 mídias válidas (filmes 1, 2, 6)');
+        assert(auditReport.validos.length === 2, 'Deve haver 2 mídias válidas (filmes 1 e 6, com filme 2 divergente excluído de válidos)');
         assert(auditReport.fileIdMismatches.length === 1, 'Deve detectar 1 divergência de fileId (filme 2)');
         assert(auditReport.fileIdMismatches[0].storedFileId === '999999' && auditReport.fileIdMismatches[0].actualDocId === '888888', 'Detalhes da divergência de fileId devem estar corretos');
         assert(auditReport.ausentes.length === 1, 'Deve detectar 1 mídia ausente (filme 3)');
@@ -559,8 +559,115 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
             telegramUploaderInstance.getStorageMessage = origGetStorageMessage;
         }
 
+        // Teste 18: hasPlayableMedia e Rejeição de fileId não verificado
+        console.log('\n--- Teste 18: hasPlayableMedia e Rejeição de fileId Não Verificado ---');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 100 }) === true, 'messageId numérico positivo deve ser playable');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: '200' }) === true, 'messageId string numérica positiva deve ser playable');
+        assert(CatalogoManager.hasPlayableMedia({ fileId: '4931446608492496572' }) === false, 'Apenas fileId sem messageId NÃO deve ser tratado como playable no catálogo público');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 0, fileId: 'some_id' }) === false, 'messageId 0 com fileId NÃO deve ser playable');
+
+        // Teste de exclusão estrita de FILE_ID_MISMATCH da lista de válidos
+        const mismatchAuditUploader = new TelegramUploader();
+        mismatchAuditUploader.getStorageMessages = async () => {
+            const map = new Map();
+            map.set(100, {
+                status: 'FOUND',
+                docId: 'real_doc_999',
+                docSize: 500000000,
+                isVideo: true,
+                duration: 3600,
+                fileName: 'video.mp4'
+            });
+            return map;
+        };
+        const mismatchResult = await mismatchAuditUploader.verifyCatalogIntegrity([
+            { id: 1, nome: 'Item Mismatch', messageId: 100, fileId: 'wrong_stored_doc_111' }
+        ]);
+        assert(mismatchResult.validos.length === 0, 'Item com divergência de fileId NÃO pode estar em válidos');
+        assert(mismatchResult.fileIdMismatches.length === 1, 'Item com divergência de fileId DEVE estar em fileIdMismatches');
+
+        // Teste 19: Auditoria Direta de PostgreSQL (verifyDatabaseIntegrity)
+        console.log('\n--- Teste 19: Auditoria Direta do Banco de Dados PostgreSQL ---');
+        const mockDb = {
+            query: async (sql) => {
+                if (sql.includes('FROM filmes')) {
+                    return {
+                        rows: [
+                            { id: 1, nome: 'Filme A', is_dublado: true, message_id: 100, versoes: { dublado: { messageId: 100 } } },
+                            { id: 2, nome: 'Filme Stale Flag', is_dublado: true, is_legendado: false, message_id: null, file_id: null, versoes: null }
+                        ]
+                    };
+                }
+                if (sql.includes('FROM series')) {
+                    return {
+                        rows: [
+                            { id: 10, nome: 'Serie Teste', total_temporadas: 1, total_episodios: 2 }
+                        ]
+                    };
+                }
+                if (sql.includes('FROM episodios')) {
+                    return {
+                        rows: [
+                            { id: 50, serie_id: 10, temporada_numero: 1, numero: 1, nome: 'E1', message_id: 200, versoes: { dublado: { messageId: 200 } } },
+                            { id: 51, serie_id: 10, temporada_numero: 1, numero: 1, nome: 'E1 Duplicado no DB', message_id: 201, versoes: { dublado: { messageId: 201 } } },
+                            { id: 99, serie_id: 999, temporada_numero: 1, numero: 1, nome: 'E Órfão', message_id: 300 }
+                        ]
+                    };
+                }
+                return { rows: [] };
+            }
+        };
+
+        const directAuditUploader = new TelegramUploader();
+        directAuditUploader.getStorageMessages = async (ids) => {
+            const map = new Map();
+            for (const id of ids) {
+                map.set(id, { status: 'FOUND', docId: String(id), docSize: 1000000, isVideo: true, duration: 1000 });
+            }
+            return map;
+        };
+
+        const dbAuditReport = await directAuditUploader.verifyDatabaseIntegrity(mockDb);
+        assert(dbAuditReport.databaseTotals.totalFilmes === 2, 'Total de filmes no banco deve ser 2');
+        assert(dbAuditReport.databaseTotals.totalEpisodios === 3, 'Total de episódios no banco deve ser 3');
+        assert(dbAuditReport.anomalousDbRecords.staleFlags.length === 1, 'Deve detectar 1 flag inconsistente (is_dublado sem mídia)');
+        assert(dbAuditReport.anomalousDbRecords.orphanedEpisodes.length === 1, 'Deve detectar 1 episódio órfão');
+        assert(dbAuditReport.anomalousDbRecords.duplicateEpisodes.length === 1, 'Deve detectar 1 número de episódio duplicado no banco');
+
+        // Teste 20: Resiliência de autoHealMissingMedia com JSONB contendo strings não numéricas
+        console.log('\n--- Teste 20: Resiliência contra Strings Não-Numéricas no JSONB ---');
+        let autoHealExecutedSafely = false;
+        const mockSafeCatMgr = { loadCatalogo: async () => {} };
+        const mockSafeServer = new StremioServer(mockSafeCatMgr, mockAssinaturaMgr, null, null, 9996);
+
+        const origSafeQuery = db.query;
+        db.query = async (sql, params) => {
+            if (sql.includes('SELECT * FROM filmes') || sql.includes('SELECT * FROM episodios')) {
+                autoHealExecutedSafely = true;
+                return {
+                    rows: [{
+                        id: 77,
+                        serie_id: 10,
+                        temporada_numero: 1,
+                        numero: 1,
+                        is_dublado: false,
+                        is_legendado: false,
+                        versoes: { dublado: { messageId: "valor_invalido_texto" }, legendado: { messageId: 315641 } }
+                    }]
+                };
+            }
+            return { rows: [] };
+        };
+
+        try {
+            await mockSafeServer.autoHealMissingMedia(315641);
+            assert(autoHealExecutedSafely === true, 'autoHealMissingMedia deve executar com segurança sem erro de casting');
+        } finally {
+            db.query = origSafeQuery;
+        }
+
         console.log('\n====================================================');
-        console.log('🎉 TODOS OS 17 TESTES DE REGRESSÃO, INTEGRIDADE E STREAMING PASSARAM COM SUCESSO!');
+        console.log('🎉 TODOS OS 20 TESTES DE REGRESSÃO, INTEGRIDADE E BANCO PASSARAM COM SUCESSO!');
         console.log('====================================================\n');
         process.exit(0);
     } catch (err) {
