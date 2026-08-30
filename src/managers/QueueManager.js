@@ -1000,28 +1000,6 @@ class QueueManager extends EventEmitter {
             nextJob.error = error.message;
             await this.saveJob(nextJob);
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
-
-            // Se for upgrade de dublado/legendado de um episódio que já existe no catálogo,
-            // registra cooldown de 7 dias para evitar loop de re-tentativas infinitas.
-            if (nextJob.type === 'serie' && nextJob.isUpgrade && nextJob.season && nextJob.episode) {
-                try {
-                    const serieExist = this.catalogoManager.buscarItemExato(nextJob.title, 'serie', nextJob.tmdbId);
-                    if (serieExist) {
-                        const epExistente = this.catalogoManager.buscarEpisodio(serieExist.id, nextJob.season, nextJob.episode);
-                        if (epExistente) {
-                            // Só aplica cooldown se o ep já existir no catálogo (ou seja, é realmente upgrade, não ep novo)
-                            const pref = nextJob.audioPreference || 'dublado';
-                            if (pref === 'dublado' && !epExistente.isDublado) {
-                                await this.catalogoManager.marcarEpisodioDubIndisponivel(serieExist.id, nextJob.season, nextJob.episode);
-                            } else if (pref === 'legendado' && !epExistente.isLegendado) {
-                                await this.catalogoManager.marcarEpisodioLegIndisponivel(serieExist.id, nextJob.season, nextJob.episode);
-                            }
-                        }
-                    }
-                } catch (cooldownErr) {
-                    console.warn('⚠️ [COOLDOWN] Erro ao registrar cooldown de upgrade:', cooldownErr.message);
-                }
-            }
         } finally {
             this.activeJobs.delete(nextJob.id);
 
@@ -1336,11 +1314,16 @@ class QueueManager extends EventEmitter {
             } else {
                 const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
                 const jaTemCam = !!(filmeExist && filmeExist.isCam);
+                const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
+                const jaPossuiDubladoFilme = !!(filmeExist && (filmeExist.isDublado || !!filmeExist.versoes?.dublado));
 
-                const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
-                                   this.catalogoManager.buscarItemExato(job.title, 'serie');
+                const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') || this.catalogoManager.buscarItemExato(job.title, 'serie')) : null;
                 const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
-                const jaPossuiLegendado = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
+                const jaPossuiLegendadoSerie = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
+                const jaPossuiDubladoSerie = !!(epExistente && (epExistente.isDublado || !!epExistente.versoes?.dublado));
+
+                const jaPossuiLegendado = job.type === 'serie' ? jaPossuiLegendadoSerie : jaPossuiLegendadoFilme;
+                const jaPossuiDublado = job.type === 'serie' ? jaPossuiDubladoSerie : jaPossuiDubladoFilme;
 
                 let forcarNaoCam = jaTemCam;
                 if (job.type === 'filme' && metadata.tmdbId) {
@@ -1361,7 +1344,8 @@ class QueueManager extends EventEmitter {
                     episode: job.episode || 1,
                     audioPreference: job.audioPreference || 'dublado',
                     forcarNaoCam: forcarNaoCam,
-                    ignorarFallbackLegendado: jaPossuiLegendado
+                    ignorarFallbackLegendado: jaPossuiLegendado,
+                    ignorarFallbackDublado: jaPossuiDublado
                 });
 
                 if (jaTemCam || forcarNaoCam) {
@@ -1371,6 +1355,34 @@ class QueueManager extends EventEmitter {
                     } else if (jaTemCam) {
                         console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
                         await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                        return;
+                    }
+                }
+
+                // Se o item já possui Legendado e o job busca Dublado, descarta estritamente fontes Legendadas
+                if (job.audioPreference === 'dublado' && jaPossuiLegendado) {
+                    sources = sources.filter(s => s.isDublado);
+                    if (sources.length === 0) {
+                        console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Mantida versão Legendada existente (sem fonte Dublada no momento)';
+                        await this.saveJob(job);
+                        this.queue = this.queue.filter(j => j.id !== job.id);
+                        return;
+                    }
+                }
+
+                // Se o item já possui Dublado e o job busca Legendado, descarta estritamente fontes Dubladas
+                if (job.audioPreference === 'legendado' && jaPossuiDublado) {
+                    sources = sources.filter(s => s.isLegendado);
+                    if (sources.length === 0) {
+                        console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Dublada no catálogo e nenhuma fonte Legendada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Mantida versão Dublada existente (sem fonte Legendada no momento)';
+                        await this.saveJob(job);
+                        this.queue = this.queue.filter(j => j.id !== job.id);
                         return;
                     }
                 }

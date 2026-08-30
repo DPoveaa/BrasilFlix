@@ -837,7 +837,6 @@ class CatalogoManager {
     }
 
     buscarEpisodiosApenasLegendados() {
-        const agora = Date.now();
         const pendentes = [];
         for (const serie of (this.catalogo.series || [])) {
             for (const temp of (serie.temporadas || [])) {
@@ -849,11 +848,6 @@ class CatalogoManager {
                     for (const ep of eps) {
                         const isDub = ep.isDublado || !!ep.versoes?.dublado || (ep.audio && ep.audio.toLowerCase().includes('dublado'));
                         if (!isDub) {
-                            // Verifica cooldown: pula episódios onde a versão dublada já falhou recentemente
-                            const dubFailedUntil = ep.versoes?.dubFailedUntil;
-                            if (dubFailedUntil && new Date(dubFailedUntil).getTime() > agora) {
-                                continue; // Em cooldown — não re-enfileira por ora
-                            }
                             pendentes.push({
                                 serieId: serie.id,
                                 serieNome: serie.nome,
@@ -874,41 +868,7 @@ class CatalogoManager {
         return pendentes;
     }
 
-    /**
-     * Marca um episódio como "dublado indisponível" por `cooldownDays` dias.
-     * Grava um timestamp em versoes.dubFailedUntil no banco de dados.
-     * O AutoFeeder não tentará baixar a versão dublada até esse prazo expirar.
-     */
-    async marcarEpisodioDubIndisponivel(serieId, seasonNum, epNum, cooldownDays = 7) {
-        try {
-            const failedUntil = new Date(Date.now() + cooldownDays * 24 * 60 * 60 * 1000).toISOString();
-            // Atualiza somente a chave dubFailedUntil no JSONB sem sobrescrever o restante
-            await db.query(
-                `UPDATE episodios
-                 SET versoes = versoes || jsonb_build_object('dubFailedUntil', $1::text)
-                 WHERE serie_id = $2 AND temporada_numero = $3 AND numero = $4`,
-                [failedUntil, serieId, seasonNum, epNum]
-            );
-            console.log(`🔕 [DUB-COOLDOWN] "${serieId}" T${seasonNum}E${epNum}: dublado indisponível por ${cooldownDays} dias (até ${failedUntil.split('T')[0]}).`);
-            // Atualiza também o cache em memória para efeito imediato
-            const serie = (this.catalogo.series || []).find(s => String(s.id) === String(serieId));
-            if (serie) {
-                const temp = (serie.temporadas || []).find(t => t.numero === seasonNum);
-                if (temp) {
-                    const ep = (temp.episodios || []).find(e => e.numero === epNum);
-                    if (ep) {
-                        ep.versoes = ep.versoes || {};
-                        ep.versoes.dubFailedUntil = failedUntil;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn(`⚠️ [DUB-COOLDOWN] Falha ao registrar cooldown de dub para T${seasonNum}E${epNum}:`, e.message);
-        }
-    }
-
     buscarEpisodiosApenasDublados() {
-        const agora = Date.now();
         const pendentes = [];
         for (const serie of (this.catalogo.series || [])) {
             for (const temp of (serie.temporadas || [])) {
@@ -918,11 +878,6 @@ class CatalogoManager {
                     const isLeg = ep.isLegendado || !!ep.versoes?.legendado;
                     // Se tem dublado mas ainda NÃO tem a versão legendada disponível
                     if (isDub && !isLeg) {
-                        // Verifica cooldown: pula episódios onde a versão legendada já falhou recentemente
-                        const legFailedUntil = ep.versoes?.legFailedUntil;
-                        if (legFailedUntil && new Date(legFailedUntil).getTime() > agora) {
-                            continue; // Em cooldown — não re-enfileira por ora
-                        }
                         pendentes.push({
                             serieId: serie.id,
                             serieNome: serie.nome,
@@ -940,37 +895,6 @@ class CatalogoManager {
             }
         }
         return pendentes;
-    }
-
-    /**
-     * Marca um episódio como "legendado indisponível" por `cooldownDays` dias.
-     * Grava um timestamp em versoes.legFailedUntil no banco de dados.
-     */
-    async marcarEpisodioLegIndisponivel(serieId, seasonNum, epNum, cooldownDays = 7) {
-        try {
-            const failedUntil = new Date(Date.now() + cooldownDays * 24 * 60 * 60 * 1000).toISOString();
-            await db.query(
-                `UPDATE episodios
-                 SET versoes = versoes || jsonb_build_object('legFailedUntil', $1::text)
-                 WHERE serie_id = $2 AND temporada_numero = $3 AND numero = $4`,
-                [failedUntil, serieId, seasonNum, epNum]
-            );
-            console.log(`🔕 [LEG-COOLDOWN] "${serieId}" T${seasonNum}E${epNum}: legendado indisponível por ${cooldownDays} dias (até ${failedUntil.split('T')[0]}).`);
-            // Atualiza cache em memória
-            const serie = (this.catalogo.series || []).find(s => String(s.id) === String(serieId));
-            if (serie) {
-                const temp = (serie.temporadas || []).find(t => t.numero === seasonNum);
-                if (temp) {
-                    const ep = (temp.episodios || []).find(e => e.numero === epNum);
-                    if (ep) {
-                        ep.versoes = ep.versoes || {};
-                        ep.versoes.legFailedUntil = failedUntil;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn(`⚠️ [LEG-COOLDOWN] Falha ao registrar cooldown de leg para T${seasonNum}E${epNum}:`, e.message);
-        }
     }
 
 

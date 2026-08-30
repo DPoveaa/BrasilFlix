@@ -297,6 +297,13 @@ class MediaSearchService {
             }
         }
 
+        // Se ignorar fallback legendado (ex: o catálogo já possui a versão legendada), filtra estritamente por Dublado
+        if (options.ignorarFallbackLegendado || options.onlyDublado || (pref === 'dublado' && options.ignorarFallbackLegendado)) {
+            ptBrResults = ptBrResults.filter(r => r.isDublado);
+        } else if (options.onlyLegendado || (pref === 'legendado' && options.ignorarFallbackDublado)) {
+            ptBrResults = ptBrResults.filter(r => r.isLegendado);
+        }
+
         if (ptBrResults.length === 0) {
             const descFalta = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublada ou Legendada)');
             console.log(`⚠️ Nenhuma versão 1080p/720p ${descFalta} encontrada para "${cleanQuery}".`);
