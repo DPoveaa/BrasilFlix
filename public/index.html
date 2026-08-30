@@ -5466,12 +5466,30 @@
                 <div id="panel-members-list" style="display:flex;flex-direction:column;gap:6px;"></div>
             </div>
 
-            <!-- Controles do host -->
-            <div id="panel-host-controls" style="display:none;">
-                <div class="party-section-label" style="margin-bottom:8px;">⚙️ Controles do Anfitrião</div>
-                <div class="party-toggle-row">
-                    <span class="party-toggle-label">Somente eu controlo</span>
-                    <input type="checkbox" class="party-toggle-switch" id="panel-host-only-chk" onchange="togglePartyHostOnlyPermission(this.checked)">
+            <!-- Controles do host (Permissões Granulares) -->
+            <div id="panel-host-controls" style="display:none; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px; margin-top: 10px;">
+                <div class="party-section-label" style="margin-bottom:8px; font-weight:800; color:#38bdf8; font-size:11px;">👑 Permissões dos Convidados</div>
+                <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; color:#e2e8f0;">
+                        <span>⏸️ Pausar reprodução</span>
+                        <input type="checkbox" id="party-perm-pause" onchange="onPartyPermissionCheckboxChange()">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; color:#e2e8f0;">
+                        <span>▶️ Retomar reprodução</span>
+                        <input type="checkbox" id="party-perm-resume" onchange="onPartyPermissionCheckboxChange()">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; color:#e2e8f0;">
+                        <span>⏩ Avançar / Voltar (Seek)</span>
+                        <input type="checkbox" id="party-perm-seek" onchange="onPartyPermissionCheckboxChange()">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; color:#e2e8f0;">
+                        <span>🎬 Trocar de episódio / filme</span>
+                        <input type="checkbox" id="party-perm-change-media" onchange="onPartyPermissionCheckboxChange()">
+                    </label>
+                    <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; color:#e2e8f0;">
+                        <span>⚡ Alterar velocidade</span>
+                        <input type="checkbox" id="party-perm-speed" onchange="onPartyPermissionCheckboxChange()">
+                    </label>
                 </div>
             </div>
 
@@ -11059,6 +11077,14 @@ function initApp() {
                 return;
             }
 
+            if (currentPartyRoom && !isSyncingFromRemote) {
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                if (!partyIsHost && !perms.canChangeMedia) {
+                    showToast('⚠️ Apenas o anfitrião pode trocar de filme nesta sala.', 'info');
+                    return;
+                }
+            }
+
             currentPlaybackMovie = movie;
             currentPlaybackSerie = null;
 
@@ -11182,6 +11208,14 @@ function initApp() {
 
             const sNum = parseInt(seasonNum, 10) || 1;
             const eNum = parseInt(epNum, 10) || 1;
+
+            if (currentPartyRoom && !isSyncingFromRemote) {
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                if (!partyIsHost && !perms.canChangeMedia) {
+                    showToast('⚠️ Apenas o anfitrião pode trocar de episódio nesta sala.', 'info');
+                    return;
+                }
+            }
 
             currentPlaybackSerie = serie;
             currentPlaybackMovie = null;
@@ -12156,12 +12190,13 @@ function initApp() {
                 closeAllPlayerDropdowns();
                 resetControlsAutoHide();
                 if (currentPartyRoom) {
-                    const hostOnly = partyRoomData?.hostOnlyControls ?? true;
-                    if (!partyIsHost && hostOnly && !isSyncingFromRemote) {
+                    const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                    const canPlay = partyIsHost || perms.canResume;
+                    if (!canPlay && !isSyncingFromRemote) {
                         if (!partyRoomData?.isPlaying) {
                             video.pause();
                         }
-                        showToast('⚠️ Apenas o anfitrião pode controlar a reprodução.', 'info');
+                        showToast('⚠️ Apenas o anfitrião pode iniciar ou retomar a reprodução.', 'info');
                         return;
                     }
                     if (!isSyncingFromRemote) {
@@ -12174,12 +12209,13 @@ function initApp() {
                 closeAllPlayerDropdowns();
                 if (card) card.classList.remove('controls-hidden');
                 if (currentPartyRoom) {
-                    const hostOnly = partyRoomData?.hostOnlyControls ?? true;
-                    if (!partyIsHost && hostOnly && !isSyncingFromRemote) {
+                    const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                    const canPause = partyIsHost || perms.canPause;
+                    if (!canPause && !isSyncingFromRemote) {
                         if (partyRoomData?.isPlaying) {
                             video.play().catch(() => {});
                         }
-                        showToast('⚠️ Apenas o anfitrião pode controlar a reprodução.', 'info');
+                        showToast('⚠️ O anfitrião não permitiu pausar a reprodução.', 'info');
                         return;
                     }
                     if (!isSyncingFromRemote) {
@@ -12191,8 +12227,9 @@ function initApp() {
             video.onseeked = () => {
                 dismissResumePlayback();
                 if (currentPartyRoom) {
-                    const hostOnly = partyRoomData?.hostOnlyControls ?? true;
-                    if (!partyIsHost && hostOnly && !isSyncingFromRemote) {
+                    const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                    const canSeek = partyIsHost || perms.canSeek;
+                    if (!canSeek && !isSyncingFromRemote) {
                         if (typeof partyRoomData?.currentTime === 'number') {
                             isSyncingFromRemote = true;
                             video.currentTime = partyRoomData.currentTime;
@@ -12238,6 +12275,10 @@ function initApp() {
                 } else {
                     dismissResumePlayback();
                 }
+
+                if (currentPartyRoom) {
+                    sendPartyAction('member_ready_state', { inPlayer: true, isReady: true, isLoading: false, audio: mediaInfo.audio });
+                }
             };
 
             // Se autoPlay for explicitamente true, inicia imediatamente
@@ -12257,7 +12298,7 @@ function initApp() {
                 if (partyIsHost) {
                     sendPartyAction('stop_media');
                 } else {
-                    sendPartyAction('member_ready_state', { inPlayer: false, isReady: false });
+                    sendPartyAction('member_ready_state', { inPlayer: false, isReady: false, isLoading: false });
                 }
             }
 
@@ -12277,28 +12318,72 @@ function initApp() {
             currentPlayingMedia = null;
         }
 
-        function togglePlayerFullscreen() {
-            const card = document.getElementById('player-card-container') || document.getElementById('html5-video-player');
-            if (!card) return;
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => {});
-            } else {
-                if (card.requestFullscreen) card.requestFullscreen().catch(() => {});
-                else if (card.webkitRequestFullscreen) card.webkitRequestFullscreen().catch(() => {});
+        /* ── Unified Fullscreen Controller ─────────────────────────────── */
+        function getActiveFullscreenElement() {
+            return document.fullscreenElement ||
+                   document.webkitFullscreenElement ||
+                   document.mozFullScreenElement ||
+                   document.msFullscreenElement ||
+                   null;
+        }
+
+        function isPlayerInFullscreen() {
+            const video = document.getElementById('html5-video-player');
+            return !!getActiveFullscreenElement() || (video && video.webkitDisplayingFullscreen);
+        }
+
+        async function togglePlayerFullscreen() {
+            const card = document.getElementById('player-card-container');
+            const video = document.getElementById('html5-video-player');
+            if (!card && !video) return;
+
+            try {
+                if (getActiveFullscreenElement()) {
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        await document.webkitExitFullscreen();
+                    } else if (document.mozCancelFullScreen) {
+                        await document.mozCancelFullScreen();
+                    } else if (document.msExitFullscreen) {
+                        await document.msExitFullscreen();
+                    }
+                } else {
+                    const target = card || video;
+                    if (target.requestFullscreen) {
+                        await target.requestFullscreen();
+                    } else if (target.webkitRequestFullscreen) {
+                        await target.webkitRequestFullscreen();
+                    } else if (target.mozRequestFullScreen) {
+                        await target.mozRequestFullScreen();
+                    } else if (target.msRequestFullscreen) {
+                        await target.msRequestFullscreen();
+                    } else if (video && video.webkitEnterFullscreen) {
+                        video.webkitEnterFullscreen();
+                    }
+                }
+            } catch (err) {
+                console.warn('[Player] Alternando fullscreen fallback:', err);
+                if (video && video.webkitEnterFullscreen) {
+                    try { video.webkitEnterFullscreen(); } catch (e) {}
+                }
             }
         }
 
-        function togglePictureInPicture() {
+        async function togglePictureInPicture() {
             const video = document.getElementById('html5-video-player');
             if (!video) return;
-            if (document.pictureInPictureElement) {
-                document.exitPictureInPicture().catch(() => {});
-            } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-                video.requestPictureInPicture().catch(() => {
-                    showToast('Popout (PiP) não disponível no momento.', 'error');
-                });
-            } else {
-                showToast('Popout (PiP) não suportado neste navegador.', 'error');
+
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+                    await video.requestPictureInPicture();
+                } else {
+                    showToast('Popout (PiP) não suportado neste navegador.', 'error');
+                }
+            } catch (err) {
+                showToast('Popout (PiP) indisponível no momento.', 'error');
             }
         }
 
@@ -12325,6 +12410,14 @@ function initApp() {
         }
 
         function setPlaybackSpeed(speed) {
+            if (currentPartyRoom) {
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                const canSpeed = partyIsHost || perms.canChangeSpeed;
+                if (!canSpeed) {
+                    showToast('⚠️ Velocidade de reprodução sincronizada com o anfitrião.', 'info');
+                    return;
+                }
+            }
             const video = document.getElementById('html5-video-player');
             if (video) video.playbackRate = speed;
             const label = document.getElementById('player-speed-label');
@@ -12336,6 +12429,9 @@ function initApp() {
             const menu = document.getElementById('player-speed-menu');
             if (menu) menu.classList.remove('visible');
             showToast(`⚡ Velocidade ajustada para ${speed}x`, 'info');
+            if (currentPartyRoom && partyIsHost) {
+                sendPartyAction('set_speed', { speed });
+            }
         }
 
         function handleZoneTap(e, seconds) {
@@ -12344,8 +12440,9 @@ function initApp() {
             closeAllPlayerDropdowns();
             dismissResumePlayback();
             if (currentPartyRoom) {
-                const hostOnly = partyRoomData?.hostOnlyControls ?? true;
-                if (!partyIsHost && hostOnly) {
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                const canSeek = partyIsHost || perms.canSeek;
+                if (!canSeek) {
                     showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
                     return;
                 }
@@ -13167,21 +13264,62 @@ function initApp() {
             partyEventSource.onerror = () => console.warn('[Party] SSE reconectando...');
         }
 
+        function updatePartyPermissionCheckboxes() {
+            const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+            const pPause = document.getElementById('party-perm-pause');
+            const pResume = document.getElementById('party-perm-resume');
+            const pSeek = document.getElementById('party-perm-seek');
+            const pMedia = document.getElementById('party-perm-change-media');
+            const pSpeed = document.getElementById('party-perm-speed');
+
+            if (pPause) pPause.checked = perms.canPause !== false;
+            if (pResume) pResume.checked = !!perms.canResume;
+            if (pSeek) pSeek.checked = !!perms.canSeek;
+            if (pMedia) pMedia.checked = !!perms.canChangeMedia;
+            if (pSpeed) pSpeed.checked = !!perms.canChangeSpeed;
+        }
+
+        async function onPartyPermissionCheckboxChange() {
+            if (!currentPartyRoom || !partyIsHost) return;
+            const permissions = {
+                canPause: document.getElementById('party-perm-pause')?.checked ?? true,
+                canResume: document.getElementById('party-perm-resume')?.checked ?? false,
+                canSeek: document.getElementById('party-perm-seek')?.checked ?? false,
+                canChangeMedia: document.getElementById('party-perm-change-media')?.checked ?? false,
+                canChangeSpeed: document.getElementById('party-perm-speed')?.checked ?? false
+            };
+            try {
+                await fetch('/api/party/action/' + currentPartyRoom, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: partyMyUserId, action: 'permissions', permissions })
+                });
+                showToast('👑 Permissões dos participantes atualizadas!', 'success');
+            } catch (e) {
+                showToast('Erro ao atualizar permissões.', 'error');
+            }
+        }
+
         function handlePartyRemoteEvent(data) {
             const video = document.getElementById('html5-video-player');
 
             if (data.type === 'init') {
                 if (data.room) {
                     partyRoomData = data.room;
+                    partyIsHost = String(partyMyUserId) === String(data.room.hostId);
                     if (data.room.wheelItems) partyWheelItems = data.room.wheelItems;
                     renderPartyPanelMembers(data.room.members || []);
                     renderPartyWheelList();
+                    updatePartyPermissionCheckboxes();
+
                     if (video && typeof data.room.currentTime === 'number' && Math.abs(video.currentTime - data.room.currentTime) > 1.5) {
                         isSyncingFromRemote = true;
                         video.currentTime = data.room.currentTime;
                         if (data.room.isPlaying) {
                             hidePlaybackPosterOverlay();
+                            hidePartyReadyOverlay();
                             startPlaybackStreamNow();
+                            video.play().catch(() => {});
                         } else {
                             video.pause();
                         }
@@ -13191,29 +13329,75 @@ function initApp() {
             } else if (data.type === 'play') {
                 hidePartyReadyOverlay();
                 hidePlaybackPosterOverlay();
-                if (partyRoomData) partyRoomData.isPlaying = true;
+                if (partyRoomData) {
+                    partyRoomData.isPlaying = true;
+                    partyRoomData.lastStateChange = Date.now();
+                    if (typeof data.currentTime === 'number') partyRoomData.currentTime = data.currentTime;
+                }
                 if (video && String(data.userId) !== String(partyMyUserId)) {
                     isSyncingFromRemote = true;
-                    if (typeof data.currentTime === 'number' && Math.abs(video.currentTime - data.currentTime) > 1.5) video.currentTime = data.currentTime;
-                    startPlaybackStreamNow();
-                    setTimeout(() => isSyncingFromRemote = false, 300);
-                    showToast('▶️ ' + data.by + ' deu play', 'info');
+                    if (typeof data.currentTime === 'number' && Math.abs(video.currentTime - data.currentTime) > 1.5) {
+                        video.currentTime = data.currentTime;
+                    }
+                    const startAt = Number(data.startPlaybackAt) || 0;
+                    const delayMs = startAt > 0 ? (startAt - Date.now()) : 0;
+
+                    if (delayMs > 0 && delayMs < 1200) {
+                        setTimeout(() => {
+                            startPlaybackStreamNow();
+                            video.play().catch(() => {});
+                            setTimeout(() => isSyncingFromRemote = false, 300);
+                        }, delayMs);
+                    } else {
+                        startPlaybackStreamNow();
+                        video.play().catch(() => {});
+                        setTimeout(() => isSyncingFromRemote = false, 300);
+                    }
+                    showToast('▶️ ' + data.by + ' iniciou a reprodução', 'info');
                 }
             } else if (data.type === 'pause') {
-                if (partyRoomData) partyRoomData.isPlaying = false;
+                if (partyRoomData) {
+                    partyRoomData.isPlaying = false;
+                    partyRoomData.lastStateChange = Date.now();
+                    if (typeof data.currentTime === 'number') partyRoomData.currentTime = data.currentTime;
+                }
                 if (video && String(data.userId) !== String(partyMyUserId)) {
                     isSyncingFromRemote = true;
-                    if (typeof data.currentTime === 'number' && Math.abs(video.currentTime - data.currentTime) > 1.5) video.currentTime = data.currentTime;
+                    if (typeof data.currentTime === 'number' && Math.abs(video.currentTime - data.currentTime) > 1.5) {
+                        video.currentTime = data.currentTime;
+                    }
                     video.pause();
                     setTimeout(() => isSyncingFromRemote = false, 300);
                     showToast('⏸️ ' + data.by + ' pausou', 'info');
                 }
             } else if (data.type === 'seek') {
+                if (partyRoomData) {
+                    partyRoomData.currentTime = data.currentTime;
+                    partyRoomData.lastStateChange = Date.now();
+                }
                 if (video && String(data.userId) !== String(partyMyUserId)) {
                     isSyncingFromRemote = true;
                     video.currentTime = data.currentTime;
                     setTimeout(() => isSyncingFromRemote = false, 300);
                     showToast('⏩ ' + data.by + ' pulou para ' + formatTimeSeconds(data.currentTime), 'info');
+                }
+            } else if (data.type === 'permissions_changed') {
+                if (data.permissions) {
+                    partyRoomData = { ...partyRoomData, permissions: data.permissions, hostOnlyControls: data.hostOnlyControls };
+                    updatePartyPermissionCheckboxes();
+                    if (!partyIsHost) {
+                        showToast('👑 As permissões da sala foram atualizadas pelo anfitrião.', 'info');
+                    }
+                }
+            } else if (data.type === 'set_speed') {
+                if (data.speed) {
+                    if (video) video.playbackRate = data.speed;
+                    const label = document.getElementById('player-speed-label');
+                    if (label) label.innerText = `${data.speed}x`;
+                    document.querySelectorAll('.speed-opt-btn').forEach(btn => {
+                        btn.classList.toggle('active', btn.innerText.includes(`${data.speed}x`));
+                    });
+                    showToast(`⚡ Velocidade ajustada para ${data.speed}x por ${data.by}`, 'info');
                 }
             } else if (data.type === 'media_stopped') {
                 partyRoomData = { ...partyRoomData, mediaInfo: null, isPlaying: false, currentTime: 0, members: data.members || partyRoomData?.members };
@@ -13227,7 +13411,7 @@ function initApp() {
                 }
             } else if (data.type === 'change_media') {
                 if (String(data.userId) !== String(partyMyUserId) && data.mediaInfo) {
-                    partyRoomData = { ...partyRoomData, mediaInfo: data.mediaInfo };
+                    partyRoomData = { ...partyRoomData, mediaInfo: data.mediaInfo, isPlaying: false, currentTime: 0 };
                     const m = data.mediaInfo;
                     const isRemembered = localStorage.getItem('bf_audio_pref_remembered') === 'true';
                     const hasBoth = m.hasDub !== false && m.hasLeg !== false;
@@ -13266,6 +13450,7 @@ function initApp() {
                 showPartyPanel(partyIsHost);
                 renderPartyPanelMembers(data.members || partyRoomData.members);
                 updatePartyHeaderState();
+                updatePartyPermissionCheckboxes();
 
                 if (partyIsHost) {
                     showToast('👑 Você agora é o novo anfitrião da sala!', 'success');
@@ -13322,17 +13507,13 @@ function initApp() {
                     renderPartyPanelMembers(data.members);
                     updatePartyHeaderState();
                 }
-            } else if (data.type === 'permissions') {
-                const chk = document.getElementById('panel-host-only-chk');
-                if (chk) chk.checked = data.hostOnlyControls;
-                showToast(data.hostOnlyControls ? '🔒 Controles bloqueados para o anfitrião.' : '🔓 Controles liberados!', 'info');
             }
         }
 
         async function sendPartyAction(action, payload) {
             if (!currentPartyRoom) return;
             try {
-                let bodyObj = { userId: partyMyUserId, action };
+                let bodyObj = { userId: partyMyUserId, action, by: localStorage.getItem('bf_party_name') || getDefaultUserNickname() };
                 if (typeof payload === 'number') {
                     bodyObj.currentTime = Math.floor(payload);
                 } else if (typeof payload === 'object' && payload !== null) {
@@ -13342,17 +13523,6 @@ function initApp() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(bodyObj)
-                });
-            } catch (e) {}
-        }
-
-        async function togglePartyHostOnlyPermission(checked) {
-            if (!currentPartyRoom) return;
-            try {
-                await fetch('/api/party/action/' + currentPartyRoom, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: partyMyUserId, action: 'permissions', hostOnlyControls: checked })
                 });
             } catch (e) {}
         }
@@ -13918,20 +14088,39 @@ function initApp() {
             list.innerHTML = members.map(m => {
                 const isMe = String(m.id) === String(partyMyUserId);
                 const canManage = partyIsHost && !isMe;
-                const inPlayerState = m.inPlayer ? '🎬 No Player' : '⏳ No Lobby';
-                const statusBadgeStyle = m.inPlayer 
-                    ? 'background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);' 
-                    : 'background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);';
+                
+                let inPlayerState = '⏳ No Lobby';
+                let statusBadgeStyle = 'background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);';
+                let dotColor = 'background:rgba(255,255,255,0.2);';
+
+                if (m.connectionState === 'disconnected') {
+                    inPlayerState = '🔌 Desconectado';
+                    statusBadgeStyle = 'background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);';
+                    dotColor = 'background:#ef4444;box-shadow:0 0 6px #ef4444;';
+                } else if (m.isLoading) {
+                    inPlayerState = '⏳ Carregando...';
+                    statusBadgeStyle = 'background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);';
+                    dotColor = 'background:#f59e0b;box-shadow:0 0 6px #f59e0b;';
+                } else if (m.inPlayer && m.isReady) {
+                    inPlayerState = '✅ Player Pronto';
+                    statusBadgeStyle = 'background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);';
+                    dotColor = 'background:#10b981;box-shadow:0 0 8px #10b981;';
+                } else if (m.inPlayer) {
+                    inPlayerState = '🎬 No Player';
+                    statusBadgeStyle = 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);';
+                    dotColor = 'background:#38bdf8;box-shadow:0 0 6px #38bdf8;';
+                }
 
                 return `<div class="party-member-item" style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);margin-bottom:6px;border:1px solid rgba(255,255,255,0.06);">
                     <div class="party-member-left" style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;">
-                        <span class="party-member-dot" style="${m.inPlayer ? 'background:#10b981;box-shadow:0 0 8px #10b981;' : ''}"></span>
+                        <span class="party-member-dot" style="${dotColor}"></span>
                         <div style="min-width:0;flex:1;">
                             <div class="party-member-name" style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(m.name)}">
                                 ${escapeHtml(m.name)}${isMe ? ' <span class="party-member-you" style="color:#38bdf8;font-size:11px;">(você)</span>' : ''}
                             </div>
                             <div style="font-size:10px;margin-top:2px;">
                                 <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-weight:700;font-size:9px;${statusBadgeStyle}">${inPlayerState}</span>
+                                ${m.audio ? `<span style="display:inline-block;padding:1px 5px;margin-left:4px;border-radius:4px;font-weight:700;font-size:8.5px;background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);">${m.audio === 'dublado' ? '🔊 DUB' : '💬 LEG'}</span>` : ''}
                             </div>
                         </div>
                     </div>
@@ -13962,6 +14151,114 @@ function initApp() {
                 statusText.innerText = '👥 Assistindo Junto · Sala ' + currentPartyRoom + ' · ' + members.length + ' membro' + (members.length !== 1 ? 's' : '') + ' — clique para gerenciar';
             }
         }
+
+        function setupPlayerKeyboardShortcuts() {
+            if (window._playerShortcutsInitialized) return;
+            window._playerShortcutsInitialized = true;
+
+            document.addEventListener('keydown', (e) => {
+                const tag = (e.target.tagName || '').toUpperCase();
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+                if (document.querySelector('.modal-backdrop.active')) return;
+
+                const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
+                if (!isPlayerActive) return;
+
+                const video = document.getElementById('html5-video-player');
+                if (!video) return;
+
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+
+                switch (e.key) {
+                    case ' ':
+                    case 'k':
+                    case 'K':
+                        e.preventDefault();
+                        if (video.paused) {
+                            if (currentPartyRoom && !partyIsHost && !perms.canResume) {
+                                showToast('⚠️ Apenas o anfitrião pode iniciar ou retomar a reprodução.', 'info');
+                                return;
+                            }
+                            video.play().catch(() => {});
+                        } else {
+                            if (currentPartyRoom && !partyIsHost && !perms.canPause) {
+                                showToast('⚠️ O anfitrião não permitiu pausar a reprodução.', 'info');
+                                return;
+                            }
+                            video.pause();
+                        }
+                        break;
+
+                    case 'f':
+                    case 'F':
+                        e.preventDefault();
+                        togglePlayerFullscreen();
+                        break;
+
+                    case 'p':
+                    case 'P':
+                    case 'i':
+                    case 'I':
+                        e.preventDefault();
+                        togglePictureInPicture();
+                        break;
+
+                    case 'ArrowLeft':
+                    case 'j':
+                    case 'J':
+                        e.preventDefault();
+                        if (currentPartyRoom && !partyIsHost && !perms.canSeek) {
+                            showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
+                            return;
+                        }
+                        video.currentTime = Math.max(0, video.currentTime - 10);
+                        break;
+
+                    case 'ArrowRight':
+                    case 'l':
+                    case 'L':
+                        e.preventDefault();
+                        if (currentPartyRoom && !partyIsHost && !perms.canSeek) {
+                            showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
+                            return;
+                        }
+                        video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
+                        break;
+
+                    case '<':
+                    case ',':
+                        e.preventDefault();
+                        if (currentPartyRoom && !partyIsHost && !perms.canChangeSpeed) {
+                            showToast('⚠️ Velocidade de reprodução sincronizada com o anfitrião.', 'info');
+                            return;
+                        }
+                        const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+                        const curIdx = speeds.indexOf(video.playbackRate);
+                        if (curIdx > 0) setPlaybackSpeed(speeds[curIdx - 1]);
+                        break;
+
+                    case '>':
+                    case '.':
+                        e.preventDefault();
+                        if (currentPartyRoom && !partyIsHost && !perms.canChangeSpeed) {
+                            showToast('⚠️ Velocidade de reprodução sincronizada com o anfitrião.', 'info');
+                            return;
+                        }
+                        const speedsUp = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+                        const curIdxUp = speedsUp.indexOf(video.playbackRate);
+                        if (curIdxUp >= 0 && curIdxUp < speedsUp.length - 1) setPlaybackSpeed(speedsUp[curIdxUp + 1]);
+                        break;
+
+                    case 'm':
+                    case 'M':
+                        e.preventDefault();
+                        video.muted = !video.muted;
+                        showToast(video.muted ? '🔇 Mudo' : '🔊 Som Ativado', 'info');
+                        break;
+                }
+            });
+        }
+        setupPlayerKeyboardShortcuts();
 
         function toggleMemberActionDropdown(memberId, event) {
             if (event) event.stopPropagation();

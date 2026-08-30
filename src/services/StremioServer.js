@@ -798,6 +798,14 @@ class StremioServer {
 
         if (!this.watchPartyRooms) this.watchPartyRooms = new Map();
 
+        const DEFAULT_ROOM_PERMISSIONS = {
+            canPause: true,
+            canResume: false,
+            canSeek: false,
+            canChangeMedia: false,
+            canChangeSpeed: false
+        };
+
         // Helper: broadcast para todos os membros conectados da sala
         const broadcastToRoom = (room, data) => {
             const payload = `data: ${JSON.stringify(data)}\n\n`;
@@ -814,17 +822,49 @@ class StremioServer {
                 isHost: String(m.id) === String(room.hostId) || !!m.isHost,
                 inPlayer: !!m.inPlayer,
                 isReady: !!m.isReady,
+                isLoading: !!m.isLoading,
+                connectionState: m.res && !m.res.writableEnded ? 'connected' : 'disconnected',
                 audio: m.audio || null
             }));
+
+        const serializeRoom = (room) => {
+            const now = Date.now();
+            const computedTime = room.isPlaying
+                ? Number(room.currentTime || 0) + (now - Number(room.lastStateChange || now)) / 1000
+                : Number(room.currentTime || 0);
+
+            return {
+                id: room.id,
+                hostId: room.hostId,
+                hostName: room.hostName,
+                mediaInfo: room.mediaInfo,
+                currentTime: Math.max(0, computedTime),
+                isPlaying: !!room.isPlaying,
+                hostOnlyControls: room.hostOnlyControls !== false,
+                permissions: room.permissions || { ...DEFAULT_ROOM_PERMISSIONS },
+                lastStateChange: room.lastStateChange || now,
+                serverTime: now,
+                members: serializeMembers(room),
+                wheelItems: room.wheelItems || []
+            };
+        };
 
         // Persistência em PostgreSQL para salas de Watch Party
         const saveRoomToDb = async (room) => {
             if (!room || !room.id) return;
             try {
-                const membersArr = Array.from(room.members.values()).map(m => ({ id: m.id, name: m.name, isHost: m.isHost }));
+                const membersArr = Array.from(room.members.values()).map(m => ({
+                    id: m.id,
+                    name: m.name,
+                    isHost: m.isHost,
+                    inPlayer: m.inPlayer,
+                    isReady: m.isReady,
+                    isLoading: m.isLoading,
+                    audio: m.audio
+                }));
                 await db.query(
-                    `INSERT INTO watch_party_rooms (id, host_id, host_name, host_token, media_info, playback_time, is_playing, host_only_controls, last_activity, wheel_items, members_data, created_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    `INSERT INTO watch_party_rooms (id, host_id, host_name, host_token, media_info, playback_time, is_playing, host_only_controls, permissions, last_state_change, last_activity, wheel_items, members_data, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                      ON CONFLICT (id) DO UPDATE SET
                          host_id = EXCLUDED.host_id,
                          host_name = EXCLUDED.host_name,
@@ -833,6 +873,8 @@ class StremioServer {
                          playback_time = EXCLUDED.playback_time,
                          is_playing = EXCLUDED.is_playing,
                          host_only_controls = EXCLUDED.host_only_controls,
+                         permissions = EXCLUDED.permissions,
+                         last_state_change = EXCLUDED.last_state_change,
                          last_activity = EXCLUDED.last_activity,
                          wheel_items = EXCLUDED.wheel_items,
                          members_data = EXCLUDED.members_data`,
@@ -845,6 +887,8 @@ class StremioServer {
                         room.currentTime || 0,
                         !!room.isPlaying,
                         room.hostOnlyControls !== false,
+                        JSON.stringify(room.permissions || DEFAULT_ROOM_PERMISSIONS),
+                        Number(room.lastStateChange) || Date.now(),
                         room.lastActivity || Date.now(),
                         JSON.stringify(room.wheelItems || []),
                         JSON.stringify(membersArr),
@@ -896,6 +940,10 @@ class StremioServer {
                     if (typeof wheelItems === 'string') {
                         try { wheelItems = JSON.parse(wheelItems); } catch(e) { wheelItems = []; }
                     }
+                    let permissions = row.permissions;
+                    if (typeof permissions === 'string') {
+                        try { permissions = JSON.parse(permissions); } catch(e) { permissions = null; }
+                    }
 
                     const room = {
                         id: row.id,
@@ -906,6 +954,8 @@ class StremioServer {
                         currentTime: Number(row.playback_time) || 0,
                         isPlaying: !!row.is_playing,
                         hostOnlyControls: row.host_only_controls !== false,
+                        permissions: { ...DEFAULT_ROOM_PERMISSIONS, ...(permissions || {}) },
+                        lastStateChange: Number(row.last_state_change) || Number(row.last_activity) || Date.now(),
                         lastActivity: Number(row.last_activity) || Date.now(),
                         members: new Map(),
                         wheelItems: Array.isArray(wheelItems) ? wheelItems : [],
@@ -1007,10 +1057,12 @@ class StremioServer {
                     hostId: hostUserId ? String(hostUserId) : null,
                     hostName: actualHostName,
                     hostToken: token || null,
-                    mediaInfo: streamUrl ? { title: title || 'BrasilFlix', sub: sub || '', streamUrl, ...mediaInfo } : null,
+                    mediaInfo: (mediaInfo || streamUrl) ? { title: title || 'BrasilFlix', sub: sub || '', streamUrl, ...mediaInfo } : null,
                     currentTime: 0,
                     isPlaying: false,
                     hostOnlyControls: true,
+                    permissions: { ...DEFAULT_ROOM_PERMISSIONS },
+                    lastStateChange: Date.now(),
                     lastActivity: Date.now(),
                     members: new Map(),
                     wheelItems: [],
@@ -1028,6 +1080,7 @@ class StremioServer {
                     roomId: roomCode,
                     hostName: actualHostName,
                     mediaInfo: room.mediaInfo,
+                    permissions: room.permissions,
                     shareUrl: `${baseUrl}/?sala=${roomCode}`
                 });
             } catch (e) {
@@ -1056,17 +1109,7 @@ class StremioServer {
             recordJoinSuccess(ip);
             res.json({
                 success: true,
-                room: {
-                    id: room.id,
-                    hostId: room.hostId,
-                    hostName: room.hostName,
-                    mediaInfo: room.mediaInfo,
-                    currentTime: room.currentTime,
-                    isPlaying: room.isPlaying,
-                    hostOnlyControls: room.hostOnlyControls,
-                    members: serializeMembers(room),
-                    wheelItems: room.wheelItems || []
-                }
+                room: serializeRoom(room)
             });
         });
 
@@ -1076,10 +1119,10 @@ class StremioServer {
             if (!room) return res.status(404).send('Sala não encontrada.');
             const roomCode = room.id;
 
-            const userId = req.query.userId || ('user_' + Math.random().toString(36).substring(2, 9));
+            const userId = String(req.query.userId || ('user_' + Math.random().toString(36).substring(2, 9)));
             const userName = decodeURIComponent(req.query.name || 'Espectador');
 
-            // O primeiro usuário a conectar ou que possui o hostToken é o host
+            // Se a sala não tem host ainda, o primeiro se torna host
             if (!room.hostId) {
                 room.hostId = userId;
                 room.hostName = userName;
@@ -1094,6 +1137,7 @@ class StremioServer {
             res.flushHeaders();
 
             const existing = room.members.get(userId);
+            const isReconnect = !!existing;
 
             room.members.set(userId, {
                 id: userId,
@@ -1101,6 +1145,7 @@ class StremioServer {
                 isHost,
                 inPlayer: existing ? !!existing.inPlayer : false,
                 isReady: existing ? !!existing.isReady : false,
+                isLoading: existing ? !!existing.isLoading : false,
                 audio: existing ? existing.audio : null,
                 res,
                 lastSeen: Date.now()
@@ -1115,26 +1160,24 @@ class StremioServer {
                 type: 'init',
                 userId,
                 isHost,
-                room: {
-                    id: room.id,
-                    hostId: room.hostId,
-                    hostName: room.hostName,
-                    mediaInfo: room.mediaInfo,
-                    currentTime: room.currentTime,
-                    isPlaying: room.isPlaying,
-                    hostOnlyControls: room.hostOnlyControls,
-                    members: membersList,
-                    wheelItems: room.wheelItems || []
-                }
+                room: serializeRoom(room)
             })}\n\n`);
 
-            // Só notifica "entrou" se não for reconexão
             if (!isReconnect) {
                 broadcastToRoom(room, {
                     type: 'member_joined',
                     userId,
                     name: userName,
-                    members: membersList
+                    members: membersList,
+                    serverTime: Date.now()
+                });
+            } else {
+                broadcastToRoom(room, {
+                    type: 'member_reconnected',
+                    userId,
+                    name: userName,
+                    members: membersList,
+                    serverTime: Date.now()
                 });
             }
 
@@ -1151,11 +1194,10 @@ class StremioServer {
                     const r = getRoomByCode(roomCode);
                     if (!r) return;
                     const m = r.members.get(userId);
-                    // Se o objeto res for o mesmo (não reconectou), remove da lista ativa
                     if (m && m.res === res) {
                         r.members.delete(userId);
                         const updatedMembers = serializeMembers(r);
-                        broadcastToRoom(r, { type: 'member_left', userId, name: userName, members: updatedMembers });
+                        broadcastToRoom(r, { type: 'member_left', userId, name: userName, members: updatedMembers, serverTime: Date.now() });
                         saveRoomToDb(r);
                     }
                 }, 30000);
@@ -1169,46 +1211,127 @@ class StremioServer {
                 if (!room) return res.status(404).json({ success: false, error: 'Sala não encontrada.' });
                 const roomCode = room.id;
 
-                const { userId, action, currentTime, hostOnlyControls, mediaInfo, suggestion, suggestionId, winner, targetId, by } = req.body;
+                const { userId, action, currentTime, permissions: newPermsReq, mediaInfo, suggestion, suggestionId, winner, targetId, by, speed } = req.body;
                 const isHost = String(userId) === String(room.hostId);
                 const member = room.members.get(String(userId)) || { name: by || (isHost ? room.hostName : 'Membro') };
+                const roomPermissions = room.permissions || { ...DEFAULT_ROOM_PERMISSIONS };
 
                 room.lastActivity = Date.now();
 
-                // Controles restritos ao host
-                if (room.hostOnlyControls && !isHost && ['play', 'pause', 'seek', 'permissions'].includes(action)) {
-                    return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode controlar a reprodução.' });
-                }
-
                 switch (action) {
                     case 'play':
-                        if (typeof currentTime === 'number') room.currentTime = currentTime;
+                        if (!isHost && !roomPermissions.canResume) {
+                            return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode retomar a reprodução.' });
+                        }
+                        if (typeof currentTime === 'number') room.currentTime = Math.max(0, currentTime);
                         room.isPlaying = true;
-                        broadcastToRoom(room, { type: 'play', userId, by: member.name, currentTime: room.currentTime });
+                        room.lastStateChange = Date.now();
+                        const startPlaybackAt = Date.now() + 500; // Início sincronizado em 500ms
+                        broadcastToRoom(room, {
+                            type: 'play',
+                            userId,
+                            by: member.name,
+                            currentTime: room.currentTime,
+                            startPlaybackAt,
+                            serverTime: Date.now()
+                        });
+                        saveRoomToDb(room);
                         break;
 
                     case 'pause':
-                        if (typeof currentTime === 'number') room.currentTime = currentTime;
+                        if (!isHost && !roomPermissions.canPause) {
+                            return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode pausar a reprodução.' });
+                        }
+                        if (typeof currentTime === 'number') room.currentTime = Math.max(0, currentTime);
                         room.isPlaying = false;
-                        broadcastToRoom(room, { type: 'pause', userId, by: member.name, currentTime: room.currentTime });
+                        room.lastStateChange = Date.now();
+                        broadcastToRoom(room, {
+                            type: 'pause',
+                            userId,
+                            by: member.name,
+                            currentTime: room.currentTime,
+                            serverTime: Date.now()
+                        });
+                        saveRoomToDb(room);
                         break;
 
                     case 'seek':
-                        if (typeof currentTime === 'number') room.currentTime = currentTime;
-                        broadcastToRoom(room, { type: 'seek', userId, by: member.name, currentTime: room.currentTime });
+                        if (!isHost && !roomPermissions.canSeek) {
+                            return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode avançar ou retroceder o vídeo.' });
+                        }
+                        if (typeof currentTime === 'number') room.currentTime = Math.max(0, currentTime);
+                        room.lastStateChange = Date.now();
+                        broadcastToRoom(room, {
+                            type: 'seek',
+                            userId,
+                            by: member.name,
+                            currentTime: room.currentTime,
+                            isPlaying: room.isPlaying,
+                            serverTime: Date.now()
+                        });
+                        saveRoomToDb(room);
                         break;
 
                     case 'permissions':
-                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião.' });
-                        if (typeof hostOnlyControls === 'boolean') room.hostOnlyControls = hostOnlyControls;
-                        broadcastToRoom(room, { type: 'permissions', userId, hostOnlyControls: room.hostOnlyControls });
+                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode configurar permissões da sala.' });
+                        if (newPermsReq && typeof newPermsReq === 'object') {
+                            room.permissions = {
+                                canPause: newPermsReq.canPause !== false,
+                                canResume: !!newPermsReq.canResume,
+                                canSeek: !!newPermsReq.canSeek,
+                                canChangeMedia: !!newPermsReq.canChangeMedia,
+                                canChangeSpeed: !!newPermsReq.canChangeSpeed
+                            };
+                            room.hostOnlyControls = !room.permissions.canResume && !room.permissions.canSeek && !room.permissions.canChangeMedia;
+                        }
+                        broadcastToRoom(room, {
+                            type: 'permissions_changed',
+                            userId,
+                            permissions: room.permissions,
+                            hostOnlyControls: room.hostOnlyControls,
+                            serverTime: Date.now()
+                        });
+                        saveRoomToDb(room);
                         break;
 
                     case 'change_media':
-                        if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode trocar a mídia.' });
-                        if (mediaInfo) { room.mediaInfo = mediaInfo; room.currentTime = 0; room.isPlaying = false; }
-                        broadcastToRoom(room, { type: 'change_media', userId, by: member.name, mediaInfo: room.mediaInfo });
+                        if (!isHost && !roomPermissions.canChangeMedia) {
+                            return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode trocar de filme ou episódio.' });
+                        }
+                        if (mediaInfo) {
+                            room.mediaInfo = mediaInfo;
+                            room.currentTime = 0;
+                            room.isPlaying = false;
+                            room.lastStateChange = Date.now();
+                            for (const m of room.members.values()) {
+                                m.inPlayer = false;
+                                m.isReady = false;
+                                m.isLoading = false;
+                            }
+                        }
+                        broadcastToRoom(room, {
+                            type: 'change_media',
+                            userId,
+                            by: member.name,
+                            mediaInfo: room.mediaInfo,
+                            members: serializeMembers(room),
+                            serverTime: Date.now()
+                        });
                         saveRoomToDb(room);
+                        break;
+
+                    case 'set_speed':
+                        if (!isHost && !roomPermissions.canChangeSpeed) {
+                            return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode alterar a velocidade de reprodução da sala.' });
+                        }
+                        const playSpeed = Number(speed) || 1.0;
+                        broadcastToRoom(room, {
+                            type: 'set_speed',
+                            userId,
+                            by: member.name,
+                            speed: playSpeed,
+                            serverTime: Date.now()
+                        });
                         break;
 
                     case 'stop_media':
@@ -1216,11 +1339,19 @@ class StremioServer {
                         room.mediaInfo = null;
                         room.currentTime = 0;
                         room.isPlaying = false;
+                        room.lastStateChange = Date.now();
                         for (const m of room.members.values()) {
                             m.inPlayer = false;
                             m.isReady = false;
+                            m.isLoading = false;
                         }
-                        broadcastToRoom(room, { type: 'media_stopped', userId, by: member.name, members: serializeMembers(room) });
+                        broadcastToRoom(room, {
+                            type: 'media_stopped',
+                            userId,
+                            by: member.name,
+                            members: serializeMembers(room),
+                            serverTime: Date.now()
+                        });
                         saveRoomToDb(room);
                         break;
 
@@ -1229,7 +1360,7 @@ class StremioServer {
                         suggestion.id = suggestion.id || (Date.now() + '_' + userId);
                         room.wheelItems = room.wheelItems || [];
                         room.wheelItems.push(suggestion);
-                        broadcastToRoom(room, { type: 'suggest_media', userId, by: member.name, suggestion });
+                        broadcastToRoom(room, { type: 'suggest_media', userId, by: member.name, suggestion, serverTime: Date.now() });
                         break;
 
                     case 'remove_suggestion':
@@ -1238,24 +1369,24 @@ class StremioServer {
                             const canRemove = isHost || (item && String(item.byId) === String(userId));
                             if (canRemove) {
                                 room.wheelItems = room.wheelItems.filter(i => i.id !== suggestionId);
-                                broadcastToRoom(room, { type: 'remove_suggestion', userId, suggestionId });
+                                broadcastToRoom(room, { type: 'remove_suggestion', userId, suggestionId, serverTime: Date.now() });
                             }
                         }
                         break;
 
                     case 'spin_wheel':
                         if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode girar a roleta.' });
-                        broadcastToRoom(room, { type: 'spin_wheel', userId, by: member.name, winner, durationMs: req.body.durationMs || 3600 });
+                        broadcastToRoom(room, { type: 'spin_wheel', userId, by: member.name, winner, durationMs: req.body.durationMs || 3600, serverTime: Date.now() });
                         break;
 
                     case 'wheel_result':
                         if (!winner) break;
-                        broadcastToRoom(room, { type: 'wheel_result', userId, by: member.name, winner });
+                        broadcastToRoom(room, { type: 'wheel_result', userId, by: member.name, winner, serverTime: Date.now() });
                         break;
 
                     case 'close_room':
                         if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode encerrar a sala.' });
-                        broadcastToRoom(room, { type: 'room_closed', reason: 'O anfitrião encerrou a sala.' });
+                        broadcastToRoom(room, { type: 'room_closed', reason: 'O anfitrião encerrou a sala.', serverTime: Date.now() });
                         this.watchPartyRooms.delete(roomCode);
                         await deleteRoomFromDb(roomCode);
                         break;
@@ -1275,7 +1406,8 @@ class StremioServer {
                                 newHostId: String(targetId),
                                 newHostName: newHostMember.name,
                                 oldHostId: String(userId),
-                                members: updatedMembers
+                                members: updatedMembers,
+                                serverTime: Date.now()
                             });
                             saveRoomToDb(room);
                         }
@@ -1286,6 +1418,7 @@ class StremioServer {
                             const m = room.members.get(String(userId));
                             if (typeof req.body.inPlayer === 'boolean') m.inPlayer = req.body.inPlayer;
                             if (typeof req.body.isReady === 'boolean') m.isReady = req.body.isReady;
+                            if (typeof req.body.isLoading === 'boolean') m.isLoading = req.body.isLoading;
                             if (req.body.audio) m.audio = req.body.audio;
                             const updatedMembers = serializeMembers(room);
                             broadcastToRoom(room, {
@@ -1293,8 +1426,10 @@ class StremioServer {
                                 userId: String(userId),
                                 inPlayer: !!m.inPlayer,
                                 isReady: !!m.isReady,
+                                isLoading: !!m.isLoading,
                                 audio: m.audio,
-                                members: updatedMembers
+                                members: updatedMembers,
+                                serverTime: Date.now()
                             });
                             saveRoomToDb(room);
                         }
@@ -1303,12 +1438,12 @@ class StremioServer {
                     case 'kick':
                         if (!isHost) return res.status(403).json({ success: false, error: 'Apenas o anfitrião pode remover membros.' });
                         if (targetId) {
-                            broadcastToRoom(room, { type: 'kicked', userId: targetId });
+                            broadcastToRoom(room, { type: 'kicked', userId: targetId, serverTime: Date.now() });
                             setTimeout(() => {
                                 const r = this.watchPartyRooms && this.watchPartyRooms.get(roomCode);
                                 if (r) {
                                     r.members.delete(String(targetId));
-                                    broadcastToRoom(r, { type: 'member_left', userId: targetId, name: '?', members: serializeMembers(r) });
+                                    broadcastToRoom(r, { type: 'member_left', userId: targetId, name: '?', members: serializeMembers(r), serverTime: Date.now() });
                                     saveRoomToDb(r);
                                 }
                             }, 1000);
@@ -1316,8 +1451,7 @@ class StremioServer {
                         break;
 
                     default:
-                        // Ação customizada — broadcast direto
-                        broadcastToRoom(room, { type: action, userId, by: member.name, ...req.body });
+                        broadcastToRoom(room, { type: action, userId, by: member.name, serverTime: Date.now(), ...req.body });
                 }
 
                 res.json({ success: true });

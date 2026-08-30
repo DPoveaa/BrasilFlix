@@ -359,11 +359,16 @@ async function createTables() {
             playback_time NUMERIC DEFAULT 0,
             is_playing BOOLEAN DEFAULT false,
             host_only_controls BOOLEAN DEFAULT true,
+            permissions JSONB DEFAULT '{"canPause":true,"canResume":false,"canSeek":false,"canChangeMedia":false,"canChangeSpeed":false}',
+            last_state_change BIGINT,
             last_activity BIGINT,
             wheel_items JSONB DEFAULT '[]',
             members_data JSONB DEFAULT '[]',
             created_at BIGINT
         );
+
+        ALTER TABLE watch_party_rooms ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{"canPause":true,"canResume":false,"canSeek":false,"canChangeMedia":false,"canChangeSpeed":false}';
+        ALTER TABLE watch_party_rooms ADD COLUMN IF NOT EXISTS last_state_change BIGINT;
 
         CREATE TABLE IF NOT EXISTS lancamentos_notificados (
             id SERIAL PRIMARY KEY,
