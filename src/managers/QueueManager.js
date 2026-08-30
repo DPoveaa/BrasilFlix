@@ -1000,6 +1000,28 @@ class QueueManager extends EventEmitter {
             nextJob.error = error.message;
             await this.saveJob(nextJob);
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
+
+            // Se for upgrade de dublado/legendado de um episódio que já existe no catálogo,
+            // registra cooldown de 7 dias para evitar loop de re-tentativas infinitas.
+            if (nextJob.type === 'serie' && nextJob.isUpgrade && nextJob.season && nextJob.episode) {
+                try {
+                    const serieExist = this.catalogoManager.buscarItemExato(nextJob.title, 'serie', nextJob.tmdbId);
+                    if (serieExist) {
+                        const epExistente = this.catalogoManager.buscarEpisodio(serieExist.id, nextJob.season, nextJob.episode);
+                        if (epExistente) {
+                            // Só aplica cooldown se o ep já existir no catálogo (ou seja, é realmente upgrade, não ep novo)
+                            const pref = nextJob.audioPreference || 'dublado';
+                            if (pref === 'dublado' && !epExistente.isDublado) {
+                                await this.catalogoManager.marcarEpisodioDubIndisponivel(serieExist.id, nextJob.season, nextJob.episode);
+                            } else if (pref === 'legendado' && !epExistente.isLegendado) {
+                                await this.catalogoManager.marcarEpisodioLegIndisponivel(serieExist.id, nextJob.season, nextJob.episode);
+                            }
+                        }
+                    }
+                } catch (cooldownErr) {
+                    console.warn('⚠️ [COOLDOWN] Erro ao registrar cooldown de upgrade:', cooldownErr.message);
+                }
+            }
         } finally {
             this.activeJobs.delete(nextJob.id);
 
