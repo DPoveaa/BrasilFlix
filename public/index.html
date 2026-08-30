@@ -4972,16 +4972,17 @@
 
         /* Barra de Navegação de Episódios (Estilo Anime/Streaming) */
         .playback-nav-bar {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 12px;
+            display: flex;
             align-items: center;
-            padding: 14px 20px;
+            justify-content: center;
+            gap: 14px;
+            padding: 16px 20px;
             background: rgba(13, 18, 28, 0.95);
             border: 1px solid var(--border-color);
             border-top: none;
             border-radius: 0 0 16px 16px;
             margin-bottom: 24px;
+            flex-wrap: wrap;
         }
 
         .playback-nav-btn {
@@ -4989,33 +4990,37 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.16);
             color: #ffffff;
             font-size: 13.5px;
             font-weight: 800;
-            padding: 12px 18px;
+            padding: 11px 22px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
             user-select: none;
             white-space: nowrap;
             text-decoration: none;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.3);
         }
 
         .playback-nav-btn:hover:not(:disabled) {
-            background: rgba(16, 185, 129, 0.18);
-            border-color: rgba(16, 185, 129, 0.45);
+            background: rgba(16, 185, 129, 0.22);
+            border-color: rgba(16, 185, 129, 0.6);
             color: #34d399;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.2);
+            box-shadow: 0 6px 22px rgba(16, 185, 129, 0.35);
         }
 
         .playback-nav-btn:disabled {
-            opacity: 0.35;
+            opacity: 0.45;
             cursor: not-allowed;
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.07);
+            color: #64748b;
             pointer-events: none;
-            filter: grayscale(1);
+            box-shadow: none;
         }
 
         .playback-nav-btn-center {
@@ -5023,24 +5028,25 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #e2e8f0;
+            background: rgba(59, 130, 246, 0.14);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #93c5fd;
             font-size: 13.5px;
             font-weight: 800;
-            padding: 12px 18px;
+            padding: 11px 22px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
             white-space: nowrap;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.2);
         }
 
         .playback-nav-btn-center:hover {
-            background: rgba(16, 185, 129, 0.18);
-            border-color: rgba(16, 185, 129, 0.45);
-            color: #34d399;
+            background: rgba(59, 130, 246, 0.28);
+            border-color: rgba(59, 130, 246, 0.7);
+            color: #ffffff;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.2);
+            box-shadow: 0 6px 22px rgba(59, 130, 246, 0.4);
         }
 
         /* Cartão de Detalhes e Sinopse da Mídia */
@@ -5299,14 +5305,15 @@
                 margin-top: 0;
             }
             .playback-nav-bar {
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-                padding: 12px 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                padding: 14px;
                 border-radius: 0;
             }
-            .playback-nav-btn-center {
-                grid-column: 1 / -1;
-                order: -1;
+            .playback-nav-bar button {
+                width: 100%;
+                justify-content: center;
             }
             .playback-episodes-grid {
                 grid-template-columns: 1fr;
@@ -6628,8 +6635,8 @@
             <button id="playback-btn-prev" class="playback-nav-btn" title="Ir para o Episódio Anterior">
                 ⏮ Episódio Anterior
             </button>
-            <button id="playback-btn-series" class="playback-nav-btn-center" onclick="handleViewFullSeries()" title="Ver Todos os Episódios da Série">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle;"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            <button id="playback-btn-series" class="playback-nav-btn-center" onclick="handleViewFullSeries()" title="Voltar para Todos os Episódios da Série">
+                <span>📺</span> <span>Voltar para a Série</span>
             </button>
             <button id="playback-btn-next" class="playback-nav-btn" title="Ir para o Próximo Episódio">
                 Próximo Episódio ⏭
@@ -12554,8 +12561,8 @@ function initApp() {
 
             if (seriesBtn) {
                 seriesBtn.style.display = 'inline-flex';
-                seriesBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle;"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>';
-                seriesBtn.title = 'Ver todos os episódios da série';
+                seriesBtn.innerHTML = '<span>📺</span> <span>Voltar para a Série</span>';
+                seriesBtn.title = 'Voltar para todos os episódios da série';
                 seriesBtn.onclick = () => openMediaDetailPage(serie.id, 'serie');
             }
 
