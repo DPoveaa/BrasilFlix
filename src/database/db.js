@@ -333,7 +333,10 @@ async function createTables() {
 
         ALTER TABLE usuarios ALTER COLUMN email DROP NOT NULL;
         ALTER TABLE usuarios ALTER COLUMN password_hash DROP NOT NULL;
+        ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+        ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias JSONB DEFAULT '{"defaultAudio": "ask", "spoilerBlur": true}'::jsonb;
         CREATE INDEX IF NOT EXISTS idx_usuarios_telegram_id ON usuarios(telegram_id);
+        CREATE INDEX IF NOT EXISTS idx_usuarios_username ON usuarios(username);
 
         CREATE TABLE IF NOT EXISTS avaliacoes_comentarios (
             id SERIAL PRIMARY KEY,
@@ -344,11 +347,19 @@ async function createTables() {
             rating SMALLINT DEFAULT 10,
             comentario TEXT NOT NULL,
             has_spoiler BOOLEAN DEFAULT false,
+            season_num INTEGER DEFAULT 0,
+            episode_num INTEGER DEFAULT 0,
+            media_title VARCHAR(255),
+            avatar_url TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
         ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS has_spoiler BOOLEAN DEFAULT false;
+        ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS season_num INTEGER DEFAULT 0;
+        ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS episode_num INTEGER DEFAULT 0;
+        ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS media_title VARCHAR(255);
+        ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
         CREATE TABLE IF NOT EXISTS watch_party_rooms (
             id VARCHAR(50) PRIMARY KEY,
@@ -388,6 +399,9 @@ async function createTables() {
         CREATE INDEX IF NOT EXISTS idx_series_nome ON series(nome);
         CREATE INDEX IF NOT EXISTS idx_episodios_serie_season ON episodios(serie_id, temporada_numero);
         CREATE INDEX IF NOT EXISTS idx_pedidos_user ON pedidos(user_id);
+        CREATE INDEX IF NOT EXISTS idx_pedidos_username ON pedidos(username);
+        CREATE INDEX IF NOT EXISTS idx_comentarios_user ON avaliacoes_comentarios(user_id);
+        CREATE INDEX IF NOT EXISTS idx_comentarios_username ON avaliacoes_comentarios(username);
         CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_jobs(status, priority);
         CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
         CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);

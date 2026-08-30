@@ -37,6 +37,33 @@ class CommandHandler {
 
         // Deep links vindos do site oficial
         if (param) {
+            // Vinculação de Conta Web com Telegram
+            if (param.startsWith('link_')) {
+                const code = param.replace(/^link_/, '');
+                const linkResult = await authService.confirmTelegramLink(code, msg.from);
+                if (linkResult.success) {
+                    await this.bot.sendMessage(chatId,
+                        `🔗 *Conta Vinculada com Sucesso!*\n\n` +
+                        `Olá, *${msg.from.first_name || msg.from.username || 'Usuário'}*! Sua conta do Telegram foi associada ao seu perfil no BrasilFlix Web com sucesso.\n\n` +
+                        `🍿 Você já pode retornar ao site para ver suas preferências atualizadas.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🌐 Abrir BrasilFlix Web', url: `https://brasilflix.kapsu.com.br/` }]
+                                ]
+                            }
+                        }
+                    );
+                } else {
+                    await this.bot.sendMessage(chatId,
+                        `⚠️ *Falha na Vinculação*\n\n${linkResult.message || 'Código expirado ou inválido. Gere um novo link na página de Configurações no site.'}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                }
+                return;
+            }
+
             // Login 1-Clique via Telegram
             if (param.startsWith('login_') || param.startsWith('auth_')) {
                 const code = param.replace(/^(login_|auth_)/, '');

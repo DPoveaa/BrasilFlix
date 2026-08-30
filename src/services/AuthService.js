@@ -436,6 +436,298 @@ class AuthService {
         }
     }
 
+    validateUsername(username) {
+        if (!username || typeof username !== 'string') {
+            return { valid: false, message: 'Nome de usuário é obrigatório.' };
+        }
+        const trimmed = username.trim();
+        if (trimmed.length < 3 || trimmed.length > 24) {
+            return { valid: false, message: 'O nome de usuário deve ter entre 3 e 24 caracteres.' };
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+            return { valid: false, message: 'Use apenas letras, números e underline (_).' };
+        }
+
+        // Normalização anti-burlagem / leetspeak
+        const normalized = trimmed.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+            .replace(/[@4]/g, 'a')
+            .replace(/[1!|]/g, 'i')
+            .replace(/[0]/g, 'o')
+            .replace(/[3]/g, 'e')
+            .replace(/[$5]/g, 's')
+            .replace(/[7+]/g, 't')
+            .replace(/[8]/g, 'b')
+            .replace(/[^a-z0-9]/g, '');
+
+        // Raízes e termos proibidos estritos (crimes, ódio, ofensas graves)
+        const blockedTerms = [
+            'estupr', 'hitler', 'nazi', 'nazist', 'pedofil', 'pedophil', 'racis',
+            'necrofil', 'zoofil', 'suicid', 'terroris', 'assassin', 'holocausto',
+            'kuklux', 'kkk', 'arrombado', 'filhadaputa', 'chupacu',
+            'buceta', 'caralho', 'putaria', 'porno', 'porn', 'hentai', 'xvideos',
+            'admin', 'administrator', 'root', 'brasilflix', 'moderador', 'suporte', 'staff'
+        ];
+
+        for (const term of blockedTerms) {
+            if (normalized.includes(term.replace(/[^a-z0-9]/g, ''))) {
+                return { valid: false, message: 'Este nome de usuário contém termos não permitidos pelas diretrizes do BrasilFlix.' };
+            }
+        }
+
+        return { valid: true, cleanUsername: trimmed };
+    }
+
+    async updateUserProfile(userId, data = {}) {
+        try {
+            const user = await this.getUserProfile(userId);
+            if (!user) return { success: false, message: 'Usuário não encontrado.' };
+
+            const updates = [];
+            const values = [];
+            let idx = 1;
+
+            // 1. Atualizar Username
+            if (data.username !== undefined && data.username !== null) {
+                const checkU = this.validateUsername(data.username);
+                if (!checkU.valid) {
+                    return { success: false, message: checkU.message };
+                }
+                const newUsername = checkU.cleanUsername;
+                if (newUsername.toLowerCase() !== (user.username || '').toLowerCase()) {
+                    const exists = await db.query(
+                        `SELECT id FROM usuarios WHERE LOWER(username) = LOWER($1) AND id != $2`,
+                        [newUsername, userId]
+                    );
+                    if (exists.rows.length > 0) {
+                        return { success: false, message: 'Este nome de usuário já está em uso por outra pessoa.' };
+                    }
+                    updates.push(`username = $${idx++}`);
+                    values.push(newUsername);
+                }
+            }
+
+            // 2. Atualizar Email
+            if (data.email !== undefined && data.email !== null) {
+                const cleanEmail = (data.email || '').trim().toLowerCase();
+                if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+                    return { success: false, message: 'Endereço de e-mail inválido.' };
+                }
+                if (cleanEmail && cleanEmail !== (user.email || '').toLowerCase()) {
+                    const exists = await db.query(
+                        `SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) AND id != $2`,
+                        [cleanEmail, userId]
+                    );
+                    if (exists.rows.length > 0) {
+                        return { success: false, message: 'Este e-mail já está em uso em outra conta.' };
+                    }
+                    updates.push(`email = $${idx++}`);
+                    values.push(cleanEmail);
+                }
+            }
+
+            // 3. Atualizar Avatar URL
+            if (data.avatar_url !== undefined) {
+                const avatar = typeof data.avatar_url === 'string' ? data.avatar_url.trim() : null;
+                updates.push(`avatar_url = $${idx++}`);
+                values.push(avatar);
+            }
+
+            // 4. Atualizar Preferências
+            if (data.preferencias !== undefined && typeof data.preferencias === 'object') {
+                const currentPrefs = user.preferencias || { defaultAudio: 'ask', spoilerBlur: true };
+                const newPrefs = {
+                    ...currentPrefs,
+                    ...data.preferencias
+                };
+                updates.push(`preferencias = $${idx++}`);
+                values.push(JSON.stringify(newPrefs));
+            }
+
+            if (updates.length === 0) {
+                return { success: true, message: 'Nenhuma alteração informada.', user };
+            }
+
+            updates.push(`updated_at = NOW()`);
+            values.push(userId);
+            const sql = `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, email, username, telegram_id, is_vip, vip_expira, avatar_url, preferencias, favoritos, notificacoes, created_at`;
+            
+            const res = await db.query(sql, values);
+            const updatedUser = res.rows[0];
+
+            // Sincroniza o username e avatar nas avaliações do usuário
+            if (data.username && data.username !== user.username) {
+                await db.query(`UPDATE avaliacoes_comentarios SET username = $1, avatar_url = $2 WHERE user_id = $3`, [updatedUser.username, updatedUser.avatar_url, userId]).catch(() => {});
+            } else if (data.avatar_url !== undefined) {
+                await db.query(`UPDATE avaliacoes_comentarios SET avatar_url = $1 WHERE user_id = $2`, [updatedUser.avatar_url, userId]).catch(() => {});
+            }
+
+            return {
+                success: true,
+                message: 'Perfil atualizado com sucesso!',
+                user: updatedUser
+            };
+        } catch (e) {
+            console.error('Erro ao atualizar perfil:', e.message);
+            return { success: false, message: 'Erro ao salvar alterações no banco de dados.' };
+        }
+    }
+
+    createTelegramLinkSession(userId) {
+        const code = crypto.randomBytes(12).toString('hex');
+        this.telegramLoginSessions.set(`link_${code}`, {
+            code,
+            userId,
+            status: 'pending',
+            telegramUser: null,
+            createdAt: Date.now()
+        });
+        setTimeout(() => this.telegramLoginSessions.delete(`link_${code}`), 15 * 60 * 1000);
+        return {
+            code,
+            botUrl: `https://t.me/BrasilFlix_bot?start=link_${code}`
+        };
+    }
+
+    async confirmTelegramLink(code, telegramUser) {
+        const key = code.startsWith('link_') ? code : `link_${code}`;
+        const session = this.telegramLoginSessions.get(key);
+        if (!session) {
+            return { success: false, message: 'Sessão de vinculação expirada ou inválida.' };
+        }
+
+        const tgId = parseInt(telegramUser.id, 10);
+        try {
+            await db.query(`UPDATE usuarios SET telegram_id = $1 WHERE id = $2`, [tgId, session.userId]);
+            session.status = 'completed';
+            session.telegramUser = telegramUser;
+
+            return {
+                success: true,
+                message: `Conta vinculada com sucesso ao Telegram (@${telegramUser.username || telegramUser.first_name})!`
+            };
+        } catch (e) {
+            console.error('Erro ao vincular Telegram:', e.message);
+            return { success: false, message: 'Erro ao salvar vinculação no banco.' };
+        }
+    }
+
+    checkTelegramLinkStatus(code) {
+        const key = code.startsWith('link_') ? code : `link_${code}`;
+        const session = this.telegramLoginSessions.get(key);
+        if (!session) return { status: 'expired' };
+        return {
+            status: session.status,
+            telegramUser: session.telegramUser
+        };
+    }
+
+    async getUserRequests(userId, username, telegramId) {
+        try {
+            let res;
+            if (telegramId) {
+                res = await db.query(
+                    `SELECT id, nome, tipo, processado, is_assinante, created_at 
+                     FROM pedidos 
+                     WHERE user_id = $1 OR ($2::text IS NOT NULL AND username = $2) 
+                     ORDER BY created_at DESC LIMIT 100`,
+                    [telegramId, username || null]
+                );
+            } else {
+                res = await db.query(
+                    `SELECT id, nome, tipo, processado, is_assinante, created_at 
+                     FROM pedidos 
+                     WHERE ($1::text IS NOT NULL AND username = $1) 
+                     ORDER BY created_at DESC LIMIT 100`,
+                    [username || null]
+                );
+            }
+            return { success: true, requests: res.rows || [] };
+        } catch (e) {
+            console.error('Erro ao buscar pedidos do usuário:', e.message);
+            return { success: false, requests: [] };
+        }
+    }
+
+    async getUserReviews(userId, username) {
+        try {
+            const res = await db.query(
+                `SELECT a.id, a.media_id, a.media_type, a.user_id, a.username, a.rating, a.comentario, 
+                        a.has_spoiler, a.season_num, a.episode_num, a.media_title, a.created_at,
+                        COALESCE(f.nome, s.nome, a.media_title, a.media_id) as computed_title,
+                        COALESCE(f.poster_url, s.poster_url) as poster_url,
+                        COALESCE(f.backdrop_url, s.backdrop_url) as backdrop_url
+                 FROM avaliacoes_comentarios a
+                 LEFT JOIN filmes f ON a.media_type = 'filme' AND f.id::text = a.media_id
+                 LEFT JOIN series s ON (a.media_type = 'serie' OR a.media_type = 'serie_ep') AND s.id::text = a.media_id
+                 WHERE a.user_id = $1 OR (a.username = $2 AND $2 IS NOT NULL)
+                 ORDER BY a.created_at DESC`,
+                [userId || 0, username || '']
+            );
+
+            const all = res.rows || [];
+            const filmes = all.filter(r => r.media_type === 'filme');
+            const seriesReviews = all.filter(r => r.media_type === 'serie' || r.media_type === 'serie_ep');
+
+            const seriesMap = {};
+            for (const r of seriesReviews) {
+                const sKey = r.media_id;
+                if (!seriesMap[sKey]) {
+                    seriesMap[sKey] = {
+                        serieId: r.media_id,
+                        title: r.computed_title,
+                        posterUrl: r.poster_url,
+                        backdropUrl: r.backdrop_url,
+                        generalReviews: [],
+                        episodeReviews: []
+                    };
+                }
+                if (r.season_num > 0 || r.episode_num > 0 || r.media_type === 'serie_ep') {
+                    seriesMap[sKey].episodeReviews.push(r);
+                } else {
+                    seriesMap[sKey].generalReviews.push(r);
+                }
+            }
+
+            return {
+                success: true,
+                filmes,
+                series: Object.values(seriesMap),
+                total: all.length
+            };
+        } catch (e) {
+            console.error('Erro ao buscar avaliações do usuário:', e.message);
+            return { success: false, filmes: [], series: [], total: 0 };
+        }
+    }
+
+    userAuthMiddleware() {
+        return (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            let token = null;
+
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                token = authHeader.substring(7).trim();
+            } else if (req.headers['x-user-token']) {
+                token = req.headers['x-user-token'];
+            } else if (req.query && req.query.token) {
+                token = req.query.token;
+            }
+
+            if (!token) {
+                return res.status(401).json({ error: 'Acesso não autorizado. Faça login para continuar.' });
+            }
+
+            const payload = this.verifyToken(token);
+            if (!payload || !payload.id) {
+                return res.status(401).json({ error: 'Sessão inválida ou expirada. Faça login novamente.' });
+            }
+
+            req.user = payload;
+            next();
+        };
+    }
+
     async toggleFavorite(userId, itemId, itemType = 'filme') {
         try {
             const user = await this.getUserProfile(userId);
@@ -559,20 +851,35 @@ class AuthService {
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // 💬 AVALIAÇÕES E COMENTÁRIOS DA COMUNIDADE
-    // ═══════════════════════════════════════════════════════════════════════
-
-    async getMediaReviews(mediaType, mediaId) {
+    async getMediaReviews(mediaType, mediaId, seasonNum = 0, episodeNum = 0) {
         try {
-            const res = await db.query(
-                `SELECT id, media_id, media_type, user_id, username, rating, comentario, has_spoiler, created_at 
-                 FROM avaliacoes_comentarios 
-                 WHERE media_type = $1 AND media_id = $2 
-                 ORDER BY created_at DESC LIMIT 50`,
-                [mediaType, String(mediaId)]
-            );
+            const isEpisode = Number(seasonNum) > 0 || Number(episodeNum) > 0 || mediaType === 'serie_ep';
+            let sql = '';
+            let params = [];
 
+            if (isEpisode) {
+                sql = `SELECT a.id, a.media_id, a.media_type, a.user_id, a.username, a.rating, a.comentario, 
+                              a.has_spoiler, a.season_num, a.episode_num, a.media_title, a.created_at,
+                              COALESCE(u.avatar_url, a.avatar_url) as avatar_url
+                       FROM avaliacoes_comentarios a
+                       LEFT JOIN usuarios u ON u.id = a.user_id
+                       WHERE (a.media_id = $1) 
+                         AND (a.media_type = 'serie_ep' OR a.media_type = $2)
+                         AND a.season_num = $3 AND a.episode_num = $4
+                       ORDER BY a.created_at DESC LIMIT 50`;
+                params = [String(mediaId), mediaType, Number(seasonNum || 0), Number(episodeNum || 0)];
+            } else {
+                sql = `SELECT a.id, a.media_id, a.media_type, a.user_id, a.username, a.rating, a.comentario, 
+                              a.has_spoiler, a.season_num, a.episode_num, a.media_title, a.created_at,
+                              COALESCE(u.avatar_url, a.avatar_url) as avatar_url
+                       FROM avaliacoes_comentarios a
+                       LEFT JOIN usuarios u ON u.id = a.user_id
+                       WHERE a.media_type = $1 AND a.media_id = $2 AND (a.season_num = 0 OR a.season_num IS NULL)
+                       ORDER BY a.created_at DESC LIMIT 50`;
+                params = [mediaType, String(mediaId)];
+            }
+
+            const res = await db.query(sql, params);
             const reviews = res.rows || [];
             let totalRating = 0;
             let count = reviews.length;
@@ -595,7 +902,7 @@ class AuthService {
         }
     }
 
-    async addMediaReview(userId, username, mediaType, mediaId, rating, comentario, hasSpoiler = false) {
+    async addMediaReview(userId, username, mediaType, mediaId, rating, comentario, hasSpoiler = false, options = {}) {
         if (!comentario || comentario.trim().length < 3) {
             return { success: false, message: 'O comentário deve ter pelo menos 3 caracteres.' };
         }
@@ -603,13 +910,22 @@ class AuthService {
         const safeRating = Math.max(1, Math.min(10, parseInt(rating || 10, 10)));
         const safeText = comentario.trim().slice(0, 1000);
         const safeSpoiler = Boolean(hasSpoiler);
+        const seasonNum = parseInt(options.seasonNum || options.season || 0, 10);
+        const episodeNum = parseInt(options.episodeNum || options.episode || 0, 10);
+        const mediaTitle = options.mediaTitle || options.title || null;
+        let avatarUrl = options.avatarUrl || options.avatar_url || null;
+
+        if (userId && !avatarUrl) {
+            const u = await this.getUserProfile(userId).catch(() => null);
+            if (u) avatarUrl = u.avatar_url;
+        }
 
         try {
             const insRes = await db.query(
-                `INSERT INTO avaliacoes_comentarios (media_id, media_type, user_id, username, rating, comentario, has_spoiler, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                `INSERT INTO avaliacoes_comentarios (media_id, media_type, user_id, username, rating, comentario, has_spoiler, season_num, episode_num, media_title, avatar_url, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
                  RETURNING *`,
-                [String(mediaId), mediaType, userId || null, username || 'Anônimo', safeRating, safeText, safeSpoiler]
+                [String(mediaId), mediaType, userId || null, username || 'Anônimo', safeRating, safeText, safeSpoiler, seasonNum, episodeNum, mediaTitle, avatarUrl]
             );
 
             return {
@@ -641,4 +957,3 @@ class AuthService {
 }
 
 module.exports = new AuthService();
-

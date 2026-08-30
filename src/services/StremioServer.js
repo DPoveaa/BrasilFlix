@@ -1932,10 +1932,43 @@ class StremioServer {
                     username: user.username,
                     is_vip: isVip,
                     telegram_id: user.telegram_id,
+                    avatar_url: user.avatar_url || null,
+                    preferencias: user.preferencias || { defaultAudio: 'ask', spoilerBlur: true },
                     favoritos: user.favoritos || [],
-                    notificacoes: notifs
+                    notificacoes: notifs,
+                    created_at: user.created_at
                 }
             });
+        });
+
+        // ⚙️ Atualização de Perfil, Nome de Usuário, Email, Avatar e Preferências
+        this.app.put('/api/user/profile', authService.userAuthMiddleware(), async (req, res) => {
+            const result = await authService.updateUserProfile(req.user.id, req.body);
+            if (!result.success) return res.status(400).json(result);
+            res.json(result);
+        });
+
+        // 🔗 Vinculação de Conta ao Telegram
+        this.app.post('/api/user/telegram-link/create', authService.userAuthMiddleware(), (req, res) => {
+            const session = authService.createTelegramLinkSession(req.user.id);
+            res.json({ success: true, ...session });
+        });
+
+        this.app.get('/api/user/telegram-link/check/:code', (req, res) => {
+            const status = authService.checkTelegramLinkStatus(req.params.code);
+            res.json(status);
+        });
+
+        // 📋 Listagem de Pedidos do Usuário
+        this.app.get('/api/user/requests', authService.userAuthMiddleware(), async (req, res) => {
+            const result = await authService.getUserRequests(req.user.id, req.user.username, req.user.telegram_id);
+            res.json(result);
+        });
+
+        // ⭐ Listagem de Avaliações e Comentários do Usuário
+        this.app.get('/api/user/reviews', authService.userAuthMiddleware(), async (req, res) => {
+            const result = await authService.getUserReviews(req.user.id, req.user.username);
+            res.json(result);
         });
 
         this.app.post('/api/user/favoritos/toggle', authService.userAuthMiddleware(), async (req, res) => {
@@ -2126,17 +2159,22 @@ class StremioServer {
         // 💬 APIs de Avaliações & Comentários da Comunidade
         this.app.get('/api/media/:type/:id/comentarios', async (req, res) => {
             const { type, id } = req.params;
-            const data = await authService.getMediaReviews(type, id);
+            const data = await authService.getMediaReviews(type, id, req.query.season, req.query.episode);
             res.json(data);
         });
 
         this.app.post('/api/media/:type/:id/comentarios', authService.userAuthMiddleware(true), async (req, res) => {
             const { type, id } = req.params;
-            const { rating, comentario, guestName, hasSpoiler } = req.body;
+            const { rating, comentario, guestName, hasSpoiler, season, episode, title, avatarUrl } = req.body;
             const userId = req.user ? req.user.id : null;
             const username = req.user ? req.user.username : (guestName || 'Usuário Anônimo');
 
-            const result = await authService.addMediaReview(userId, username, type, id, rating, comentario, hasSpoiler);
+            const result = await authService.addMediaReview(userId, username, type, id, rating, comentario, hasSpoiler, {
+                seasonNum: season,
+                episodeNum: episode,
+                mediaTitle: title,
+                avatarUrl: avatarUrl
+            });
             if (!result.success) return res.status(400).json(result);
             res.json(result);
         });
