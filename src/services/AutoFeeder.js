@@ -540,10 +540,13 @@ class AutoFeeder {
             const apenasDublados = this.catalogoManager.buscarFilmesApenasDublados();
             if (apenasDublados.length === 0) return;
 
-            for (const filme of apenasDublados.slice(0, 3)) {
+            console.log(`🎬 AutoFeeder: Verificando se ${apenasDublados.length} filme(s) dublado(s) possuem versão LEGENDADA para completar o catálogo...`);
+
+            for (const filme of apenasDublados) {
                 const jaNaFila = (this.queueManager.queue || []).some(j =>
                     j.type === 'filme' &&
                     j.title.toLowerCase() === filme.nome.toLowerCase() &&
+                    j.audioPreference === 'legendado' &&
                     ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                 );
 
@@ -555,23 +558,25 @@ class AutoFeeder {
                         audioPreference: 'legendado'
                     });
 
-                    const legSource = sources.find(s => s.isLegendado && s.seeders > 0);
+                    const legSource = sources.find(s => (s.isLegendado || s.seeders >= 2) && s.seeders > 0);
                     if (legSource) {
-                        console.log(`🌟 VERSÃO LEGENDADA ENCONTRADA para "${filme.nome}"! Fonte: ${legSource.title}`);
+                        console.log(`🌟 VERSÃO LEGENDADA ENCONTRADA para filme "${filme.nome}"! Fonte: ${legSource.title} [Seeds: ${legSource.seeders}]`);
                         this.queueManager.addJob(filme.nome, 'filme', PRIORITIES.SERIES || 3, {
                             tmdbId: filme.tmdbId,
                             imdbId: filme.imdbId,
+                            nomeOriginal: filme.nomeOriginal,
+                            ano: filme.ano,
                             audioPreference: 'legendado',
-                            isUpgrade: true
+                            isUpgrade: true,
+                            extraData: { isLegendadoUpgrade: true }
                         });
                     }
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 400));
                 }
             }
         } catch (e) {
             console.error('⚠️ Erro ao verificar upgrades de filmes para legendado:', e.message);
         }
-
     }
 
     async considerItem(item, tipo, isDorama = false) {
