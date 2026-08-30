@@ -1640,20 +1640,22 @@ class QueueManager extends EventEmitter {
                 videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
 
                 // Verificação de Duração Mínima Absoluta e Comparativa com TMDB:
-                // Filmes: Mínimo 40 minutos (2400s).
-                // Séries: Mínimo 12 minutos (720s) (a não ser que o TMDB confirme explicitamente curta/anime < 12min).
-                const defaultExpectedMin = job.type === 'filme' ? 80 : (metadata.duracaoMinutos || 45);
+                // Filmes: Mínimo 45 minutos (2700s) ou 60% da duração esperada do TMDB (o que for maior).
+                // Séries: Mínimo 12 minutos (720s) ou 40% da duração esperada do episódio (a não ser que o TMDB confirme explicitamente curta/anime <= 15min).
+                const defaultExpectedMin = job.type === 'filme' ? 90 : (metadata.duracaoMinutos || 45);
                 const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
-                const minRatio = job.type === 'serie' ? 0.35 : 0.55;
+                const minRatio = job.type === 'serie' ? 0.40 : 0.60;
                 const minAcceptableSec = Math.floor(effectiveExpectedMin * 60 * minRatio);
-                const absoluteMinSec = (job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : (job.type === 'serie' ? 720 : 2400);
-                const finalMinSec = Math.min(minAcceptableSec, absoluteMinSec);
+                const absoluteMinSec = (job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : (job.type === 'serie' ? 720 : 2700);
+                const finalMinSec = (job.type === 'serie' && effectiveExpectedMin <= 15) 
+                    ? 180 
+                    : Math.max(minAcceptableSec, absoluteMinSec);
 
                 if (videoInfo.duration && videoInfo.duration < finalMinSec) {
                     const durAtualMin = (videoInfo.duration / 60).toFixed(1);
-                    console.warn(`⚠️ Arquivo descartado: Duração inválida detectada (${videoInfo.durationFormatted} / ~${durAtualMin} min). Esperado para "${job.title}": ~${effectiveExpectedMin} min (Mínimo: ${Math.round(finalMinSec / 60)} min). Possível corte/amostra/extra descartado.`);
+                    console.warn(`⚠️ Arquivo descartado: Duração inválida detectada (${videoInfo.durationFormatted} / ~${durAtualMin} min). Esperado para "${job.title}": ~${effectiveExpectedMin} min (Mínimo aceito: ${Math.round(finalMinSec / 60)} min). Corte/amostra/incompleto descartado.`);
                     await DownloaderManager.cleanupFile(rawFilePath);
-                    throw new Error(`Vídeo com duração insuficiente (${videoInfo.durationFormatted} vs ~${effectiveExpectedMin} min esperados). Arquivo extra/amostra descartado.`);
+                    throw new Error(`Vídeo com duração insuficiente (${videoInfo.durationFormatted} vs ~${effectiveExpectedMin} min esperados). Arquivo incompleto descartado.`);
                 }
 
                 const effectiveSource = bestSource || job.bestSource || (job.audioPreference === 'legendado' || metadata.isDorama ? { isLegendado: true } : {});
