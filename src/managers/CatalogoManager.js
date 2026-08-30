@@ -437,8 +437,9 @@ class CatalogoManager {
         const generosArr = Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos || '[]') : []);
         const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
         const isAnime = s.is_anime || s.isAnime || (hasAnimeGenre && (s.is_dorama || s.isDorama)) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
-        const isDorama = !isAnime && (s.is_dorama || s.isDorama || false);
-        const tags = (s.nome || '') + ' ' + (s.sinopse || s.descricao || '') + ' ' + generosArr.toString();
+        const isMicrodrama = s.subtipo === 'microdrama' || !!(s.is_microdrama || s.isMicrodrama) || s.formato === 'vertical' || generosArr.some(g => String(g).toLowerCase().includes('microdrama') || String(g).toLowerCase().includes('duanju'));
+        const isDorama = !isAnime && (s.is_dorama || s.isDorama || isMicrodrama || false);
+        const tags = (s.nome || '') + ' ' + (s.sinopse || s.descricao || '') + ' ' + generosArr.toString() + (isMicrodrama ? ' microdrama duanju vertical 9:16' : '');
 
         return {
             id: s.id,
@@ -455,6 +456,13 @@ class CatalogoManager {
             generos: generosArr,
             isDorama: isDorama,
             isAnime: isAnime,
+            isMicrodrama: isMicrodrama,
+            subtipo: isMicrodrama ? 'microdrama' : (isAnime ? 'anime' : (isDorama ? 'dorama' : (s.subtipo || 'serie'))),
+            formato: s.formato || (isMicrodrama ? 'vertical' : 'horizontal'),
+            origem: s.origem || 'China',
+            plataformaOrigem: s.plataforma_origem || s.plataformaOrigem || null,
+            trendingScore: parseFloat(s.trending_score || s.trendingScore || 0.0),
+            metadataExtra: typeof s.metadata_extra === 'string' ? JSON.parse(s.metadata_extra || '{}') : (s.metadata_extra || {}),
             isDublado: hasDub,
             isLegendado: hasLeg,
             isCam: !!(s.is_cam || s.isCam),
@@ -668,11 +676,15 @@ class CatalogoManager {
                 // Inicia o verificador periódico de integridade (singleton)
                 this.startPeriodicRevalidation();
 
-                // Executa enriquecimento automático em segundo plano
-                setTimeout(() => {
-                    this.autoEnrichMissingMetadata().catch(() => {});
-                    this.enriquecerEpisodiosPendentes().catch(() => {});
-                }, 3000);
+                // Executa enriquecimento automático em segundo plano apenas 1 vez na inicialização ou a cada 4 horas
+                const now = Date.now();
+                if (!this._lastEnrichTimestamp || (now - this._lastEnrichTimestamp > 4 * 60 * 60 * 1000)) {
+                    this._lastEnrichTimestamp = now;
+                    setTimeout(() => {
+                        this.autoEnrichMissingMetadata().catch(() => {});
+                        this.enriquecerEpisodiosPendentes().catch(() => {});
+                    }, 5000);
+                }
             } catch (error) {
                 console.error('❌ Erro ao carregar catálogo do PostgreSQL:', error.message);
                 if (fs.existsSync(config.CATALOGO_FILE)) {
@@ -1086,6 +1098,9 @@ class CatalogoManager {
         const isDub = metadados.isDublado ?? (metadados.audio ? !metadados.audio.toLowerCase().includes('legendado') : true);
         const isLeg = metadados.isLegendado ?? (metadados.audio ? metadados.audio.toLowerCase().includes('legendado') : false);
 
+        const isMicro = metadados.subtipo === 'microdrama' || metadados.isMicrodrama || metadados.formato === 'vertical';
+        const isDorama = metadados.isDorama || isMicro || false;
+
         if (!serie) {
             let sId = null;
             try {
@@ -1093,16 +1108,22 @@ class CatalogoManager {
                     INSERT INTO series (
                         nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                         nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
-                        is_dublado, is_legendado, is_cam, created_at, updated_at
+                        is_dublado, is_legendado, is_cam, is_microdrama, subtipo, formato, origem,
+                        plataforma_origem, trending_score, metadata_extra, created_at, updated_at
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW()
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
                     ) RETURNING id
                 `, [
                     serieNome.trim(), metadados.nomeOriginal || serieNome.trim(), metadados.ano || '',
                     JSON.stringify(metadados.generos || []), metadados.sinopse || '',
                     metadados.posterUrl || null, metadados.backdropUrl || null,
                     metadados.nota || 8.0, metadados.tmdbId || null, metadados.imdbId || null,
-                    1, 1, metadados.isDorama || false, isDub, isLeg, metadados.isCam || false
+                    1, 1, isDorama, isDub, isLeg, metadados.isCam || false,
+                    isMicro, metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                    metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
+                    metadados.origem || 'China', metadados.plataformaOrigem || metadados.plataforma_origem || null,
+                    parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
+                    JSON.stringify(metadados.metadataExtra || metadados.metadata_extra || {})
                 ]);
                 sId = res.rows[0]?.id;
             } catch (e) {
@@ -1122,10 +1143,16 @@ class CatalogoManager {
                 ano: metadados.ano || '',
                 nota: metadados.nota || 8.0,
                 generos: metadados.generos || [],
-                isDorama: metadados.isDorama || false,
+                isDorama: isDorama,
+                isMicrodrama: isMicro,
+                subtipo: metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                formato: metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
+                origem: metadados.origem || 'China',
+                plataformaOrigem: metadados.plataformaOrigem || metadados.plataforma_origem || null,
+                trendingScore: parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
                 isDublado: isDub,
                 isLegendado: isLeg,
-                tipo: 'serie',
+                tipo: isMicro ? 'dorama' : 'serie',
                 temporadas: [],
                 dataAdicionado: new Date().toISOString(),
                 tags: this.extrairTags(serieNome + ' ' + (metadados.generos ? metadados.generos.join(' ') : ''))
@@ -1134,6 +1161,11 @@ class CatalogoManager {
         } else {
             if (isDub) serie.isDublado = true;
             if (isLeg) serie.isLegendado = true;
+            if (isMicro) {
+                serie.isMicrodrama = true;
+                serie.subtipo = 'microdrama';
+                serie.formato = 'vertical';
+            }
 
             // Se a série existente não tinha poster mas agora temos, atualiza
             if (!serie.posterUrl && metadados.posterUrl) {
@@ -1686,6 +1718,7 @@ class CatalogoManager {
 
         const animes = this.getAnimes();
         const doramas = this.getDoramas();
+        const microdramas = this.getMicrodramas();
         const filmes = this.getFilmesNormais();
         const series = this.getSeriesNormais();
 
@@ -1702,6 +1735,7 @@ class CatalogoManager {
             totalDoramas: doramas.length,
             totalDoramasDublados: doramas.filter(d => d.isDublado).length,
             totalDoramasLegendados: doramas.filter(d => d.isLegendado).length,
+            totalMicrodramas: microdramas.length,
             totalEpisodios: totalEpisodios,
             total: this.catalogo.filmes.length + this.catalogo.series.length
         };
@@ -1712,7 +1746,7 @@ class CatalogoManager {
     }
 
     getSeriesNormais() {
-        return (this.catalogo.series || []).filter(s => !s.isAnime && !s.isDorama);
+        return (this.catalogo.series || []).filter(s => !s.isAnime && !s.isDorama && !s.isMicrodrama && s.subtipo !== 'microdrama');
     }
 
     getAnimes() {
@@ -1723,6 +1757,10 @@ class CatalogoManager {
 
     getDoramas() {
         return (this.catalogo.series || []).filter(s => s.isDorama && !s.isAnime);
+    }
+
+    getMicrodramas() {
+        return (this.catalogo.series || []).filter(s => (s.subtipo === 'microdrama' || s.isMicrodrama || s.formato === 'vertical') && !s.isAnime);
     }
 
     getFilmesDublados() {
@@ -1941,6 +1979,7 @@ class CatalogoManager {
         if (!this.bot || !item) return;
 
         const releaseGroupId = config.PUBLIC_RELEASE_GROUP_ID || '-1005359335072';
+        const TelegramNotificationFormatter = require('../services/TelegramNotificationFormatter');
 
         try {
             if (tipo === 'filme') {
@@ -1953,55 +1992,40 @@ class CatalogoManager {
                 );
                 if (exists.rows.length > 0) return;
 
-                const ratingStr = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-                const audioLabel = (item.isDublado && item.isLegendado) ? '🇧🇷 Dublado & 💬 Legendado (Dual)' : (item.isDublado ? '🇧🇷 Dublado (PT-BR)' : '💬 Legendado');
-                const qualLabel = item.qualidade || (item.isCam ? 'CAM' : '1080p Full HD');
-                const generosStr = (item.generos || []).slice(0, 4).join(', ') || 'Filme';
-                const sinopse = item.sinopse || item.descricao || 'Disponível no catálogo com máxima qualidade.';
-                const sinopseCurta = sinopse.length > 280 ? sinopse.substring(0, 277) + '...' : sinopse;
-
-                const caption = 
-`🍿 *NOVO FILME NO BRASILFLIX!*
-
-🎬 *${item.nome}* (${item.ano || '2026'})
-⭐ *Nota:* ${ratingStr} TMDB
-🔊 *Áudio:* ${audioLabel}
-📺 *Qualidade:* ${qualLabel}
-🎭 *Gêneros:* ${generosStr}
-
-📖 *Sinopse:*
-_${sinopseCurta}_
-
-✨ _Assista agora no site ou direto pelo Telegram!_`;
-
-                const replyMarkup = {
-                    inline_keyboard: [
-                        [
-                            { text: '🌐 Assistir no Site', url: `https://brasilflix.kapsu.com.br/#filme/${item.id}` },
-                            { text: '🤖 Assistir no Telegram', url: `https://t.me/BrasilFlix_bot?start=ver_${item.id}` }
-                        ]
-                    ]
-                };
+                const caption = TelegramNotificationFormatter.formatMovieNotification(item);
+                const replyMarkup = TelegramNotificationFormatter.buildInlineKeyboard('filme', item.id);
 
                 const posterUrl = item.posterUrl || item.poster_url || null;
                 if (posterUrl && posterUrl.startsWith('http')) {
                     try {
                         await this.bot.sendPhoto(releaseGroupId, posterUrl, {
                             caption,
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
                             reply_markup: replyMarkup
                         });
                     } catch (errPhoto) {
+                        try {
+                            await this.bot.sendMessage(releaseGroupId, caption, {
+                                parse_mode: 'HTML',
+                                reply_markup: replyMarkup
+                            });
+                        } catch (errHtml) {
+                            await this.bot.sendMessage(releaseGroupId, caption.replace(/<[^>]*>/g, ''), {
+                                reply_markup: replyMarkup
+                            });
+                        }
+                    }
+                } else {
+                    try {
                         await this.bot.sendMessage(releaseGroupId, caption, {
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
+                            reply_markup: replyMarkup
+                        });
+                    } catch (errHtml) {
+                        await this.bot.sendMessage(releaseGroupId, caption.replace(/<[^>]*>/g, ''), {
                             reply_markup: replyMarkup
                         });
                     }
-                } else {
-                    await this.bot.sendMessage(releaseGroupId, caption, {
-                        parse_mode: 'Markdown',
-                        reply_markup: replyMarkup
-                    });
                 }
 
                 await db.query(
@@ -2013,7 +2037,6 @@ _${sinopseCurta}_
             } else if (tipo === 'serie') {
                 const seasonNum = detalhes.seasonNum || 1;
                 const audio = detalhes.audio || (item.isDublado ? 'dublado' : 'legendado');
-                const totalEps = detalhes.totalEps || (item.totalEpisodios || 1);
 
                 // Evita notificação duplicada desta temporada e áudio
                 const exists = await db.query(
@@ -2022,58 +2045,40 @@ _${sinopseCurta}_
                 );
                 if (exists.rows.length > 0) return;
 
-                const ratingStr = item.nota ? Number(item.nota).toFixed(1) : '8.0';
-                const audioLabel = audio === 'dublado' ? '🇧🇷 Dublado (PT-BR)' : '💬 Legendado (PT-BR)';
-                const qualLabel = '1080p Full HD';
-                const generosStr = (item.generos || []).slice(0, 4).join(', ') || (item.isAnime ? 'Anime' : (item.isDorama ? 'Dorama' : 'Série'));
-                const sinopse = item.sinopse || item.descricao || 'Temporada completa disponível no catálogo.';
-                const sinopseCurta = sinopse.length > 260 ? sinopse.substring(0, 257) + '...' : sinopse;
-
-                const tipoTitulo = item.isAnime ? '⛩️ NOVO ANIME DISPONÍVEL' : (item.isDorama ? '🌸 NOVO DORAMA DISPONÍVEL' : '🎉 NOVA TEMPORADA COMPLETA');
-
-                const caption = 
-`${tipoTitulo}!
-
-📺 *${item.nome}* - *${seasonNum}ª Temporada Completa* (${item.ano || '2026'})
-📦 *Episódios:* ${totalEps}/${totalEps} Episódios
-🔊 *Áudio:* ${audioLabel}
-⭐ *Nota:* ${ratingStr} TMDB
-📺 *Qualidade:* ${qualLabel}
-🎭 *Gêneros:* ${generosStr}
-
-📖 *Sinopse:*
-_${sinopseCurta}_
-
-🍿 _Todos os episódios já disponíveis para maratonar!_`;
-
-                const replyMarkup = {
-                    inline_keyboard: [
-                        [
-                            { text: '🌐 Assistir no Site', url: `https://brasilflix.kapsu.com.br/#serie/${item.id}` },
-                            { text: '🤖 Assistir no Telegram', url: `https://t.me/BrasilFlix_bot?start=ver_${item.id}` }
-                        ]
-                    ]
-                };
+                const caption = TelegramNotificationFormatter.formatCompleteSeasonNotification(item, detalhes);
+                const replyMarkup = TelegramNotificationFormatter.buildInlineKeyboard('serie', item.id, seasonNum);
 
                 const posterUrl = item.posterUrl || item.poster_url || null;
                 if (posterUrl && posterUrl.startsWith('http')) {
                     try {
                         await this.bot.sendPhoto(releaseGroupId, posterUrl, {
                             caption,
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
                             reply_markup: replyMarkup
                         });
                     } catch (errPhoto) {
+                        try {
+                            await this.bot.sendMessage(releaseGroupId, caption, {
+                                parse_mode: 'HTML',
+                                reply_markup: replyMarkup
+                            });
+                        } catch (errHtml) {
+                            await this.bot.sendMessage(releaseGroupId, caption.replace(/<[^>]*>/g, ''), {
+                                reply_markup: replyMarkup
+                            });
+                        }
+                    }
+                } else {
+                    try {
                         await this.bot.sendMessage(releaseGroupId, caption, {
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
+                            reply_markup: replyMarkup
+                        });
+                    } catch (errHtml) {
+                        await this.bot.sendMessage(releaseGroupId, caption.replace(/<[^>]*>/g, ''), {
                             reply_markup: replyMarkup
                         });
                     }
-                } else {
-                    await this.bot.sendMessage(releaseGroupId, caption, {
-                        parse_mode: 'Markdown',
-                        reply_markup: replyMarkup
-                    });
                 }
 
                 await db.query(
@@ -2192,10 +2197,7 @@ _${sinopseCurta}_
                 }
             }
 
-            // Recarrega o catálogo completo respeitando a Fonte Única de Verdade e regras de integridade
-            console.log(`✅ [ENRICH-EPS] Metadados de episódios atualizados no PostgreSQL. Recarregando catálogo com integridade estrita...`);
-            this._loadingPromise = null;
-            await this.loadCatalogo();
+            console.log(`✅ [ENRICH-EPS] Metadados de episódios atualizados no PostgreSQL com sucesso.`);
         } catch (e) {
             console.warn('⚠️ [ENRICH-EPS] Erro geral:', e.message);
         }

@@ -44,7 +44,8 @@ const filesToSync = [
     'public/assets/telegram/bot_avatar.jpg',
     'public/assets/telegram/vip_clients_avatar.jpg',
     'public/assets/telegram/storage_group_avatar.jpg',
-    'scripts/run_production_audit.js'
+    'scripts/run_production_audit.js',
+    'scripts/full_production_deep_audit.js'
 ];
 
 async function sync() {

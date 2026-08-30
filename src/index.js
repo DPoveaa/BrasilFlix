@@ -61,6 +61,8 @@ class BrasilFlixBot {
         this.bot.onText(/\/pedir (.+)/, (msg, match) => this.commandHandler.handlePedido(msg, match));
         this.bot.onText(/\/buscar (.+)/, (msg, match) => this.commandHandler.handleBuscar(msg, match));
         this.bot.onText(/\/catalogo/, (msg) => this.commandHandler.handleCatalogo(msg));
+        this.bot.onText(/\/microdramas/, (msg) => this.commandHandler.handleMicrodramasCommand(msg));
+        this.bot.onText(/\/duanju/, (msg) => this.commandHandler.handleMicrodramasCommand(msg));
         this.bot.onText(/\/fila/, (msg) => this.commandHandler.handleFila(msg));
         this.bot.onText(/\/adicionar/, (msg) => this.commandHandler.handleAdicionar(msg));
         this.bot.onText(/\/adicionar_manual (.+)/, (msg, match) => this.commandHandler.handleAdicionarManual(msg, match));

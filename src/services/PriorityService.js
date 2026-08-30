@@ -16,8 +16,9 @@ const DEFAULT_PRIORITIES = {
     SERIES:       3,  // Séries e Doramas em Andamento (Próx. Episódio)
     UPGRADE_DUB:  4,  // Upgrade de dublagem (Legendado para Dublado PT-BR)
     FREE_USER:    5,  // Pedido de Usuário Gratuito / Normal
-    ANIME:        6,  // Episódios de animes
-    FEEDER:       7   // Auto-Feeder (Sugestão de novos títulos em background)
+    MICRODRAMA:   6,  // Microdramas / Short Dramas Verticais (短剧 / Duanju 9:16)
+    ANIME:        7,  // Episódios de animes
+    FEEDER:       8   // Auto-Feeder (Sugestão de novos títulos em background)
 };
 
 // Labels para exibição na UI
@@ -27,6 +28,7 @@ const PRIORITY_LABELS = {
     SERIES:       'Séries e Doramas em Andamento (Próx. Episódio)',
     UPGRADE_DUB:  'Upgrade de Áudio (Legendado para Dublado)',
     FREE_USER:    'Cliente Gratuito',
+    MICRODRAMA:   'Microdramas / Short Dramas Verticais (9:16)',
     ANIME:        'Animes (Séries Animadas)',
     FEEDER:       'Auto-Feeder (Novos Títulos Sugeridos)'
 };

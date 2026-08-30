@@ -135,6 +135,13 @@ async function createTables() {
         ALTER TABLE series ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS is_microdrama BOOLEAN DEFAULT false;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS subtipo VARCHAR(50) DEFAULT 'serie';
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS formato VARCHAR(50) DEFAULT 'horizontal';
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS origem VARCHAR(50) DEFAULT 'China';
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS plataforma_origem VARCHAR(100);
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS trending_score NUMERIC(5,2) DEFAULT 0.0;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS metadata_extra JSONB DEFAULT '{}';
         ALTER TABLE series ADD COLUMN IF NOT EXISTS em_lancamento BOOLEAN DEFAULT false;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS status_serie VARCHAR(50) DEFAULT 'Ended';
         ALTER TABLE series ADD COLUMN IF NOT EXISTS temporadas_meta JSONB DEFAULT '{}';
@@ -162,6 +169,7 @@ async function createTables() {
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS still_url TEXT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS formato VARCHAR(50);
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,
@@ -335,9 +343,12 @@ async function createTables() {
             username VARCHAR(100) NOT NULL,
             rating SMALLINT DEFAULT 10,
             comentario TEXT NOT NULL,
+            has_spoiler BOOLEAN DEFAULT false,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
+
+        ALTER TABLE avaliacoes_comentarios ADD COLUMN IF NOT EXISTS has_spoiler BOOLEAN DEFAULT false;
 
         CREATE TABLE IF NOT EXISTS watch_party_rooms (
             id VARCHAR(50) PRIMARY KEY,

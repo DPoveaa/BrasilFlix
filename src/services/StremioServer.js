@@ -739,6 +739,28 @@ class StremioServer {
             }
         });
 
+        // 📱 Descoberta e Catálogo de Microdramas Chineses / Short Dramas Verticais (短剧 / Duanju)
+        const microdramaService = require('./MicrodramaService');
+        this.app.get('/api/microdramas/trending', async (req, res) => {
+            try {
+                const limit = parseInt(req.query.limit || 20, 10);
+                const results = await microdramaService.getTrendingMicrodramas(limit);
+                res.json({ success: true, count: results.length, results });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/microdramas/search', async (req, res) => {
+            try {
+                const query = req.query.query || req.query.q || '';
+                const results = await microdramaService.searchMicrodramas(query);
+                res.json({ success: true, query, results });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         // 💬 Canal de Sugestões, Pedidos, Dúvidas e Reclamações de Usuários
         this.app.post('/api/user/feedback', async (req, res) => {
             try {
@@ -1661,7 +1683,20 @@ class StremioServer {
 
         // 2. Dashboard Web e Rotas de Navegacao
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
-        this.app.get(['/status', '/fila', '/catalogo', '/admin'], (req, res) => this.renderLandingPage(req, res, 'public'));
+        this.app.get([
+            '/status',
+            '/fila',
+            '/catalogo',
+            '/admin',
+            '/filme/:id',
+            '/filme/:id/assistir',
+            '/serie/:id',
+            '/serie/:serieId/temporada/:season/episodio/:episode',
+            '/serie/:serieId/t/:season/e/:episode',
+            '/assistir',
+            '/assistir/*',
+            '/sala/:id'
+        ], (req, res) => this.renderLandingPage(req, res, 'public'));
 
         // Rota oficial de Checkout e Assinatura Web
         this.app.get('/assinar', (req, res) => {
@@ -1963,11 +1998,11 @@ class StremioServer {
 
         this.app.post('/api/media/:type/:id/comentarios', authService.userAuthMiddleware(true), async (req, res) => {
             const { type, id } = req.params;
-            const { rating, comentario, guestName } = req.body;
+            const { rating, comentario, guestName, hasSpoiler } = req.body;
             const userId = req.user ? req.user.id : null;
             const username = req.user ? req.user.username : (guestName || 'Usuário Anônimo');
 
-            const result = await authService.addMediaReview(userId, username, type, id, rating, comentario);
+            const result = await authService.addMediaReview(userId, username, type, id, rating, comentario, hasSpoiler);
             if (!result.success) return res.status(400).json(result);
             res.json(result);
         });
@@ -2006,7 +2041,7 @@ class StremioServer {
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health') {
+            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health' || token === 'filme' || token === 'serie' || token === 'assistir' || token === 'sala') {
                 return next();
             }
             this.renderLandingPage(req, res, token);

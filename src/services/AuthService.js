@@ -566,7 +566,7 @@ class AuthService {
     async getMediaReviews(mediaType, mediaId) {
         try {
             const res = await db.query(
-                `SELECT id, media_id, media_type, user_id, username, rating, comentario, created_at 
+                `SELECT id, media_id, media_type, user_id, username, rating, comentario, has_spoiler, created_at 
                  FROM avaliacoes_comentarios 
                  WHERE media_type = $1 AND media_id = $2 
                  ORDER BY created_at DESC LIMIT 50`,
@@ -595,20 +595,21 @@ class AuthService {
         }
     }
 
-    async addMediaReview(userId, username, mediaType, mediaId, rating, comentario) {
+    async addMediaReview(userId, username, mediaType, mediaId, rating, comentario, hasSpoiler = false) {
         if (!comentario || comentario.trim().length < 3) {
             return { success: false, message: 'O comentário deve ter pelo menos 3 caracteres.' };
         }
 
         const safeRating = Math.max(1, Math.min(10, parseInt(rating || 10, 10)));
         const safeText = comentario.trim().slice(0, 1000);
+        const safeSpoiler = Boolean(hasSpoiler);
 
         try {
             const insRes = await db.query(
-                `INSERT INTO avaliacoes_comentarios (media_id, media_type, user_id, username, rating, comentario, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                `INSERT INTO avaliacoes_comentarios (media_id, media_type, user_id, username, rating, comentario, has_spoiler, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
                  RETURNING *`,
-                [String(mediaId), mediaType, userId || null, username || 'Anônimo', safeRating, safeText]
+                [String(mediaId), mediaType, userId || null, username || 'Anônimo', safeRating, safeText, safeSpoiler]
             );
 
             return {

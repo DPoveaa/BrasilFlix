@@ -72,16 +72,28 @@ class DiskCleaner {
         if (this.isRunning) return { cleanedCount: 0, freedBytes: 0 };
         this.isRunning = true;
 
-        const normalizedActive = (activeFilePaths || [])
+        // Combina caminhos passados com activePaths do DownloaderManager
+        let allActive = [...(activeFilePaths || [])];
+        try {
+            const DownloaderManager = require('./DownloaderManager');
+            if (DownloaderManager && DownloaderManager.activePaths) {
+                for (const p of DownloaderManager.activePaths) {
+                    allActive.push(p);
+                }
+            }
+        } catch (e) {}
+
+        const normalizedActive = allActive
             .filter(Boolean)
             .map(p => path.resolve(p).toLowerCase());
 
         let totalFreedBytes = 0;
         let totalCleanedCount = 0;
         const now = Date.now();
+        const minAgeMs = 2 * 60 * 60 * 1000; // 2 horas de inatividade mínima comprovada
 
         const cleanFolder = async (folderPath) => {
-            if (!fs.existsSync(folderPath)) return;
+            if (!folderPath || !fs.existsSync(folderPath)) return;
 
             let entries = [];
             try {
@@ -95,25 +107,26 @@ class DiskCleaner {
                 const resolved = path.resolve(fullPath).toLowerCase();
 
                 // Ignora se estiver na lista de arquivos ativos
-                const isActive = normalizedActive.some(act => resolved.startsWith(act) || act.startsWith(resolved));
+                const isActive = normalizedActive.some(act => resolved === act || resolved.startsWith(act + path.sep) || act.startsWith(resolved + path.sep));
                 if (isActive) continue;
 
                 try {
                     const stat = await fs.stat(fullPath);
-                    const ageMs = now - stat.mtimeMs;
+                    const mostRecentTime = Math.max(stat.ctimeMs || 0, stat.mtimeMs || 0, stat.birthtimeMs || 0);
+                    const ageMs = now - mostRecentTime;
 
                     if (stat.isDirectory()) {
                         // Varre subdiretório recursivamente
                         await cleanFolder(fullPath);
-                        // Se a pasta ficou vazia e tem mais de 30 min, remove a pasta
+                        // Se a pasta ficou vazia e tem mais de 2 horas, remove a pasta
                         const subEntries = await fs.readdir(fullPath);
-                        if (subEntries.length === 0 && ageMs >= this.minAgeMs) {
+                        if (subEntries.length === 0 && ageMs >= minAgeMs) {
                             await fs.remove(fullPath);
                             console.log(`🧹 [Auto-Cleaner] Pasta residual vazia removida: "${entry}"`);
                         }
                     } else if (stat.isFile()) {
-                        // Se o arquivo tiver mais de 30 min sem modificação e não for ativo
-                        if (ageMs >= this.minAgeMs) {
+                        // Se o arquivo tiver mais de 2 horas sem modificação e não for ativo
+                        if (ageMs >= minAgeMs) {
                             const fileSize = stat.size;
                             await fs.unlink(fullPath);
                             totalFreedBytes += fileSize;

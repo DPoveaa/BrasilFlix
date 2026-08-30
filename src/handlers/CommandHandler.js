@@ -1060,6 +1060,94 @@ class CommandHandler {
         }, callbackQuery);
     }
 
+    async handleMicrodramasCommand(msg) {
+        const chatId = msg.chat.id;
+        const userId = msg.from?.id;
+        await this.handleCatalogoMicrodramas(chatId, userId, null, 0);
+    }
+
+    async handleCatalogoMicrodramas(chatId, userId, callbackQuery, pagina = 0) {
+        let microdramas = this.catalogoManager.getMicrodramas ? this.catalogoManager.getMicrodramas() : [];
+        if (microdramas.length === 0) {
+            microdramas = (this.catalogoManager.catalogo.series || []).filter(s => s.subtipo === 'microdrama' || s.isMicrodrama || s.formato === 'vertical' || (s.isDorama && s.totalEpisodios >= 35));
+        }
+
+        let tituloCategoria = '📱 *Microdramas & Short Dramas Verticais (短剧 / Duanju 9:16)*';
+        
+        if (microdramas.length === 0) {
+            await this.sendOrEdit(chatId, 
+                `📭 Nenhum microdrama cadastrado no momento.\n\n💡 *Dica:* O robô busca e adiciona novos microdramas em alta automaticamente!`,
+                { 
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔍 Fazer Busca', callback_data: 'buscar' }],
+                            [{ text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }]
+                        ]
+                    }
+                },
+                callbackQuery
+            );
+            return;
+        }
+
+        const microdramasPorPagina = 8;
+        const paginas = Math.ceil(microdramas.length / microdramasPorPagina);
+        const paginaAtual = Math.max(0, Math.min(pagina, paginas - 1));
+        
+        const inicio = paginaAtual * microdramasPorPagina;
+        const fim = Math.min(inicio + microdramasPorPagina, microdramas.length);
+        const microdramasPagina = microdramas.slice(inicio, fim);
+
+        const mensagem = `${tituloCategoria}\n\n` +
+                        `💡 *Formato 9:16 Vertical para Celular* • Episódios de 1-3 minutos\n` +
+                        `🏷️ [D] Dublado • [L] Legendado • [D/L] Dub/Leg\n\n` +
+                        `📊 Mostrando ${inicio + 1}-${fim} de ${microdramas.length} microdramas\n\n` +
+                        `Selecione para ver episódios e assistir:`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        microdramasPagina.forEach(item => {
+            const badge = this.catalogoManager.getAudioBadge(item) || '[D]';
+            const totalEps = item.totalEpisodios || item.total_episodios || (item.temporadas?.[0]?.episodios?.length) || '';
+            const epTag = totalEps ? ` (${totalEps} eps)` : '';
+            const prefixo = `📱 ${badge} `;
+            const maxLen = 38;
+            const nomeCompleto = `${item.nome}${epTag}`;
+            const nomeFinal = nomeCompleto.length > (maxLen - prefixo.length) 
+                ? nomeCompleto.substring(0, maxLen - prefixo.length - 3) + '...' 
+                : nomeCompleto;
+            
+            keyboard.inline_keyboard.push([
+                { text: `${prefixo}${nomeFinal}`, callback_data: `info_serie_${item.id}` }
+            ]);
+        });
+
+        const botoesNavegacao = [];
+        if (paginas > 1) {
+            if (paginaAtual > 0) {
+                botoesNavegacao.push({ text: '⬅️ Anterior', callback_data: `microdramas_pagina_${paginaAtual - 1}` });
+            }
+            if (paginaAtual < paginas - 1) {
+                botoesNavegacao.push({ text: 'Próxima ➡️', callback_data: `microdramas_pagina_${paginaAtual + 1}` });
+            }
+        }
+        
+        if (botoesNavegacao.length > 0) {
+            keyboard.inline_keyboard.push(botoesNavegacao);
+        }
+
+        keyboard.inline_keyboard.push([
+            { text: '🔍 Buscar Microdrama', callback_data: 'buscar' },
+            { text: '🔙 Voltar ao Catálogo', callback_data: 'catalogo' }
+        ]);
+
+        await this.sendOrEdit(chatId, mensagem, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        }, callbackQuery);
+    }
+
     async handleInfoFilme(chatId, userId, filmeId, callbackQuery) {
         const filme = this.catalogoManager.getItemPorId(parseInt(filmeId));
         if (!filme) {
@@ -1976,6 +2064,9 @@ class CommandHandler {
                 case 'catalogo_doramas_legendados':
                     await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'legendado', 0);
                     break;
+                case 'catalogo_microdramas':
+                    await this.handleCatalogoMicrodramas(chatId, userId, callbackQuery, 0);
+                    break;
                 case 'catalogo_categorias':
                     await this.handleCatalogoCategorias(chatId, userId, callbackQuery);
                     break;
@@ -1997,6 +2088,11 @@ class CommandHandler {
                 case data.match(/^doramas_pagina_(\d+)$/)?.input: {
                     const pag = parseInt(data.match(/^doramas_pagina_(\d+)$/)?.[1] || 0, 10);
                     await this.handleCatalogoDoramas(chatId, userId, callbackQuery, 'todos', pag);
+                    break;
+                }
+                case data.match(/^microdramas_pagina_(\d+)$/)?.input: {
+                    const pag = parseInt(data.match(/^microdramas_pagina_(\d+)$/)?.[1] || 0, 10);
+                    await this.handleCatalogoMicrodramas(chatId, userId, callbackQuery, pag);
                     break;
                 }
                 case data.match(/^filmes_(dublado|legendado)_pagina_(\d+)$/)?.input: {
@@ -2468,6 +2564,7 @@ class CommandHandler {
                         `📺 *Séries:* ${stats.totalSeries}\n` +
                         `⛩️ *Animes:* ${stats.totalAnimes}\n` +
                         `🌸 *Doramas:* ${stats.totalDoramas}\n` +
+                        `📱 *Microdramas 9:16:* ${stats.totalMicrodramas || 0}\n` +
                         `📊 *Total de Títulos:* ${stats.total}\n\n` +
                         `💡 [D] Dublado  •  [L] Legendado\n` +
                         `📹 [CAM] Qualidade Cinema (Provisório)\n\n` +
@@ -2484,7 +2581,8 @@ class CommandHandler {
                     { text: `🌸 Doramas (${stats.totalDoramas})`, callback_data: 'catalogo_doramas' }
                 ],
                 [
-                    { text: '🎭 Explorar por Categorias', callback_data: 'catalogo_categorias' }
+                    { text: `📱 Microdramas 9:16 (${stats.totalMicrodramas || 0})`, callback_data: 'catalogo_microdramas' },
+                    { text: '🎭 Categorias', callback_data: 'catalogo_categorias' }
                 ],
                 [
                     { text: '🔍 Buscar no Catálogo', callback_data: 'buscar' }

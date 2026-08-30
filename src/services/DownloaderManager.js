@@ -744,14 +744,15 @@ class DownloaderManager extends EventEmitter {
                     // 3.2 Validação profunda de decodificação de stream via FFmpeg
                     const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath);
                     if (!integrity.valid) {
-                        if (integrity.error.includes('MOOV') || integrity.error.includes('Incomplete') || integrity.error.includes('Invalid data')) {
-                            console.warn(`❌ [DOWNLOAD] Arquivo corrompido descartado: stream com erro (${integrity.error}). Tentando próxima fonte...`);
+                        const errStr = integrity.error ? String(integrity.error) : '';
+                        if (errStr.includes('MOOV') || errStr.includes('Incomplete') || errStr.includes('Invalid data')) {
+                            console.warn(`❌ [DOWNLOAD] Arquivo corrompido descartado: stream com erro (${errStr}). Tentando próxima fonte...`);
                             finished = true;
                             safeCleanup();
                             await this.cleanupFile(fullPath).catch(() => {});
-                            return reject(new Error(`Arquivo corrompido no stream: ${integrity.error}`));
+                            return reject(new Error(`Arquivo corrompido no stream: ${errStr}`));
                         }
-                        console.warn(`⚠️ [DOWNLOAD] Arquivo com stream parcial: ${integrity.error}. Aguardando mais dados...`);
+                        console.warn(`⚠️ [DOWNLOAD] Arquivo com stream parcial: ${errStr}. Aguardando mais dados...`);
                         isCompleting = false;
                         return;
                     }

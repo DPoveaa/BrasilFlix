@@ -338,8 +338,8 @@ class MediaSearchService {
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
 
                 // Bloqueia categoricamente releases russas, scam/bookmakers e tags de áudio russo (.D., 1xbet, etc.)
-                const isRussianOrScam = /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|rus[._ -]?sub|sub[._ -]?rus|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\)|звук|лицензия|itunes[._ -]?ru|itunes\.r|hdrip-avc|web-dlrip|web-rip\.rus)\b/i.test(rawTitle) || /\b(1xbet|mostbet|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\))\b/i.test(title);
-                if (isRussianOrScam && !isBrazilianGroup && !isPtBrExplicit) {
+                const isRussianOrScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|rus[._ -]?sub|sub[._ -]?rus|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\)|звук|лицензия|itunes[._ -]?ru|itunes\.r|hdrip-avc|web-dlrip|web-rip\.rus)\b/i.test(rawTitle) || /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|betano|blaze|novibet|bet365|stake|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\))\b/i.test(title);
+                if (isRussianOrScam) {
                     continue;
                 }
 
@@ -420,7 +420,7 @@ class MediaSearchService {
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(title);
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
-                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|dcprip|line\.audio|line[-_ ]audio)\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(title);
                 if (isScam) continue;
                 if (isRussian && !isDublado) continue;
 
@@ -777,7 +777,7 @@ class MediaSearchService {
             if (sizeBytes > maxAllowedBytes) return;
 
             const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(name);
-            const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|dcprip|line\.audio|line[-_ ]audio)\b/i.test(name);
+            const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(name);
             if (isScam) return;
             const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
             if (isRussian && origLang !== 'ru' && origLang !== 'rus' && !isDublado) return;

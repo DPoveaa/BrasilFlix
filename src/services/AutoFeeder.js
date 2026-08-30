@@ -151,6 +151,9 @@ class AutoFeeder {
                 }
             }
 
+            // 7.1 Microdramas Chineses Verticais (Duanju 9:16) em Alta (Fila 2 / Background)
+            await this.checkMicrodramasFeed();
+
             // 8. Séries ocidentais em alta (mantém cota independente para Faixa 3)
             if (seriesInQueue.length < 6) {
                 const trendingTV = await TMDBService.getTrendingTV('week');
@@ -163,6 +166,50 @@ class AutoFeeder {
             console.error('❌ Erro no ciclo do AutoFeeder:', error.message);
         } finally {
             this.isRunningCheck = false;
+        }
+    }
+
+    async checkMicrodramasFeed() {
+        try {
+            const MicrodramaService = require('./MicrodramaService');
+            const microdramasInQueue = (this.queueManager.queue || []).filter(j => 
+                (j.subtipo === 'microdrama' || j.extraData?.subtipo === 'microdrama' || j.extraData?.isMicrodrama) && j.status === 'queued'
+            );
+
+            if (microdramasInQueue.length >= 4) return;
+
+            console.log('📱 AutoFeeder: Avaliando microdramas populares/em alta (短剧 / Duanju 9:16)...');
+            const trending = await MicrodramaService.getTrendingMicrodramas(8);
+
+            for (const md of trending) {
+                const existente = this.catalogoManager.buscarItemExato(md.nome, 'serie');
+                if (existente) continue;
+
+                const inQueue = this.queueManager.queue.some(j => 
+                    j.title.toLowerCase() === md.nome.toLowerCase() && j.status !== 'failed'
+                );
+                if (inQueue) continue;
+
+                console.log(`📱 [AutoFeeder Duanju] Enfileirando microdrama em alta: "${md.nome}" (${md.plataformaOrigem || 'Duanju'}) [Prioridade: ${PRIORITIES.MICRODRAMA}]`);
+                this.queueManager.addJob(md.nome, 'serie', PRIORITIES.MICRODRAMA, {
+                    tmdbId: null,
+                    nomeOriginal: md.nomeOriginal,
+                    season: 1,
+                    episode: 1,
+                    totalEpisodiosEsperados: md.totalEpisodios,
+                    isDorama: true,
+                    isMicrodrama: true,
+                    subtipo: 'microdrama',
+                    formato: 'vertical',
+                    origem: md.origem || 'China',
+                    plataformaOrigem: md.plataformaOrigem || 'DramaBox',
+                    trendingScore: md.trendingScore || 95.0,
+                    audioPreference: md.isDublado ? 'dublado' : 'legendado'
+                });
+                break;
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao verificar microdramas no AutoFeeder:', e.message);
         }
     }
 

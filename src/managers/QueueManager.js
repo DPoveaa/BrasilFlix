@@ -158,10 +158,17 @@ class QueueManager extends EventEmitter {
         for (const task of this.activeJobs.values()) {
             if (task.rawFilePath) files.push(task.rawFilePath);
             if (task.optimizedFilePath) files.push(task.optimizedFilePath);
+            if (task.optimizedPath) files.push(task.optimizedPath);
         }
         for (const j of this.queue) {
             if (j.rawFilePath) files.push(j.rawFilePath);
             if (j.optimizedFilePath) files.push(j.optimizedFilePath);
+            if (j.optimizedPath) files.push(j.optimizedPath);
+        }
+        if (DownloaderManager && DownloaderManager.activePaths) {
+            for (const p of DownloaderManager.activePaths) {
+                files.push(p);
+            }
         }
         return files;
     }
