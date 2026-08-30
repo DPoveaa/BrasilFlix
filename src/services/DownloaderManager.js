@@ -506,6 +506,18 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Arquivo excede o limite de tamanho para filmes 1080p (${this.formatBytes(torrent.length)}).`));
                 }
 
+                const isMicrodrama = options.isMicrodrama || options.is_microdrama || (options.runtime && options.runtime < 5);
+                const isAnime = options.isAnime || options.is_anime;
+                const minAllowedBytes = isMicrodrama ? (12 * 1024 * 1024) : (isAnime ? (75 * 1024 * 1024) : (options.episode ? (180 * 1024 * 1024) : (350 * 1024 * 1024)));
+
+                // Proteção contra arquivos únicos muito pequenos (amostras/fakes de 10-60MB)
+                if (torrent.files.length === 1 && torrent.files[0].length < minAllowedBytes) {
+                    console.warn(`❌ [DOWNLOAD] Torrent "${torrent.name}" descartado: arquivo único de tamanho insuficiente (${this.formatBytes(torrent.files[0].length)} < ${this.formatBytes(minAllowedBytes)}). Trata-se de uma amostra/fake.`);
+                    finished = true;
+                    safeCleanup();
+                    return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(torrent.files[0].length)}). Amostra/Fake descartado.`));
+                }
+
                 if (options.episode && torrent.files && torrent.files.length > 1) {
                     // Mapeia todos os episódios disponíveis no torrent
                     detectedEpisodeMap = this.mapAllEpisodeFilesInTorrent(torrent.files, seasonNum);
@@ -538,7 +550,7 @@ class DownloaderManager extends EventEmitter {
                             isMissing = true;
                         }
 
-                        if (isMissing) {
+                        if (isMissing && (fileObj.length >= minAllowedBytes)) {
                             neededEpisodesMap[epNumber] = fileObj;
                         }
                     }
@@ -578,6 +590,12 @@ class DownloaderManager extends EventEmitter {
                         // Se não for seguro baixar múltiplos ou neededCount for 0, baixa SOMENTE o episódio alvo do job
                         const found = neededEpisodesMap[epNum] || detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
                         if (found) {
+                            if (found.length < minAllowedBytes) {
+                                console.warn(`❌ [DOWNLOAD] Arquivo "${found.name}" descartado: tamanho físico insuficiente (${this.formatBytes(found.length)} < ${this.formatBytes(minAllowedBytes)}).`);
+                                finished = true;
+                                safeCleanup();
+                                return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(found.length)}). Amostra/Fake descartado.`));
+                            }
                             targetEpisodeFile = found;
                             try {
                                 found.select();
@@ -592,7 +610,7 @@ class DownloaderManager extends EventEmitter {
                             console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
                             const videoFiles = torrent.files.filter(f => {
                                 const ext = path.extname(f.name).toLowerCase();
-                                return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext);
+                                return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && (f.length >= minAllowedBytes);
                             });
                             videoFiles.forEach(vf => {
                                 try { vf.select(); } catch (e) {}
@@ -705,14 +723,17 @@ class DownloaderManager extends EventEmitter {
                     }
 
 
-                    // 2.1 Verificação de tamanho mínimo absoluto (amostras/trailers/fakes de 10-30MB)
-                    const isMinSizeInsufficient = isSerie ? (stat.size < 50 * 1024 * 1024) : (stat.size < 150 * 1024 * 1024);
-                    if (isMinSizeInsufficient) {
-                        console.warn(`❌ [DOWNLOAD] Arquivo descartado: tamanho físico insuficiente (${this.formatBytes(stat.size)} para ${isSerie ? 'episódio' : 'filme'}). Trata-se de uma amostra/fake. Descartando fonte...`);
+                    // 2.1 Verificação de tamanho mínimo absoluto (amostras/trailers/fakes/recaps)
+                    const isMicrodrama = options.isMicrodrama || options.is_microdrama || (options.runtime && options.runtime < 5);
+                    const isAnime = options.isAnime || options.is_anime;
+                    const minRequiredBytes = isMicrodrama ? (12 * 1024 * 1024) : (isAnime ? (75 * 1024 * 1024) : (isSerie ? (180 * 1024 * 1024) : (350 * 1024 * 1024)));
+
+                    if (stat.size < minRequiredBytes) {
+                        console.warn(`❌ [DOWNLOAD] Arquivo descartado: tamanho físico insuficiente (${this.formatBytes(stat.size)} < ${this.formatBytes(minRequiredBytes)} para ${isMicrodrama ? 'microdrama' : (isAnime ? 'anime' : (isSerie ? 'episódio de série' : 'filme'))}). Trata-se de uma amostra/fake. Descartando fonte...`);
                         finished = true;
                         safeCleanup();
                         await this.cleanupFile(fullPath).catch(() => {});
-                        return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(stat.size)}). Amostra descartada.`));
+                        return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(stat.size)} < ${this.formatBytes(minRequiredBytes)}). Amostra descartada.`));
                     }
 
                     // 3. Verificação de integridade estrutural via ffprobe

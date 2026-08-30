@@ -1420,7 +1420,10 @@ class QueueManager extends EventEmitter {
                             attemptIndex: i,
                             totalAttempts: maxAttempts,
                             mode: SchedulerService.getActiveMode(),
-                            isEpisodeMissing: isEpisodeMissing
+                            isEpisodeMissing: isEpisodeMissing,
+                            isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
+                            isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
+                            runtime: metadata.runtime || metadata.duracao
                         });
 
                     } else if (currentSource.url) {
@@ -1436,7 +1439,10 @@ class QueueManager extends EventEmitter {
                             type: job.type,
                             audio: currentSource.audio,
                             isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
-                            audioPreference: job.audioPreference || 'dublado'
+                            audioPreference: job.audioPreference || 'dublado',
+                            isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
+                            isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
+                            runtime: metadata.runtime || metadata.duracao
                         });
                     }
 

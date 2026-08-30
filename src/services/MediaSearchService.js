@@ -7,6 +7,27 @@ class MediaSearchService {
         this.timeout = 7000;
     }
 
+    getMinAllowedSizeMB(tipo, options = {}) {
+        const isMicrodrama = options.isMicrodrama || options.is_microdrama || (options.runtime && options.runtime < 5);
+        if (isMicrodrama) {
+            return 12; // 12 MB mínimo para microdramas verticais (1-3 min)
+        }
+        const isAnime = options.isAnime || options.is_anime;
+        if (isAnime) {
+            return 75; // 75 MB mínimo para anime (20 min)
+        }
+        if (tipo === 'serie') {
+            if (options.isPack) {
+                return 400; // 400 MB mínimo para temporada completa
+            }
+            return 180; // 180 MB mínimo para episódio padrão (40-60 min)
+        }
+        if (tipo === 'filme') {
+            return 350; // 350 MB mínimo para longa-metragem
+        }
+        return 80;
+    }
+
     async search(query, tipo = 'filme', options = {}) {
         if (typeof tipo === 'object') {
             options = tipo;
@@ -199,14 +220,16 @@ class MediaSearchService {
             const isSampleOrTrailer = /\b(sample|amostra|trailer|teaser|preview)\b/i.test(r.title);
             if (isSampleOrTrailer) return false;
 
-            // 3. Validação de tamanho físico mínimo e máximo
+            // 3. Validação inteligente de tamanho físico mínimo e máximo
             const sizeMB = parseFloat(r.sizeMB) || ((r.sizeBytes || 0) / (1024 * 1024));
+            const isPack = r.isPack || (r.sizeBytes > 2.5 * 1024 * 1024 * 1024) || /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(r.title);
+            const minSizeMB = this.getMinAllowedSizeMB(tipo, { ...options, isPack });
+
             if (tipo === 'filme') {
-                if (sizeMB > 5500) return false; // Máximo 5.5 GB para filmes
-                if (sizeMB > 0 && sizeMB < 200) return false; // Mínimo 200 MB para filmes
+                if (sizeMB > 5500) return false; // Máximo 5.5 GB para filmes 1080p
+                if (sizeMB > 0 && sizeMB < minSizeMB) return false; // Mínimo 350 MB para filmes
             } else if (tipo === 'serie') {
-                // Se não for season pack (tamanho < 3GB), o episódio avulso deve ter ao menos 80 MB
-                if (sizeMB > 0 && sizeMB < 80) return false;
+                if (sizeMB > 0 && sizeMB < minSizeMB) return false; // Mínimo 180 MB para ep avulso / 400 MB pack
 
                 // 4. Validação de Temporada Exata para Séries (impede que torrents de S01 sejam usados quando buscando S03/S04)
                 if (season) {
@@ -772,6 +795,11 @@ class MediaSearchService {
 
             // Descarta 4K / 2160p
             if (/\b(2160p|4k|uhd|remux\.2160p)\b/i.test(name)) return;
+
+            const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes|s\d{1,2}(?![._ -]?e\d+))\b/i.test(name) && !epMatch && !rangeMatch;
+            const minSizeMB = this.getMinAllowedSizeMB(opts.tipo, { ...opts, isPack });
+            const minAllowedBytes = minSizeMB * 1024 * 1024;
+            if (sizeBytes > 0 && sizeBytes < minAllowedBytes) return;
 
             const maxAllowedBytes = opts.tipo === 'serie' ? (80 * 1024 * 1024 * 1024) : (5.5 * 1024 * 1024 * 1024);
             if (sizeBytes > maxAllowedBytes) return;
