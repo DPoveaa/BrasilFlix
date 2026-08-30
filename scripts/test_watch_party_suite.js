@@ -1,8 +1,11 @@
+const https = require('https');
 const http = require('http');
 
 function request(options, data) {
+    const isHttps = options.port === 443 || options.protocol === 'https:';
+    const client = isHttps ? https : http;
     return new Promise((resolve, reject) => {
-        const req = http.request(options, (res) => {
+        const req = client.request(options, (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
@@ -23,9 +26,9 @@ function request(options, data) {
 }
 
 async function runTests() {
-    console.log('🚀 Iniciando Suite de Testes do Watch Party...');
-    const PORT = 7000;
-    const HOST = '127.0.0.1';
+    console.log('🚀 Iniciando Suite de Testes do Watch Party em Produção...');
+    const PORT = 443;
+    const HOST = 'brasilflix.kapsu.com.br';
 
     try {
         // 1. Criar sala
