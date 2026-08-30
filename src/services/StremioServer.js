@@ -1955,6 +1955,41 @@ class StremioServer {
             res.json(result);
         });
 
+        // 📸 Upload de Avatar como arquivo (imagem → base64 data URI armazenado no banco)
+        const avatarUpload = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 2 * 1024 * 1024 }, // 2MB máximo
+            fileFilter: (req, file, cb) => {
+                if (!file.mimetype.startsWith('image/')) {
+                    return cb(new Error('Apenas imagens são aceitas.'), false);
+                }
+                cb(null, true);
+            }
+        });
+        this.app.post('/api/user/avatar-upload', authService.userAuthMiddleware(), avatarUpload.single('avatar'), async (req, res) => {
+            try {
+                if (!req.file) return res.status(400).json({ success: false, message: 'Nenhuma imagem enviada.' });
+                const base64 = req.file.buffer.toString('base64');
+                const dataUri = `data:${req.file.mimetype};base64,${base64}`;
+                const result = await authService.updateUserProfile(req.user.id, { avatar_url: dataUri });
+                if (!result.success) return res.status(400).json(result);
+                res.json({ success: true, avatar_url: dataUri, user: result.user });
+            } catch (e) {
+                console.error('Erro no upload de avatar:', e.message);
+                res.status(500).json({ success: false, message: 'Erro ao processar imagem.' });
+            }
+        });
+        // Trata erros do multer (ex: arquivo muito grande)
+        this.app.use((err, req, res, next) => {
+            if (err && err.message === 'Apenas imagens são aceitas.') {
+                return res.status(400).json({ success: false, message: err.message });
+            }
+            if (err && err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ success: false, message: 'Imagem muito grande. Máximo: 2MB.' });
+            }
+            next(err);
+        });
+
         // 🔗 Vinculação de Conta ao Telegram
         this.app.post('/api/user/telegram-link/create', authService.userAuthMiddleware(), (req, res) => {
             const session = authService.createTelegramLinkSession(req.user.id);

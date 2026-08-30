@@ -424,7 +424,7 @@ class AuthService {
     async getUserProfile(userId) {
         try {
             const res = await db.query(
-                `SELECT id, email, username, telegram_id, is_vip, vip_expira, favoritos, historico, notificacoes, created_at 
+                `SELECT id, email, username, telegram_id, is_vip, vip_expira, favoritos, historico, notificacoes, avatar_url, preferencias, created_at 
                  FROM usuarios WHERE id = $1`,
                 [userId]
             );
@@ -441,14 +441,14 @@ class AuthService {
             return { valid: false, message: 'Nome de usuário é obrigatório.' };
         }
         const trimmed = username.trim();
-        if (trimmed.length < 3 || trimmed.length > 24) {
-            return { valid: false, message: 'O nome de usuário deve ter entre 3 e 24 caracteres.' };
+        if (trimmed.length < 1) {
+            return { valid: false, message: 'Nome de usuário não pode estar vazio.' };
         }
-        if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
-            return { valid: false, message: 'Use apenas letras, números e underline (_).' };
+        if (trimmed.length > 15) {
+            return { valid: false, message: 'O nome de usuário deve ter no máximo 15 caracteres.' };
         }
 
-        // Normalização anti-burlagem / leetspeak
+        // Normalização anti-burlagem / leetspeak para filtragem de termos
         const normalized = trimmed.toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
             .replace(/[@4]/g, 'a')
@@ -463,9 +463,9 @@ class AuthService {
         // Raízes e termos proibidos estritos (crimes, ódio, ofensas graves)
         const blockedTerms = [
             'estupr', 'hitler', 'nazi', 'nazist', 'pedofil', 'pedophil', 'racis',
-            'necrofil', 'zoofil', 'suicid', 'terroris', 'assassin', 'holocausto',
+            'necrofil', 'zoofil', 'suicid', 'terroris', 'holocausto',
             'kuklux', 'kkk', 'arrombado', 'filhadaputa', 'chupacu',
-            'buceta', 'caralho', 'putaria', 'porno', 'porn', 'hentai', 'xvideos',
+            'buceta', 'caralho', 'putaria', 'porno', 'hentai', 'xvideos',
             'admin', 'administrator', 'root', 'brasilflix', 'moderador', 'suporte', 'staff'
         ];
 

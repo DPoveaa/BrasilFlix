@@ -5690,27 +5690,28 @@
 
         .settings-preset-gallery {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
             gap: 10px;
             margin-top: 18px;
             padding: 16px;
             background: rgba(0, 0, 0, 0.4);
             border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            max-height: 170px;
+            max-height: 260px;
             overflow-y: auto;
         }
 
         .settings-preset-avatar-btn {
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            border-radius: 10px;
             border: 2px solid transparent;
             padding: 0;
             cursor: pointer;
             overflow: hidden;
             background: rgba(255,255,255,0.06);
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
         }
 
         .settings-preset-avatar-btn:hover {
@@ -6894,12 +6895,19 @@
                         <div class="settings-card">
                             <h3 class="settings-card-title"><span>🖼️</span> Foto de Perfil / Avatar</h3>
                             <div class="settings-avatar-preview-box">
-                                <div class="settings-avatar-preview" id="settings-avatar-preview">U</div>
+                                <!-- Avatar com botão X para remover -->
+                                <div style="position: relative; display: inline-block;">
+                                    <div class="settings-avatar-preview" id="settings-avatar-preview">U</div>
+                                    <button type="button" id="btn-remove-avatar" onclick="removeCustomAvatar()" title="Remover avatar" style="display:none; position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:#ef4444; border:none; color:#fff; font-size:13px; font-weight:900; cursor:pointer; line-height:1; box-shadow:0 2px 6px rgba(0,0,0,0.5); z-index:2;">✕</button>
+                                </div>
                                 <div class="settings-avatar-info">
-                                    <div class="settings-avatar-tip">Esta foto aparecerá nos seus comentários de filmes e episódios, e no seu perfil do BrasilFlix.</div>
+                                    <div class="settings-avatar-tip">Esta foto aparecerá nos seus comentários e no seu perfil do BrasilFlix.</div>
                                     <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
-                                        <button type="button" class="settings-btn-preset" onclick="toggleAvatarPresetGallery()">🎨 Galeria de Avatares</button>
-                                        <button type="button" class="settings-btn-remove" onclick="removeCustomAvatar()">🗑️ Remover Foto</button>
+                                        <label class="settings-btn-preset" style="cursor:pointer;" title="Enviar foto do seu dispositivo">
+                                            📁 Enviar Arquivo
+                                            <input type="file" id="settings-avatar-file" accept="image/*" style="display:none" onchange="handleAvatarFileUpload(this)">
+                                        </label>
+                                        <button type="button" class="settings-btn-preset" onclick="toggleAvatarPresetGallery()">🎬 Galeria de Avatares</button>
                                     </div>
                                 </div>
                             </div>
@@ -6915,9 +6923,9 @@
                         <div class="settings-card">
                             <h3 class="settings-card-title"><span>👤</span> Dados da Conta</h3>
                             <div class="settings-form-group">
-                                <label class="settings-label">Nome de Usuário:</label>
-                                <input type="text" id="settings-input-username" class="settings-input" maxlength="24" placeholder="Seu nome de usuário">
-                                <div class="settings-hint">Apenas letras, números e underline (_). Nomes com palavras ofensivas ou preconceituosas serão rejeitados.</div>
+                                <label class="settings-label">Nome de Usuário: <span style="font-size:11px; color: var(--text-muted); font-weight:400;" id="username-char-counter">0/15</span></label>
+                                <input type="text" id="settings-input-username" class="settings-input" maxlength="15" placeholder="Seu nome de usuário" oninput="updateUsernameCounter(this)">
+                                <div class="settings-hint">Qualquer caractere. Máximo 15. Termos ofensivos serão rejeitados.</div>
                             </div>
 
                             <div class="settings-form-group">
@@ -6978,7 +6986,7 @@
                                 <div class="settings-pref-sub">Aplica um desfoque suave na foto dos episódios que você ainda não assistiu para evitar spoilers visuais de cenas cruciais.</div>
                             </div>
                             <label class="settings-toggle-switch">
-                                <input type="checkbox" id="settings-pref-spoiler" checked onchange="savePreferencesDirectly()">
+                                <input type="checkbox" id="settings-pref-spoiler" onchange="savePreferencesDirectly()">
                                 <span class="settings-toggle-slider"></span>
                             </label>
                         </div>
@@ -10619,19 +10627,39 @@ function initApp() {
         let telegramLinkCheckInterval = null;
 
         const AVATAR_PRESETS = [
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+            // 🔵 NETFLIX / Filmes e Séries Internacionais
+            { label: 'Eleven - Stranger Things', url: 'https://image.tmdb.org/t/p/w185/vT4AJN5QJMjVvIJIa8aPqQSEcHt.jpg' },
+            { label: 'Walter White - Breaking Bad', url: 'https://image.tmdb.org/t/p/w185/rGOPJPMQMaFbxnFnQBqgMRtPgbf.jpg' },
+            { label: 'Tony Stark - Vingadores', url: 'https://image.tmdb.org/t/p/w185/1YjdSym1jTG7xjHSI0yGGWEsw5i.jpg' },
+            { label: 'Daenerys - Game of Thrones', url: 'https://image.tmdb.org/t/p/w185/xuAIuYSmsUzKlUMBFGVZaWsY3DZ.jpg' },
+            { label: 'Jon Snow - Game of Thrones', url: 'https://image.tmdb.org/t/p/w185/drAbzyjOy2oAqIQSwQ8FNqaOa98.jpg' },
+            { label: 'Wednesday Addams', url: 'https://image.tmdb.org/t/p/w185/jeGtaMwGxPmQN5xM4ClnwPQcDMF.jpg' },
+            { label: 'Deadpool', url: 'https://image.tmdb.org/t/p/w185/fSRb7vyIP8rQpL0I47P3qUsEKX3.jpg' },
+            { label: 'Batman', url: 'https://image.tmdb.org/t/p/w185/ttVGYoFkN2bFJVR9n0yFNkMuvC1.jpg' },
+            // 🌸 ANIMES FAMOSOS
+            { label: 'Goku - Dragon Ball', url: 'https://image.tmdb.org/t/p/w185/xQHxe7gDgBOCkMD0O7TDWXEQNQS.jpg' },
+            { label: 'Naruto Uzumaki', url: 'https://image.tmdb.org/t/p/w185/neTCi3QBYSuZTd1HNbSVE7wEL8g.jpg' },
+            { label: 'Tanjiro - Demon Slayer', url: 'https://image.tmdb.org/t/p/w185/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg' },
+            { label: 'Levi - Attack on Titan', url: 'https://image.tmdb.org/t/p/w185/3I3qoKpDvFKnI9M2mGD7LbJANQr.jpg' },
+            { label: 'Luffy - One Piece', url: 'https://image.tmdb.org/t/p/w185/cezWGskPY5x7GaglTTRN4Fugfb8.jpg' },
+            { label: 'Zoro - One Piece', url: 'https://image.tmdb.org/t/p/w185/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
+            { label: 'Itadori - Jujutsu Kaisen', url: 'https://image.tmdb.org/t/p/w185/9m5n6FmJnCVyGdJw8Z3tFv1DK4.jpg' },
+            { label: 'Spike - Cowboy Bebop', url: 'https://image.tmdb.org/t/p/w185/rdNhp0dIEqFGJPFm79p3L7hC5Gz.jpg' },
+            // 🇰🇷 DORAMAS E SÉRIES COREANAS
+            { label: 'Seong Gi-hun - Round 6', url: 'https://image.tmdb.org/t/p/w185/dBo7VGT7VkGYLFkMliJYwEsFkLo.jpg' },
+            { label: 'Gu Jun-pyo - Boys Over Flowers', url: 'https://image.tmdb.org/t/p/w185/9lnR4CxC67OaO6gJAtMqsB8SLu5.jpg' },
+            { label: 'Kim Dok-ja - Omniscient Reader', url: 'https://image.tmdb.org/t/p/w185/pzIddUEMWhWzfvLI3TwxUG2wGoi.jpg' },
+            // 🎥 FILMES CLÁSSICOS E BLOCKBUSTERS
+            { label: 'Harry Potter', url: 'https://image.tmdb.org/t/p/w185/vMP0RnkZFbVb5oUXnm0YzBxKKhJ.jpg' },
+            { label: 'Hermione Granger', url: 'https://image.tmdb.org/t/p/w185/uVm6dGKBgVOOJEGFVS1rGSTxd0B.jpg' },
+            { label: 'Jack Sparrow', url: 'https://image.tmdb.org/t/p/w185/8mgIfHHdh9MChHFHCqpBkFD0Oxi.jpg' },
+            { label: 'John Wick', url: 'https://image.tmdb.org/t/p/w185/l9iqe5oRAbDFBqWv28qCExOFCfS.jpg' },
+            { label: 'Elsa - Frozen', url: 'https://image.tmdb.org/t/p/w185/iG1YeA2bGMJ4ELgVa3cELvGCDMx.jpg' },
+            { label: 'Darth Vader - Star Wars', url: 'https://image.tmdb.org/t/p/w185/2jvHi56QUKKVgmsPOIhCPBqaQN5.jpg' },
+            { label: 'Spider-Man', url: 'https://image.tmdb.org/t/p/w185/uJYYizSuA9Y3DCs0qS4qWvHfZg4.jpg' },
+            { label: 'Black Widow', url: 'https://image.tmdb.org/t/p/w185/6aoT0bRh25K4R37yiVDjOQbGPvo.jpg' },
         ];
+
 
         function openSettingsTab(section = 'profile') {
             if (!currentUser && !userAuthToken) {
@@ -10693,9 +10721,16 @@ function initApp() {
             const emailInput = document.getElementById('settings-input-email');
             const avatarInput = document.getElementById('settings-input-avatar-url');
 
-            if (userInput) userInput.value = currentUser.username || '';
+            if (userInput) {
+                userInput.value = currentUser.username || '';
+                updateUsernameCounter(userInput);
+            }
             if (emailInput) emailInput.value = currentUser.email || '';
-            if (avatarInput) avatarInput.value = currentUser.avatar_url || '';
+            // Only show URL in field if it's not a base64 data URI (too large for input)
+            if (avatarInput) {
+                const av = currentUser.avatar_url || '';
+                avatarInput.value = av.startsWith('data:') ? '' : av;
+            }
 
             renderAvatarPreview(currentUser.avatar_url, currentUser.username);
 
@@ -10705,7 +10740,17 @@ function initApp() {
 
             const prefs = currentUser.preferencias || {};
             if (prefAudio) prefAudio.value = prefs.defaultAudio || localStorage.getItem('bf_pref_default_audio') || 'ask';
-            if (prefSpoiler) prefSpoiler.checked = prefs.spoilerBlur !== false && localStorage.getItem('bf_pref_spoiler_blur') !== 'false';
+            // Spoiler blur: off by default unless user explicitly enabled it
+            if (prefSpoiler) {
+                const savedLocal = localStorage.getItem('bf_pref_spoiler_blur');
+                if (typeof prefs.spoilerBlur === 'boolean') {
+                    prefSpoiler.checked = prefs.spoilerBlur;
+                } else if (savedLocal !== null) {
+                    prefSpoiler.checked = savedLocal === 'true';
+                } else {
+                    prefSpoiler.checked = false; // off by default
+                }
+            }
 
             // Telegram status
             updateTelegramStatusUI();
@@ -10717,18 +10762,31 @@ function initApp() {
 
         function renderAvatarPreview(url, username) {
             const previewEl = document.getElementById('settings-avatar-preview');
+            const removeBtn = document.getElementById('btn-remove-avatar');
             if (!previewEl) return;
 
-            if (url && url.trim()) {
-                previewEl.innerHTML = `<img src="${url.trim()}" alt="${username || 'U'}" onerror="this.outerHTML='${(username || 'U')[0].toUpperCase()}';">`;
+            const hasAvatar = url && url.trim();
+            if (hasAvatar) {
+                previewEl.innerHTML = `<img src="${url.trim()}" alt="${username || 'U'}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="renderAvatarPreview('','${(username||'U')[0].toUpperCase()}');">`;
             } else {
                 const initial = (username || currentUser?.username || 'U')[0].toUpperCase();
                 previewEl.innerHTML = initial;
             }
+            if (removeBtn) removeBtn.style.display = hasAvatar ? 'flex' : 'none';
         }
 
         function previewAvatarUrl(url) {
-            renderAvatarPreview(url, document.getElementById('settings-input-username')?.value);
+            const username = document.getElementById('settings-input-username')?.value;
+            renderAvatarPreview(url, username);
+        }
+
+        function updateUsernameCounter(input) {
+            const counter = document.getElementById('username-char-counter');
+            if (counter && input) {
+                const len = input.value.length;
+                counter.textContent = `${len}/15`;
+                counter.style.color = len >= 14 ? '#f87171' : 'var(--text-muted)';
+            }
         }
 
         function toggleAvatarPresetGallery() {
@@ -10736,11 +10794,14 @@ function initApp() {
             if (!gallery) return;
 
             if (gallery.style.display === 'none' || !gallery.style.display) {
-                gallery.innerHTML = AVATAR_PRESETS.map((url, idx) => `
-                    <button type="button" class="settings-preset-avatar-btn" onclick="selectAvatarPreset('${url}')" title="Avatar ${idx + 1}">
-                        <img src="${url}" alt="Avatar Preset">
-                    </button>
-                `).join('');
+                gallery.innerHTML = AVATAR_PRESETS.map((preset) => {
+                    const url = preset.url || preset;
+                    const label = preset.label || 'Avatar';
+                    return `<button type="button" class="settings-preset-avatar-btn" onclick="selectAvatarPreset('${url}')" title="${label}">
+                        <img src="${url}" alt="${label}" loading="lazy" onerror="this.style.opacity='0.3'">
+                        <span style="position:absolute;bottom:0;left:0;right:0;font-size:9px;line-height:1.2;background:rgba(0,0,0,0.7);color:#fff;padding:3px 4px;text-align:center;border-radius:0 0 8px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${label}</span>
+                    </button>`;
+                }).join('');
                 gallery.style.display = 'grid';
             } else {
                 gallery.style.display = 'none';
@@ -10750,7 +10811,7 @@ function initApp() {
         function selectAvatarPreset(url) {
             const input = document.getElementById('settings-input-avatar-url');
             if (input) input.value = url;
-            previewAvatarUrl(url);
+            renderAvatarPreview(url, document.getElementById('settings-input-username')?.value);
             const gallery = document.getElementById('settings-preset-gallery');
             if (gallery) gallery.style.display = 'none';
         }
@@ -10758,7 +10819,55 @@ function initApp() {
         function removeCustomAvatar() {
             const input = document.getElementById('settings-input-avatar-url');
             if (input) input.value = '';
-            previewAvatarUrl('');
+            const fileInput = document.getElementById('settings-avatar-file');
+            if (fileInput) fileInput.value = '';
+            renderAvatarPreview('', document.getElementById('settings-input-username')?.value);
+        }
+
+        async function handleAvatarFileUpload(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            if (!file.type.startsWith('image/')) {
+                showToast('Apenas imagens são aceitas.', 'error');
+                return;
+            }
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('Imagem muito grande. Máximo: 2MB.', 'error');
+                return;
+            }
+
+            // Pré-visualização instantânea via FileReader
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                renderAvatarPreview(e.target.result, document.getElementById('settings-input-username')?.value);
+                // Clear URL field since we're using a file
+                const urlInput = document.getElementById('settings-input-avatar-url');
+                if (urlInput) urlInput.value = '';
+            };
+            reader.readAsDataURL(file);
+
+            if (!userAuthToken) return;
+
+            // Upload para o servidor
+            const formData = new FormData();
+            formData.append('avatar', file);
+            try {
+                const res = await fetch('/api/user/avatar-upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${userAuthToken}` },
+                    body: formData
+                });
+                const data = await res.json();
+                if (data && data.success) {
+                    currentUser = { ...currentUser, avatar_url: data.avatar_url, ...(data.user || {}) };
+                    updateUserHeaderUI(currentUser);
+                    showToast('✨ Foto de perfil atualizada!', 'success');
+                } else {
+                    showToast(data.message || 'Erro ao salvar imagem.', 'error');
+                }
+            } catch (e) {
+                showToast('Erro de conexão ao enviar imagem.', 'error');
+            }
         }
 
         async function saveProfileChanges() {
