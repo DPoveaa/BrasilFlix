@@ -5989,7 +5989,7 @@
                 <div class="playback-title-sub" id="playback-top-sub">Carregando informações da mídia...</div>
             </button>
             <div class="playback-top-actions">
-                <button class="speed-badge-btn desktop-only" onclick="togglePictureInPicture()" title="Janela Flutuante (Picture-in-Picture)">
+                <button class="speed-badge-btn desktop-only" id="playback-btn-popout" onclick="togglePictureInPicture()" title="Janela Flutuante (Picture-in-Picture)">
                     Popout
                 </button>
                 <button class="speed-badge-btn" onclick="handleShareCurrentMedia()" title="Compartilhar Link">
@@ -12066,9 +12066,44 @@ function initApp() {
 
         let pendingPlaybackMedia = null;
 
+        function updatePlayerAuxControlsState(isPlaying) {
+            const popoutBtn = document.getElementById('playback-btn-popout');
+            const speedBtn = document.getElementById('player-speed-btn');
+
+            if (popoutBtn) {
+                if (isPlaying) {
+                    popoutBtn.removeAttribute('disabled');
+                    popoutBtn.style.opacity = '1';
+                    popoutBtn.style.cursor = 'pointer';
+                    popoutBtn.title = 'Janela Flutuante (Picture-in-Picture)';
+                } else {
+                    popoutBtn.setAttribute('disabled', 'true');
+                    popoutBtn.style.opacity = '0.45';
+                    popoutBtn.style.cursor = 'not-allowed';
+                    popoutBtn.title = 'Inicie o vídeo para usar o Popout';
+                }
+            }
+
+            if (speedBtn) {
+                if (isPlaying) {
+                    speedBtn.removeAttribute('disabled');
+                    speedBtn.style.opacity = '1';
+                    speedBtn.style.cursor = 'pointer';
+                    speedBtn.title = 'Alterar Velocidade de Reprodução';
+                } else {
+                    speedBtn.setAttribute('disabled', 'true');
+                    speedBtn.style.opacity = '0.45';
+                    speedBtn.style.cursor = 'not-allowed';
+                    speedBtn.title = 'Inicie o vídeo para alterar a velocidade';
+                }
+            }
+        }
+
         function showPlaybackPosterOverlay(mediaInfo) {
             const overlay = document.getElementById('playback-poster-overlay');
             if (!overlay) return;
+
+            updatePlayerAuxControlsState(false);
 
             // Se for convidado de uma sala ativa, bloqueia a reprodução direta e mostra a tela de espera do anfitrião
             if (currentPartyRoom && !partyIsHost) {
@@ -12116,10 +12151,12 @@ function initApp() {
                 overlay.style.display = 'none';
                 overlay.classList.remove('visible');
             }
+            updatePlayerAuxControlsState(true);
         }
 
         function startPlaybackStreamNow() {
             hidePlaybackPosterOverlay();
+            updatePlayerAuxControlsState(true);
             
             if (!currentPlayingMedia) return;
 
@@ -12417,8 +12454,14 @@ function initApp() {
         }
 
         async function togglePictureInPicture() {
+            const overlay = document.getElementById('playback-poster-overlay');
+            const isPosterVisible = overlay && (overlay.style.display !== 'none' || overlay.classList.contains('visible'));
             const video = document.getElementById('html5-video-player');
-            if (!video) return;
+
+            if (isPosterVisible || !video || !video.src || video.src === '' || video.readyState === 0) {
+                showToast('⚠️ Inicie a reprodução do vídeo para abrir a Janela Flutuante (Popout).', 'info');
+                return;
+            }
 
             try {
                 if (document.pictureInPictureElement) {
@@ -12449,6 +12492,16 @@ function initApp() {
 
         function toggleSpeedDropdown(e) {
             if (e) e.stopPropagation();
+
+            const overlay = document.getElementById('playback-poster-overlay');
+            const isPosterVisible = overlay && (overlay.style.display !== 'none' || overlay.classList.contains('visible'));
+            const video = document.getElementById('html5-video-player');
+
+            if (isPosterVisible || !video || !video.src || video.src === '' || video.readyState === 0) {
+                showToast('⚠️ Inicie a reprodução do vídeo para alterar a velocidade.', 'info');
+                return;
+            }
+
             const audioMenu = document.getElementById('player-audio-menu');
             if (audioMenu) audioMenu.classList.remove('visible');
             const menu = document.getElementById('player-speed-menu');
@@ -12456,6 +12509,15 @@ function initApp() {
         }
 
         function setPlaybackSpeed(speed) {
+            const overlay = document.getElementById('playback-poster-overlay');
+            const isPosterVisible = overlay && (overlay.style.display !== 'none' || overlay.classList.contains('visible'));
+            const video = document.getElementById('html5-video-player');
+
+            if (isPosterVisible || !video || !video.src || video.src === '' || video.readyState === 0) {
+                showToast('⚠️ Inicie a reprodução do vídeo para alterar a velocidade.', 'info');
+                return;
+            }
+
             if (currentPartyRoom) {
                 const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
                 const canSpeed = partyIsHost || perms.canChangeSpeed;
@@ -12464,7 +12526,6 @@ function initApp() {
                     return;
                 }
             }
-            const video = document.getElementById('html5-video-player');
             if (video) video.playbackRate = speed;
             const label = document.getElementById('player-speed-label');
             if (label) label.innerText = `${speed}x`;
