@@ -1641,15 +1641,17 @@ class QueueManager extends EventEmitter {
 
                 // Verificação de Duração Mínima Absoluta e Comparativa com TMDB:
                 // Filmes: Mínimo 45 minutos (2700s) ou 60% da duração esperada do TMDB (o que for maior).
-                // Séries: Mínimo 12 minutos (720s) ou 40% da duração esperada do episódio (a não ser que o TMDB confirme explicitamente curta/anime <= 15min).
-                const defaultExpectedMin = job.type === 'filme' ? 90 : (metadata.duracaoMinutos || 45);
+                // Mini-Séries Chinesas / Microdramas: Mínimo 45s (episódios curtos de 1 a 5 min).
+                // Séries/Doramas Normais: Mínimo 12 minutos (720s) ou 40% da duração esperada do episódio (curtas/animes <= 15min: 180s).
+                const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (effectiveExpectedMin || 0) <= 10);
+                const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
                 const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
-                const minRatio = job.type === 'serie' ? 0.40 : 0.60;
+                const minRatio = isMicro ? 0.30 : (job.type === 'serie' ? 0.40 : 0.60);
                 const minAcceptableSec = Math.floor(effectiveExpectedMin * 60 * minRatio);
-                const absoluteMinSec = (job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : (job.type === 'serie' ? 720 : 2700);
-                const finalMinSec = (job.type === 'serie' && effectiveExpectedMin <= 15) 
-                    ? 180 
-                    : Math.max(minAcceptableSec, absoluteMinSec);
+                const absoluteMinSec = isMicro ? 45 : ((job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : (job.type === 'serie' ? 720 : 2700));
+                const finalMinSec = isMicro 
+                    ? 45 
+                    : ((job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : Math.max(minAcceptableSec, absoluteMinSec));
 
                 if (videoInfo.duration && videoInfo.duration < finalMinSec) {
                     const durAtualMin = (videoInfo.duration / 60).toFixed(1);

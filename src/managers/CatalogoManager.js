@@ -1746,7 +1746,7 @@ class CatalogoManager {
     }
 
     getSeriesNormais() {
-        return (this.catalogo.series || []).filter(s => !s.isAnime && !s.isDorama && !s.isMicrodrama && s.subtipo !== 'microdrama');
+        return (this.catalogo.series || []).filter(s => !s.isAnime);
     }
 
     getAnimes() {

@@ -9365,7 +9365,7 @@ function initApp() {
             } else if (catalogFilters.type === 'filme') {
                 allItems = allItems.filter(i => i.itemType === 'filme' && !isItemAnime(i));
             } else if (catalogFilters.type === 'serie') {
-                allItems = allItems.filter(i => i.itemType === 'serie' && !isItemAnime(i) && !isItemDorama(i));
+                allItems = allItems.filter(i => i.itemType === 'serie' && !isItemAnime(i));
             } else if (catalogFilters.type === 'anime') {
                 allItems = allItems.filter(i => isItemAnime(i));
             } else if (catalogFilters.type === 'dorama') {
