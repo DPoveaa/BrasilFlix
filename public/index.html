@@ -12307,8 +12307,9 @@ function initApp() {
 
             const token = getUserStreamingToken();
             const isVip = localStorage.getItem('bf_user_is_vip') === 'true' || (currentUser && currentUser.is_vip) || token !== 'public';
-            const hasDub = !!movie.versoes?.dublado || movie.isDublado;
-            const hasLeg = !!movie.versoes?.legendado || movie.isLegendado;
+            const hasDub = !!movie.versoes?.dublado || !!movie.isDublado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('D')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('dublado'));
+            const hasLeg = !!movie.versoes?.legendado || !!movie.isLegendado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('L')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('legendado'));
+            const isDualAudio = (hasDub && hasLeg) || movie.audio === 'dual' || (!!movie.versoes?.dublado && !!movie.versoes?.legendado) || (!!movie.isDublado && !!movie.isLegendado);
 
             // ── PASSO 1: CONFIRMAÇÃO DE CONSUMO DE CRÉDITOS (PRIMEIRO) ──
             const mediaKey = `filme_${movie.id}`;
@@ -12322,7 +12323,7 @@ function initApp() {
                     }
                     if (quota.requerConfirmacao) {
                         showQuotaConfirmationModal(movie.nome, 'filme', () => {
-                            proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg);
+                            proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio);
                         }, mediaKey);
                         return;
                     }
@@ -12331,22 +12332,23 @@ function initApp() {
                 }
             }
 
-            proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg);
+            proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio);
         }
 
-        function proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg) {
+        function proceedMovieAudioAndPlayback(movie, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio) {
             const savedAudioPref = getUserMediaAudioPref('filme', movie.id);
+            const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
             // ── PASSO 2: ESCOLHA DE IDIOMA (SEGUNDO) ──
-            // Se tiver áudio duplo e o usuário não passou áudio explícito nem salvou preferência anterior
-            if (hasDub && hasLeg && !explicitAudio && !savedAudioPref) {
+            // Se tiver áudio duplo e não houver preferência global fixa nem preferência salva nem áudio explícito
+            if (isDualAudio && !explicitAudio && !savedAudioPref && (!userPrefAudio || userPrefAudio === 'ask')) {
                 openAudioSelectModal({ id: movie.id, type: 'filme', nome: movie.nome }, (selectedAudio) => {
                     finalizeMoviePlaybackPage(movie, selectedAudio, updateUrl, token, hasDub, hasLeg);
                 });
                 return;
             }
 
-            let chosenAudio = explicitAudio || savedAudioPref || getUserPreferredAudio('filme', movie.id);
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id);
             if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
             else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
             else if (!hasDub && !hasLeg) chosenAudio = 'dublado';
@@ -12457,8 +12459,9 @@ function initApp() {
 
             const token = getUserStreamingToken();
             const isVip = localStorage.getItem('bf_user_is_vip') === 'true' || (currentUser && currentUser.is_vip) || token !== 'public';
-            const hasDub = !!episode.versoes?.dublado || episode.isDublado;
-            const hasLeg = !!episode.versoes?.legendado || episode.isLegendado;
+            const hasDub = !!episode.versoes?.dublado || !!episode.isDublado || !!serie.isDublado || episode.audio === 'dual' || serie.audio === 'dual' || (typeof episode.audioText === 'string' && episode.audioText.toLowerCase().includes('dublado')) || (typeof serie.audioText === 'string' && serie.audioText.toLowerCase().includes('dublado'));
+            const hasLeg = !!episode.versoes?.legendado || !!episode.isLegendado || !!serie.isLegendado || episode.audio === 'dual' || serie.audio === 'dual' || (typeof episode.audioText === 'string' && episode.audioText.toLowerCase().includes('legendado')) || (typeof serie.audioText === 'string' && serie.audioText.toLowerCase().includes('legendado'));
+            const isDualAudio = (hasDub && hasLeg) || episode.audio === 'dual' || serie.audio === 'dual' || (!!episode.versoes?.dublado && !!episode.versoes?.legendado) || (!!episode.isDublado && !!episode.isLegendado) || (!!serie.isDublado && !!serie.isLegendado);
 
             // ── PASSO 1: CONFIRMAÇÃO DE CONSUMO DE CRÉDITOS (PRIMEIRO) ──
             const mediaKey = `serie_${serie.id}_s${sNum}_e${eNum}`;
@@ -12472,7 +12475,7 @@ function initApp() {
                     }
                     if (quota.requerConfirmacao) {
                         showQuotaConfirmationModal(`${serie.nome} (T${sNum}E${eNum})`, 'serie', () => {
-                            proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg);
+                            proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio);
                         }, mediaKey);
                         return;
                     }
@@ -12481,22 +12484,23 @@ function initApp() {
                 }
             }
 
-            proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg);
+            proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio);
         }
 
-        function proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg) {
+        function proceedEpisodeAudioAndPlayback(serie, season, episode, sNum, eNum, explicitAudio, updateUrl, token, hasDub, hasLeg, isDualAudio) {
             const savedAudioPref = getUserMediaAudioPref('serie', serie.id);
+            const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
             // ── PASSO 2: ESCOLHA DE IDIOMA (SEGUNDO) ──
-            // Se tiver áudio duplo e o usuário não passou áudio explícito nem salvou preferência anterior
-            if (hasDub && hasLeg && !explicitAudio && !savedAudioPref) {
+            // Se tiver áudio duplo e não houver preferência global fixa nem preferência salva nem áudio explícito
+            if (isDualAudio && !explicitAudio && !savedAudioPref && (!userPrefAudio || userPrefAudio === 'ask')) {
                 openAudioSelectModal({ id: serie.id, type: 'serie', nome: `${serie.nome} - T${sNum}E${eNum}` }, (selectedAudio) => {
                     finalizeEpisodePlaybackPage(serie, season, episode, sNum, eNum, selectedAudio, updateUrl, token, hasDub, hasLeg);
                 });
                 return;
             }
 
-            let chosenAudio = explicitAudio || savedAudioPref || getUserPreferredAudio('serie', serie.id);
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('serie', serie.id);
             if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
             else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
             else if (!hasDub && !hasLeg) chosenAudio = serie.isDublado ? 'dublado' : 'legendado';
