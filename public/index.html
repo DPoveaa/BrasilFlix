@@ -4834,34 +4834,54 @@
             margin-top: 12px;
         }
 
-        .playback-back-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid var(--border-color);
-            color: #f1f5f9;
-            padding: 8px 16px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .playback-back-btn:hover {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.4);
-            color: #34d399;
-            transform: translateX(-2px);
-        }
-
-        .playback-title-info {
+        .playback-title-info-btn {
+            background: transparent;
+            border: none;
             display: flex;
             flex-direction: column;
+            align-items: flex-start;
             min-width: 0;
             flex: 1;
-            padding: 0 12px;
+            padding: 6px 10px;
+            margin: -4px -6px;
+            border-radius: 12px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            user-select: none;
+        }
+
+        .playback-title-info-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .playback-title-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .playback-title-back-icon {
+            font-size: 16px;
+            color: var(--text-muted);
+            transition: transform 0.2s ease, color 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.75;
+            flex-shrink: 0;
+        }
+
+        .playback-title-info-btn:hover .playback-title-back-icon {
+            color: #34d399;
+            transform: translateX(-3px);
+            opacity: 1;
+        }
+
+        .playback-title-info-btn:hover .playback-title-main {
+            color: #34d399;
         }
 
         .playback-title-main {
@@ -4873,6 +4893,7 @@
             text-overflow: ellipsis;
             line-height: 1.2;
             letter-spacing: -0.3px;
+            transition: color 0.2s ease;
         }
 
         .playback-title-sub {
@@ -4881,7 +4902,8 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-top: 2px;
+            margin-top: 3px;
+            transition: color 0.2s ease;
         }
 
         .playback-top-actions {
@@ -5954,13 +5976,13 @@
         
         <!-- BARRA SUPERIOR DE NAVEGAÇÃO / BREADCRUMB -->
         <div class="playback-header-bar">
-            <button class="playback-back-btn" onclick="handlePlaybackBack()">
-                <span style="font-size: 15px;">←</span> <span id="playback-back-label">Voltar</span>
-            </button>
-            <div class="playback-title-info">
-                <h2 class="playback-title-main" id="playback-top-title">BrasilFlix Player</h2>
+            <button class="playback-title-info-btn" onclick="handlePlaybackBack()" title="Voltar para a página de detalhes">
+                <div class="playback-title-row">
+                    <span class="playback-title-back-icon">←</span>
+                    <h2 class="playback-title-main" id="playback-top-title">BrasilFlix Player</h2>
+                </div>
                 <div class="playback-title-sub" id="playback-top-sub">Carregando informações da mídia...</div>
-            </div>
+            </button>
             <div class="playback-top-actions">
                 <button class="speed-badge-btn desktop-only" onclick="togglePictureInPicture()" title="Janela Flutuante (Picture-in-Picture)">
                     Popout
@@ -11188,9 +11210,11 @@ function initApp() {
             }
 
             // Atualiza elementos visuais da página
-            document.getElementById('playback-back-label').innerText = 'Voltar';
-            document.getElementById('playback-top-title').innerText = movie.nome;
-            document.getElementById('playback-top-sub').innerText = `Filme • ${movie.ano || ''} • ${movie.generos?.slice(0, 2).join(', ') || 'HD'}`;
+            const titleEl = document.getElementById('playback-top-title');
+            const subEl = document.getElementById('playback-top-sub');
+            if (titleEl) titleEl.innerText = movie.nome;
+            const movieGenres = Array.isArray(movie.generos) ? movie.generos.slice(0, 2).join(', ') : (movie.genero || '');
+            if (subEl) subEl.innerText = `Filme • ${movie.ano || ''}${movieGenres ? ' • ' + movieGenres : ''}`;
 
             // Oculta barra de navegação de episódios para filmes
             const navBar = document.getElementById('playback-nav-controls-bar');
@@ -11339,9 +11363,10 @@ function initApp() {
             const breadcrumbSub = `Temporada ${sNum} • Episódio ${eNum} - ${epTitleStr}`;
 
             // Atualiza breadcrumb no topo
-            document.getElementById('playback-back-label').innerText = 'Voltar';
-            document.getElementById('playback-top-title').innerText = serie.nome;
-            document.getElementById('playback-top-sub').innerText = breadcrumbSub;
+            const titleEl = document.getElementById('playback-top-title');
+            const subEl = document.getElementById('playback-top-sub');
+            if (titleEl) titleEl.innerText = serie.nome;
+            if (subEl) subEl.innerText = breadcrumbSub;
 
             // Configura botões da barra de navegação
             const navBar = document.getElementById('playback-nav-controls-bar');
@@ -11545,7 +11570,7 @@ function initApp() {
             if (currentPlaybackSerie) {
                 openMediaDetailPage(currentPlaybackSerie.id, 'serie');
             } else if (currentPlaybackMovie) {
-                switchNavCategory('filme');
+                openMediaDetailPage(currentPlaybackMovie.id, 'filme');
             } else {
                 switchNavCategory('inicio');
             }
