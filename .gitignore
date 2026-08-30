@@ -32,6 +32,7 @@ Thumbs.db
 # Arquivos temporários
 tmp/
 temp/
+scratch/
 
 # Arquivos de backup
 *.bak
