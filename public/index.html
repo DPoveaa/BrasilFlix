@@ -13310,7 +13310,9 @@ function initApp() {
             updatePlayerAuxControlsState(true);
         }
 
-        function startPlaybackStreamNow() {
+        let isPartyPlaybackActive = false;
+
+        function startPlaybackStreamNow(forcePlay = false) {
             hidePlaybackPosterOverlay();
             updatePlayerAuxControlsState(true);
             
@@ -13341,7 +13343,7 @@ function initApp() {
             }
 
             // ── AUTO-SYNC & INÍCIO PAUSADO WATCH PARTY ─────────────────────────
-            if (currentPartyRoom) {
+            if (currentPartyRoom && !forcePlay && !isPartyPlaybackActive) {
                 video.pause();
                 showPartyReadyOverlay(partyIsHost);
                 sendPartyAction('member_ready_state', { inPlayer: true, isReady: true, audio: currentPlayingMedia.audio || 'dublado' });
@@ -14133,18 +14135,29 @@ function initApp() {
 
         /* ── Overlay: Todos Estão Prontos? ────────────────────────────────── */
         function showPartyReadyOverlay(isHost) {
+            if (isPartyPlaybackActive) return; // Não exibe o overlay se a transmissão já foi iniciada na sala
+
             const overlay = document.getElementById('party-ready-overlay');
             const video = document.getElementById('html5-video-player');
-            if (video) video.pause();
+            if (video && !video.paused) video.pause();
             if (!overlay) return;
 
             const title = document.getElementById('party-ready-title');
             const msg = document.getElementById('party-ready-msg');
             const actions = document.getElementById('party-ready-actions');
 
+            // Garante que o usuário atual (local) está marcado como no player e pronto
+            if (partyMyUserId && partyRoomData && Array.isArray(partyRoomData.members)) {
+                const me = partyRoomData.members.find(m => String(m.id) === String(partyMyUserId));
+                if (me) {
+                    me.inPlayer = true;
+                    me.isReady = true;
+                }
+            }
+
             const members = partyRoomData?.members || [];
             const total = Math.max(1, members.length);
-            const readyCount = members.filter(m => m.inPlayer && m.isReady).length;
+            const readyCount = members.filter(m => (String(m.id) === String(partyMyUserId)) || (m.inPlayer && m.isReady)).length;
             const otherMembers = members.filter(m => !m.isHost && String(m.id) !== String(partyMyUserId));
             const otherReadyCount = otherMembers.filter(m => m.inPlayer && m.isReady).length;
             const allReady = total > 1 ? (otherReadyCount === otherMembers.length) : true;
@@ -14153,8 +14166,8 @@ function initApp() {
                 <div style="margin: 12px 0 16px 0; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; max-height: 130px; overflow-y: auto; text-align: left;">
                     <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Status dos Participantes:</div>
                     ${members.map(m => {
-                        const isMReady = m.inPlayer && m.isReady;
                         const isMe = String(m.id) === String(partyMyUserId);
+                        const isMReady = isMe || (m.inPlayer && m.isReady);
                         return `
                             <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12px;">
                                 <span style="display: flex; align-items: center; gap: 6px; color: ${isMReady ? '#fff' : 'var(--text-muted)'}; font-weight: ${isMReady ? '700' : '500'};">
@@ -14207,7 +14220,7 @@ function initApp() {
                             <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 12px; color: #34d399; font-size: 13px; font-weight: 800; text-align: center;">
                                 ✅ Player Conectado • Aguardando o play do anfitrião...
                             </div>
-                            <button class="btn-modal btn-modal-secondary" style="padding: 10px; font-size: 12px; font-weight: 700; width: 100%; border-radius: 8px;" onclick="confirmLeaveParty(); startPlaybackStreamNow();">
+                            <button class="btn-modal btn-modal-secondary" style="padding: 10px; font-size: 12px; font-weight: 700; width: 100%; border-radius: 8px;" onclick="confirmLeaveParty(); startPlaybackStreamNow(true);">
                                 🚪 Sair da Sala e Assistir Sozinho
                             </button>
                         </div>
@@ -14224,11 +14237,16 @@ function initApp() {
         }
 
         function startPartyPlaybackNow() {
+            isPartyPlaybackActive = true;
             hidePartyReadyOverlay();
             hidePlaybackPosterOverlay();
-            startPlaybackStreamNow();
+            startPlaybackStreamNow(true);
+            const video = document.getElementById('html5-video-player');
+            if (video) {
+                video.play().catch(() => {});
+            }
             if (currentPartyRoom && partyIsHost) {
-                sendPartyAction('play', 0);
+                sendPartyAction('play', video?.currentTime || 0);
             }
         }
 
@@ -14587,9 +14605,10 @@ function initApp() {
                         isSyncingFromRemote = true;
                         video.currentTime = data.room.currentTime;
                         if (data.room.isPlaying) {
+                            isPartyPlaybackActive = true;
                             hidePlaybackPosterOverlay();
                             hidePartyReadyOverlay();
-                            startPlaybackStreamNow();
+                            startPlaybackStreamNow(true);
                             video.play().catch(() => {});
                         } else {
                             video.pause();
@@ -14598,6 +14617,7 @@ function initApp() {
                     }
                 }
             } else if (data.type === 'play') {
+                isPartyPlaybackActive = true;
                 hidePartyReadyOverlay();
                 hidePlaybackPosterOverlay();
                 if (partyRoomData) {
@@ -14615,12 +14635,12 @@ function initApp() {
 
                     if (delayMs > 0 && delayMs < 1200) {
                         setTimeout(() => {
-                            startPlaybackStreamNow();
+                            startPlaybackStreamNow(true);
                             video.play().catch(() => {});
                             setTimeout(() => isSyncingFromRemote = false, 300);
                         }, delayMs);
                     } else {
-                        startPlaybackStreamNow();
+                        startPlaybackStreamNow(true);
                         video.play().catch(() => {});
                         setTimeout(() => isSyncingFromRemote = false, 300);
                     }
@@ -14671,6 +14691,7 @@ function initApp() {
                     showToast(`⚡ Velocidade ajustada para ${data.speed}x por ${data.by}`, 'info');
                 }
             } else if (data.type === 'media_stopped') {
+                isPartyPlaybackActive = false;
                 partyRoomData = { ...partyRoomData, mediaInfo: null, isPlaying: false, currentTime: 0, members: data.members || partyRoomData?.members };
                 if (data.members) renderPartyPanelMembers(data.members);
                 if (!partyIsHost) {
@@ -14681,6 +14702,7 @@ function initApp() {
                     }
                 }
             } else if (data.type === 'change_media') {
+                isPartyPlaybackActive = false;
                 if (String(data.userId) !== String(partyMyUserId) && data.mediaInfo) {
                     partyRoomData = { ...partyRoomData, mediaInfo: data.mediaInfo, isPlaying: false, currentTime: 0 };
                     const m = data.mediaInfo;
@@ -15360,6 +15382,9 @@ function initApp() {
                 const isMe = String(m.id) === String(partyMyUserId);
                 const canManage = partyIsHost && !isMe;
                 
+                const isInPlayer = isMe ? (!!currentPlayingMedia || (document.getElementById('tab-playback-page')?.classList.contains('active')) || !!m.inPlayer) : !!m.inPlayer;
+                const isReady = isMe ? isInPlayer : !!m.isReady;
+
                 let inPlayerState = '⏳ No Lobby';
                 let statusBadgeStyle = 'background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);';
                 let dotColor = 'background:rgba(255,255,255,0.2);';
@@ -15372,11 +15397,11 @@ function initApp() {
                     inPlayerState = '⏳ Carregando...';
                     statusBadgeStyle = 'background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);';
                     dotColor = 'background:#f59e0b;box-shadow:0 0 6px #f59e0b;';
-                } else if (m.inPlayer && m.isReady) {
+                } else if (isInPlayer && isReady) {
                     inPlayerState = '✅ Player Pronto';
                     statusBadgeStyle = 'background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);';
                     dotColor = 'background:#10b981;box-shadow:0 0 8px #10b981;';
-                } else if (m.inPlayer) {
+                } else if (isInPlayer) {
                     inPlayerState = '🎬 No Player';
                     statusBadgeStyle = 'background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);';
                     dotColor = 'background:#38bdf8;box-shadow:0 0 6px #38bdf8;';

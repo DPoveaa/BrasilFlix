@@ -1304,9 +1304,16 @@ class StremioServer {
                             room.isPlaying = false;
                             room.lastStateChange = Date.now();
                             for (const m of room.members.values()) {
-                                m.inPlayer = false;
-                                m.isReady = false;
-                                m.isLoading = false;
+                                if (String(m.id) === String(userId)) {
+                                    m.inPlayer = true;
+                                    m.isReady = true;
+                                    m.isLoading = false;
+                                    if (mediaInfo.audio) m.audio = mediaInfo.audio;
+                                } else {
+                                    m.inPlayer = false;
+                                    m.isReady = false;
+                                    m.isLoading = false;
+                                }
                             }
                         }
                         broadcastToRoom(room, {
