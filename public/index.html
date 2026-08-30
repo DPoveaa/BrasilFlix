@@ -3401,12 +3401,39 @@
             display: block;
             filter: none;
             transform: scale(1);
-            transition: transform 0.25s ease;
+            transition: transform 0.25s ease, filter 0.3s ease;
         }
 
-        .episode-cascade-row:hover .episode-preview-img,
-        .episode-preview-wrapper:hover .episode-preview-img {
+        .episode-preview-img.episode-preview-spoiler-blur {
+            filter: blur(14px) brightness(0.65) saturate(0.85);
+            transform: scale(1.12);
+        }
+
+        .episode-cascade-row:hover .episode-preview-img:not(.episode-preview-spoiler-blur),
+        .episode-preview-wrapper:hover .episode-preview-img:not(.episode-preview-spoiler-blur) {
             transform: scale(1.04);
+        }
+
+        .episode-spoiler-shield-badge {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            color: #fbbf24;
+            font-size: 9px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 5px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 3;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 3px;
         }
 
         .episode-duration-badge {
@@ -3517,21 +3544,24 @@
         }
 
         .badge-ep-audio-dual {
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.35);
-            color: #34d399;
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.22) 0%, rgba(16, 185, 129, 0.16) 48%, rgba(59, 130, 246, 0.16) 52%, rgba(59, 130, 246, 0.22) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-left: 2px solid #10b981;
+            border-right: 2px solid #3b82f6;
+            color: #ffffff;
+            font-weight: 800;
         }
 
         .badge-ep-audio-dub {
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.35);
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.45);
             color: #34d399;
         }
 
         .badge-ep-audio-leg {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: #cbd5e1;
+            background: rgba(59, 130, 246, 0.18);
+            border: 1px solid rgba(59, 130, 246, 0.45);
+            color: #60a5fa;
         }
 
         .episode-cascade-title-row {
@@ -4840,33 +4870,35 @@
             margin-top: 12px;
         }
 
-        .playback-title-info-btn {
-            background: transparent;
-            border: none;
+        .playback-title-info {
             display: flex;
             flex-direction: column;
             align-items: flex-start;
+            gap: 2px;
             min-width: 0;
             flex: 1;
-            padding: 6px 10px;
-            margin: -4px -6px;
-            border-radius: 12px;
+        }
+
+        .playback-title-back-btn {
+            background: transparent;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px 4px 6px;
+            margin: -2px -4px;
+            border-radius: 10px;
             cursor: pointer;
             text-align: left;
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
             user-select: none;
-        }
-
-        .playback-title-info-btn:hover {
-            background: rgba(255, 255, 255, 0.06);
-        }
-
-        .playback-title-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            width: fit-content;
             max-width: 100%;
-            min-width: 0;
+        }
+
+        .playback-title-back-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(-2px);
         }
 
         .playback-title-back-icon {
@@ -4880,14 +4912,10 @@
             flex-shrink: 0;
         }
 
-        .playback-title-info-btn:hover .playback-title-back-icon {
+        .playback-title-back-btn:hover .playback-title-back-icon {
             color: #34d399;
             transform: translateX(-3px);
             opacity: 1;
-        }
-
-        .playback-title-info-btn:hover .playback-title-main {
-            color: #34d399;
         }
 
         .playback-title-main {
@@ -4900,6 +4928,11 @@
             line-height: 1.2;
             letter-spacing: -0.3px;
             transition: color 0.2s ease;
+            margin: 0;
+        }
+
+        .playback-title-back-btn:hover .playback-title-main {
+            color: #34d399;
         }
 
         .playback-title-sub {
@@ -4908,8 +4941,9 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-top: 3px;
-            transition: color 0.2s ease;
+            max-width: 100%;
+            margin-top: 1px;
+            padding-left: 2px;
         }
 
         .playback-top-actions {
@@ -5987,13 +6021,13 @@
         
         <!-- BARRA SUPERIOR DE NAVEGAÇÃO / BREADCRUMB -->
         <div class="playback-header-bar">
-            <button class="playback-title-info-btn" onclick="handlePlaybackBack()" title="Voltar para a página de detalhes">
-                <div class="playback-title-row">
+            <div class="playback-title-info">
+                <button class="playback-title-back-btn" onclick="handlePlaybackBack()" title="Voltar para a página de detalhes">
                     <span class="playback-title-back-icon">←</span>
                     <h2 class="playback-title-main" id="playback-top-title">BrasilFlix Player</h2>
-                </div>
+                </button>
                 <div class="playback-title-sub" id="playback-top-sub">Carregando informações da mídia...</div>
-            </button>
+            </div>
             <div class="playback-top-actions">
                 <button class="speed-badge-btn desktop-only" id="playback-btn-popout" onclick="togglePictureInPicture()" title="Janela Flutuante (Picture-in-Picture)">
                     Popout
@@ -10964,9 +10998,9 @@ function initApp() {
 
                 let audioBadgeHtml = '';
                 if (hasDub && hasLeg) {
-                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dual">Dublado & Legendado</span>`;
+                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dual"><span style="color:#34d399;">Dublado</span> <span style="opacity:0.6; color:#cbd5e1;">&amp;</span> <span style="color:#60a5fa;">Legendado</span></span>`;
                 } else if (hasDub) {
-                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dub">Dublado (PT-BR)</span>`;
+                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dub">Dublado</span>`;
                 } else if (hasLeg) {
                     audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-leg">Legendado</span>`;
                 } else {
@@ -10980,17 +11014,22 @@ function initApp() {
                 const prog = getEpisodeProgress(serie.id, selectedTemp.numero, ep.numero);
                 const isCompleted = prog?.completed || false;
                 const curTime = prog?.currentTime || 0;
+                const isStarted = !isCompleted && curTime > 10;
+                const isWatchedOrStarted = isCompleted || isStarted;
                 const dur = prog?.duration || (ep.duracao ? ep.duracao * 60 : 0);
                 const pct = dur > 0 ? Math.min(100, Math.round((curTime / dur) * 100)) : (isCompleted ? 100 : 0);
+                const spoilerBlurClass = isWatchedOrStarted ? '' : 'episode-preview-spoiler-blur';
+                const spoilerBadgeHtml = isWatchedOrStarted ? '' : '<div class="episode-spoiler-shield-badge" title="Anti-Spoiler: Oculto até assistir">🙈 Spoiler</div>';
 
                 return `
                     <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="openWebPlayerEpisode('${serie.id}', ${selectedTemp.numero}, ${ep.numero})">
                         <div class="episode-cascade-num">${ep.numero}</div>
                         <div class="episode-preview-wrapper">
-                            <img src="${epThumb}" class="episode-preview-img" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
+                            <img src="${epThumb}" class="episode-preview-img ${spoilerBlurClass}" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
                             <div class="episode-play-overlay-icon">▶</div>
+                            ${spoilerBadgeHtml}
                             ${isCompleted ? '<div class="episode-watched-badge">✓ Assistido</div>' : ''}
-                            ${!isCompleted && pct > 0 ? `<div class="episode-progress-bar-bg"><div class="episode-progress-bar-fill" style="width: ${pct}%;"></div></div>` : ''}
+                            ${isStarted && pct > 0 ? `<div class="episode-progress-bar-bg"><div class="episode-progress-bar-fill" style="width: ${pct}%;"></div></div>` : ''}
                             ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
                         </div>
                         <div class="episode-cascade-info">
