@@ -395,7 +395,16 @@ class DownloaderManager extends EventEmitter {
             ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})` 
             : mediaTitle;
 
-        const audioBadge = options.audio ? (options.audio.includes('Dublado') ? '🔊 Dublado' : '💬 Legendado') : (options.audioPreference === 'legendado' ? '💬 Legendado' : '🔊 Dublado');
+        const getAudioBadge = (opts) => {
+            const isDub = opts.isDublado || (opts.audio && (opts.audio.includes('Dublado') || opts.audio.includes('Dual')));
+            const isLeg = opts.isLegendado || (opts.audio && opts.audio.includes('Legendado')) || opts.audioPreference === 'legendado';
+            if (isDub && isLeg) return '🔊 Dublado & 💬 Legendado';
+            if (isDub) return '🔊 Dublado';
+            if (isLeg) return '💬 Legendado';
+            return opts.audioPreference === 'legendado' ? '💬 Legendado' : '🔊 Dublado';
+        };
+
+        const audioBadge = getAudioBadge(options);
         return new Promise((resolve, reject) => {
             console.log(`📥 Iniciando download via Torrent: "${displayTitle}" [${audioBadge}] [Hash: ${String(torrentTarget).substring(0, 15)}...]`);
 
@@ -873,7 +882,7 @@ class DownloaderManager extends EventEmitter {
                     const remainingBytes = Math.max(0, curTotal - curDownloaded);
                     const remainingSec = torrent.downloadSpeed > 0 ? Math.floor(remainingBytes / torrent.downloadSpeed) : null;
                     const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
-                    const audioBadge = options.audio ? (options.audio.includes('Dublado') ? '🔊 Dublado' : '💬 Legendado') : (options.audioPreference === 'legendado' ? '💬 Legendado' : '🔊 Dublado');
+                    const audioBadge = getAudioBadge(options);
 
                     const packCount = isSeasonPack && detectedEpisodeMap ? Object.keys(detectedEpisodeMap).length : 0;
                     const packTitle = isSeasonPack 

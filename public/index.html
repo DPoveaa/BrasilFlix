@@ -3414,28 +3414,6 @@
             transform: scale(1.04);
         }
 
-        .episode-spoiler-shield-badge {
-            position: absolute;
-            top: 6px;
-            left: 6px;
-            background: rgba(0, 0, 0, 0.8);
-            border: 1px solid rgba(251, 191, 36, 0.4);
-            color: #fbbf24;
-            font-size: 9px;
-            font-weight: 800;
-            padding: 2px 6px;
-            border-radius: 5px;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
-            z-index: 3;
-            pointer-events: none;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-        }
-
         .episode-duration-badge {
             position: absolute;
             bottom: 6px;
@@ -11019,7 +10997,6 @@ function initApp() {
                 const dur = prog?.duration || (ep.duracao ? ep.duracao * 60 : 0);
                 const pct = dur > 0 ? Math.min(100, Math.round((curTime / dur) * 100)) : (isCompleted ? 100 : 0);
                 const spoilerBlurClass = isWatchedOrStarted ? '' : 'episode-preview-spoiler-blur';
-                const spoilerBadgeHtml = isWatchedOrStarted ? '' : '<div class="episode-spoiler-shield-badge" title="Anti-Spoiler: Oculto até assistir">🙈 Spoiler</div>';
 
                 return `
                     <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="openWebPlayerEpisode('${serie.id}', ${selectedTemp.numero}, ${ep.numero})">
@@ -11027,7 +11004,6 @@ function initApp() {
                         <div class="episode-preview-wrapper">
                             <img src="${epThumb}" class="episode-preview-img ${spoilerBlurClass}" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
                             <div class="episode-play-overlay-icon">▶</div>
-                            ${spoilerBadgeHtml}
                             ${isCompleted ? '<div class="episode-watched-badge">✓ Assistido</div>' : ''}
                             ${isStarted && pct > 0 ? `<div class="episode-progress-bar-bg"><div class="episode-progress-bar-fill" style="width: ${pct}%;"></div></div>` : ''}
                             ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
