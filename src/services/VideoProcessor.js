@@ -145,11 +145,11 @@ class VideoProcessor {
             const cmd = `ffmpeg -nostdin -v error -t 30 -i "${filePath}" -f null -max_error_rate 0.05 -`;
             exec(cmd, { timeout: 15000 }, (error, stdout, stderr) => {
                 if (error && error.killed) {
-                    resolve({ isValid: true, warning: 'Verificação rápida concluída por tempo' });
+                    resolve({ isValid: true, valid: true, warning: 'Verificação rápida concluída por tempo' });
                 } else if (stderr && (stderr.includes('Invalid data found') || stderr.includes('moov atom not found'))) {
-                    resolve({ isValid: false, error: stderr.substring(0, 200) });
+                    resolve({ isValid: false, valid: false, error: stderr.substring(0, 200) });
                 } else {
-                    resolve({ isValid: true });
+                    resolve({ isValid: true, valid: true });
                 }
             });
         });

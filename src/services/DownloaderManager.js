@@ -743,9 +743,10 @@ class DownloaderManager extends EventEmitter {
 
                     // 3.2 Validação profunda de decodificação de stream via FFmpeg
                     const integrity = await VideoProcessor.verifyVideoIntegrity(fullPath);
-                    if (!integrity.valid) {
-                        const errStr = integrity.error ? String(integrity.error) : '';
-                        if (errStr.includes('MOOV') || errStr.includes('Incomplete') || errStr.includes('Invalid data')) {
+                    const isValid = (integrity && (integrity.isValid !== undefined ? integrity.isValid : integrity.valid));
+                    if (!isValid) {
+                        const errStr = integrity && integrity.error ? String(integrity.error) : '';
+                        if (errStr.includes('MOOV') || errStr.includes('Incomplete') || errStr.includes('Invalid data') || errStr.includes('moov atom not found')) {
                             console.warn(`❌ [DOWNLOAD] Arquivo corrompido descartado: stream com erro (${errStr}). Tentando próxima fonte...`);
                             finished = true;
                             safeCleanup();
