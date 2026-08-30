@@ -2257,7 +2257,7 @@
             display: none;
             flex-direction: column;
             gap: 4px;
-            z-index: 100;
+            z-index: 1000 !important;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.85);
             min-width: 175px;
             max-width: calc(100vw - 32px);
@@ -4918,10 +4918,15 @@
             position: relative;
             width: 100%;
             background: #000;
-            overflow: hidden;
+            overflow: visible;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 40px rgba(16, 185, 129, 0.08);
             border-left: 1px solid var(--border-color);
             border-right: 1px solid var(--border-color);
+        }
+
+        .player-footer-bar {
+            position: relative;
+            z-index: 60 !important;
         }
 
         .playback-player-stage #player-card-container {
@@ -6092,7 +6097,7 @@
             </div>
 
             <!-- FOOTER DE CONTROLES: ÁUDIO, VELOCIDADE & ATALHOS -->
-            <div class="player-footer-bar" style="padding: 10px 20px; background: rgba(13, 18, 29, 0.98); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; position: relative; z-index: 10;">
+            <div class="player-footer-bar" style="padding: 10px 20px; background: rgba(13, 18, 29, 0.98); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; position: relative; z-index: 60;">
                 <div class="desktop-only" style="font-size: 11px; color: var(--text-muted);">
                     <span>Atalhos: [Espaço] Play/Pausa • [F] Tela Cheia • [P] Janela Flutuante • [← / →] 10s • [&lt; / &gt;] Velocidade</span>
                 </div>
