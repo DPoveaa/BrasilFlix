@@ -5689,13 +5689,14 @@
         }
 
         
-        /* 🎭 MODAL: GALERIA DE AVATARES */
+        
+        /* 🎭 MODAL: GALERIA DE AVATARES COM GRUPOS POR SÉRIE */
         .avatar-modal-box {
             background: #0d1322;
             border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 20px;
-            max-width: 820px;
-            width: 94%;
+            max-width: 860px;
+            width: 95%;
             max-height: 88vh;
             display: flex;
             flex-direction: column;
@@ -5709,8 +5710,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 16px;
-            padding-bottom: 14px;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
@@ -5797,14 +5798,48 @@
             box-shadow: 0 0 14px rgba(229, 9, 20, 0.45);
         }
 
+        .avatar-modal-body-scroll {
+            overflow-y: auto;
+            padding: 4px 6px 12px 2px;
+            max-height: 52vh;
+            scrollbar-width: thin;
+        }
+
+        .avatar-series-section {
+            margin-bottom: 22px;
+        }
+
+        .avatar-series-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.04);
+            border-left: 3px solid #e50914;
+            padding: 7px 14px;
+            border-radius: 0 10px 10px 0;
+            margin-bottom: 12px;
+        }
+
+        .avatar-series-title {
+            font-size: 13.5px;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: 0.3px;
+        }
+
+        .avatar-series-badge {
+            font-size: 10.5px;
+            font-weight: 800;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 2px 8px;
+            border-radius: 99px;
+        }
+
         .avatar-modal-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
             gap: 12px;
-            overflow-y: auto;
-            padding: 4px 6px 12px 2px;
-            max-height: 48vh;
-            scrollbar-width: thin;
         }
 
         .avatar-card-item {
@@ -5830,8 +5865,8 @@
         }
 
         .avatar-card-img-wrap {
-            width: 76px;
-            height: 76px;
+            width: 78px;
+            height: 78px;
             border-radius: 12px;
             overflow: hidden;
             background: rgba(0, 0, 0, 0.4);
@@ -6279,8 +6314,9 @@
     </div>
 
     
+    
     <!-- ═══════════════════════════════════════════════════════════════════════
-         🎭 MODAL: GALERIA DE AVATARES COM BUSCADOR E CATEGORIAS
+         🎭 MODAL: GALERIA DE AVATARES COM BUSCADOR E SEPARAÇÃO POR SÉRIE
          ═══════════════════════════════════════════════════════════════════════ -->
     <div id="avatar-gallery-modal" class="modal-backdrop" onclick="closeAvatarGalleryModal(event)">
         <div class="avatar-modal-box" onclick="event.stopPropagation()">
@@ -6290,7 +6326,7 @@
                     <div style="font-size: 26px; line-height: 1;">🎭</div>
                     <div>
                         <h3 style="font-size: 18px; font-weight: 900; color: #fff; margin: 0;">Galeria de Personagens & Avatares</h3>
-                        <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">Escolha o avatar do seu personagem favorito de séries, filmes e animes</p>
+                        <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">Escolha o avatar do seu personagem favorito caracterizado de séries, animes e filmes</p>
                     </div>
                 </div>
                 <button type="button" class="modal-close" onclick="closeAvatarGalleryModal()" title="Fechar" style="position:static;width:32px;height:32px;font-size:15px;">✕</button>
@@ -6299,7 +6335,7 @@
             <!-- SEARCH BAR -->
             <div class="avatar-modal-search-box">
                 <div style="position: relative; width: 100%;">
-                    <input type="text" id="avatar-gallery-search-input" class="avatar-search-input" placeholder="🔍 Pesquisar por personagem, ator ou série... (ex: Walter White, Bryan Cranston, Naruto, Geralt, Wandinha...)" oninput="handleAvatarSearch(this.value)">
+                    <input type="text" id="avatar-gallery-search-input" class="avatar-search-input" placeholder="🔍 Pesquisar por personagem, anime ou série... (ex: Rias, DxD, Goblin Slayer, Luffy, Walter White, Gojo, Wandinha...)" oninput="handleAvatarSearch(this.value)">
                     <button type="button" id="avatar-search-clear-btn" class="avatar-search-clear" onclick="clearAvatarSearch()" style="display: none;" title="Limpar busca">✕</button>
                 </div>
             </div>
@@ -6309,12 +6345,12 @@
 
             <!-- COUNTER & STATUS -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 11.5px; color: var(--text-muted);">
-                <div>Mostrando <strong id="avatar-count-visible" style="color: #fff;">0</strong> avatares</div>
-                <div style="font-size: 11px;">Clique no avatar para selecionar</div>
+                <div>Mostrando <strong id="avatar-count-visible" style="color: #fff;">0</strong> personagens</div>
+                <div style="font-size: 11px;">Separados por série • Clique para selecionar</div>
             </div>
 
-            <!-- AVATARS GRID -->
-            <div class="avatar-modal-grid" id="avatar-modal-grid"></div>
+            <!-- SCROLLABLE SECTIONS BODY -->
+            <div class="avatar-modal-body-scroll" id="avatar-modal-body"></div>
         </div>
     </div>
 
@@ -10816,855 +10852,594 @@ function initApp() {
 
         const AVATAR_PRESETS = [
     {
-        "character": "Eleven / Onze",
-        "actor": "Millie Bobby Brown",
-        "series": "Stranger Things",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/kHO7hdNEVuTnQ0OjjrxP1RcAa0e.jpg"
+        "character": "Rias Gremory (Princesa Carmesim)",
+        "actor": "High School DxD",
+        "series": "High School DxD",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/yMYvz4vbKMIXb2IMYYi1GSlNaGx.jpg"
     },
     {
-        "character": "Jim Hopper",
-        "actor": "David Harbour",
-        "series": "Stranger Things",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/qMFtMWlYVtFVyBoBhX5IoA5sN5a.jpg"
+        "character": "Issei Hyoudou (Dragão Vermelho)",
+        "actor": "High School DxD",
+        "series": "High School DxD",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/yMYvz4vbKMIXb2IMYYi1GSlNaGx.jpg"
     },
     {
-        "character": "Dustin Henderson",
-        "actor": "Gaten Matarazzo",
-        "series": "Stranger Things",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/alVT7oDp8N5G9WLIApI9jqeuqHq.jpg"
+        "character": "Akeno Himejima (Trovão & Sacerdotisa)",
+        "actor": "High School DxD",
+        "series": "High School DxD",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/yMYvz4vbKMIXb2IMYYi1GSlNaGx.jpg"
     },
     {
-        "character": "Steve Harrington",
-        "actor": "Joe Keery",
-        "series": "Stranger Things",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/ayIAVLMfZGEGIFwAo3pPnY7p59.jpg"
+        "character": "Goblin Slayer (Armadura & Elmo de Ferro)",
+        "actor": "Goblin Slayer",
+        "series": "Goblin Slayer",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/nUiT0whRDuUJKkk74L1pn8xUE2z.jpg"
     },
     {
-        "character": "Eddie Munson",
-        "actor": "Joseph Quinn",
-        "series": "Stranger Things",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/zshhuioZaH8S5ZKdMcojzWi1ntl.jpg"
+        "character": "Priestess (Sacerdotisa da Luz)",
+        "actor": "Goblin Slayer",
+        "series": "Goblin Slayer",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/yuPWl2YTrSgVNpiTe5SEMBw13cj.jpg"
     },
     {
-        "character": "Wandinha Addams",
-        "actor": "Jenna Ortega",
-        "series": "Wandinha (Wednesday)",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/cV4x7jNmsGLdKZn5I6xVF3Ltnmg.jpg"
+        "character": "Monkey D. Luffy (Gear 5)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40-MNypXsxSRb1R.png"
     },
     {
-        "character": "Enid Sinclair",
-        "actor": "Emma Myers",
-        "series": "Wandinha (Wednesday)",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/v1Y8RP39135ZOary9M4MbkrCAdn.jpg"
+        "character": "Roronoa Zoro (Rei do Inferno)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b62-S7oAeA9WInjV.png"
     },
     {
-        "character": "Geralt de Rívia",
+        "character": "Sanji Vinsmoke (Ifrit Jambe)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b305-6lisPmHtCnLT.png"
+    },
+    {
+        "character": "Trafalgar D. Law (Ope Ope no Mi)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b13767-U604OJN9dxCn.jpg"
+    },
+    {
+        "character": "Portgas D. Ace (Punhos de Fogo)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2072-Lc6jEdsueJUK.jpg"
+    },
+    {
+        "character": "Shanks (O Ruivo / Yonkou)",
+        "actor": "Eiichiro Oda",
+        "series": "One Piece",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b727-wUJx7M1z5xON.png"
+    },
+    {
+        "character": "Naruto Uzumaki (Modo Sábio / Kurama)",
+        "actor": "Masashi Kishimoto",
+        "series": "Naruto Shippuden",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b17-phjcWCkRuIhu.png"
+    },
+    {
+        "character": "Sasuke Uchiha (Rinnegan & Chidori)",
+        "actor": "Masashi Kishimoto",
+        "series": "Naruto Shippuden",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b13-SISLEw1oAD7a.png"
+    },
+    {
+        "character": "Kakashi Hatake (Sharingan)",
+        "actor": "Masashi Kishimoto",
+        "series": "Naruto Shippuden",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b85-mkVBh2yjxjmx.png"
+    },
+    {
+        "character": "Itachi Uchiha (Tsukuyomi / Akatsuki)",
+        "actor": "Masashi Kishimoto",
+        "series": "Naruto Shippuden",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b14-9Kb1E5oel1ke.png"
+    },
+    {
+        "character": "Madara Uchiha (Lendário Susanoo)",
+        "actor": "Masashi Kishimoto",
+        "series": "Naruto Shippuden",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b53901-HnRKSoHMG5Vg.png"
+    },
+    {
+        "character": "Son Goku (Super Saiyajin)",
+        "actor": "Akira Toriyama",
+        "series": "Dragon Ball",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/246-wsRRr6z1kii8.png"
+    },
+    {
+        "character": "Vegeta (Príncipe Saiyajin)",
+        "actor": "Akira Toriyama",
+        "series": "Dragon Ball",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b913-NIFkKazWM8VO.png"
+    },
+    {
+        "character": "Son Gohan (SSJ2 / Modo Besta)",
+        "actor": "Akira Toriyama",
+        "series": "Dragon Ball",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2093-kdFZhqcNSsqW.png"
+    },
+    {
+        "character": "Trunks do Futuro (Espada)",
+        "actor": "Akira Toriyama",
+        "series": "Dragon Ball",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2707-YKWmn4q87oF8.png"
+    },
+    {
+        "character": "Tanjiro Kamado (Dança do Deus do Fogo)",
+        "actor": "Koyoharu Gotouge",
+        "series": "Demon Slayer",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/7Uj6vqmznWQ3w3hpQ1eIY9mMyMw.jpg"
+    },
+    {
+        "character": "Nezuko Kamado (Forma Oni)",
+        "actor": "Koyoharu Gotouge",
+        "series": "Demon Slayer",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127518-NRlq1CQ1v1ro.png"
+    },
+    {
+        "character": "Kyojuro Rengoku (Hashira das Chamas)",
+        "actor": "Koyoharu Gotouge",
+        "series": "Demon Slayer",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/41XdjOXGQoH0HTDNqEfwKGvGgwm.jpg"
+    },
+    {
+        "character": "Satoru Gojo (Vazio Infinito)",
+        "actor": "Gege Akutami",
+        "series": "Jujutsu Kaisen",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127691-9zqh1xpIubn7.png"
+    },
+    {
+        "character": "Ryomen Sukuna (Rei das Maldições)",
+        "actor": "Gege Akutami",
+        "series": "Jujutsu Kaisen",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b133701-rCQuDpHr3UZL.png"
+    },
+    {
+        "character": "Yuta Okkotsu & Rika",
+        "actor": "Gege Akutami",
+        "series": "Jujutsu Kaisen",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/2ndvx03fmREMxEgaZ1vWt756TOQ.jpg"
+    },
+    {
+        "character": "Eren Yeager (Titã de Ataque)",
+        "actor": "Hajime Isayama",
+        "series": "Attack on Titan",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40882-dsj7IP943WFF.jpg"
+    },
+    {
+        "character": "Levi Ackerman (O Soldado Mais Forte)",
+        "actor": "Hajime Isayama",
+        "series": "Attack on Titan",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/8aMqmB5xSblsZc7bLMEhE28yHa2.jpg"
+    },
+    {
+        "character": "Light Yagami (Kira)",
+        "actor": "Tsugumi Ohba",
+        "series": "Death Note",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b80-26EhwSsSqQ50.png"
+    },
+    {
+        "character": "L Lawliet (Maior Detetive do Mundo)",
+        "actor": "Tsugumi Ohba",
+        "series": "Death Note",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b71-1W4panC53vfs.png"
+    },
+    {
+        "character": "Ryuk (Shinigami)",
+        "actor": "Tsugumi Ohba",
+        "series": "Death Note",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b75-IkEpzO21LgFy.jpg"
+    },
+    {
+        "character": "Sung Jin-woo (Monarca das Sombras)",
+        "actor": "Chugong",
+        "series": "Solo Leveling",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/eCD7WS9h4lCT8N4Xavc9u8R1IGk.jpg"
+    },
+    {
+        "character": "Saitama (Careca de Capa)",
+        "actor": "ONE",
+        "series": "One Punch Man",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b73935-ON5d0mAcrItd.jpg"
+    },
+    {
+        "character": "Denji (Chainsaw Man)",
+        "actor": "Tatsuki Fujimoto",
+        "series": "Chainsaw Man",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/mIz0eKhzHuSPeRSePCyoCt9bKVp.jpg"
+    },
+    {
+        "character": "Anya Forger (Waku Waku)",
+        "actor": "Tatsuya Endo",
+        "series": "Spy x Family",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/vaIREdPGZOnW9Jrs86mheVVlIQQ.jpg"
+    },
+    {
+        "character": "Kirito (Espadachim Negro)",
+        "actor": "Reki Kawahara",
+        "series": "Sword Art Online",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/htNohqrYEwuz4fCa9ATVF90s58S.jpg"
+    },
+    {
+        "character": "Ken Kaneki (Ghoul de Um Olho)",
+        "actor": "Sui Ishida",
+        "series": "Tokyo Ghoul",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/5XBk7T4NsGeN9RG39y2nU6gRWQl.jpg"
+    },
+    {
+        "character": "Rem (Empregada Demônio)",
+        "actor": "Tappei Nagatsuki",
+        "series": "Re:Zero",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/ccG0ZfXOQ0834bIus4SwZrXtkyM.jpg"
+    },
+    {
+        "character": "Megumin (Explosion!)",
+        "actor": "Natsume Akatsuki",
+        "series": "KonoSuba",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/kvXF7ugmNHo2HyNLy7lhQQVbBBa.jpg"
+    },
+    {
+        "character": "Ichigo Kurosaki (Bankai)",
+        "actor": "Tite Kubo",
+        "series": "Bleach",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/dx28DE7EgLy0FatOvnaUg0k9j92.jpg"
+    },
+    {
+        "character": "Edward Elric (Alquimista de Aço)",
+        "actor": "Hiromu Arakawa",
+        "series": "Fullmetal Alchemist",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/vIkH7fUQf8Olo8Apq56FQLGDXOo.jpg"
+    },
+    {
+        "character": "Gon & Killua (Hunter x Hunter)",
+        "actor": "Yoshihiro Togashi",
+        "series": "Hunter x Hunter",
+        "category": "Animes",
+        "url": "https://image.tmdb.org/t/p/w300/eobAuhCJA8oRp814V67WhezVXtQ.jpg"
+    },
+    {
+        "character": "Geralt de Rívia (O Lobo Branco)",
         "actor": "Henry Cavill",
         "series": "The Witcher",
         "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/kN3A5oLgtKYAxa9lAkpsIGYKYVo.jpg"
-    },
-    {
-        "character": "Yennefer de Vengerberg",
-        "actor": "Anya Chalotra",
-        "series": "The Witcher",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/c3QiX7znSjTR7u2xj29KH6DAnMs.jpg"
-    },
-    {
-        "character": "Ciri",
-        "actor": "Freya Allan",
-        "series": "The Witcher",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/8RuLG2mePw8YgFNUjWROBuxMrwT.jpg"
-    },
-    {
-        "character": "Seong Gi-hun (Nº 456)",
-        "actor": "Lee Jung-jae",
-        "series": "Round 6 (Squid Game)",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/lx8oiTXL9lIx78KOXlrlvNfoz43.jpg"
-    },
-    {
-        "character": "Cho Sang-woo (Nº 218)",
-        "actor": "Park Hae-soo",
-        "series": "Round 6 (Squid Game)",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/hFt7Cj8sx1VYIwm18lYmq5kS7Pw.jpg"
-    },
-    {
-        "character": "Professor (Sergio Marquina)",
-        "actor": "Álvaro Morte",
-        "series": "La Casa de Papel",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/2TGPhdpRC5wjdFEJqnLYiN5kbwg.jpg"
-    },
-    {
-        "character": "Tóquio (Silene Oliveira)",
-        "actor": "Úrsula Corberó",
-        "series": "La Casa de Papel",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/cmH8Z459tw9YkR61QfxlCSlZw9P.jpg"
-    },
-    {
-        "character": "Berlim (Andrés de Fonollosa)",
-        "actor": "Pedro Alonso",
-        "series": "La Casa de Papel",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/38HeVKeOBztVYrLJOWzAtEZiB02.jpg"
-    },
-    {
-        "character": "Denver (Daniel Ramos)",
-        "actor": "Jaime Lorente",
-        "series": "La Casa de Papel",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/nLaxzU92z14FIbe25sE8jDMIThZ.jpg"
-    },
-    {
-        "character": "Nairóbi (Ágata Jiménez)",
-        "actor": "Alba Flores",
-        "series": "La Casa de Papel",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/vWUZkQKxj63qTNBa8DvEd0CpU64.jpg"
-    },
-    {
-        "character": "Lucifer Morningstar",
-        "actor": "Tom Ellis",
-        "series": "Lucifer",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/zhjIyqpk5bsYgxsh5bSeS6VZtHm.jpg"
-    },
-    {
-        "character": "Mazikeen (Maze)",
-        "actor": "Lesley-Ann Brandt",
-        "series": "Lucifer",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/fW2ITcpENpNnHf4wuNltf3PSQTk.jpg"
-    },
-    {
-        "character": "Beth Harmon",
-        "actor": "Anya Taylor-Joy",
-        "series": "O Gambito da Rainha",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/qYNofOjlRke2MlJVihmJmEdQI4v.jpg"
-    },
-    {
-        "character": "Joe Goldberg",
-        "actor": "Penn Badgley",
-        "series": "YOU (Você)",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/3ekfkoj3YmRlCtez4OOZoVPiO7a.jpg"
-    },
-    {
-        "character": "Otis Milburn",
-        "actor": "Asa Butterfield",
-        "series": "Sex Education",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/1IoQIesuvI9o1IpYZqdjBWvKhRf.jpg"
-    },
-    {
-        "character": "Maeve Wiley",
-        "actor": "Emma Mackey",
-        "series": "Sex Education",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/9OZBcFSS3Yz0Oqr8mssbQa4suW8.jpg"
-    },
-    {
-        "character": "Emily Cooper",
-        "actor": "Lily Collins",
-        "series": "Emily em Paris",
-        "category": "Netflix",
-        "url": "https://image.tmdb.org/t/p/w200/zhJISAc4qi7xiHMzHMzUTgZSIRH.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/uJ1kQWTY1nElMcrrbHtDitbV85K.jpg"
     },
     {
         "character": "Walter White (Heisenberg)",
         "actor": "Bryan Cranston",
         "series": "Breaking Bad",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/npIIZJGSrcJIJ6yHdmbqO6Jzo5I.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/hGwm9Cj3CdbJIqQWNExQqiYmCd4.jpg"
     },
     {
-        "character": "Jesse Pinkman",
-        "actor": "Aaron Paul",
-        "series": "Breaking Bad",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/8Ac9uuoYwZoYVAIJfRLzzLsGGJn.jpg"
-    },
-    {
-        "character": "Saul Goodman (Jimmy McGill)",
+        "character": "Saul Goodman (Melhor Ligar pro Saul)",
         "actor": "Bob Odenkirk",
-        "series": "Better Call Saul / Breaking Bad",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/rF0Lb6SBhGSTvjRffmlKRSeI3jE.jpg"
-    },
-    {
-        "character": "Gus Fring",
-        "actor": "Giancarlo Esposito",
         "series": "Breaking Bad",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/rcXnr82TwDzU4ZGdBeNXfG0ZQnZ.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/tFCPd8nOqrxjKpTs0ZAdPRydQFR.jpg"
     },
     {
-        "character": "Joel Miller",
-        "actor": "Pedro Pascal",
-        "series": "The Last of Us",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/oKcMbVn0NJTNzQt0ClKKvVXkm60.jpg"
-    },
-    {
-        "character": "Ellie Williams",
-        "actor": "Bella Ramsey",
-        "series": "The Last of Us",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/vDbgxc7RYawpB1wK7JDEj62j06H.jpg"
-    },
-    {
-        "character": "Thomas Shelby",
+        "character": "Thomas Shelby (Líder dos Peaky Blinders)",
         "actor": "Cillian Murphy",
         "series": "Peaky Blinders",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/2lKs67r7FI4bPu0AXxMUJZxmUXn.jpg"
-    },
-    {
-        "character": "Arthur Shelby",
-        "actor": "Paul Anderson",
-        "series": "Peaky Blinders",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/nds5rTBZvJ4rEsP4N6OaoEgQDkW.jpg"
-    },
-    {
-        "character": "Alfie Solomons",
-        "actor": "Tom Hardy",
-        "series": "Peaky Blinders",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/d81K0RH8UX7tZj49tZaQhZ9ewH.jpg"
-    },
-    {
-        "character": "Daenerys Targaryen",
-        "actor": "Emilia Clarke",
-        "series": "Game of Thrones",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/iFY6t7Ux9r70WB7Sp0TTVz6eGtm.jpg"
-    },
-    {
-        "character": "Jon Snow (Aegon Targaryen)",
-        "actor": "Kit Harington",
-        "series": "Game of Thrones",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/iGXlJbExWwZmo9sUDsYuzf4Sv4y.jpg"
-    },
-    {
-        "character": "Tyrion Lannister",
-        "actor": "Peter Dinklage",
-        "series": "Game of Thrones",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/9CAd7wr8QZyIN0E7nm8v1B6WkGn.jpg"
-    },
-    {
-        "character": "Cersei Lannister",
-        "actor": "Lena Headey",
-        "series": "Game of Thrones",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/cDyZLf8ddz0EgoUjpv4jjzy7qxA.jpg"
-    },
-    {
-        "character": "Arya Stark",
-        "actor": "Maisie Williams",
-        "series": "Game of Thrones",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/5RjD4dDpRDAhalFtvcUj7zdLWYB.jpg"
-    },
-    {
-        "character": "Daemon Targaryen",
-        "actor": "Matt Smith",
-        "series": "A Casa do Dragão (House of the Dragon)",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/wxMdHj4UA6LgIU5MiA7CKySZeVU.jpg"
-    },
-    {
-        "character": "Rhaenyra Targaryen",
-        "actor": "Emma D'Arcy",
-        "series": "A Casa do Dragão (House of the Dragon)",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/9Zlmb7VmtVCxkLq5yqFFRRxCaED.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/i0uajcHH9yogXMfDHpOXexIukG9.jpg"
     },
     {
         "character": "Capitão Pátria (Homelander)",
         "actor": "Antony Starr",
         "series": "The Boys",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/xx3As5SWcE8vYOKZgtjDjqmT3jc.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/in1R2dDc421JxsoRWaIIAqVI2KE.jpg"
     },
     {
-        "character": "Billy Butcher (Bruto)",
-        "actor": "Karl Urban",
-        "series": "The Boys",
+        "character": "Eleven / Onze (Poderes Psíquicos)",
+        "actor": "Millie Bobby Brown",
+        "series": "Stranger Things",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/twfKp60THrcOIep9sjHODOOfO8d.jpg"
+    },
+    {
+        "character": "Wandinha Addams (Uniforme Preto)",
+        "actor": "Jenna Ortega",
+        "series": "Wandinha (Wednesday)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/7rxiQrZjrer0RB9qNA8rHYFo53R.jpg"
+    },
+    {
+        "character": "Joel Miller (Contrabandista)",
+        "actor": "Pedro Pascal",
+        "series": "The Last of Us",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/7Y96dAfg0HcFrcLjlD5eD9N0uj4.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/el1KQzwdIm17I3A6cYPfsVIWhfX.jpg"
     },
     {
-        "character": "Hughie Campbell",
-        "actor": "Jack Quaid",
-        "series": "The Boys",
+        "character": "Daenerys Targaryen (Mãe dos Dragões)",
+        "actor": "Emilia Clarke",
+        "series": "Game of Thrones",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/320qW5yEbxpmyxQ3evmClJbtKag.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/aqomTRKjNZkmNEeOZnEmWrFTmKU.jpg"
     },
     {
-        "character": "Soldier Boy",
-        "actor": "Jensen Ackles",
-        "series": "The Boys",
+        "character": "Daemon Targaryen (Príncipe Rebelde)",
+        "actor": "Matt Smith",
+        "series": "Game of Thrones",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/xgOAHqDiqdZCF1BhfHaeLrd47ki.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/oKJDm4QCKbp6mR4FnxXrFlPJP8Y.jpg"
     },
     {
-        "character": "Dean Winchester",
-        "actor": "Jensen Ackles",
-        "series": "Supernatural",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/xgOAHqDiqdZCF1BhfHaeLrd47ki.jpg"
-    },
-    {
-        "character": "Sam Winchester",
-        "actor": "Jared Padalecki",
-        "series": "Supernatural",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/dTV5ImKP5uIdFShiG3VFbbjLFWo.jpg"
-    },
-    {
-        "character": "Castiel",
-        "actor": "Misha Collins",
-        "series": "Supernatural",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/szigprnenokR4yOpELIB2rj1Er2.jpg"
-    },
-    {
-        "character": "Ragnar Lothbrok",
+        "character": "Ragnar Lothbrok (Rei Viking)",
         "actor": "Travis Fimmel",
         "series": "Vikings",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/kuTSw3I2hqb5N1QqYrXPX8zd8EA.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/bQLrHIRNEkE3PdIWQrZHynQZazu.jpg"
     },
     {
-        "character": "Lagertha",
-        "actor": "Katheryn Winnick",
-        "series": "Vikings",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/vQSqH3ybDWZHZIqX4NZKhOCXAhQ.jpg"
-    },
-    {
-        "character": "Bjorn Ironside",
-        "actor": "Alexander Ludwig",
-        "series": "Vikings",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/3KpzKT4iGhNivSISQMe6EwpAmCi.jpg"
-    },
-    {
-        "character": "Ivar o Desossado",
-        "actor": "Alex Høgh Andersen",
-        "series": "Vikings",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/kDO1gFqMnsV5gCQsMgEL9BZongX.jpg"
-    },
-    {
-        "character": "Daryl Dixon",
+        "character": "Daryl Dixon (Besta & Moto)",
         "actor": "Norman Reedus",
         "series": "The Walking Dead",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/ozHPdO5jAt7ozzdZUgyRAMNPSDW.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/8pQ09TA3FGeptJnHJ1R9rbENPWr.jpg"
     },
     {
-        "character": "Rick Grimes",
+        "character": "Rick Grimes (O Xerife)",
         "actor": "Andrew Lincoln",
         "series": "The Walking Dead",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/gR4RzQTDsMfVv8oEh2VRbO8LkFz.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/95pv9daC8yFm1BfaUyCTx7MfOs.jpg"
     },
     {
-        "character": "Negan Smith",
-        "actor": "Jeffrey Dean Morgan",
-        "series": "The Walking Dead",
-        "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/m8bdrmh6ExDCGQ64E83mHg002YV.jpg"
-    },
-    {
-        "character": "Dexter Morgan",
+        "character": "Dexter Morgan (Passageiro Sombrio)",
         "actor": "Michael C. Hall",
         "series": "Dexter",
         "category": "Séries",
-        "url": "https://image.tmdb.org/t/p/w200/7zUMGoujuev5PUwwv4Gl6ikB50k.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/v95YfP2MvoGOC7FrBD1v5nlWBHv.jpg"
     },
     {
-        "character": "Tony Stark (Homem de Ferro)",
+        "character": "O Professor (Máscara de Dalí)",
+        "actor": "Álvaro Morte",
+        "series": "La Casa de Papel",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/yVUAfbrP5HDJugXraB7KQS0yz6Z.jpg"
+    },
+    {
+        "character": "Berlim (Andrés de Fonollosa)",
+        "actor": "Pedro Alonso",
+        "series": "La Casa de Papel",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/jYShWyYllx9DhOS6d92mN2yVsbA.jpg"
+    },
+    {
+        "character": "Seong Gi-hun (Jogador 456)",
+        "actor": "Lee Jung-jae",
+        "series": "Round 6 (Squid Game)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/sUolfAUop5JtKkO0fSq33r9KCKW.jpg"
+    },
+    {
+        "character": "Lucifer Morningstar (Diabo)",
+        "actor": "Tom Ellis",
+        "series": "Lucifer",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/hdKxcoV5CFc3sGOmbGXDXbx1cTZ.jpg"
+    },
+    {
+        "character": "Beth Harmon (Gênio do Xadrez)",
+        "actor": "Anya Taylor-Joy",
+        "series": "O Gambito da Rainha",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/ubWpLTkwcms5PfZJMFZkNXVYXqJ.jpg"
+    },
+    {
+        "character": "Joe Goldberg (Perseguidor)",
+        "actor": "Penn Badgley",
+        "series": "YOU (Você)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w300/ivqi64qY0S3ZAimvjlqXLEH7D6W.jpg"
+    },
+    {
+        "character": "Jinx (Tranças Azuis)",
+        "actor": "Arcane",
+        "series": "Arcane & Cyberpunk",
+        "category": "Netflix",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b318488-nDSqz6AlFCT9.png"
+    },
+    {
+        "character": "Vi (Manoplas Hextech)",
+        "actor": "Arcane",
+        "series": "Arcane & Cyberpunk",
+        "category": "Netflix",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b90169-4wr1Zehnsac8.png"
+    },
+    {
+        "character": "David Martinez (Sandevistan)",
+        "actor": "Studio Trigger",
+        "series": "Arcane & Cyberpunk",
+        "category": "Netflix",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b284158-z1uGKC3IYVa1.png"
+    },
+    {
+        "character": "Homem de Ferro (Iron Man)",
         "actor": "Robert Downey Jr.",
-        "series": "Vingadores / Marvel",
+        "series": "Vingadores & Marvel",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/5qHNjhtjMD4YWH3UP0rm4tKwxCL.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/mqN7RxojEiPoh3FTSTwOtwg7KAu.jpg"
     },
     {
-        "character": "Steve Rogers (Capitão América)",
+        "character": "Capitão América (Escudo)",
         "actor": "Chris Evans",
-        "series": "Vingadores / Marvel",
+        "series": "Vingadores & Marvel",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/3bOGNsHlrswhyW79uvIHH1V43JI.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/19wxfSXHhuJBRbbfUweCsfXFhpv.jpg"
     },
     {
-        "character": "Thor Odinson",
+        "character": "Thor Odinson (Deus do Trovão)",
         "actor": "Chris Hemsworth",
-        "series": "Vingadores / Marvel",
+        "series": "Vingadores & Marvel",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/piQGdoIQOF3C1EI5cbYZLAW1gfj.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/2K45Fp6koAVoeeYS6aMb9BeNt4F.jpg"
     },
     {
-        "character": "Natasha Romanoff (Viúva Negra)",
-        "actor": "Scarlett Johansson",
-        "series": "Vingadores / Marvel",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/druW5adKddizHNSoPbI0q7Mvn0K.jpg"
-    },
-    {
-        "character": "Peter Parker (Homem-Aranha)",
-        "actor": "Tom Holland",
-        "series": "Homem-Aranha / Marvel",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/xKBAaPIa1c7tzZD3Y0MhBLv4hPE.jpg"
-    },
-    {
-        "character": "Doutor Estranho (Stephen Strange)",
-        "actor": "Benedict Cumberbatch",
-        "series": "Marvel",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/wz3MRiMmoz6b5X3oSzMRC9nLxY1.jpg"
-    },
-    {
-        "character": "Wanda Maximoff (Feiticeira Escarlate)",
-        "actor": "Elizabeth Olsen",
-        "series": "Marvel",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/wIU675y4dofIDVuhaNWPizJNtep.jpg"
-    },
-    {
-        "character": "Loki Laufeyson",
-        "actor": "Tom Hiddleston",
-        "series": "Marvel",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/mclHxMm8aPlCPKptP67257F5GPo.jpg"
-    },
-    {
-        "character": "Wade Wilson (Deadpool)",
+        "character": "Deadpool (Mercenário Tagarela)",
         "actor": "Ryan Reynolds",
-        "series": "Deadpool / Marvel",
+        "series": "Vingadores & Marvel",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/trzgptffGvAlAT6MEu01fz47cLW.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/tekExNqal2kcHp8BKiHX5jjxK9J.jpg"
     },
     {
-        "character": "Logan (Wolverine)",
+        "character": "Wolverine (Garras de Adamantium)",
         "actor": "Hugh Jackman",
-        "series": "X-Men / Marvel",
+        "series": "Vingadores & Marvel",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/oX6CpXmnXCHLyqsa4NEed1DZAKx.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/f0CtZbae9cXj8bkWdCHzUHx5lsR.jpg"
     },
     {
-        "character": "Bruce Wayne (Batman)",
+        "character": "Batman (O Cavaleiro das Trevas)",
         "actor": "Christian Bale",
-        "series": "Batman: O Cavaleiro das Trevas",
+        "series": "Batman & DC Comics",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/7Pxez9J8fuPd2Mn9kex13YALrCQ.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/4lj1ikfsSmMZNyfdi8R8Tv5tsgb.jpg"
     },
     {
-        "character": "Coringa (The Joker)",
+        "character": "Coringa / Joker (Heath Ledger)",
         "actor": "Heath Ledger",
-        "series": "O Cavaleiro das Trevas",
+        "series": "Batman & DC Comics",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/AdWKVqyWpkYSfKE5Gb2qn8JzHni.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/4lj1ikfsSmMZNyfdi8R8Tv5tsgb.jpg"
     },
     {
-        "character": "Arthur Fleck (Coringa)",
+        "character": "Coringa (Joaquin Phoenix)",
         "actor": "Joaquin Phoenix",
-        "series": "Coringa (Joker)",
+        "series": "Batman & DC Comics",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/u38k3hQBDwNX0VA22aQceDp9Iyv.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/xLxgVxFWvb9hhUyCDDXxRPPnFck.jpg"
     },
     {
         "character": "John Wick (Baba Yaga)",
         "actor": "Keanu Reeves",
-        "series": "John Wick",
+        "series": "Cinema & Clássicos",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/8RZLOyYGsoRe9p44q3xin9QkMHv.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/rXTqhpkpj6E0YilQ49PK1SSqLhm.jpg"
     },
     {
-        "character": "Capitão Jack Sparrow",
+        "character": "Capitão Jack Sparrow (Pérola Negra)",
         "actor": "Johnny Depp",
-        "series": "Piratas do Caribe",
+        "series": "Cinema & Clássicos",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/k2xt6EUxQDwYRKIyI4IBdZxfs8n.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/xsAlxvMCRzyreLxdZL1dOUSbonV.jpg"
     },
     {
-        "character": "Harry Potter",
+        "character": "Harry Potter (O Menino que Sobreviveu)",
         "actor": "Daniel Radcliffe",
         "series": "Harry Potter",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/uUFfo8RANo7tuckB6AZAnESne55.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/67FVFOTaeBUQnimhCWpUkDawDct.jpg"
     },
     {
-        "character": "Hermione Granger",
-        "actor": "Emma Watson",
-        "series": "Harry Potter",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/mf0OANvWYSzU1d8yggrhyw8IbIz.jpg"
-    },
-    {
-        "character": "Rony Weasley",
-        "actor": "Rupert Grint",
-        "series": "Harry Potter",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/q2KZZ0ltTEl7Sf8volNFV1JDEP4.jpg"
-    },
-    {
-        "character": "Lord Voldemort",
-        "actor": "Ralph Fiennes",
-        "series": "Harry Potter",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/tJr9GcmGNHhLVVEH3i7QYbj6hBi.jpg"
-    },
-    {
-        "character": "Severo Snape",
-        "actor": "Alan Rickman",
-        "series": "Harry Potter",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/7tADZs4ILE93oJ5pAh6mKQFEq2m.jpg"
-    },
-    {
-        "character": "Darth Vader (Anakin Skywalker)",
-        "actor": "Hayden Christensen",
+        "character": "Darth Vader (Lorde Sith)",
+        "actor": "Star Wars",
         "series": "Star Wars",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/RuwAecNK9VDeTrfw6LUE4q4rIt.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/nuF5yWtTJEEAd4Qa6cVkYz1XCST.jpg"
     },
     {
-        "character": "Obi-Wan Kenobi",
-        "actor": "Ewan McGregor",
-        "series": "Star Wars",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/aEmyadfRXTmmR7UW7OXsm5a6smS.jpg"
-    },
-    {
-        "character": "Luke Skywalker",
-        "actor": "Mark Hamill",
-        "series": "Star Wars",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/zMQ93JTLW8KxusKhOlHFZhih3YQ.jpg"
-    },
-    {
-        "character": "Han Solo",
-        "actor": "Harrison Ford",
-        "series": "Star Wars / Indiana Jones",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/pjBMJVPpcZK23Vt1nzr1zEBTWrP.jpg"
-    },
-    {
-        "character": "Neo (Thomas Anderson)",
-        "actor": "Keanu Reeves",
-        "series": "Matrix",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/8RZLOyYGsoRe9p44q3xin9QkMHv.jpg"
-    },
-    {
-        "character": "Oppenheimer",
+        "character": "J. Robert Oppenheimer (Bomba Atômica)",
         "actor": "Cillian Murphy",
-        "series": "Oppenheimer",
+        "series": "Cinema & Clássicos",
         "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/2lKs67r7FI4bPu0AXxMUJZxmUXn.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/1OsQJEoSXBjduuCvDOlRhoEUaHu.jpg"
     },
     {
-        "character": "Ethan Hunt",
-        "actor": "Tom Cruise",
-        "series": "Missão: Impossível",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/3mShHjSQR7NXOVbdTu5rT2Qd0MN.jpg"
-    },
-    {
-        "character": "Dom Cobb",
-        "actor": "Leonardo DiCaprio",
-        "series": "A Origem (Inception)",
-        "category": "Cinema",
-        "url": "https://image.tmdb.org/t/p/w200/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg"
-    },
-    {
-        "character": "Park Sae-royi",
+        "character": "Park Sae-royi (DanBam)",
         "actor": "Park Seo-jun",
-        "series": "Itaewon Class",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/k1ALgZkOApYt7PIUBkUitmknXQC.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/2tTMci6Hq99gkagpYe19RulNXRr.jpg"
     },
     {
-        "character": "Vincenzo Cassano",
+        "character": "Vincenzo Cassano (Consigliere)",
         "actor": "Song Joong-ki",
-        "series": "Vincenzo",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/kgjb5OppOVTh5tz3hhnfDVnTvDv.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/opMEH9JLmkYumUTJib321REvezr.jpg"
     },
     {
-        "character": "Yoon Se-ri",
-        "actor": "Son Ye-jin",
-        "series": "Pousando no Amor (Crash Landing on You)",
+        "character": "Capitão Ri & Yoon Se-ri",
+        "actor": "Hyun Bin & Son Ye-jin",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/i6fASFvO3mUceZJvipn4RiLHA44.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/sLBtmtaqrngZegQwbnL2fSzzTBJ.jpg"
     },
     {
-        "character": "Lee Su-ho",
+        "character": "Lee Su-ho (Colégio Saebom)",
         "actor": "Cha Eun-woo",
-        "series": "Beleza Verdadeira (True Beauty)",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/kZUO2s2ZsBRYZ8acu0wMzlGHpRS.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/kXMsz2dKK43ripZZPaahLdWEojB.jpg"
     },
     {
-        "character": "Jang Man-wol",
+        "character": "Jang Man-wol (Hotel de Fantasmas)",
         "actor": "IU (Lee Ji-eun)",
-        "series": "Hotel Del Luna",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/uNhKOO9lIAFXF11LM6gjCrX2CJz.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/uuQvLgr3xWuW5bb4LeR1jwa0G82.jpg"
     },
     {
-        "character": "Sa Hye-jun",
-        "actor": "Park Bo-gum",
-        "series": "Passarela de Sonhos (Record of Youth)",
+        "character": "Kim Shin (O Goblin & Ceifador)",
+        "actor": "Gong Yoo & Lee Dong-wook",
+        "series": "Doramas Coreanos",
         "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/iQHhzpJnxPAeZetNLJPr3gTs1rE.jpg"
-    },
-    {
-        "character": "Moon Gang-tae",
-        "actor": "Kim Soo-hyun",
-        "series": "Tudo Bem Não Ser Normal (It's Okay to Not Be Okay)",
-        "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/q24P4pmtWGhe08T7rTkoDc5EC1p.jpg"
-    },
-    {
-        "character": "Ko Moon-young",
-        "actor": "Seo Yea-ji",
-        "series": "Tudo Bem Não Ser Normal",
-        "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/a9moiE8WWuygU02m4KE3M2Nrrkp.jpg"
-    },
-    {
-        "character": "Kim Shin (Goblin)",
-        "actor": "Gong Yoo",
-        "series": "Goblin (The Lonely and Great God)",
-        "category": "Doramas",
-        "url": "https://image.tmdb.org/t/p/w200/ocGoFb6TrK3uWGXt4WnuibUG1vD.jpg"
-    },
-    {
-        "character": "Naruto Uzumaki",
-        "actor": "Masashi Kishimoto (Criador)",
-        "series": "Naruto Shippuden",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b17-phjcWCkRuIhu.png"
-    },
-    {
-        "character": "Sasuke Uchiha",
-        "actor": "Masashi Kishimoto (Criador)",
-        "series": "Naruto Shippuden",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b13-SISLEw1oAD7a.png"
-    },
-    {
-        "character": "Kakashi Hatake",
-        "actor": "Masashi Kishimoto (Criador)",
-        "series": "Naruto Shippuden",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b85-mkVBh2yjxjmx.png"
-    },
-    {
-        "character": "Itachi Uchiha",
-        "actor": "Masashi Kishimoto (Criador)",
-        "series": "Naruto Shippuden",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b14-9Kb1E5oel1ke.png"
-    },
-    {
-        "character": "Madara Uchiha",
-        "actor": "Masashi Kishimoto (Criador)",
-        "series": "Naruto Shippuden",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b53901-HnRKSoHMG5Vg.png"
-    },
-    {
-        "character": "Monkey D. Luffy",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40-MNypXsxSRb1R.png"
-    },
-    {
-        "character": "Roronoa Zoro",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b62-S7oAeA9WInjV.png"
-    },
-    {
-        "character": "Sanji Vinsmoke",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b305-6lisPmHtCnLT.png"
-    },
-    {
-        "character": "Trafalgar D. Water Law",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b13767-U604OJN9dxCn.jpg"
-    },
-    {
-        "character": "Portgas D. Ace",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2072-Lc6jEdsueJUK.jpg"
-    },
-    {
-        "character": "Shanks",
-        "actor": "Eiichiro Oda (Criador)",
-        "series": "One Piece",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b727-wUJx7M1z5xON.png"
-    },
-    {
-        "character": "Son Goku (Kakarotto)",
-        "actor": "Akira Toriyama (Criador)",
-        "series": "Dragon Ball Z / Super",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/246-wsRRr6z1kii8.png"
-    },
-    {
-        "character": "Vegeta (Príncipe dos Saiyajins)",
-        "actor": "Akira Toriyama (Criador)",
-        "series": "Dragon Ball Z / Super",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b913-NIFkKazWM8VO.png"
-    },
-    {
-        "character": "Gohan",
-        "actor": "Akira Toriyama (Criador)",
-        "series": "Dragon Ball Z / Super",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2093-kdFZhqcNSsqW.png"
-    },
-    {
-        "character": "Trunks do Futuro",
-        "actor": "Akira Toriyama (Criador)",
-        "series": "Dragon Ball Z",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b2707-YKWmn4q87oF8.png"
-    },
-    {
-        "character": "Nezuko Kamado",
-        "actor": "Koyoharu Gotouge (Criador)",
-        "series": "Demon Slayer (Kimetsu no Yaiba)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127518-NRlq1CQ1v1ro.png"
-    },
-    {
-        "character": "Zenitsu Agatsuma",
-        "actor": "Koyoharu Gotouge (Criador)",
-        "series": "Demon Slayer (Kimetsu no Yaiba)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b129131-FZrQ7lSlxmEr.png"
-    },
-    {
-        "character": "Inosuke Hashibira",
-        "actor": "Koyoharu Gotouge (Criador)",
-        "series": "Demon Slayer (Kimetsu no Yaiba)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/n129130-SJC0Kn1DU39E.jpg"
-    },
-    {
-        "character": "Kyojuro Rengoku",
-        "actor": "Koyoharu Gotouge (Criador)",
-        "series": "Demon Slayer (Kimetsu no Yaiba)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b129133-VlTPowwt68rJ.png"
-    },
-    {
-        "character": "Satoru Gojo",
-        "actor": "Gege Akutami (Criador)",
-        "series": "Jujutsu Kaisen",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127691-9zqh1xpIubn7.png"
-    },
-    {
-        "character": "Yuji Itadori",
-        "actor": "Gege Akutami (Criador)",
-        "series": "Jujutsu Kaisen",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127212-FVm2tD0erQ5B.png"
-    },
-    {
-        "character": "Megumi Fushiguro",
-        "actor": "Gege Akutami (Criador)",
-        "series": "Jujutsu Kaisen",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b126635-L0y3I92JSUkN.png"
-    },
-    {
-        "character": "Ryomen Sukuna",
-        "actor": "Gege Akutami (Criador)",
-        "series": "Jujutsu Kaisen",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b133701-rCQuDpHr3UZL.png"
-    },
-    {
-        "character": "Eren Yeager",
-        "actor": "Hajime Isayama (Criador)",
-        "series": "Attack on Titan (Shingeki no Kyojin)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40882-dsj7IP943WFF.jpg"
-    },
-    {
-        "character": "Levi Ackerman",
-        "actor": "Hajime Isayama (Criador)",
-        "series": "Attack on Titan (Shingeki no Kyojin)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b45627-CR68RyZmddGG.png"
-    },
-    {
-        "character": "Mikasa Ackerman",
-        "actor": "Hajime Isayama (Criador)",
-        "series": "Attack on Titan (Shingeki no Kyojin)",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40881-F3gr1PkreDvj.png"
-    },
-    {
-        "character": "Light Yagami (Kira)",
-        "actor": "Tsugumi Ohba (Criador)",
-        "series": "Death Note",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b80-26EhwSsSqQ50.png"
-    },
-    {
-        "character": "L Lawliet",
-        "actor": "Tsugumi Ohba (Criador)",
-        "series": "Death Note",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b71-1W4panC53vfs.png"
-    },
-    {
-        "character": "Ryuk",
-        "actor": "Tsugumi Ohba (Criador)",
-        "series": "Death Note",
-        "category": "Animes",
-        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b75-IkEpzO21LgFy.jpg"
+        "url": "https://image.tmdb.org/t/p/w300/uGj0VhydzfMiYXGdx0ps4pKpcN2.jpg"
     }
 ];
-
-
 
 
 
@@ -11797,6 +11572,7 @@ function initApp() {
         }
 
         
+        
         let avatarModalSearchQuery = '';
         let avatarModalSelectedCat = 'Todos';
 
@@ -11842,18 +11618,18 @@ function initApp() {
         }
 
         function renderAvatarGalleryModal() {
-            const grid = document.getElementById('avatar-modal-grid');
+            const body = document.getElementById('avatar-modal-body');
             const catsContainer = document.getElementById('avatar-modal-categories');
             const counter = document.getElementById('avatar-count-visible');
-            if (!grid) return;
+            if (!body) return;
 
             const categories = [
                 { id: 'Todos', label: '🔥 Todos' },
-                { id: 'Netflix', label: '🔴 Netflix' },
-                { id: 'Séries', label: '🎬 Séries' },
-                { id: 'Cinema', label: '🍿 Cinema & Heróis' },
-                { id: 'Animes', label: '🌸 Animes' },
-                { id: 'Doramas', label: '🇰🇷 Doramas' }
+                { id: 'Animes', label: '🌸 Animes & Animações' },
+                { id: 'Netflix', label: '🔴 Netflix Originals' },
+                { id: 'Séries', label: '🎬 Séries Famosas' },
+                { id: 'Cinema', label: '🍿 Cinema, Marvel & DC' },
+                { id: 'Doramas', label: '🇰🇷 Doramas Coreanos' }
             ];
 
             // Render categories
@@ -11870,13 +11646,13 @@ function initApp() {
 
             // Filter items
             const filtered = AVATAR_PRESETS.filter(item => {
-                // Category match
+                // Category filter
                 if (avatarModalSelectedCat !== 'Todos' && item.category !== avatarModalSelectedCat) {
                     return false;
                 }
-                // Search match (character, actor, series)
+                // Search filter (character, series, actor)
                 if (avatarModalSearchQuery) {
-                    const fullSearch = `${item.character || ''} ${item.actor || ''} ${item.series || ''}`.toLowerCase()
+                    const fullSearch = `${item.character || ''} ${item.series || ''} ${item.actor || ''}`.toLowerCase()
                         .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                     const cleanQuery = avatarModalSearchQuery.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                     return fullSearch.includes(cleanQuery);
@@ -11887,25 +11663,94 @@ function initApp() {
             if (counter) counter.textContent = filtered.length;
 
             if (filtered.length === 0) {
-                grid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                body.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
                         <div style="font-size: 42px; margin-bottom: 10px;">🔍</div>
                         <div style="font-size: 15px; font-weight: 800; color: #fff;">Nenhum personagem encontrado</div>
-                        <div style="font-size: 12px; margin-top: 4px;">Tente buscar por outro termo, ator ou série</div>
+                        <div style="font-size: 12px; margin-top: 4px;">Tente pesquisar por outro nome, anime ou série</div>
                     </div>
                 `;
                 return;
             }
 
-            grid.innerHTML = filtered.map(item => `
-                <div class="avatar-card-item" onclick="selectAvatarFromModal('${item.url.replace(/'/g, "\\'")}', '${(item.character || '').replace(/'/g, "\\'")}')" title="${item.character} (${item.series})">
-                    <div class="avatar-card-img-wrap">
-                        <img src="${item.url}" alt="${item.character}" loading="lazy" onerror="this.style.opacity='0.2'">
+            // Group by Series / Franchise
+            const grouped = {};
+            filtered.forEach(item => {
+                const sName = item.series || 'Outros';
+                if (!grouped[sName]) grouped[sName] = [];
+                grouped[sName].push(item);
+            });
+
+            // Series Icons Mapping
+            const seriesIcons = {
+                'High School DxD': '⚔️',
+                'Goblin Slayer': '🛡️',
+                'One Piece': '🏴‍☠️',
+                'Naruto Shippuden': '🍃',
+                'Dragon Ball': '🐉',
+                'Demon Slayer': '⚔️',
+                'Jujutsu Kaisen': '🧿',
+                'Attack on Titan': '⚔️',
+                'Death Note': '📓',
+                'Solo Leveling': '🗡️',
+                'One Punch Man': '👊',
+                'Chainsaw Man': '🪚',
+                'Spy x Family': '🕵️',
+                'Sword Art Online': '⚔️',
+                'Tokyo Ghoul': '☕',
+                'Re:Zero': '🍎',
+                'KonoSuba': '💥',
+                'Bleach': '🗡️',
+                'Fullmetal Alchemist': '🦾',
+                'Hunter x Hunter': '🎣',
+                'The Witcher': '🐺',
+                'Breaking Bad': '🧪',
+                'Peaky Blinders': '🧢',
+                'The Boys': '🩸',
+                'Stranger Things': '🧇',
+                'Wandinha (Wednesday)': '🖤',
+                'The Last of Us': '🎮',
+                'Game of Thrones': '🐉',
+                'Vikings': '🛡️',
+                'The Walking Dead': '🧟',
+                'Dexter': '💉',
+                'La Casa de Papel': '🎭',
+                'Round 6 (Squid Game)': '🔴',
+                'Lucifer': '😈',
+                'O Gambito da Rainha': '♟️',
+                'YOU (Você)': '🧢',
+                'Arcane & Cyberpunk': '⚡',
+                'Vingadores & Marvel': '🦸‍♂️',
+                'Batman & DC Comics': '🦇',
+                'Cinema & Clássicos': '🍿',
+                'Harry Potter': '⚡',
+                'Star Wars': '🌌',
+                'Doramas Coreanos': '🇰🇷'
+            };
+
+            body.innerHTML = Object.keys(grouped).map(sName => {
+                const items = grouped[sName];
+                const icon = seriesIcons[sName] || '🎬';
+                return `
+                    <div class="avatar-series-section">
+                        <div class="avatar-series-header">
+                            <span class="avatar-series-title">${icon} ${sName}</span>
+                            <span class="avatar-series-badge">${items.length} ${items.length === 1 ? 'personagem' : 'personagens'}</span>
+                        </div>
+                        <div class="avatar-modal-grid">
+                            ${items.map(item => `
+                                <div class="avatar-card-item" onclick="selectAvatarFromModal('${item.url.replace(/'/g, "\\'")}', '${(item.character || '').replace(/'/g, "\\'")}')" title="${item.character} (${item.series})">
+                                    <div class="avatar-card-img-wrap">
+                                        <img src="${item.url}" alt="${item.character}" loading="lazy" onerror="this.style.opacity='0.2'">
+                                    </div>
+                                    <div class="avatar-card-name">${item.character}</div>
+                                    <div class="avatar-card-sub">${item.series}</div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
-                    <div class="avatar-card-name">${item.character}</div>
-                    <div class="avatar-card-sub">${item.series || item.actor || ''}</div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function selectAvatarFromModal(url, charName) {
