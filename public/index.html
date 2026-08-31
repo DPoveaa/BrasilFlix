@@ -5689,21 +5689,60 @@
         }
 
         .settings-preset-gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-            gap: 10px;
             margin-top: 18px;
             padding: 16px;
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(0, 0, 0, 0.45);
             border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            max-height: 260px;
+        }
+
+        .settings-avatar-cats {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            scrollbar-width: thin;
+        }
+
+        .settings-cat-pill {
+            padding: 6px 13px;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.06);
+            color: #cbd5e1;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .settings-cat-pill:hover {
+            background: rgba(255, 255, 255, 0.14);
+            color: #fff;
+        }
+
+        .settings-cat-pill.active {
+            background: #e50914;
+            color: #fff;
+            border-color: #e50914;
+            box-shadow: 0 0 10px rgba(229, 9, 20, 0.4);
+        }
+
+        .settings-preset-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+            gap: 10px;
+            max-height: 290px;
             overflow-y: auto;
+            padding-right: 4px;
         }
 
         .settings-preset-avatar-btn {
-            width: 80px;
-            height: 80px;
+            width: 100%;
+            aspect-ratio: 1;
             border-radius: 10px;
             border: 2px solid transparent;
             padding: 0;
@@ -5715,15 +5754,17 @@
         }
 
         .settings-preset-avatar-btn:hover {
-            transform: scale(1.15);
-            border-color: #10b981;
-            box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+            transform: scale(1.08);
+            border-color: #e50914;
+            box-shadow: 0 0 12px rgba(229, 9, 20, 0.5);
+            z-index: 2;
         }
 
         .settings-preset-avatar-btn img {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
         }
 
         .settings-form-group {
@@ -10627,38 +10668,328 @@ function initApp() {
         let telegramLinkCheckInterval = null;
 
         const AVATAR_PRESETS = [
-            // 🔵 NETFLIX / Filmes e Séries Internacionais
-            { label: 'Eleven - Stranger Things', url: 'https://image.tmdb.org/t/p/w185/vT4AJN5QJMjVvIJIa8aPqQSEcHt.jpg' },
-            { label: 'Walter White - Breaking Bad', url: 'https://image.tmdb.org/t/p/w185/rGOPJPMQMaFbxnFnQBqgMRtPgbf.jpg' },
-            { label: 'Tony Stark - Vingadores', url: 'https://image.tmdb.org/t/p/w185/1YjdSym1jTG7xjHSI0yGGWEsw5i.jpg' },
-            { label: 'Daenerys - Game of Thrones', url: 'https://image.tmdb.org/t/p/w185/xuAIuYSmsUzKlUMBFGVZaWsY3DZ.jpg' },
-            { label: 'Jon Snow - Game of Thrones', url: 'https://image.tmdb.org/t/p/w185/drAbzyjOy2oAqIQSwQ8FNqaOa98.jpg' },
-            { label: 'Wednesday Addams', url: 'https://image.tmdb.org/t/p/w185/jeGtaMwGxPmQN5xM4ClnwPQcDMF.jpg' },
-            { label: 'Deadpool', url: 'https://image.tmdb.org/t/p/w185/fSRb7vyIP8rQpL0I47P3qUsEKX3.jpg' },
-            { label: 'Batman', url: 'https://image.tmdb.org/t/p/w185/ttVGYoFkN2bFJVR9n0yFNkMuvC1.jpg' },
-            // 🌸 ANIMES FAMOSOS
-            { label: 'Goku - Dragon Ball', url: 'https://image.tmdb.org/t/p/w185/xQHxe7gDgBOCkMD0O7TDWXEQNQS.jpg' },
-            { label: 'Naruto Uzumaki', url: 'https://image.tmdb.org/t/p/w185/neTCi3QBYSuZTd1HNbSVE7wEL8g.jpg' },
-            { label: 'Tanjiro - Demon Slayer', url: 'https://image.tmdb.org/t/p/w185/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg' },
-            { label: 'Levi - Attack on Titan', url: 'https://image.tmdb.org/t/p/w185/3I3qoKpDvFKnI9M2mGD7LbJANQr.jpg' },
-            { label: 'Luffy - One Piece', url: 'https://image.tmdb.org/t/p/w185/cezWGskPY5x7GaglTTRN4Fugfb8.jpg' },
-            { label: 'Zoro - One Piece', url: 'https://image.tmdb.org/t/p/w185/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
-            { label: 'Itadori - Jujutsu Kaisen', url: 'https://image.tmdb.org/t/p/w185/9m5n6FmJnCVyGdJw8Z3tFv1DK4.jpg' },
-            { label: 'Spike - Cowboy Bebop', url: 'https://image.tmdb.org/t/p/w185/rdNhp0dIEqFGJPFm79p3L7hC5Gz.jpg' },
-            // 🇰🇷 DORAMAS E SÉRIES COREANAS
-            { label: 'Seong Gi-hun - Round 6', url: 'https://image.tmdb.org/t/p/w185/dBo7VGT7VkGYLFkMliJYwEsFkLo.jpg' },
-            { label: 'Gu Jun-pyo - Boys Over Flowers', url: 'https://image.tmdb.org/t/p/w185/9lnR4CxC67OaO6gJAtMqsB8SLu5.jpg' },
-            { label: 'Kim Dok-ja - Omniscient Reader', url: 'https://image.tmdb.org/t/p/w185/pzIddUEMWhWzfvLI3TwxUG2wGoi.jpg' },
-            // 🎥 FILMES CLÁSSICOS E BLOCKBUSTERS
-            { label: 'Harry Potter', url: 'https://image.tmdb.org/t/p/w185/vMP0RnkZFbVb5oUXnm0YzBxKKhJ.jpg' },
-            { label: 'Hermione Granger', url: 'https://image.tmdb.org/t/p/w185/uVm6dGKBgVOOJEGFVS1rGSTxd0B.jpg' },
-            { label: 'Jack Sparrow', url: 'https://image.tmdb.org/t/p/w185/8mgIfHHdh9MChHFHCqpBkFD0Oxi.jpg' },
-            { label: 'John Wick', url: 'https://image.tmdb.org/t/p/w185/l9iqe5oRAbDFBqWv28qCExOFCfS.jpg' },
-            { label: 'Elsa - Frozen', url: 'https://image.tmdb.org/t/p/w185/iG1YeA2bGMJ4ELgVa3cELvGCDMx.jpg' },
-            { label: 'Darth Vader - Star Wars', url: 'https://image.tmdb.org/t/p/w185/2jvHi56QUKKVgmsPOIhCPBqaQN5.jpg' },
-            { label: 'Spider-Man', url: 'https://image.tmdb.org/t/p/w185/uJYYizSuA9Y3DCs0qS4qWvHfZg4.jpg' },
-            { label: 'Black Widow', url: 'https://image.tmdb.org/t/p/w185/6aoT0bRh25K4R37yiVDjOQbGPvo.jpg' },
-        ];
+    {
+        "label": "Eleven (Stranger Things)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/kHO7hdNEVuTnQ0OjjrxP1RcAa0e.jpg"
+    },
+    {
+        "label": "Wandinha Addams",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/cV4x7jNmsGLdKZn5I6xVF3Ltnmg.jpg"
+    },
+    {
+        "label": "Geralt de Rívia (The Witcher)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/kN3A5oLgtKYAxa9lAkpsIGYKYVo.jpg"
+    },
+    {
+        "label": "Seong Gi-hun (Round 6)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/lx8oiTXL9lIx78KOXlrlvNfoz43.jpg"
+    },
+    {
+        "label": "Professor (La Casa de Papel)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/2TGPhdpRC5wjdFEJqnLYiN5kbwg.jpg"
+    },
+    {
+        "label": "Tóquio (La Casa de Papel)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/cmH8Z459tw9YkR61QfxlCSlZw9P.jpg"
+    },
+    {
+        "label": "Lucifer Morningstar",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/zhjIyqpk5bsYgxsh5bSeS6VZtHm.jpg"
+    },
+    {
+        "label": "Beth Harmon (O Gambito da Rainha)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/qYNofOjlRke2MlJVihmJmEdQI4v.jpg"
+    },
+    {
+        "label": "Joe Goldberg (YOU)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/3ekfkoj3YmRlCtez4OOZoVPiO7a.jpg"
+    },
+    {
+        "label": "Otis Milburn (Sex Education)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/1IoQIesuvI9o1IpYZqdjBWvKhRf.jpg"
+    },
+    {
+        "label": "Maeve Wiley (Sex Education)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/9OZBcFSS3Yz0Oqr8mssbQa4suW8.jpg"
+    },
+    {
+        "label": "Emily Cooper (Emily em Paris)",
+        "category": "Netflix",
+        "url": "https://image.tmdb.org/t/p/w200/zhJISAc4qi7xiHMzHMzUTgZSIRH.jpg"
+    },
+    {
+        "label": "Walter White (Breaking Bad)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/npIIZJGSrcJIJ6yHdmbqO6Jzo5I.jpg"
+    },
+    {
+        "label": "Jesse Pinkman (Breaking Bad)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/8Ac9uuoYwZoYVAIJfRLzzLsGGJn.jpg"
+    },
+    {
+        "label": "Joel (The Last of Us)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/oKcMbVn0NJTNzQt0ClKKvVXkm60.jpg"
+    },
+    {
+        "label": "Ellie (The Last of Us)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/vDbgxc7RYawpB1wK7JDEj62j06H.jpg"
+    },
+    {
+        "label": "Thomas Shelby (Peaky Blinders)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/2lKs67r7FI4bPu0AXxMUJZxmUXn.jpg"
+    },
+    {
+        "label": "Arthur Shelby (Peaky Blinders)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/nds5rTBZvJ4rEsP4N6OaoEgQDkW.jpg"
+    },
+    {
+        "label": "Daenerys Targaryen (Game of Thrones)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/iFY6t7Ux9r70WB7Sp0TTVz6eGtm.jpg"
+    },
+    {
+        "label": "Jon Snow (Game of Thrones)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/iGXlJbExWwZmo9sUDsYuzf4Sv4y.jpg"
+    },
+    {
+        "label": "Tyrion Lannister (Game of Thrones)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/9CAd7wr8QZyIN0E7nm8v1B6WkGn.jpg"
+    },
+    {
+        "label": "Capitão Pátria (The Boys)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/xx3As5SWcE8vYOKZgtjDjqmT3jc.jpg"
+    },
+    {
+        "label": "Billy Butcher (The Boys)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/7Y96dAfg0HcFrcLjlD5eD9N0uj4.jpg"
+    },
+    {
+        "label": "Dean Winchester (Supernatural)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/xgOAHqDiqdZCF1BhfHaeLrd47ki.jpg"
+    },
+    {
+        "label": "Sam Winchester (Supernatural)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/dTV5ImKP5uIdFShiG3VFbbjLFWo.jpg"
+    },
+    {
+        "label": "Ragnar Lothbrok (Vikings)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/kuTSw3I2hqb5N1QqYrXPX8zd8EA.jpg"
+    },
+    {
+        "label": "Daryl Dixon (The Walking Dead)",
+        "category": "Séries",
+        "url": "https://image.tmdb.org/t/p/w200/ozHPdO5jAt7ozzdZUgyRAMNPSDW.jpg"
+    },
+    {
+        "label": "Tony Stark (Homem de Ferro)",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/5qHNjhtjMD4YWH3UP0rm4tKwxCL.jpg"
+    },
+    {
+        "label": "Capitão América",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/3bOGNsHlrswhyW79uvIHH1V43JI.jpg"
+    },
+    {
+        "label": "Thor",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/piQGdoIQOF3C1EI5cbYZLAW1gfj.jpg"
+    },
+    {
+        "label": "Viúva Negra",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/druW5adKddizHNSoPbI0q7Mvn0K.jpg"
+    },
+    {
+        "label": "Homem-Aranha",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/xKBAaPIa1c7tzZD3Y0MhBLv4hPE.jpg"
+    },
+    {
+        "label": "Coringa (The Dark Knight)",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/AdWKVqyWpkYSfKE5Gb2qn8JzHni.jpg"
+    },
+    {
+        "label": "Coringa (Joker)",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/u38k3hQBDwNX0VA22aQceDp9Iyv.jpg"
+    },
+    {
+        "label": "Batman",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/7Pxez9J8fuPd2Mn9kex13YALrCQ.jpg"
+    },
+    {
+        "label": "Deadpool",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/trzgptffGvAlAT6MEu01fz47cLW.jpg"
+    },
+    {
+        "label": "Wolverine",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/oX6CpXmnXCHLyqsa4NEed1DZAKx.jpg"
+    },
+    {
+        "label": "John Wick",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/8RZLOyYGsoRe9p44q3xin9QkMHv.jpg"
+    },
+    {
+        "label": "Jack Sparrow",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/k2xt6EUxQDwYRKIyI4IBdZxfs8n.jpg"
+    },
+    {
+        "label": "Harry Potter",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/uUFfo8RANo7tuckB6AZAnESne55.jpg"
+    },
+    {
+        "label": "Hermione Granger",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/mf0OANvWYSzU1d8yggrhyw8IbIz.jpg"
+    },
+    {
+        "label": "Rony Weasley",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/q2KZZ0ltTEl7Sf8volNFV1JDEP4.jpg"
+    },
+    {
+        "label": "Ethan Hunt (Missão Impossível)",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/3mShHjSQR7NXOVbdTu5rT2Qd0MN.jpg"
+    },
+    {
+        "label": "Dom Cobb (A Origem)",
+        "category": "Cinema",
+        "url": "https://image.tmdb.org/t/p/w200/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg"
+    },
+    {
+        "label": "Park Sae-royi (Itaewon Class)",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/k1ALgZkOApYt7PIUBkUitmknXQC.jpg"
+    },
+    {
+        "label": "Vincenzo Cassano",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/kgjb5OppOVTh5tz3hhnfDVnTvDv.jpg"
+    },
+    {
+        "label": "Yoon Se-ri (Pousando no Amor)",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/i6fASFvO3mUceZJvipn4RiLHA44.jpg"
+    },
+    {
+        "label": "Lee Su-ho (Beleza Verdadeira)",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/kZUO2s2ZsBRYZ8acu0wMzlGHpRS.jpg"
+    },
+    {
+        "label": "Jang Man-wol (Hotel Del Luna)",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/uNhKOO9lIAFXF11LM6gjCrX2CJz.jpg"
+    },
+    {
+        "label": "Sa Hye-jun (Passarela de Sonhos)",
+        "category": "Doramas",
+        "url": "https://image.tmdb.org/t/p/w200/iQHhzpJnxPAeZetNLJPr3gTs1rE.jpg"
+    },
+    {
+        "label": "Naruto Uzumaki",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b17-phjcWCkRuIhu.png"
+    },
+    {
+        "label": "Sasuke Uchiha",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b13-SISLEw1oAD7a.png"
+    },
+    {
+        "label": "Kakashi Hatake",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b85-mkVBh2yjxjmx.png"
+    },
+    {
+        "label": "Monkey D. Luffy (One Piece)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40-MNypXsxSRb1R.png"
+    },
+    {
+        "label": "Roronoa Zoro (One Piece)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b62-S7oAeA9WInjV.png"
+    },
+    {
+        "label": "Goku (Dragon Ball)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/246-wsRRr6z1kii8.png"
+    },
+    {
+        "label": "Vegeta (Dragon Ball)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b913-NIFkKazWM8VO.png"
+    },
+    {
+        "label": "Nezuko (Demon Slayer)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127518-NRlq1CQ1v1ro.png"
+    },
+    {
+        "label": "Satoru Gojo (Jujutsu Kaisen)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b127691-9zqh1xpIubn7.png"
+    },
+    {
+        "label": "Eren (Attack on Titan)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b40882-dsj7IP943WFF.jpg"
+    },
+    {
+        "label": "Light (Death Note)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b80-26EhwSsSqQ50.png"
+    },
+    {
+        "label": "L (Death Note)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b71-1W4panC53vfs.png"
+    },
+    {
+        "label": "Killua (Hunter x Hunter)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b27-Z5O02kQUydpT.jpg"
+    },
+    {
+        "label": "Saitama (One Punch Man)",
+        "category": "Animes",
+        "url": "https://s4.anilist.co/file/anilistcdn/character/large/b73935-ON5d0mAcrItd.jpg"
+    }
+];
+
 
 
         function openSettingsTab(section = 'profile') {
@@ -10789,23 +11120,60 @@ function initApp() {
             }
         }
 
+        let currentAvatarGalleryCat = 'Todos';
+
         function toggleAvatarPresetGallery() {
             const gallery = document.getElementById('settings-preset-gallery');
             if (!gallery) return;
 
             if (gallery.style.display === 'none' || !gallery.style.display) {
-                gallery.innerHTML = AVATAR_PRESETS.map((preset) => {
-                    const url = preset.url || preset;
-                    const label = preset.label || 'Avatar';
-                    return `<button type="button" class="settings-preset-avatar-btn" onclick="selectAvatarPreset('${url}')" title="${label}">
-                        <img src="${url}" alt="${label}" loading="lazy" onerror="this.style.opacity='0.3'">
-                        <span style="position:absolute;bottom:0;left:0;right:0;font-size:9px;line-height:1.2;background:rgba(0,0,0,0.7);color:#fff;padding:3px 4px;text-align:center;border-radius:0 0 8px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${label}</span>
-                    </button>`;
-                }).join('');
-                gallery.style.display = 'grid';
+                gallery.style.display = 'block';
+                renderAvatarPresetGallery();
             } else {
                 gallery.style.display = 'none';
             }
+        }
+
+        function filterAvatarGallery(cat) {
+            currentAvatarGalleryCat = cat;
+            renderAvatarPresetGallery();
+        }
+
+        function renderAvatarPresetGallery() {
+            const gallery = document.getElementById('settings-preset-gallery');
+            if (!gallery) return;
+
+            const categories = ['Todos', 'Netflix', 'Séries', 'Cinema', 'Animes', 'Doramas'];
+            const catIcons = {
+                'Todos': '🔥 Todos',
+                'Netflix': '🔴 Netflix',
+                'Séries': '🎬 Séries',
+                'Cinema': '🍿 Cinema',
+                'Animes': '🌸 Animes',
+                'Doramas': '🇰🇷 Doramas'
+            };
+
+            const filtered = currentAvatarGalleryCat === 'Todos'
+                ? AVATAR_PRESETS
+                : AVATAR_PRESETS.filter(a => a.category === currentAvatarGalleryCat);
+
+            gallery.innerHTML = `
+                <div class="settings-avatar-cats">
+                    ${categories.map(cat => `
+                        <button type="button" class="settings-cat-pill ${cat === currentAvatarGalleryCat ? 'active' : ''}" onclick="filterAvatarGallery('${cat}')">
+                            ${catIcons[cat] || cat}
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="settings-preset-grid">
+                    ${filtered.map(preset => `
+                        <button type="button" class="settings-preset-avatar-btn" onclick="selectAvatarPreset('${preset.url}')" title="${preset.label}">
+                            <img src="${preset.url}" alt="${preset.label}" loading="lazy" onerror="this.style.opacity='0.2'">
+                            <span style="position:absolute;bottom:0;left:0;right:0;font-size:9px;line-height:1.2;background:rgba(0,0,0,0.85);color:#fff;padding:3px 4px;text-align:center;border-radius:0 0 8px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${preset.label}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            `;
         }
 
         function selectAvatarPreset(url) {
