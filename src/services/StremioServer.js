@@ -21,7 +21,7 @@ class StremioServer {
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
         this.pedidosManager = pedidosManager;
-        this.tmdbService = new TMDBService();
+        this.tmdbService = TMDBService;
         this.progressManager = new ProgressManager();
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
         this.port = port;

@@ -1673,19 +1673,36 @@ class QueueManager extends EventEmitter {
             try {
                 videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
 
-                // Verificação de Duração Mínima Absoluta e Comparativa com TMDB:
-                // Filmes: Mínimo 45 minutos (2700s) ou 60% da duração esperada do TMDB (o que for maior).
-                // Mini-Séries Chinesas / Microdramas: Mínimo 45s (episódios curtos de 1 a 5 min).
-                // Séries/Doramas Normais: Mínimo 12 minutos (720s) ou 40% da duração esperada do episódio (curtas/animes <= 15min: 180s).
-                const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (effectiveExpectedMin || 0) <= 10);
+                // Verificação de Duração Mínima Inteligente e Anti-Falsos-Positivos:
+                // Filmes: Qualquer vídeo >= 65 minutos (3900s) é garantidamente um longa-metragem completo e nunca deve ser descartado por divergência de minissérie/edição estendida no TMDB.
+                // Apenas descartar como corte/sample se o filme for < 45 minutos (2700s) ou < 50% de um filme curto (< 65min).
+                // Mini-Séries Chinesas / Microdramas: Mínimo 40s (episódios curtos de 1 a 5 min).
+                // Séries/Doramas Normais: Mínimo 10 minutos (600s) ou 35% da duração esperada (animes curtos <= 15min: 180s).
+                const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (tmdbExpectedDurationMin || 0) <= 10);
                 const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
                 const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
-                const minRatio = isMicro ? 0.30 : (job.type === 'serie' ? 0.40 : 0.60);
-                const minAcceptableSec = Math.floor(effectiveExpectedMin * 60 * minRatio);
-                const absoluteMinSec = isMicro ? 45 : ((job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : (job.type === 'serie' ? 720 : 2700));
-                const finalMinSec = isMicro 
-                    ? 45 
-                    : ((job.type === 'serie' && effectiveExpectedMin <= 15) ? 180 : Math.max(minAcceptableSec, absoluteMinSec));
+
+                let finalMinSec = 2700; // 45 min padrão para filmes
+                if (isMicro) {
+                    finalMinSec = 40;
+                } else if (job.type === 'serie') {
+                    if (effectiveExpectedMin <= 15) {
+                        finalMinSec = 180; // 3 min para animes curtos
+                    } else {
+                        finalMinSec = Math.min(600, Math.max(300, Math.floor(effectiveExpectedMin * 60 * 0.35)));
+                    }
+                } else {
+                    // Para FILMES:
+                    if (videoInfo.duration >= 3900) {
+                        // Se tem pelo menos 65 minutos (ex: The Odyssey com 86min), é um filme completo!
+                        finalMinSec = 3900;
+                    } else if (effectiveExpectedMin <= 110) {
+                        finalMinSec = Math.max(2400, Math.floor(effectiveExpectedMin * 60 * 0.45));
+                    } else {
+                        // Se o TMDB disser que tem 172 min (minissérie), mas o vídeo tem 65+ min, aceita. Caso contrário, exige pelo menos 45 min.
+                        finalMinSec = 2700;
+                    }
+                }
 
                 if (videoInfo.duration && videoInfo.duration < finalMinSec) {
                     const durAtualMin = (videoInfo.duration / 60).toFixed(1);
