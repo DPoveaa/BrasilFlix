@@ -78,6 +78,36 @@ class CatalogoManager {
         }
     }
 
+    buscarItemExato(nome, tipo = null) {
+        if (!nome || typeof nome !== 'string') return null;
+        const norm = (s) => (s || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const target = norm(nome);
+
+        if (!tipo || tipo === 'filme') {
+            const filme = (this.catalogo?.filmes || []).find(f => norm(f.nome) === target || norm(f.nomeOriginal) === target);
+            if (filme) return filme;
+        }
+
+        if (!tipo || tipo === 'serie') {
+            const serie = (this.catalogo?.series || []).find(s => norm(s.nome) === target || norm(s.nomeOriginal) === target);
+            if (serie) return serie;
+        }
+
+        return null;
+    }
+
+    buscarSeriePorTmdb(tmdbId) {
+        if (!tmdbId) return null;
+        const targetId = Number(tmdbId);
+        return (this.catalogo?.series || []).find(s => Number(s.tmdbId) === targetId || Number(s.tmdb_id) === targetId) || null;
+    }
+
+    buscarFilmePorTmdb(tmdbId) {
+        if (!tmdbId) return null;
+        const targetId = Number(tmdbId);
+        return (this.catalogo?.filmes || []).find(f => Number(f.tmdbId) === targetId || Number(f.tmdb_id) === targetId) || null;
+    }
+
     /**
      * Retorna o estado de verificação atual de um messageId:
      * - 'VERIFIED_PLAYABLE': Mídia confirmada e reproduzível no Telegram
