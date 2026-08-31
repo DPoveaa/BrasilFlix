@@ -5945,7 +5945,189 @@
         .settings-review-item:last-child {
             margin-bottom: 0;
         }
-</style>
+
+        /* 🍿 MODAL DE PEDIR FILMES & SÉRIES COM TMDB AUTOCOMPLETE */
+        .req-media-modal-box {
+            background: #0d1322;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 20px;
+            max-width: 540px;
+            width: 94%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 24px;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 40px rgba(229, 9, 20, 0.15);
+            animation: modalFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+        }
+
+        .tmdb-autocomplete-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        .tmdb-autocomplete-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.8);
+            display: none;
+        }
+
+        .tmdb-autocomplete-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            cursor: pointer;
+            transition: background 0.18s ease;
+        }
+
+        .tmdb-autocomplete-item:hover {
+            background: rgba(229, 9, 20, 0.18);
+        }
+
+        .tmdb-autocomplete-item img {
+            width: 38px;
+            height: 52px;
+            object-fit: cover;
+            border-radius: 6px;
+            flex-shrink: 0;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .tmdb-item-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1.2;
+        }
+
+        .tmdb-item-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .req-selected-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(229, 9, 20, 0.1);
+            border: 1px solid rgba(229, 9, 20, 0.35);
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+        }
+
+        .req-selected-card img {
+            width: 44px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+
+        /* 💬 TICKET SYSTEM & ADMIN CARDS */
+        .ticket-image-preview-wrap {
+            position: relative;
+            display: inline-block;
+            margin-top: 8px;
+        }
+
+        .ticket-image-preview-wrap img {
+            max-width: 100%;
+            max-height: 140px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.15);
+            object-fit: contain;
+            background: rgba(0,0,0,0.4);
+        }
+
+        .ticket-remove-img-btn {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #ef4444;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+
+        .admin-ticket-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .admin-ticket-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .admin-ticket-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .admin-ticket-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #fff;
+            margin: 0 0 4px 0;
+        }
+
+        .admin-ticket-meta {
+            font-size: 11.5px;
+            color: var(--text-muted);
+        }
+
+        .admin-ticket-body {
+            font-size: 13px;
+            color: #e2e8f0;
+            line-height: 1.5;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+        }
+
+        .admin-ticket-response-box {
+            background: rgba(16, 185, 129, 0.08);
+            border-left: 3px solid #10b981;
+            padding: 8px 12px;
+            border-radius: 0 8px 8px 0;
+            font-size: 12px;
+            color: #34d399;
+            margin-top: 8px;
+        }
+
+    </style>
 </head>
 <body>
 
@@ -6962,8 +7144,8 @@
                     <div class="settings-card">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 10px;">
                             <h3 class="settings-card-title" style="margin: 0;"><span>📋</span> Meus Pedidos de Filmes & Séries</h3>
-                            <button type="button" class="btn-modal btn-modal-primary" onclick="openFeedbackModal()" style="font-size: 12px; padding: 6px 14px; width: auto;">
-                                ➕ Fazer Novo Pedido
+                            <button type="button" class="btn-modal btn-modal-primary" onclick="openRequestMediaModal()" style="font-size: 12px; padding: 6px 14px; width: auto;">
+                                🍿 Fazer Pedido de Filme/Série
                             </button>
                         </div>
                         <div id="settings-requests-list" class="settings-requests-list">
@@ -7057,6 +7239,9 @@
                     </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-requests" onclick="switchAdminSubTab('requests')">
                         🍿 Pedidos de Clientes
+                    </button>
+                    <button class="admin-sub-btn" id="admin-sub-btn-tickets" onclick="switchAdminSubTab('tickets')">
+                        💬 Tickets de Suporte
                     </button>
                     <button class="admin-sub-btn" id="admin-sub-btn-catalog" onclick="switchAdminSubTab('catalog')">
                         🎬 Gerenciar Catálogo
@@ -7264,6 +7449,25 @@
                 </div>
 
                 <!-- SUB-TAB 4: PEDIDOS DE CLIENTES -->
+                
+                <!-- SUB-TAB 4.5: TICKETS DE SUPORTE DOS USUÁRIOS -->
+                <div id="admin-subtab-tickets" class="admin-subtab-content" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 800; color: #fff; margin: 0;">💬 Tickets & Chamados de Ajuda</h3>
+                            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">Leia e responda às dúvidas, erros e solicitações enviadas pelos usuários</p>
+                        </div>
+                        <button class="btn-action" onclick="loadAdminTickets()">
+                            🔄 Atualizar Tickets
+                        </button>
+                    </div>
+
+                    <div id="admin-tickets-container">
+                        <div style="text-align: center; padding: 30px; color: var(--text-muted);">Carregando tickets...</div>
+                    </div>
+                </div>
+
+
                 <div id="admin-subtab-requests" class="admin-subtab-content" style="display: none;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
                         <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🍿 Pedidos Solicitados pelos Usuários</h3>
@@ -10196,10 +10400,17 @@ function initApp() {
                                     <span>Minha Lista (${(userFavorites || []).length} salvos)</span>
                                 </div>
 
-                                <div class="profile-menu-item" onclick="openFeedbackModal(); closeProfileDropdown();">
-                                    <span>💬</span>
-                                    <span>Pedir Filme/Série ou Sugestão</span>
+                                
+                                <div class="profile-menu-item" onclick="openRequestMediaModal(); closeProfileDropdown();" style="background: rgba(229, 9, 20, 0.08); border-color: rgba(229, 9, 20, 0.25); color: #fca5a5; font-weight: 800;">
+                                    <span>🍿</span>
+                                    <span>Pedir Filme ou Série</span>
                                 </div>
+
+                                <div class="profile-menu-item" onclick="openSupportTicketModal(); closeProfileDropdown();">
+                                    <span>💬</span>
+                                    <span>Central de Ajuda & Suporte</span>
+                                </div>
+
 
                                 <div class="profile-menu-item logout-item" onclick="handleUserLogout(); closeProfileDropdown();" style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
                                     <span>🚪</span>
@@ -15828,6 +16039,7 @@ function initApp() {
             else if (subTabId === 'settings') loadAdminSettings();
             else if (subTabId === 'subs') { loadAdminSubs(); loadAdminTokens(); }
             else if (subTabId === 'requests') loadAdminRequests();
+            else if (subTabId === 'tickets') loadAdminTickets();
             else if (subTabId === 'catalog') loadAdminCatalog();
 
         }
@@ -17776,6 +17988,775 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 showToast(err.message || 'Erro ao restaurar.', 'error');
             }
         }
+    
+        /* ═══════════════════════════════════════════════════════════════════════
+           🍿 SISTEMA 1: PEDIDOS DE FILMES & SÉRIES COM BUSCA TMDB EM TEMPO REAL
+           ═══════════════════════════════════════════════════════════════════════ */
+        
+        let tmdbSearchDebounceTimer = null;
+        let selectedTMDBData = null;
+
+        function openRequestMediaModal(prefillTitle = '', prefillType = 'serie') {
+            const modal = document.getElementById('request-media-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+
+            const input = document.getElementById('req-media-input');
+            const typeSelect = document.getElementById('req-media-type');
+            if (typeSelect && prefillType) typeSelect.value = prefillType;
+
+            clearSelectedTMDB();
+
+            if (input) {
+                input.value = prefillTitle || '';
+                setTimeout(() => input.focus(), 100);
+                if (prefillTitle) handleTMDBAutocomplete(prefillTitle);
+            }
+        }
+
+        function closeRequestMediaModal(e) {
+            if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-close')) return;
+            const modal = document.getElementById('request-media-modal');
+            if (modal) modal.style.display = 'none';
+            const dropdown = document.getElementById('req-tmdb-dropdown');
+            if (dropdown) dropdown.style.display = 'none';
+        }
+
+        function handleTMDBAutocomplete(query) {
+            const dropdown = document.getElementById('req-tmdb-dropdown');
+            if (!dropdown) return;
+
+            const q = (query || '').trim();
+            if (q.length < 2) {
+                dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
+                return;
+            }
+
+            clearTimeout(tmdbSearchDebounceTimer);
+            tmdbSearchDebounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch('/api/tmdb/search-all?query=' + encodeURIComponent(q));
+                    const data = await res.json();
+                    const results = data.results || [];
+
+                    if (results.length === 0) {
+                        dropdown.innerHTML = `
+                            <div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px;">
+                                Nenhuma sugestão encontrada no TMDB.<br>
+                                <span style="color: #cbd5e1; font-weight: 700;">Você pode enviar seu pedido como texto livre normalmente!</span>
+                            </div>
+                        `;
+                        dropdown.style.display = 'block';
+                        return;
+                    }
+
+                    dropdown.innerHTML = results.map(item => {
+                        const posterUrl = item.poster || '/assets/no-poster.png';
+                        const typeTag = item.tipo === 'serie' ? '📺 Série' : '🎬 Filme';
+                        const yearStr = item.ano ? `(${item.ano})` : '';
+                        const safeTitle = (item.nome || '').replace(/'/g, "\\'");
+                        const safeOrig = (item.nomeOriginal || '').replace(/'/g, "\\'");
+                        const safePoster = (item.poster || '').replace(/'/g, "\\'");
+
+                        return `
+                            <div class="tmdb-autocomplete-item" onclick="selectTMDBItem('${item.tmdbId}', '${safeTitle}', '${item.ano || ''}', '${safePoster}', '${item.tipo || 'filme'}', '${safeOrig}')">
+                                <img src="${posterUrl}" alt="${item.nome}" onerror="this.src='/assets/no-poster.png'">
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="tmdb-item-title">${item.nome} ${yearStr}</div>
+                                    <div class="tmdb-item-meta">${typeTag} ${item.nota ? '• ⭐ ' + Number(item.nota).toFixed(1) : ''} ${item.nomeOriginal && item.nomeOriginal !== item.nome ? '• ' + item.nomeOriginal : ''}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+
+                    dropdown.style.display = 'block';
+                } catch (e) {
+                    dropdown.style.display = 'none';
+                }
+            }, 250);
+        }
+
+        function selectTMDBItem(tmdbId, title, year, poster, type, originalTitle) {
+            selectedTMDBData = { tmdbId, title, year, poster, type, originalTitle };
+
+            const dropdown = document.getElementById('req-tmdb-dropdown');
+            if (dropdown) dropdown.style.display = 'none';
+
+            const input = document.getElementById('req-media-input');
+            if (input) input.value = title;
+
+            const preview = document.getElementById('req-selected-preview');
+            const selPoster = document.getElementById('req-sel-poster');
+            const selTitle = document.getElementById('req-sel-title');
+            const selMeta = document.getElementById('req-sel-meta');
+            const selType = document.getElementById('req-sel-type');
+
+            if (preview && selPoster && selTitle && selMeta && selType) {
+                selPoster.src = poster || '/assets/no-poster.png';
+                selTitle.textContent = title;
+                selMeta.textContent = [year ? 'Ano: ' + year : '', originalTitle ? 'Original: ' + originalTitle : ''].filter(Boolean).join(' • ');
+                selType.textContent = type === 'serie' ? '📺 Série de TV' : '🎬 Filme';
+                preview.style.display = 'block';
+            }
+
+            const typeSelect = document.getElementById('req-media-type');
+            if (typeSelect) typeSelect.value = type === 'tv' || type === 'serie' ? 'serie' : 'filme';
+
+            // Hidden fields
+            document.getElementById('req-hidden-tmdb-id').value = tmdbId || '';
+            document.getElementById('req-hidden-poster').value = poster || '';
+            document.getElementById('req-hidden-year').value = year || '';
+            document.getElementById('req-hidden-formatted-title').value = title || '';
+        }
+
+        function clearSelectedTMDB() {
+            selectedTMDBData = null;
+            const preview = document.getElementById('req-selected-preview');
+            if (preview) preview.style.display = 'none';
+
+            document.getElementById('req-hidden-tmdb-id').value = '';
+            document.getElementById('req-hidden-poster').value = '';
+            document.getElementById('req-hidden-year').value = '';
+            document.getElementById('req-hidden-formatted-title').value = '';
+        }
+
+        async function handleRequestMediaSubmit(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-submit-req-media');
+            const inputName = document.getElementById('req-media-input').value.trim();
+            const type = document.getElementById('req-media-type').value;
+            const season = document.getElementById('req-media-season').value.trim();
+            const audio = document.getElementById('req-media-audio').value;
+            const notes = document.getElementById('req-media-notes').value.trim();
+
+            const tmdbId = document.getElementById('req-hidden-tmdb-id').value;
+            const poster = document.getElementById('req-hidden-poster').value;
+            const year = document.getElementById('req-hidden-year').value;
+
+            if (!inputName) {
+                showToast('Informe o nome do filme ou série.', 'warning');
+                return;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Enviando...';
+            }
+
+            try {
+                const res = await fetch('/api/user/pedidos/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(userAuthToken ? { 'Authorization': 'Bearer ' + userAuthToken } : {})
+                    },
+                    body: JSON.stringify({
+                        nome: inputName,
+                        tipo: type,
+                        temporada: season,
+                        idioma: audio,
+                        tmdb_id: tmdbId ? Number(tmdbId) : null,
+                        poster_url: poster,
+                        ano: year,
+                        detalhes: notes
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao enviar pedido');
+
+                showToast(`🍿 Pedido de "${inputName}" registrado com sucesso!`, 'success');
+                closeRequestMediaModal();
+
+                // Recarrega lista na aba de configurações se estiver aberta
+                if (typeof loadUserRequests === 'function' && userAuthToken) {
+                    loadUserRequests();
+                }
+            } catch (err) {
+                showToast(err.message || 'Erro ao enviar pedido.', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = '🚀 Enviar Pedido ao Catálogo';
+                }
+            }
+        }
+
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           💬 SISTEMA 2: CENTRAL DE AJUDA & SUPORTE / TICKETS (SEM CATEGORIAS)
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        let currentTicketAttachedImageUrl = '';
+
+        function openSupportTicketModal(prefillTitle = '') {
+            const modal = document.getElementById('support-ticket-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+
+            const titleInput = document.getElementById('ticket-title-input');
+            const msgInput = document.getElementById('ticket-msg-input');
+            const contactInput = document.getElementById('ticket-contact-input');
+
+            if (titleInput) titleInput.value = prefillTitle || '';
+            if (msgInput) msgInput.value = '';
+            if (contactInput && currentUser) {
+                contactInput.value = currentUser.email || (currentUser.username ? '@' + currentUser.username : '');
+            }
+
+            clearTicketImage();
+            setTimeout(() => {
+                if (titleInput) titleInput.focus();
+            }, 100);
+        }
+
+        function closeSupportTicketModal(e) {
+            if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-close')) return;
+            const modal = document.getElementById('support-ticket-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function previewTicketImageUrl(url) {
+            currentTicketAttachedImageUrl = (url || '').trim();
+            const box = document.getElementById('ticket-image-preview-box');
+            const img = document.getElementById('ticket-preview-img');
+            if (box && img) {
+                if (currentTicketAttachedImageUrl) {
+                    img.src = currentTicketAttachedImageUrl;
+                    box.style.display = 'inline-block';
+                } else {
+                    box.style.display = 'none';
+                }
+            }
+        }
+
+        async function handleTicketImageUpload(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('Imagem muito grande. Máximo 5MB.', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                showToast('Carregando imagem...', 'info');
+                const res = await fetch('/api/user/ticket-image-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.success && data.url) {
+                    previewTicketImageUrl(data.url);
+                    const urlInput = document.getElementById('ticket-img-url-input');
+                    if (urlInput) urlInput.value = data.url;
+                    showToast('Print anexado com sucesso!', 'success');
+                } else {
+                    showToast('Erro ao subir imagem.', 'error');
+                }
+            } catch (e) {
+                showToast('Erro ao enviar print.', 'error');
+            }
+        }
+
+        function clearTicketImage() {
+            currentTicketAttachedImageUrl = '';
+            const box = document.getElementById('ticket-image-preview-box');
+            const urlInput = document.getElementById('ticket-img-url-input');
+            const fileInput = document.getElementById('ticket-file-input');
+            if (box) box.style.display = 'none';
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+        }
+
+        async function handleSupportTicketSubmit(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-submit-support-ticket');
+            const title = document.getElementById('ticket-title-input').value.trim();
+            const msg = document.getElementById('ticket-msg-input').value.trim();
+            const contact = document.getElementById('ticket-contact-input').value.trim();
+            const imageUrl = currentTicketAttachedImageUrl || document.getElementById('ticket-img-url-input')?.value.trim() || '';
+
+            if (!title || !msg) {
+                showToast('Preencha o título e a mensagem do chamado.', 'warning');
+                return;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Enviando chamado...';
+            }
+
+            try {
+                const res = await fetch('/api/user/tickets/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(userAuthToken ? { 'Authorization': 'Bearer ' + userAuthToken } : {})
+                    },
+                    body: JSON.stringify({
+                        titulo: title,
+                        mensagem: msg,
+                        imagem_url: imageUrl,
+                        contato: contact
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao enviar chamado');
+
+                showToast('💬 Chamado de suporte enviado com sucesso! Responderemos em breve.', 'success');
+                closeSupportTicketModal();
+            } catch (err) {
+                showToast(err.message || 'Erro ao abrir ticket de suporte.', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = '📨 Enviar Chamado de Suporte';
+                }
+            }
+        }
+
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           📋 LISTAGEM APRIMORADA: MEUS PEDIDOS (USUÁRIO) & ADMIN TICKETS
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        async function loadUserRequests() {
+            const listEl = document.getElementById('settings-requests-list');
+            if (!listEl || !userAuthToken) return;
+
+            listEl.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando pedidos...</div>';
+
+            try {
+                const res = await fetch('/api/user/requests', {
+                    headers: { 'Authorization': `Bearer ${userAuthToken}` }
+                });
+                const data = await res.json();
+                const requests = data.requests || [];
+
+                const badge = document.getElementById('settings-requests-badge');
+                if (badge) badge.innerText = requests.length;
+
+                if (requests.length === 0) {
+                    listEl.innerHTML = `
+                        <div style="text-align: center; padding: 32px 16px; color: var(--text-muted);">
+                            <div style="font-size: 36px; margin-bottom: 8px;">🍿</div>
+                            <div style="font-weight: 800; color: #fff; font-size: 15px;">Você ainda não fez nenhum pedido de filme ou série.</div>
+                            <div style="font-size: 12px; margin-top: 4px;">Clique em "🍿 Fazer Pedido de Filme/Série" para solicitar qualquer título ao catálogo.</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                listEl.innerHTML = requests.map(req => {
+                    const status = req.status || (req.processado ? 'adicionado' : 'pendente');
+                    let statusLabel = '⏳ Pendente';
+                    let statusColor = '#f59e0b';
+                    let statusBg = 'rgba(245, 158, 11, 0.15)';
+
+                    if (status === 'adicionado' || req.processado) {
+                        statusLabel = '✓ Adicionado ao Catálogo';
+                        statusColor = '#34d399';
+                        statusBg = 'rgba(52, 211, 153, 0.15)';
+                    } else if (status === 'na_fila') {
+                        statusLabel = '🚀 Na Fila de Download';
+                        statusColor = '#60a5fa';
+                        statusBg = 'rgba(96, 165, 250, 0.15)';
+                    } else if (status === 'recusado') {
+                        statusLabel = '✕ Não Encontrado / Recusado';
+                        statusColor = '#f87171';
+                        statusBg = 'rgba(248, 113, 113, 0.15)';
+                    }
+
+                    const dateStr = req.created_at ? new Date(req.created_at).toLocaleDateString('pt-BR') : '';
+                    const posterHtml = req.poster_url 
+                        ? `<img src="${req.poster_url}" alt="${req.nome}" style="width: 44px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">`
+                        : `<div style="width: 44px; height: 60px; border-radius: 6px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0;">${req.tipo === 'serie' ? '📺' : '🎬'}</div>`;
+
+                    return `
+                        <div class="settings-request-row" style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); margin-bottom: 10px; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                                ${posterHtml}
+                                <div style="min-width: 0;">
+                                    <div style="font-size: 14.5px; font-weight: 800; color: #ffffff; line-height: 1.2;">${req.nome} ${req.ano ? '(' + req.ano + ')' : ''}</div>
+                                    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 3px;">
+                                        ${req.tipo === 'serie' ? '📺 Série' : '🎬 Filme'} ${req.temporada ? '• ' + req.temporada : ''} ${req.idioma ? '• ' + req.idioma : ''}
+                                    </div>
+                                    <div style="font-size: 10.5px; color: rgba(255,255,255,0.4); margin-top: 2px;">Solicitado em ${dateStr}</div>
+                                </div>
+                            </div>
+                            <span style="font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 99px; background: ${statusBg}; color: ${statusColor}; white-space: nowrap;">
+                                ${statusLabel}
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 20px; color: #f87171;">Erro ao carregar lista de pedidos.</div>';
+            }
+        }
+
+        async function loadAdminRequests() {
+            if (!adminToken) return;
+            const tbody = document.getElementById('admin-requests-tbody');
+            if (!tbody) return;
+
+            try {
+                const res = await fetch('/api/admin/pedidos', { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const list = data.pedidos || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum pedido de usuário registrado.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.slice(-80).reverse().map(p => {
+                    const status = p.status || (p.processado ? 'adicionado' : 'pendente');
+                    const isProc = status === 'adicionado' || p.processado;
+                    const dataStr = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+
+                    const posterImg = p.posterUrl 
+                        ? `<img src="${p.posterUrl}" style="width: 32px; height: 44px; object-fit: cover; border-radius: 4px; vertical-align: middle; margin-right: 8px;">`
+                        : '';
+
+                    return `
+                        <tr>
+                            <td>
+                                <div style="display: flex; align-items: center;">
+                                    ${posterImg}
+                                    <div>
+                                        <strong>${p.nome} ${p.ano ? '(' + p.ano + ')' : ''}</strong>
+                                        <div style="font-size: 11px; color: var(--text-muted);">
+                                            ${p.tipo === 'serie' ? '📺 Série' : '🎬 Filme'} ${p.temporada ? '• ' + p.temporada : ''} ${p.idioma ? '• ' + p.idioma : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div>@${p.username || 'Usuário'}</div>
+                                <span style="font-size: 10px; color: ${p.isAssinante ? '#fbbf24' : '#9ca3af'}; font-weight: 700;">
+                                    ${p.isAssinante ? '👑 VIP Assinante' : '👤 Grátis'}
+                                </span>
+                            </td>
+                            <td>
+                                <span style="font-size: 11px; font-weight: 800; color: ${isProc ? '#34d399' : (status === 'recusado' ? '#f87171' : '#f59e0b')};">
+                                    ${isProc ? '✓ ATENDIDO' : (status === 'recusado' ? '✕ RECUSADO' : '⏳ PENDENTE')}
+                                </span>
+                            </td>
+                            <td>${dataStr}</td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                ${!isProc ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')" title="Adicionar à fila de downloads">🚀 Baixar</button>` : ''}
+                                <button class="btn-action" onclick="handleAdminSetPedidoStatus('${p.id}', '${isProc ? 'pendente' : 'adicionado'}')" title="Alternar status">
+                                    ${isProc ? '🔄 Reabrir' : '✅ Concluir'}
+                                </button>
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteRequest('${p.id}')" title="Excluir pedido">✕</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar pedidos.</td></tr>';
+            }
+        }
+
+        async function handleAdminSetPedidoStatus(pedidoId, status) {
+            try {
+                const res = await fetch(`/api/admin/pedidos/${pedidoId}/status`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ status })
+                });
+                if (res.ok) {
+                    showToast('Status do pedido atualizado.', 'success');
+                    loadAdminRequests();
+                }
+            } catch (e) {
+                showToast('Erro ao atualizar status.', 'error');
+            }
+        }
+
+        async function loadAdminTickets() {
+            if (!adminToken) return;
+            const container = document.getElementById('admin-tickets-container');
+            if (!container) return;
+
+            container.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--text-muted);">Carregando chamados...</div>';
+
+            try {
+                const res = await fetch('/api/admin/tickets', { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                const tickets = data.tickets || [];
+
+                if (tickets.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                            <div style="font-size: 36px; margin-bottom: 8px;">🎉</div>
+                            <div style="font-weight: 800; color: #fff;">Nenhum ticket de suporte em aberto!</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = tickets.map(t => {
+                    const dateStr = t.created_at ? new Date(t.created_at).toLocaleString('pt-BR') : '-';
+                    let statusBadge = '<span style="color: #f59e0b; background: rgba(245, 158, 11, 0.15); padding: 3px 8px; border-radius: 99px; font-size: 11px; font-weight: 800;">⏳ Aberto</span>';
+                    if (t.status === 'resolvido') {
+                        statusBadge = '<span style="color: #34d399; background: rgba(52, 211, 153, 0.15); padding: 3px 8px; border-radius: 99px; font-size: 11px; font-weight: 800;">✓ Resolvido</span>';
+                    } else if (t.status === 'em_atendimento') {
+                        statusBadge = '<span style="color: #60a5fa; background: rgba(96, 165, 250, 0.15); padding: 3px 8px; border-radius: 99px; font-size: 11px; font-weight: 800;">💬 Em Atendimento</span>';
+                    }
+
+                    const imgHtml = t.imagem_url 
+                        ? `
+                            <div style="margin-top: 10px;">
+                                <a href="${t.imagem_url}" target="_blank" title="Clique para abrir imagem em tamanho real">
+                                    <img src="${t.imagem_url}" alt="Print Anexado" style="max-width: 240px; max-height: 140px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); object-fit: contain; background: #000;">
+                                </a>
+                            </div>
+                          `
+                        : '';
+
+                    const responseHtml = t.resposta 
+                        ? `<div class="admin-ticket-response-box"><strong>Resposta da Equipe:</strong> ${t.resposta}</div>`
+                        : '';
+
+                    return `
+                        <div class="admin-ticket-card">
+                            <div class="admin-ticket-header">
+                                <div>
+                                    <h4 class="admin-ticket-title">${t.titulo || 'Chamado de Suporte #' + t.id}</h4>
+                                    <div class="admin-ticket-meta">
+                                        Por: <strong>@${t.username || 'Visitante'}</strong> (ID: ${t.user_id || 'N/A'}) ${t.contato ? '• Contato: <span style="color: #38bdf8;">' + t.contato + '</span>' : ''} • ${dateStr}
+                                    </div>
+                                </div>
+                                <div>${statusBadge}</div>
+                            </div>
+                            <div class="admin-ticket-body">${t.mensagem}</div>
+                            ${imgHtml}
+                            ${responseHtml}
+                            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px;">
+                                <button class="btn-action btn-action-primary" onclick="handleAdminReplyTicket('${t.id}', '${t.status}')">
+                                    📝 Responder / Mudar Status
+                                </button>
+                                <button class="btn-action btn-action-danger" onclick="handleAdminDeleteTicket('${t.id}')">
+                                    🗑️ Excluir
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px;">Erro ao carregar tickets de suporte.</div>';
+            }
+        }
+
+        async function handleAdminReplyTicket(ticketId, currentStatus) {
+            const resposta = prompt('Digite sua resposta / observação para este ticket (ou deixe em branco para apenas mudar status):');
+            if (resposta === null) return;
+
+            const novoStatus = confirm('Deseja marcar este ticket como RESOLVIDO? (Clique Cancelar para manter Em Atendimento)')
+                ? 'resolvido'
+                : 'em_atendimento';
+
+            try {
+                const res = await fetch(`/api/admin/tickets/${ticketId}/responder`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        status: novoStatus,
+                        resposta: resposta.trim() || undefined
+                    })
+                });
+                if (res.ok) {
+                    showToast('Ticket atualizado com sucesso!', 'success');
+                    loadAdminTickets();
+                }
+            } catch (e) {
+                showToast('Erro ao responder ticket.', 'error');
+            }
+        }
+
+        async function handleAdminDeleteTicket(ticketId) {
+            if (!confirm('Tem certeza que deseja excluir este ticket de suporte?')) return;
+            try {
+                const res = await fetch(`/api/admin/tickets/${ticketId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (res.ok) {
+                    showToast('Ticket excluído.', 'info');
+                    loadAdminTickets();
+                }
+            } catch (e) {
+                showToast('Erro ao excluir ticket.', 'error');
+            }
+        }
+
     </script>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         🍿 MODAL 1: PEDIDO DE CONTEÚDO (FILME, SÉRIE, ANIME, DORAMA)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="modal-backdrop" id="request-media-modal" onclick="closeRequestMediaModal(event)">
+        <div class="req-media-modal-box" onclick="event.stopPropagation()">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px; line-height: 1;">🍿</span>
+                    <div>
+                        <h3 style="font-size: 17px; font-weight: 900; color: #fff; margin: 0;">Pedir Filme ou Série</h3>
+                        <p style="font-size: 11.5px; color: var(--text-muted); margin: 2px 0 0 0;">Solicite títulos para download e inclusão no catálogo</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeRequestMediaModal()" title="Fechar" style="position:static;width:30px;height:30px;font-size:14px;">✕</button>
+            </div>
+
+            <form id="form-request-media" onsubmit="handleRequestMediaSubmit(event)">
+                <!-- BUSCADOR TMDB -->
+                <div class="tmdb-autocomplete-wrap" style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Nome do Filme / Série / Anime *</label>
+                    <input type="text" id="req-media-input" class="settings-input" placeholder="Digite o nome... (ex: The Rookie, Silo, One Piece, Batman)" autocomplete="off" oninput="handleTMDBAutocomplete(this.value)" required>
+                    
+                    <!-- DROPDOWN DE SUGESTÕES TMDB -->
+                    <div id="req-tmdb-dropdown" class="tmdb-autocomplete-dropdown"></div>
+                </div>
+
+                <!-- CARD DE SELEÇÃO CONFIRMADA DO TMDB -->
+                <div id="req-selected-preview" style="display: none;">
+                    <div class="req-selected-card">
+                        <img id="req-sel-poster" src="" alt="Poster">
+                        <div style="flex: 1; min-width: 0;">
+                            <div id="req-sel-title" style="font-size: 13.5px; font-weight: 900; color: #fff; line-height: 1.2;"></div>
+                            <div id="req-sel-meta" style="font-size: 11px; color: var(--text-muted); margin-top: 3px;"></div>
+                            <div id="req-sel-type" style="display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e50914; color: #fff; margin-top: 4px;"></div>
+                        </div>
+                        <button type="button" onclick="clearSelectedTMDB()" style="background: rgba(255,255,255,0.1); border: none; color: #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer;">✕ Trocar</button>
+                    </div>
+                </div>
+
+                <!-- TIPO DE CONTEÚDO -->
+                <div style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Tipo de Conteúdo</label>
+                    <select id="req-media-type" class="settings-input">
+                        <option value="filme">🎬 Filme</option>
+                        <option value="serie" selected>📺 Série de TV</option>
+                        <option value="anime">🌸 Anime</option>
+                        <option value="dorama">🇰🇷 Dorama Asiático</option>
+                    </select>
+                </div>
+
+                <!-- TEMPORADA / EPISÓDIO (OPCIONAL) -->
+                <div style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Temporada ou Episódios <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
+                    <input type="text" id="req-media-season" class="settings-input" placeholder="Ex: Temporada 3, ou Todas as Temporadas, ou Ep 1 a 12">
+                </div>
+
+                <!-- PREFERÊNCIA DE IDIOMA / ÁUDIO (OPCIONAL) -->
+                <div style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Preferência de Áudio / Dublagem <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
+                    <select id="req-media-audio" class="settings-input">
+                        <option value="Dublado PT-BR" selected>🎙️ Dublado em Português (PT-BR)</option>
+                        <option value="Dual Áudio (Dublado + Legendado)">🎧 Dual Áudio (Dublado + Legendado)</option>
+                        <option value="Legendado PT-BR">💬 Legendado (Áudio Original com Legendas PT-BR)</option>
+                        <option value="Qualquer / Indiferente">🌐 Tanto faz / Qualquer um</option>
+                    </select>
+                </div>
+
+                <!-- OBSERVAÇÕES DETALHES (OPCIONAL) -->
+                <div style="margin-bottom: 18px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Observações / Detalhes Adicionais <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
+                    <textarea id="req-media-notes" class="settings-input" rows="2" style="resize: vertical;" placeholder="Ex: Lançamento recente da Netflix, versão sem cortes, etc..."></textarea>
+                </div>
+
+                <!-- HIDDEN FIELDS FOR TMDB METADATA -->
+                <input type="hidden" id="req-hidden-tmdb-id" value="">
+                <input type="hidden" id="req-hidden-poster" value="">
+                <input type="hidden" id="req-hidden-year" value="">
+                <input type="hidden" id="req-hidden-formatted-title" value="">
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" id="btn-submit-req-media" class="btn-modal btn-modal-primary" style="flex: 1; padding: 12px; font-weight: 800;">
+                        🚀 Enviar Pedido ao Catálogo
+                    </button>
+                    <button type="button" class="btn-modal btn-modal-secondary" style="padding: 12px;" onclick="closeRequestMediaModal()">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         💬 MODAL 2: CENTRAL DE AJUDA, SUPORTE & TICKETS (SEM CATEGORIAS CONFUSAS)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="modal-backdrop" id="support-ticket-modal" onclick="closeSupportTicketModal(event)">
+        <div class="req-media-modal-box" onclick="event.stopPropagation()">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px; line-height: 1;">💬</span>
+                    <div>
+                        <h3 style="font-size: 17px; font-weight: 900; color: #fff; margin: 0;">Central de Ajuda & Suporte</h3>
+                        <p style="font-size: 11.5px; color: var(--text-muted); margin: 2px 0 0 0;">Abra um chamado diretamente com os administradores</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeSupportTicketModal()" title="Fechar" style="position:static;width:30px;height:30px;font-size:14px;">✕</button>
+            </div>
+
+            <form id="form-support-ticket" onsubmit="handleSupportTicketSubmit(event)">
+                <!-- TÍTULO -->
+                <div style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Título / Assunto do Problema ou Dúvida *</label>
+                    <input type="text" id="ticket-title-input" class="settings-input" placeholder="Ex: Episódio 3 sem som / Erro ao carregar / Dúvida sobre VIP" required>
+                </div>
+
+                <!-- DESCRIÇÃO -->
+                <div style="margin-bottom: 12px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Descrição Detalhada *</label>
+                    <textarea id="ticket-msg-input" class="settings-input" rows="4" style="resize: vertical;" placeholder="Explique o que aconteceu, qual filme/série ou sua dúvida..." required></textarea>
+                </div>
+
+                <!-- ANEXAR PRINT / IMAGEM (OPCIONAL) -->
+                <div style="margin-bottom: 14px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Anexo de Print / Imagem do Erro <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <label class="settings-btn-preset" style="cursor: pointer; padding: 7px 14px; font-size: 12px;" title="Enviar print do dispositivo">
+                            📷 Anexar Print
+                            <input type="file" id="ticket-file-input" accept="image/*" style="display: none;" onchange="handleTicketImageUpload(this)">
+                        </label>
+                        <span style="font-size: 11px; color: var(--text-muted);">ou cole uma URL de imagem:</span>
+                    </div>
+                    <input type="url" id="ticket-img-url-input" class="settings-input" placeholder="https://exemplo.com/screenshot.png" style="margin-top: 6px;" oninput="previewTicketImageUrl(this.value)">
+
+                    <!-- PREVIEW DA IMAGEM DO TICKET -->
+                    <div id="ticket-image-preview-box" class="ticket-image-preview-wrap" style="display: none;">
+                        <img id="ticket-preview-img" src="" alt="Print Anexado">
+                        <button type="button" class="ticket-remove-img-btn" onclick="clearTicketImage()" title="Remover print">✕</button>
+                    </div>
+                </div>
+
+                <!-- CONTATO (OPCIONAL) -->
+                <div style="margin-bottom: 18px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Seu Contato para Resposta <span style="font-weight: 400; opacity: 0.7;">(Opcional - Telegram ou E-mail)</span></label>
+                    <input type="text" id="ticket-contact-input" class="settings-input" placeholder="Ex: @seunome no Telegram ou seuemail@gmail.com">
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" id="btn-submit-support-ticket" class="btn-modal btn-modal-primary" style="flex: 1; padding: 12px; font-weight: 800;">
+                        📨 Enviar Chamado de Suporte
+                    </button>
+                    <button type="button" class="btn-modal btn-modal-secondary" style="padding: 12px;" onclick="closeSupportTicketModal()">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 </body>
 </html>

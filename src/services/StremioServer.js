@@ -21,6 +21,7 @@ class StremioServer {
         this.assinaturaManager = assinaturaManager;
         this.queueManager = queueManager;
         this.pedidosManager = pedidosManager;
+        this.tmdbService = new TMDBService();
         this.progressManager = new ProgressManager();
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
         this.port = port;
@@ -546,6 +547,16 @@ class StremioServer {
             }
         });
 
+        this.app.post('/api/admin/pedidos/:id/status', auth, async (req, res) => {
+            try {
+                const { status } = req.body;
+                await this.pedidosManager?.atualizarStatus(req.params.id, status || 'adicionado');
+                res.json({ success: true, message: `Status do pedido atualizado para "${status}".` });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         this.app.post('/api/admin/pedidos/:id/enfileirar', auth, async (req, res) => {
             try {
                 const pedido = this.pedidosManager?.getPedidoPorId(req.params.id);
@@ -557,7 +568,7 @@ class StremioServer {
                     username: pedido.username
                 });
 
-                await this.pedidosManager.marcarComoProcessado(pedido.id);
+                await this.pedidosManager.atualizarStatus(pedido.id, 'adicionado');
                 res.json({ success: true, message: `Pedido "${pedido.nome}" enviado para a fila!` });
             } catch (e) {
                 res.status(500).json({ error: e.message });
@@ -568,6 +579,44 @@ class StremioServer {
             try {
                 await this.pedidosManager?.removerPedido(req.params.id);
                 res.json({ success: true, message: 'Pedido removido com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 5.1. Gerenciamento de Tickets de Suporte & Ajuda
+        this.app.get('/api/admin/tickets', auth, async (req, res) => {
+            try {
+                const queryRes = await db.query(`
+                    SELECT id, user_id, username, tipo, titulo, mensagem, imagem_url, contato, status, resposta, created_at 
+                    FROM feedbacks 
+                    ORDER BY created_at DESC 
+                    LIMIT 200
+                `);
+                res.json({ success: true, tickets: queryRes.rows || [] });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/tickets/:id/responder', auth, async (req, res) => {
+            try {
+                const { status, resposta } = req.body;
+                await db.query(`
+                    UPDATE feedbacks 
+                    SET status = COALESCE($1, status), resposta = COALESCE($2, resposta), updated_at = NOW() 
+                    WHERE id = $3
+                `, [status || 'resolvido', resposta || null, req.params.id]);
+                res.json({ success: true, message: 'Ticket atualizado com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.delete('/api/admin/tickets/:id', auth, async (req, res) => {
+            try {
+                await db.query(`DELETE FROM feedbacks WHERE id = $1`, [req.params.id]);
+                res.json({ success: true, message: 'Ticket excluído com sucesso.' });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -761,7 +810,137 @@ class StremioServer {
             }
         });
 
-        // 💬 Canal de Sugestões, Pedidos, Dúvidas e Reclamações de Usuários
+        // 🔍 TMDB Search Unificado para Pedidos de Usuários
+        this.app.get('/api/tmdb/search-all', async (req, res) => {
+            try {
+                const query = (req.query.query || req.query.q || '').trim();
+                if (!query || query.length < 2) {
+                    return res.json({ success: true, results: [] });
+                }
+                const results = await this.tmdbService.searchMulti(query);
+                res.json({
+                    success: true,
+                    results: (results || []).slice(0, 12).map(r => ({
+                        tmdbId: r.tmdbId,
+                        nome: r.nome,
+                        nomeOriginal: r.nomeOriginal,
+                        tipo: r.tipo || 'filme',
+                        ano: r.ano || '',
+                        poster: r.poster || '',
+                        nota: r.nota || 0,
+                        sinopse: r.sinopse || ''
+                    }))
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 🍿 1. Criação de Pedido de Conteúdo (Filme / Série / Anime / Dorama)
+        this.app.post('/api/user/pedidos/create', async (req, res) => {
+            try {
+                const { nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes } = req.body;
+                if (!nome || !nome.trim()) {
+                    return res.status(400).json({ error: 'Nome da obra é obrigatório.' });
+                }
+
+                let userId = 0;
+                let username = 'Visitante';
+                let isAssinante = false;
+
+                const authHeader = req.headers['authorization'];
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const token = authHeader.split(' ')[1];
+                    const decoded = authService.verifyToken(token);
+                    if (decoded) {
+                        userId = Number(decoded.id || decoded.telegram_id || 0);
+                        username = decoded.username || decoded.email || 'Usuário';
+                        isAssinante = decoded.role === 'admin' || !!decoded.is_assinante;
+                    }
+                }
+
+                const pedido = await this.pedidosManager?.adicionarPedidoCompleto({
+                    userId,
+                    username,
+                    nome: nome.trim(),
+                    tipo: tipo || 'filme',
+                    temporada: (temporada || '').trim(),
+                    idioma: (idioma || '').trim(),
+                    tmdbId: tmdb_id || null,
+                    posterUrl: poster_url || '',
+                    ano: ano || '',
+                    detalhes: (detalhes || '').trim(),
+                    isAssinante
+                });
+
+                res.json({
+                    success: true,
+                    message: `Pedido de "${nome.trim()}" registrado com sucesso!`,
+                    pedido
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 💬 2. Criação de Ticket de Ajuda & Suporte
+        this.app.post('/api/user/tickets/create', async (req, res) => {
+            try {
+                const { titulo, mensagem, imagem_url, contato } = req.body;
+                if (!titulo || !titulo.trim()) {
+                    return res.status(400).json({ error: 'Título / Assunto é obrigatório.' });
+                }
+                if (!mensagem || !mensagem.trim()) {
+                    return res.status(400).json({ error: 'Descrição detalhada é obrigatória.' });
+                }
+
+                let userId = null;
+                let username = 'Visitante';
+                const authHeader = req.headers['authorization'];
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const token = authHeader.split(' ')[1];
+                    const decoded = authService.verifyToken(token);
+                    if (decoded) {
+                        userId = String(decoded.id || decoded.telegram_id || '');
+                        username = decoded.username || decoded.email || 'Usuário';
+                    }
+                }
+
+                const result = await db.query(`
+                    INSERT INTO feedbacks (user_id, username, tipo, titulo, mensagem, imagem_url, contato, status, created_at)
+                    VALUES ($1, $2, 'suporte', $3, $4, $5, $6, 'aberto', NOW())
+                    RETURNING id, created_at
+                `, [userId, username, titulo.trim(), mensagem.trim(), (imagem_url || '').trim(), (contato || '').trim()]);
+
+                res.json({
+                    success: true,
+                    message: 'Ticket de suporte enviado com sucesso! Nossa equipe responderá em breve.',
+                    ticketId: result.rows?.[0]?.id
+                });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 📷 3. Upload de Imagem / Print para Ticket de Suporte (em memória)
+        const uploadTicketImage = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 6 * 1024 * 1024 }
+        });
+
+        this.app.post('/api/user/ticket-image-upload', uploadTicketImage.single('image'), (req, res) => {
+            try {
+                if (!req.file) return res.status(400).json({ error: 'Nenhuma imagem enviada.' });
+                const mime = req.file.mimetype || 'image/jpeg';
+                const base64 = req.file.buffer.toString('base64');
+                const dataUrl = `data:${mime};base64,${base64}`;
+                res.json({ success: true, url: dataUrl });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 💬 Canal Legado de Feedback (Compatibilidade)
         this.app.post('/api/user/feedback', async (req, res) => {
             try {
                 const { tipo, titulo, mensagem, contato } = req.body;
@@ -774,7 +953,7 @@ class StremioServer {
                 const authHeader = req.headers['authorization'];
                 if (authHeader && authHeader.startsWith('Bearer ')) {
                     const token = authHeader.split(' ')[1];
-                    const decoded = AuthService.verifyToken(token);
+                    const decoded = authService.verifyToken(token);
                     if (decoded) {
                         userId = String(decoded.id || decoded.telegram_id || '');
                         username = decoded.username || decoded.email || 'Usuário';

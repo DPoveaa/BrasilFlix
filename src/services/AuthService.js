@@ -627,7 +627,7 @@ class AuthService {
             let res;
             if (telegramId) {
                 res = await db.query(
-                    `SELECT id, nome, tipo, processado, is_assinante, created_at 
+                    `SELECT id, nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes, status, processado, is_assinante, created_at 
                      FROM pedidos 
                      WHERE user_id = $1 OR ($2::text IS NOT NULL AND username = $2) 
                      ORDER BY created_at DESC LIMIT 100`,
@@ -635,7 +635,7 @@ class AuthService {
                 );
             } else {
                 res = await db.query(
-                    `SELECT id, nome, tipo, processado, is_assinante, created_at 
+                    `SELECT id, nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes, status, processado, is_assinante, created_at 
                      FROM pedidos 
                      WHERE ($1::text IS NOT NULL AND username = $1) 
                      ORDER BY created_at DESC LIMIT 100`,

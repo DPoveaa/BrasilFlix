@@ -23,8 +23,15 @@ class PedidosManager {
                 username: p.username || 'Usuário',
                 nome: p.nome,
                 tipo: p.tipo || 'filme',
+                temporada: p.temporada || '',
+                idioma: p.idioma || '',
+                tmdbId: p.tmdb_id || null,
+                posterUrl: p.poster_url || '',
+                ano: p.ano || '',
+                detalhes: p.detalhes || '',
                 data: p.created_at,
-                status: p.processado ? 'adicionado' : 'pendente',
+                status: p.status || (p.processado ? 'adicionado' : 'pendente'),
+                processado: p.processado || p.status === 'adicionado',
                 isAssinante: p.is_assinante,
                 prioridade: p.is_assinante ? 'alta' : 'normal'
             }));
@@ -57,26 +64,45 @@ class PedidosManager {
     }
 
     async adicionarPedido(userId, username, nome, descricao = '', isAssinante = false) {
-        const id = `ped_${Date.now()}`;
-        const pedido = {
-            id: id,
+        return this.adicionarPedidoCompleto({
             userId,
+            username,
+            nome,
+            tipo: 'filme',
+            detalhes: descricao,
+            isAssinante
+        });
+    }
+
+    async adicionarPedidoCompleto({ userId, username, nome, tipo = 'filme', temporada = '', idioma = '', tmdbId = null, posterUrl = '', ano = '', detalhes = '', isAssinante = false }) {
+        const id = `ped_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const pedido = {
+            id,
+            userId: userId ? Number(userId) : 0,
             username: username || 'Usuário',
-            nome: nome.trim(),
-            descricao: descricao.trim(),
+            nome: (nome || '').trim(),
+            tipo: tipo || 'filme',
+            temporada: (temporada || '').trim(),
+            idioma: (idioma || '').trim(),
+            tmdbId: tmdbId ? Number(tmdbId) : null,
+            posterUrl: (posterUrl || '').trim(),
+            ano: (ano || '').trim(),
+            detalhes: (detalhes || '').trim(),
             data: new Date().toISOString(),
             status: 'pendente',
-            isAssinante,
+            processado: false,
+            isAssinante: !!isAssinante,
             prioridade: isAssinante ? 'alta' : 'normal'
         };
 
         try {
             await db.query(`
-                INSERT INTO pedidos (id, user_id, username, nome, tipo, is_assinante, processado, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                INSERT INTO pedidos (id, user_id, username, nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes, is_assinante, processado, status, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
             `, [
-                id, userId, username || 'Usuário', nome.trim(),
-                'filme', isAssinante, false
+                id, pedido.userId, pedido.username, pedido.nome,
+                pedido.tipo, pedido.temporada, pedido.idioma, pedido.tmdbId,
+                pedido.posterUrl, pedido.ano, pedido.detalhes, pedido.isAssinante, false, 'pendente'
             ]);
         } catch (e) {
             console.warn('⚠️ Erro ao persistir pedido no PostgreSQL:', e.message);
@@ -87,8 +113,31 @@ class PedidosManager {
         this.ordenarPedidos();
         this.savePedidos();
 
-        console.log(`📝 Novo pedido registrado: ${nome} por ${username} ${isAssinante ? '(Assinante VIP)' : ''}`);
+        console.log(`📝 Novo pedido registrado: [${pedido.tipo.toUpperCase()}] ${pedido.nome} por ${pedido.username} ${isAssinante ? '(Assinante VIP)' : ''}`);
         return pedido;
+    }
+
+    async atualizarStatus(pedidoId, novoStatus) {
+        const pedido = this.pedidos.find(p => String(p.id) === String(pedidoId));
+        if (pedido) {
+            pedido.status = novoStatus;
+            pedido.processado = novoStatus === 'adicionado';
+            if (novoStatus === 'pendente') {
+                this.pedidosPendentes.set(pedido.id, pedido);
+            } else {
+                this.pedidosPendentes.delete(pedido.id);
+            }
+
+            try {
+                await db.query(`UPDATE pedidos SET status = $1, processado = $2 WHERE id = $3`, [novoStatus, pedido.processado, pedido.id]);
+            } catch (e) {
+                console.warn('⚠️ Erro ao atualizar status do pedido no PostgreSQL:', e.message);
+            }
+
+            this.savePedidos();
+            return true;
+        }
+        return false;
     }
 
     ordenarPedidos() {

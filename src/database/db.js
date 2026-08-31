@@ -182,22 +182,34 @@ async function createTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS temporada VARCHAR(100);
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS idioma VARCHAR(100);
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS tmdb_id INTEGER;
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS poster_url TEXT;
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS ano VARCHAR(20);
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS detalhes TEXT;
+        ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pendente';
+
         CREATE TABLE IF NOT EXISTS feedbacks (
             id BIGSERIAL PRIMARY KEY,
             user_id VARCHAR(100),
             username VARCHAR(255),
-            tipo VARCHAR(50) DEFAULT 'sugestao',
+            tipo VARCHAR(50) DEFAULT 'suporte',
             titulo VARCHAR(255),
             mensagem TEXT NOT NULL,
             contato VARCHAR(255),
-            status VARCHAR(50) DEFAULT 'pendente',
+            status VARCHAR(50) DEFAULT 'aberto',
             notified BOOLEAN DEFAULT false,
             media_id BIGINT,
+            imagem_url TEXT,
+            resposta TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
         ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT false;
         ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS media_id BIGINT;
+        ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS imagem_url TEXT;
+        ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS resposta TEXT;
 
         CREATE TABLE IF NOT EXISTS user_notifications (
             id BIGSERIAL PRIMARY KEY,
