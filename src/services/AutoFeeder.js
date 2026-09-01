@@ -350,13 +350,21 @@ class AutoFeeder {
                         );
 
                         if (!jaNaFila) {
-                            console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${sNum}E${proximoEpFaltante.numero} ("${proximoEpFaltante.nome}")! Enfileirando download...`);
+                            const isAnime = serie.isAnime || serie.categoria === 'Anime' || (serie.generos && serie.generos.includes('Anime')) || serie.originalLanguage === 'ja';
+                            const isMicrodrama = serie.isMicrodrama || serie.subtipo === 'microdrama';
+                            const isDorama = !isAnime && (serie.isDorama || serie.categoria === 'Dorama' || isMicrodrama || serie.originalLanguage === 'ko' || serie.originalLanguage === 'zh');
+
+                            console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${sNum}E${proximoEpFaltante.numero} ("${proximoEpFaltante.nome}") [${isAnime ? 'Anime' : (isMicrodrama ? 'Microdrama' : (isDorama ? 'Dorama' : 'Série'))}]! Enfileirando download...`);
                             this.queueManager.addJob(serie.nome, 'serie', PRIORITIES.SERIES, {
                                 tmdbId: tmdbData.tmdbId,
                                 season: sNum,
                                 episode: proximoEpFaltante.numero,
                                 nomeOriginal: serie.nomeOriginal,
-                                isDorama: serie.isDorama,
+                                isAnime: isAnime,
+                                isDorama: isDorama,
+                                isMicrodrama: isMicrodrama,
+                                subtipo: serie.subtipo || (isMicrodrama ? 'microdrama' : null),
+                                originalLanguage: serie.originalLanguage || (isAnime ? 'ja' : (isDorama ? 'ko' : null)),
                                 queueOrder: -1
                             });
                             break;
