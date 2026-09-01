@@ -340,7 +340,7 @@ class CatalogoManager {
         if (!Array.isArray(rawEps) || rawEps.length === 0) return null;
         const sortedEps = [...rawEps].sort((a, b) => Number(a.numero) - Number(b.numero));
 
-        // 1. Sequência contínua para Dublado a partir do Episódio 1 com mídia real utilizável
+        // 1. Sequência contínua a partir do Episódio 1 com mídia real utilizável (Dublado ou Legendado)
         let maxDubSeq = 0;
         for (let n = 1; ; n++) {
             const epN = sortedEps.find(e => Number(e.numero) === n);
@@ -351,7 +351,6 @@ class CatalogoManager {
             }
         }
 
-        // 2. Sequência contínua para Legendado a partir do Episódio 1 com mídia real utilizável
         let maxLegSeq = 0;
         for (let n = 1; ; n++) {
             const epN = sortedEps.find(e => Number(e.numero) === n);
@@ -362,27 +361,31 @@ class CatalogoManager {
             }
         }
 
-        // Se nem o Episódio 1 dublado nem o Episódio 1 legendado possuem mídia real -> temporada oculta
-        if (maxDubSeq === 0 && maxLegSeq === 0) return null;
-
-        // Se a temporada já foi concluída/lançada e temos a quantidade total esperada de episódios no TMDB:
-        // Exige que a temporada esteja 100% completa (Dublada completa ou Legendada completa) para ser visível
-        const expectedEps = tMeta ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : 0;
-        if (!isEmLancamento && expectedEps > 0) {
-            const isDubCompleto = maxDubSeq >= expectedEps;
-            const isLegCompleto = maxLegSeq >= expectedEps;
-            if (!isDubCompleto && !isLegCompleto) {
-                return null; // Oculta temporada incompleta até que todos os episódios estejam disponíveis
+        let maxAnySeq = 0;
+        for (let n = 1; ; n++) {
+            const epN = sortedEps.find(e => Number(e.numero) === n);
+            if (epN && (CatalogoManager.hasValidDubbedMedia(epN) || CatalogoManager.hasValidSubtitledMedia(epN))) {
+                maxAnySeq = n;
+            } else {
+                break;
             }
         }
 
-        // 3. Filtra apenas episódios pertencentes à sequência contínua com mídia real
+        // Ponto de Entrada Obrigatório: Episódio 1 DEVE ter mídia real
+        if (maxAnySeq === 0) return null;
+
+        const expectedEps = tMeta ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : 0;
+        const isCompleto = expectedEps > 0 ? (maxAnySeq >= expectedEps) : (maxAnySeq > 0);
+
+        // 2. Filtra apenas episódios pertencentes à sequência contínua utilizável
         const episodiosValidos = sortedEps.map(ep => {
             const epNum = Number(ep.numero);
-            const hasDub = epNum <= maxDubSeq && CatalogoManager.hasValidDubbedMedia(ep);
-            const hasLeg = epNum <= maxLegSeq && CatalogoManager.hasValidSubtitledMedia(ep);
+            if (epNum > maxAnySeq) return null;
 
-            if (!hasDub && !hasLeg) return null; // Episódio isolado/fora da sequência contínua ou sem arquivo
+            const hasDub = CatalogoManager.hasValidDubbedMedia(ep);
+            const hasLeg = CatalogoManager.hasValidSubtitledMedia(ep);
+
+            if (!hasDub && !hasLeg) return null; // Episódio sem mídia real
 
             const versoesFiltradas = {};
             if (hasDub) {
@@ -434,10 +437,11 @@ class CatalogoManager {
             numero: num,
             nome: `Temporada ${num}`,
             totalEpisodios: episodiosValidos.length,
-            isDublado: maxDubSeq > 0,
-            isLegendado: maxLegSeq > 0,
+            isDublado: maxDubSeq > 0 || episodiosValidos.some(e => e.isDublado),
+            isLegendado: maxLegSeq > 0 || episodiosValidos.some(e => e.isLegendado),
             isDubladoCompleto: expectedEps > 0 ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0),
             isLegendadoCompleto: expectedEps > 0 ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0),
+            isCompleto: isCompleto,
             episodios: episodiosValidos
         };
     }
