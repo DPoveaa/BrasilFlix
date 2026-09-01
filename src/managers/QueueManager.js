@@ -796,19 +796,27 @@ class QueueManager extends EventEmitter {
             return eligibleJobs[0];
         }
 
-        // 4. Em Modo Desempenho (Madrugada com 4 slots simultâneos): FAIXAS ESPECIALIZADAS COM TRANSBORDO (Work-Stealing)
+        // 4. Em Modo Desempenho (Madrugada com 4 slots simultâneos): FAIXAS ESPECIALIZADAS COM TRANSBORDO (Work-Stealing Equilibrado)
         // Faixa 1: Novos Filmes (lançamentos)
         // Faixa 2: Upgrades de Qualidade (CAM -> 1080p WEB-DL / Dublagens) & Pedidos de Usuários
         // Faixa 3: Séries Ocidentais
-        // Faixa 4: Doramas (K-Dramas / C-Dramas)
+        // Faixa 4: Animes & Doramas (Produções Orientais com vaga 100% garantida)
 
-        // Helper para checar propriedades de um job da fila
+        // Helper para categorização precisa do job
         const checkJobCategory = (j) => {
             const isUserOrder = Number(j.priority || 4) <= 2 && (j.userId || j.isManualAdd);
             const isUpgrade = j.isUpgrade || j.extraData?.isUpgrade || j.priority === PRIORITIES.CAM_UPGRADE || j.priority === PRIORITIES.UPGRADE_DUB;
-            const isDorama = j.isDorama || j.extraData?.isDorama || j.title?.toLowerCase().includes('dorama');
+            const isAnime = j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
+                            j.generos?.includes('Animação') || j.generos?.includes('Anime') || 
+                            j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
+                            /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball|solo leveling|jujutsu|hunter x hunter|kimetsu/i.test(j.title || '');
+            const isDorama = !isAnime && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
+                             j.originalLanguage === 'ko' || j.originalLanguage === 'zh' || 
+                             j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' || 
+                             j.title?.toLowerCase().includes('dorama'));
             
             if (isUserOrder || isUpgrade) return 'upgrade_ou_pedido';
+            if (isAnime) return 'anime';
             if (isDorama) return 'dorama';
             if (j.type === 'filme') return 'filme';
             return 'serie';
@@ -819,11 +827,14 @@ class QueueManager extends EventEmitter {
         let activeUpgradesAndOrders = 0;
         let activeSeries = 0;
         let activeDoramas = 0;
+        let activeAnimes = 0;
 
         for (const active of this.activeJobs.values()) {
             const cat = checkJobCategory(active);
             if (cat === 'upgrade_ou_pedido') {
                 activeUpgradesAndOrders++;
+            } else if (cat === 'anime') {
+                activeAnimes++;
             } else if (cat === 'dorama') {
                 activeDoramas++;
             } else if (cat === 'filme') {
@@ -839,13 +850,20 @@ class QueueManager extends EventEmitter {
             if (movieJob) return movieJob;
         }
 
-        // Faixa 2: Se o slot de Upgrades & Pedidos estiver livre, tenta pegar um upgrade (ex: Minions 1080p) ou pedido de usuário
+        // Faixa 2: Se o slot de Upgrades & Pedidos estiver livre, tenta pegar um upgrade ou pedido de usuário
         if (activeUpgradesAndOrders < 1) {
             const upgradeJob = eligibleJobs.find(j => checkJobCategory(j) === 'upgrade_ou_pedido');
             if (upgradeJob) return upgradeJob;
         }
 
-        // Faixa 4: Se o slot de Doramas estiver livre, tenta pegar um dorama
+        // Faixa 4: Vaga Garantida para Conteúdo Oriental (Animes & Doramas)
+        // Se não houver anime ativo e houver anime elegível, puxa o anime imediatamente!
+        if (activeAnimes < 1) {
+            const animeJob = eligibleJobs.find(j => checkJobCategory(j) === 'anime');
+            if (animeJob) return animeJob;
+        }
+
+        // Se não houver dorama ativo e houver dorama elegível, puxa o dorama
         if (activeDoramas < 1) {
             const doramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'dorama');
             if (doramaJob) return doramaJob;
@@ -857,10 +875,29 @@ class QueueManager extends EventEmitter {
             if (seriesJob) return seriesJob;
         }
 
-        // TRANSBORDO DINÂMICO (WORK-STEALING TOTAL):
-        // Se nenhuma faixa especializada precisou do slot no momento (ex: não há pedidos/upgrades pendentes),
-        // o slot NÃO fica parado e puxa imediatamente o próximo item mais prioritário disponível de qualquer categoria!
-        return eligibleJobs[0];
+        // TRANSBORDO DINÂMICO EQUILIBRADO (WORK-STEALING BALANCEADO):
+        // Se slots extras estiverem vagos, distribui entre as categorias menos representadas no momento
+        const categoryCounts = {
+            'anime': activeAnimes,
+            'dorama': activeDoramas,
+            'filme': activeMovies,
+            'upgrade_ou_pedido': activeUpgradesAndOrders,
+            'serie': activeSeries
+        };
+
+        // Ordena jobs elegíveis priorizando categorias com menor número de workers ativos no momento
+        const balancedJob = eligibleJobs.slice().sort((a, b) => {
+            const catA = checkJobCategory(a);
+            const catB = checkJobCategory(b);
+            const countA = categoryCounts[catA] || 0;
+            const countB = categoryCounts[catB] || 0;
+            if (countA !== countB) {
+                return countA - countB; // Prioriza a categoria com MENOS workers ativos
+            }
+            return (a.priority || 5) - (b.priority || 5); // Desempata pela prioridade do job
+        })[0];
+
+        return balancedJob || eligibleJobs[0];
     }
 
     getActiveDownloadsCount() {
