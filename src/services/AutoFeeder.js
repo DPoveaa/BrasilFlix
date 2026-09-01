@@ -132,32 +132,41 @@ class AutoFeeder {
             console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento equilibrado...');
 
             const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
-            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.extraData?.isDorama && j.status === 'queued');
+            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.isAnime && !j.isMicrodrama && !j.extraData?.isDorama && !j.extraData?.isAnime && !j.extraData?.isMicrodrama && j.status === 'queued');
             const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
+            const animesInQueue = (this.queueManager.queue || []).filter(j => (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
 
             // 6. Filmes em alta (mantém cota independente para Faixa 1)
             if (moviesInQueue.length < 6) {
                 const trendingMovies = await TMDBService.getTrendingMovies('week');
-                for (const movie of trendingMovies.slice(0, 8)) {
+                for (const movie of trendingMovies.slice(0, 6)) {
                     await this.considerItem(movie, 'filme');
                 }
             }
 
-            // 7. Doramas populares (mantém cota independente para Faixa 4)
+            // 7. Doramas populares (mantém cota independente para Faixa 5)
             if (doramasInQueue.length < 6) {
                 const popularDoramas = await TMDBService.getPopularKDramas();
                 for (const dorama of popularDoramas.slice(0, 6)) {
-                    await this.considerItem(dorama, 'serie', true);
+                    await this.considerItem(dorama, 'serie', true, false);
                 }
             }
 
-            // 7.1 Microdramas Chineses Verticais (Duanju 9:16) em Alta (Fila 2 / Background)
+            // 7.1 Animes populares (mantém cota independente para Faixa 4)
+            if (animesInQueue.length < 6) {
+                const popularAnimes = await TMDBService.getPopularAnime();
+                for (const anime of popularAnimes.slice(0, 6)) {
+                    await this.considerItem(anime, 'serie', false, true);
+                }
+            }
+
+            // 7.2 Microdramas Chineses Verticais (Duanju 9:16) em Alta (Faixa 6)
             await this.checkMicrodramasFeed();
 
             // 8. Séries ocidentais em alta (mantém cota independente para Faixa 3)
             if (seriesInQueue.length < 6) {
                 const trendingTV = await TMDBService.getTrendingTV('week');
-                for (const tv of trendingTV.slice(0, 3)) {
+                for (const tv of trendingTV.slice(0, 4)) {
                     await this.considerItem(tv, 'serie');
                 }
             }
@@ -181,7 +190,10 @@ class AutoFeeder {
             console.log('📱 AutoFeeder: Avaliando microdramas populares/em alta (短剧 / Duanju 9:16)...');
             const trending = await MicrodramaService.getTrendingMicrodramas(8);
 
+            let added = 0;
             for (const md of trending) {
+                if (microdramasInQueue.length + added >= 4) break;
+
                 const existente = this.catalogoManager.buscarItemExato(md.nome, 'serie');
                 if (existente) continue;
 
@@ -206,7 +218,7 @@ class AutoFeeder {
                     trendingScore: md.trendingScore || 95.0,
                     audioPreference: md.isDublado ? 'dublado' : 'legendado'
                 });
-                break;
+                added++;
             }
         } catch (e) {
             console.warn('⚠️ Erro ao verificar microdramas no AutoFeeder:', e.message);
@@ -579,7 +591,7 @@ class AutoFeeder {
         }
     }
 
-    async considerItem(item, tipo, isDorama = false) {
+    async considerItem(item, tipo, isDorama = false, isAnime = false) {
         const title = item.nome;
         if (!title) return;
 
@@ -610,11 +622,14 @@ class AutoFeeder {
             return;
         }
 
-        console.log(`✨ AutoFeeder adicionando à fila de background: "${title}" (${tipo}${isDorama ? ' - Dorama' : ''})`);
+        const tag = isAnime ? 'Anime' : (isDorama ? 'Dorama' : tipo);
+        console.log(`✨ AutoFeeder adicionando à fila: "${title}" (${tag})`);
 
         this.queueManager.addJob(title, tipo, PRIORITIES.FEEDER, {
             tmdbId: item.tmdbId,
-            isDorama: isDorama,
+            isDorama: isDorama || item.isDorama || false,
+            isAnime: isAnime || item.isAnime || false,
+            originalLanguage: isAnime ? 'ja' : (isDorama ? 'ko' : null),
             season: 1,
             episode: tipo === 'serie' ? 1 : null
         });

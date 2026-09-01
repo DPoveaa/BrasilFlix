@@ -345,7 +345,11 @@ class TMDBService {
                 with_original_language: 'ko',
                 'vote_count.gte': 10
             }, 15000);
-            return (data.results || []).map(item => this.formatItem({ ...item, media_type: 'tv' }));
+            return (data.results || []).map(item => ({
+                ...this.formatItem({ ...item, media_type: 'tv' }),
+                isDorama: true,
+                categoria: 'Dorama'
+            }));
         } catch (error) {
             return [
                 { nome: 'Pousando no Amor', ano: '2019', tipo: 'serie', isDorama: true, nota: 8.8, generos: ['Romance', 'Drama'] },
@@ -353,6 +357,30 @@ class TMDBService {
                 { nome: 'Tudo Bem Não Ser Normal', ano: '2020', tipo: 'serie', isDorama: true, nota: 8.6, generos: ['Drama', 'Romance'] },
                 { nome: 'Round 6', ano: '2021', tipo: 'serie', isDorama: true, nota: 8.0, generos: ['Ação', 'Suspense'] },
                 { nome: 'Uma Advogada Extraordinária', ano: '2022', tipo: 'serie', isDorama: true, nota: 8.7, generos: ['Drama', 'Comédia'] }
+            ];
+        }
+    }
+
+    async getPopularAnime() {
+        try {
+            const data = await this._getWithRetry('/discover/tv', {
+                sort_by: 'popularity.desc',
+                with_original_language: 'ja',
+                with_genres: '16',
+                'vote_count.gte': 10
+            }, 15000);
+            return (data.results || []).map(item => ({
+                ...this.formatItem({ ...item, media_type: 'tv' }),
+                isAnime: true,
+                categoria: 'Anime'
+            }));
+        } catch (error) {
+            return [
+                { nome: 'Solo Leveling', ano: '2024', tipo: 'serie', isAnime: true, nota: 8.8, generos: ['Anime', 'Ação', 'Fantasia'] },
+                { nome: 'Jujutsu Kaisen', ano: '2020', tipo: 'serie', isAnime: true, nota: 8.6, generos: ['Anime', 'Ação', 'Sobrenatural'] },
+                { nome: 'Demon Slayer', ano: '2019', tipo: 'serie', isAnime: true, nota: 8.7, generos: ['Anime', 'Ação', 'Fantasia'] },
+                { nome: 'One Piece', ano: '1999', tipo: 'serie', isAnime: true, nota: 8.9, generos: ['Anime', 'Aventura', 'Fantasia'] },
+                { nome: 'Bleach: Thousand-Year Blood War', ano: '2022', tipo: 'serie', isAnime: true, nota: 8.9, generos: ['Anime', 'Ação'] }
             ];
         }
     }
