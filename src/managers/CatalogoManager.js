@@ -383,10 +383,13 @@ class CatalogoManager {
             if (epNum > maxAnySeq) return null;
             if (expectedEps > 0 && epNum > expectedEps) return null; // Clampa ao total real de episódios da temporada no TMDB
 
-            const hasDub = CatalogoManager.hasValidDubbedMedia(ep);
-            const hasLeg = CatalogoManager.hasValidSubtitledMedia(ep);
+            // O áudio Dublado só é liberado para o episódio se a sequência dublada contínua alcançar este episódio a partir do Ep 1
+            const hasDub = (epNum <= maxDubSeq) && CatalogoManager.hasValidDubbedMedia(ep);
 
-            if (!hasDub && !hasLeg) return null; // Episódio sem mídia real
+            // O áudio Legendado só é liberado para o episódio se a sequência legendada contínua alcançar este episódio a partir do Ep 1
+            const hasLeg = (epNum <= maxLegSeq) && CatalogoManager.hasValidSubtitledMedia(ep);
+
+            if (!hasDub && !hasLeg) return null; // Episódio sem mídia contínua válida
 
             const versoesFiltradas = {};
             if (hasDub) {
@@ -438,8 +441,8 @@ class CatalogoManager {
             numero: num,
             nome: `Temporada ${num}`,
             totalEpisodios: episodiosValidos.length,
-            isDublado: maxDubSeq > 0 || episodiosValidos.some(e => e.isDublado),
-            isLegendado: maxLegSeq > 0 || episodiosValidos.some(e => e.isLegendado),
+            isDublado: maxDubSeq > 0,
+            isLegendado: maxLegSeq > 0,
             isDubladoCompleto: expectedEps > 0 ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0),
             isLegendadoCompleto: expectedEps > 0 ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0),
             isCompleto: isCompleto,
