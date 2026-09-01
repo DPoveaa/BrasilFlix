@@ -18053,7 +18053,11 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
                     dropdown.innerHTML = results.map(item => {
                         const posterUrl = item.poster || '/assets/no-poster.png';
-                        const typeTag = item.tipo === 'serie' ? '📺 Série' : '🎬 Filme';
+                        let typeTag = '🎬 Filme';
+                        if (item.tipo === 'anime') typeTag = '🌸 Anime';
+                        else if (item.tipo === 'dorama') typeTag = '🇰🇷 Dorama';
+                        else if (item.tipo === 'serie' || item.tipo === 'tv') typeTag = '📺 Série';
+
                         const yearStr = item.ano ? `(${item.ano})` : '';
                         const safeTitle = (item.nome || '').replace(/'/g, "\\'");
                         const safeOrig = (item.nomeOriginal || '').replace(/'/g, "\\'");
@@ -18096,12 +18100,23 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 selPoster.src = poster || '/assets/no-poster.png';
                 selTitle.textContent = title;
                 selMeta.textContent = [year ? 'Ano: ' + year : '', originalTitle ? 'Original: ' + originalTitle : ''].filter(Boolean).join(' • ');
-                selType.textContent = type === 'serie' ? '📺 Série de TV' : '🎬 Filme';
+                
+                let typeLabel = '🎬 Filme';
+                if (type === 'anime') typeLabel = '🌸 Anime';
+                else if (type === 'dorama') typeLabel = '🇰🇷 Dorama Asiático';
+                else if (type === 'serie' || type === 'tv') typeLabel = '📺 Série de TV';
+                
+                selType.textContent = typeLabel;
                 preview.style.display = 'block';
             }
 
             const typeSelect = document.getElementById('req-media-type');
-            if (typeSelect) typeSelect.value = type === 'tv' || type === 'serie' ? 'serie' : 'filme';
+            if (typeSelect) {
+                if (type === 'anime') typeSelect.value = 'anime';
+                else if (type === 'dorama') typeSelect.value = 'dorama';
+                else if (type === 'tv' || type === 'serie') typeSelect.value = 'serie';
+                else typeSelect.value = 'filme';
+            }
 
             // Hidden fields
             document.getElementById('req-hidden-tmdb-id').value = tmdbId || '';
@@ -18661,9 +18676,9 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 <div style="margin-bottom: 12px;">
                     <label class="settings-label" style="margin-bottom: 6px;">Preferência de Áudio / Dublagem <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
                     <select id="req-media-audio" class="settings-input">
-                        <option value="Dublado PT-BR" selected>🎙️ Dublado em Português (PT-BR)</option>
-                        <option value="Dual Áudio (Dublado + Legendado)">🎧 Dual Áudio (Dublado + Legendado)</option>
-                        <option value="Legendado PT-BR">💬 Legendado (Áudio Original com Legendas PT-BR)</option>
+                        <option value="Dual Áudio (Dublado + Legendado)" selected>🎧 Ambas as Versões / Dual Áudio (Dublado + Legendado)</option>
+                        <option value="Dublado PT-BR">🎙️ Apenas Dublado em Português (PT-BR)</option>
+                        <option value="Legendado PT-BR">💬 Apenas Legendado (Áudio Original com Legendas PT-BR)</option>
                         <option value="Qualquer / Indiferente">🌐 Tanto faz / Qualquer um</option>
                     </select>
                 </div>

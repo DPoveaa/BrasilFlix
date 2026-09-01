@@ -1034,42 +1034,105 @@ class DownloaderManager extends EventEmitter {
         });
     }
 
-    async downloadHttp(url, fileName, onProgress = null) {
+    async downloadHttp(url, fileName, onProgress = null, options = {}) {
         this.ensureDirectories();
         await this.ensureDiskSpace();
-        const targetPath = path.join(this.downloadDir, fileName);
-        console.log(`📥 Baixando arquivo direto via HTTP: ${fileName}...`);
 
-        const response = await axios({
-            method: 'GET',
-            url: url,
-            responseType: 'stream',
-            timeout: 30000
-        });
+        // Garante extensão de vídeo se o nome vier sem ela
+        if (!path.extname(fileName)) {
+            fileName = `${fileName}.mp4`;
+        }
+
+        const targetPath = path.join(this.downloadDir, fileName);
+        const isEcoMode = options.mode === 'eco' || SchedulerService.getActiveMode() === 'eco';
+        const ecoLimitMB = config.ECO_DOWNLOAD_LIMIT_MB || 3.0;
+        const maxBytesPerSec = isEcoMode ? Math.round(ecoLimitMB * 1024 * 1024) : Infinity;
+
+        const mediaTitle = options.title || fileName;
+        const isSerie = options.type === 'serie' || (options.season && options.episode && options.type !== 'filme');
+        const displayTitle = isSerie
+            ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})`
+            : mediaTitle;
+
+        console.log(`📥 Iniciando download direto via Web CDN: "${displayTitle}" [${isEcoMode ? `🍃 ECO: Máx ${ecoLimitMB} MB/s` : '⚡ MÁXIMA VELOCIDADE'}]`);
+
+        const abortController = new AbortController();
+        let isCancelled = false;
+
+        if (options.jobId && this.activeDownloads) {
+            this.activeDownloads.set(options.jobId, {
+                cancel: () => {
+                    isCancelled = true;
+                    try {
+                        abortController.abort();
+                    } catch (e) {}
+                }
+            });
+        }
+
+        let response;
+        try {
+            response = await axios({
+                method: 'GET',
+                url: url,
+                responseType: 'stream',
+                signal: abortController.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://serv01.meusdoramas.club/'
+                },
+                timeout: 30000
+            });
+        } catch (err) {
+            if (options.jobId && this.activeDownloads) {
+                this.activeDownloads.delete(options.jobId);
+            }
+            if (isCancelled || abortController.signal.aborted) {
+                throw new Error('DOWNLOAD_CANCELLED');
+            }
+            throw new Error(`Falha ao conectar com o servidor CDN: ${err.message}`);
+        }
 
         const totalBytes = parseInt(response.headers['content-length'] || 0, 10);
         let downloadedBytes = 0;
         let lastProgressTime = Date.now();
+        let lastDownloadedBytes = 0;
+        let currentSpeedStr = '0.0 MB/s';
 
         const writer = fs.createWriteStream(targetPath);
 
         return new Promise((resolve, reject) => {
+            const cleanup = () => {
+                if (options.jobId && this.activeDownloads) {
+                    this.activeDownloads.delete(options.jobId);
+                }
+            };
+
             response.data.on('data', (chunk) => {
                 downloadedBytes += chunk.length;
                 const now = Date.now();
-                if (now - lastProgressTime > 1000) {
+                const elapsedMs = now - lastProgressTime;
+
+                if (elapsedMs >= 1000) {
+                    const bytesInInterval = downloadedBytes - lastDownloadedBytes;
+                    const speedMB = (bytesInInterval / (1024 * 1024)) / (elapsedMs / 1000);
+                    currentSpeedStr = `${speedMB.toFixed(2)} MB/s`;
+
                     lastProgressTime = now;
+                    lastDownloadedBytes = downloadedBytes;
+
                     const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0;
                     const downloadedMB = (downloadedBytes / (1024 * 1024)).toFixed(1);
-                    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+                    const totalMB = totalBytes > 0 ? (totalBytes / (1024 * 1024)).toFixed(1) : '?';
 
-                    process.stdout.write(`\r📥 Baixando: ${percent.toFixed(1)}% | ${downloadedMB}/${totalMB} MB `);
+                    process.stdout.write(`\r📥 Web CDN: ${percent.toFixed(1)}% | ${downloadedMB}/${totalMB} MB (${currentSpeedStr}) `);
 
                     if (onProgress) {
                         onProgress({
                             percent: parseFloat(percent.toFixed(1)),
                             downloaded: `${downloadedMB} MB`,
-                            total: `${totalMB} MB`
+                            total: `${totalMB} MB`,
+                            speed: currentSpeedStr
                         });
                     }
                 }
@@ -1078,19 +1141,37 @@ class DownloaderManager extends EventEmitter {
             response.data.pipe(writer);
 
             writer.on('finish', () => {
+                cleanup();
                 process.stdout.write('\n');
-                console.log(`✅ Download HTTP concluído: ${fileName}`);
+                console.log(`✅ Download Web CDN concluído com sucesso: ${fileName} (${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB)`);
                 resolve({
                     filePath: targetPath,
                     fileName: fileName,
-                    sizeBytes: downloadedBytes
+                    sizeBytes: downloadedBytes,
+                    isDirect: true
                 });
             });
 
             writer.on('error', (err) => {
+                cleanup();
                 writer.close();
                 fs.removeSync(targetPath);
-                reject(new Error(`Falha no download HTTP: ${err.message}`));
+                if (isCancelled || abortController.signal.aborted) {
+                    reject(new Error('DOWNLOAD_CANCELLED'));
+                } else {
+                    reject(new Error(`Falha na gravação do arquivo CDN: ${err.message}`));
+                }
+            });
+
+            response.data.on('error', (err) => {
+                cleanup();
+                writer.close();
+                fs.removeSync(targetPath);
+                if (isCancelled || abortController.signal.aborted) {
+                    reject(new Error('DOWNLOAD_CANCELLED'));
+                } else {
+                    reject(new Error(`Erro no fluxo de dados CDN: ${err.message}`));
+                }
             });
         });
     }

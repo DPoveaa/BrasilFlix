@@ -1180,6 +1180,55 @@ class QueueManager extends EventEmitter {
         let videoInfo = null;
         let langInfo = job.langInfo || { isValid: true, isDublado: true, isLegendado: false, audioText: 'Dublado (PT-BR)' };
 
+        let tmdbExpectedDurationMin = 0;
+        try {
+            if (metadata.tmdbId) {
+                if (job.type === 'filme') {
+                    if (metadata.duracaoMinutos && metadata.duracaoMinutos > 0) {
+                        tmdbExpectedDurationMin = metadata.duracaoMinutos;
+                    } else {
+                        const movieDet = await TMDBService.getMovieDetails(metadata.tmdbId);
+                        if (movieDet && movieDet.duracaoMinutos > 0) {
+                            tmdbExpectedDurationMin = movieDet.duracaoMinutos;
+                            metadata.duracaoMinutos = movieDet.duracaoMinutos;
+                        }
+                    }
+                } else {
+                    const epDet = await TMDBService.getEpisodeDetails(metadata.tmdbId, job.season || 1, job.episode || 1);
+                    if (epDet && epDet.duracaoMinutos) {
+                        tmdbExpectedDurationMin = epDet.duracaoMinutos;
+                    } else if (metadata.duracaoMinutos) {
+                        tmdbExpectedDurationMin = metadata.duracaoMinutos;
+                    }
+                }
+            }
+        } catch (e) {}
+
+        const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (tmdbExpectedDurationMin || 0) <= 10);
+        const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
+        const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
+
+        let finalMinSec = 2700; // 45 min padrão para filmes
+        if (isMicro) {
+            finalMinSec = 40;
+        } else if (job.type === 'serie') {
+            if (effectiveExpectedMin <= 15) {
+                finalMinSec = 180; // 3 min para animes curtos
+            } else {
+                finalMinSec = Math.min(600, Math.max(300, Math.floor(effectiveExpectedMin * 60 * 0.35)));
+            }
+        } else {
+            // Para FILMES:
+            if (effectiveExpectedMin >= 120) {
+                // Filmes longos (ex: Duna 2 com 166 min, Vingadores com 180 min): exige no mínimo 65% da duração (~100 min / 6000s)
+                finalMinSec = Math.floor(effectiveExpectedMin * 60 * 0.65);
+            } else if (effectiveExpectedMin <= 80) {
+                finalMinSec = Math.max(2400, Math.floor(effectiveExpectedMin * 60 * 0.50));
+            } else {
+                finalMinSec = 3600; // Mínimo 60 minutos para filmes normais
+            }
+        }
+
         // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD — retomada inteligente após crash
         let resumeFromOptimized = false;
         let resumeFromRaw = false;
@@ -1187,21 +1236,27 @@ class QueueManager extends EventEmitter {
         // Primeiro tenta retomar do arquivo otimizado (já codificado, pronto para upload)
         if (optimizedPath && fs.existsSync(optimizedPath)) {
             const optStat = fs.statSync(optimizedPath);
-            if (optStat.size > 100 * 1024 * 1024) {
+            if (optStat.size > 50 * 1024 * 1024) {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const optInfo = await VideoProcessor.getVideoInfo(optimizedPath);
-                    if (optInfo && optInfo.duration > 0) {
-                        console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(optimizedPath)}`);
+                    if (optInfo && optInfo.duration >= finalMinSec) {
+                        console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB, ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
                         videoInfo = optInfo;
                         bestSource = job.bestSource || { title: job.title, source: 'Cache Local', audio: '1080p Full HD' };
                         langInfo = job.langInfo || langInfo;
+                    } else {
+                        console.warn(`🧹 Arquivo otimizado incompleto (${optInfo?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado para reprocessar.`);
+                        await DownloaderManager.cleanupFile(optimizedPath);
+                        optimizedPath = null;
+                        job.optimizedPath = null;
                     }
                 } catch (e) {
                     console.warn('⚠️ Arquivo otimizado inválido, descartando:', e.message);
                     await DownloaderManager.cleanupFile(optimizedPath);
                     optimizedPath = null;
+                    job.optimizedPath = null;
                 }
             } else {
                 await DownloaderManager.cleanupFile(optimizedPath);
@@ -1218,13 +1273,18 @@ class QueueManager extends EventEmitter {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const info = await VideoProcessor.getVideoInfo(rawFilePath);
-                    if (info && info.duration > 0) {
-                        console.log(`📁 Utilizando arquivo de vídeo existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB): ${path.basename(rawFilePath)}`);
+                    if (info && info.duration >= finalMinSec) {
+                        console.log(`📁 Utilizando arquivo bruto existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB, ${info.durationFormatted}): ${path.basename(rawFilePath)}`);
                         resumeFromRaw = true;
                         videoInfo = info;
                         downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
                         bestSource = job.bestSource || { title: job.title, source: 'Upload Manual', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
                         langInfo = job.langInfo || langInfo;
+                    } else {
+                        console.warn(`🧹 Arquivo bruto em disco incompleto (${info?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado.`);
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                        rawFilePath = null;
+                        job.rawFilePath = null;
                     }
                 } catch (e) {
                     console.warn('⚠️ Arquivo raw inválido, descartando:', e.message);
@@ -1461,10 +1521,13 @@ class QueueManager extends EventEmitter {
                         });
 
                     } else if (currentSource.url) {
-                        const fileName = `${Date.now()}_${path.basename(currentSource.url) || 'video.mp4'}`;
+                        const cleanUrlPath = currentSource.url.split('?')[0];
+                        const baseName = path.basename(cleanUrlPath) || 'video.mp4';
+                        const fileName = `${Date.now()}_${baseName.endsWith('.mp4') || baseName.endsWith('.mkv') ? baseName : `${baseName}.mp4`}`;
+
                         downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
                             job.progress = progress.percent;
-                            job.progressDetails = `${progress.downloaded} / ${progress.total}`;
+                            job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed || 'Web CDN'})`;
                         }, {
                             jobId: job.id,
                             title: job.title,
@@ -1474,6 +1537,7 @@ class QueueManager extends EventEmitter {
                             audio: currentSource.audio,
                             isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
                             audioPreference: job.audioPreference || 'dublado',
+                            mode: SchedulerService.getActiveMode(),
                             isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
                             isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
                             runtime: metadata.runtime || metadata.duracao
@@ -1652,22 +1716,6 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        let tmdbExpectedDurationMin = 0;
-        try {
-            if (metadata.tmdbId) {
-                if (job.type === 'filme') {
-                    tmdbExpectedDurationMin = metadata.duracaoMinutos || 0;
-                } else {
-                    const epDet = await TMDBService.getEpisodeDetails(metadata.tmdbId, job.season || 1, job.episode || 1);
-                    if (epDet && epDet.duracaoMinutos) {
-                        tmdbExpectedDurationMin = epDet.duracaoMinutos;
-                    } else if (metadata.duracaoMinutos) {
-                        tmdbExpectedDurationMin = metadata.duracaoMinutos;
-                    }
-                }
-            }
-        } catch (e) {}
-
         if (!resumeFromOptimized) {
             // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
             try {
@@ -1750,7 +1798,7 @@ class QueueManager extends EventEmitter {
                             } catch(e) {}
                         }
                         const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
-                        if (ptSubs && ptSubs.length > 0) {
+                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado) {
                             console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${ptSubs.length} legenda(s) PT-BR encontradas no OpenSubtitles. Processando como Legendado (PT-BR)...`);
                             langInfo = {
                                 isValid: true,
@@ -1766,7 +1814,7 @@ class QueueManager extends EventEmitter {
                             if (job.type === 'serie') {
                                 this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
                             }
-                            throw new Error(`O arquivo baixado não contém áudio nem legendas em Português.`);
+                            throw new Error(`O arquivo baixado não contém áudio dublado em Português.`);
                         }
                     }
                 }
@@ -1862,6 +1910,15 @@ class QueueManager extends EventEmitter {
             await new Promise(r => setTimeout(r, 5000));
         }
 
+        // Validação Estrita de Duração Pré-Upload (Evita qualquer envio de vídeo cortado/truncado por crash prévio)
+        const finalOptInfo = await VideoProcessor.getVideoInfo(optimizedPath).catch(() => null);
+        if (finalOptInfo && finalOptInfo.duration > 0 && finalOptInfo.duration < finalMinSec) {
+            console.error(`❌ [TRAVA ANTI-TRUNCAMENTO] Arquivo otimizado para "${job.title}" possui apenas ${finalOptInfo.durationFormatted} (${Math.round(finalOptInfo.duration)}s), mas o mínimo aceito é ${Math.round(finalMinSec / 60)} min. Abortando upload e limpando arquivo corrompido.`);
+            await DownloaderManager.cleanupFile(optimizedPath);
+            await DownloaderManager.cleanupFile(rawFilePath);
+            throw new Error(`Vídeo com duração truncada (${finalOptInfo.durationFormatted} vs mínimo de ${Math.round(finalMinSec / 60)} min). Upload abortado.`);
+        }
+
         job.status = 'uploading';
         job.progress = 0;
         job.progressDetails = 'Iniciando envio ao Telegram...';
@@ -1885,6 +1942,7 @@ class QueueManager extends EventEmitter {
         const sourceTitle = effectiveSource.title || path.basename(rawFilePath || optimizedPath || '');
         const hasCamKeyword = CAM_REGEX.test(sourceTitle) || CAM_GROUPS_REGEX.test(sourceTitle) || (effectiveSource.isCam === true);
         const hasDigitalKeyword = DIGITAL_MASTER_REGEX.test(sourceTitle) && !hasCamKeyword;
+        const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(sourceTitle);
 
         const relStatus = job.type === 'filme' ? await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference !== 'legendado') : { isTheatricalOnly: false };
         const isCamArtifacts = VideoProcessor.detectCamArtifacts(videoInfo, path.basename(rawFilePath || optimizedPath || ''), metadata);
@@ -1892,15 +1950,23 @@ class QueueManager extends EventEmitter {
         let isCamFinal = false;
         if (hasCamKeyword || isCamArtifacts || (effectiveSource.quality && effectiveSource.quality.toUpperCase().includes('CAM'))) {
             isCamFinal = true;
-        } else if (relStatus.isTheatricalOnly && !hasDigitalKeyword) {
+        } else if (relStatus.isTheatricalOnly && (!hasDigitalKeyword || !isBrazilianGroup)) {
+            // Se o filme só existe em cinema no mundo, qualquer release de tracker genérico com WEBRip é fake/CAM/Bet disfarçado
             isCamFinal = true;
+        }
+
+        if (isCamFinal && !config.ALLOW_CINEMA_CAM && !job.allowCam) {
+            console.log(`🚫 [CAM REJEITADO] "${job.title}" identificado como gravação de cinema/CAM e o sistema está configurado para não aceitar versões de cinema (ALLOW_CINEMA_CAM = false). Abortando.`);
+            await DownloaderManager.cleanupFile(rawFilePath);
+            await DownloaderManager.cleanupFile(optimizedPath);
+            throw new Error(`Rejeitado: Versão de cinema/CAM detectada para "${job.title}". Aguardando lançamento digital oficial.`);
         }
 
         metadata.isCam = isCamFinal;
         if (isCamFinal) {
-            console.log(`🎬 [CAM DETECTADO] "${job.title}" identificado como gravação de Cinema. Motivo: ${hasCamKeyword ? 'título/grupo de release CAM' : (isCamArtifacts ? 'áudio/container mono ou de microfone de cinema' : 'lançamento digital não ocorreu (TMDB theatrical-only)')}`);
+            console.log(`🎬 [CAM DETECTADO] "${job.title}" identificado como gravação de Cinema. Motivo: ${hasCamKeyword ? 'título/grupo de release CAM' : (isCamArtifacts ? 'áudio/container mono ou de microfone de cinema' : 'lançamento digital oficial não ocorreu no TMDB')}`);
         }
-        metadata.qualidade = isCamFinal ? 'CAM (Cinema)' : (effectiveSource.quality || '1080p Full HD');
+        metadata.qualidade = isCamFinal ? 'Versão Cinema (CAM)' : (effectiveSource.quality || '1080p Full HD');
         
         // Classificação rigorosa: Ou é 100% Dublado (áudio PT-BR sem legendas na tela) ou 100% Legendado (áudio original + legendas PT-BR)
         const isJobDublado = job.audioPreference !== 'legendado' && (langInfo ? langInfo.isDublado : true);
@@ -1967,7 +2033,8 @@ class QueueManager extends EventEmitter {
                 uploadResult.fileId,
                 {
                     ...metadata,
-                    episodioNome: metadata.episodioNome
+                    isCam: isCamFinal,
+                    qualidade: metadata.qualidade || '1080p Full HD'
                 }
             );
         }
@@ -2010,9 +2077,11 @@ class QueueManager extends EventEmitter {
                     audioBloco = '🔊 <b>Áudio:</b> Original (Inglês)\n📝 <b>Legendas:</b> Português (PT-BR) [Embutida/Hardsub]';
                 }
 
+                const qualTexto = isCamFinal ? 'Versão Cinema (CAM)' : (metadata.qualidade || '1080p Full HD');
+
                 const notifMsg = `✅ <b>Conteúdo Armazenado & Catalogado com Sucesso!</b>\n\n` +
                                  `${tipoTexto}\n` +
-                                 `✨ <b>Qualidade:</b> ${metadata.qualidade || '1080p Full HD'}\n` +
+                                 `✨ <b>Qualidade:</b> ${qualTexto}\n` +
                                  `${audioBloco}\n` +
                                  `📦 <b>Fonte/Release:</b> <code>${fonteInfo}</code>\n` +
                                  `🆔 <b>Message ID:</b> <code>${uploadResult.messageId}</code>\n\n` +

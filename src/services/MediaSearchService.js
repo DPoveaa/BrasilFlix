@@ -1,6 +1,7 @@
 const axios = require('axios');
 const config = require('../../config');
 const TMDBService = require('./TMDBService');
+const AnimeExtractorService = require('./AnimeExtractorService');
 
 class MediaSearchService {
     constructor() {
@@ -41,21 +42,27 @@ class MediaSearchService {
         const pref = options.audioPreference || 'geral';
         const season = options.season || 1;
         const episode = options.episode || 1;
+        let isAnime = options.isAnime || options.is_anime || false;
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
         console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''} ${tipo === 'serie' ? `(T${season}E${episode})` : ''}...`);
 
         const allResults = [];
         const seenHashes = new Set();
 
-        // 1. Tentar obter IMDb ID caso não tenha sido fornecido
+        // 1. Tentar obter IMDb ID caso não tenha sido fornecido e verificar se é Anime
+        let tmdbDetails = null;
         if (!imdbId && options.tmdbId) {
             try {
                 if (tipo === 'filme') {
-                    const det = await TMDBService.getMovieDetails(options.tmdbId);
-                    imdbId = det?.imdbId;
+                    tmdbDetails = await TMDBService.getMovieDetails(options.tmdbId);
+                    imdbId = tmdbDetails?.imdbId;
                 } else {
-                    const det = await TMDBService.getTVDetails(options.tmdbId);
-                    imdbId = det?.imdbId;
+                    tmdbDetails = await TMDBService.getTVDetails(options.tmdbId);
+                    imdbId = tmdbDetails?.imdbId;
+                }
+                if (tmdbDetails && !isAnime) {
+                    const generos = tmdbDetails.generos || [];
+                    isAnime = generos.includes('Animação') || generos.includes('Anime') || tmdbDetails.original_language === 'ja';
                 }
             } catch (e) {
                 console.warn('⚠️ Diagnóstico TMDB (busca por ID):', e.message);
@@ -71,21 +78,57 @@ class MediaSearchService {
                 
                 if (searchRes.length > 0) {
                     const first = searchRes[0];
-                    const det = tipo === 'filme' ? 
+                    tmdbDetails = tipo === 'filme' ? 
                         await TMDBService.getMovieDetails(first.tmdbId) : 
                         await TMDBService.getTVDetails(first.tmdbId);
-                    imdbId = det?.imdbId;
+                    if (tmdbDetails) {
+                        imdbId = tmdbDetails.imdbId;
+                        if (!isAnime) {
+                            const generos = tmdbDetails.generos || [];
+                            isAnime = generos.includes('Animação') || generos.includes('Anime') || tmdbDetails.original_language === 'ja';
+                        }
+                    }
                 }
             } catch (e) {
                 console.warn('⚠️ Diagnóstico TMDB (busca por título):', e.message);
             }
         }
 
-        // 2. BUSCA NO TORRENTIO / STREMIO MULTI-PROVIDER (ComandoTorrents, BluDV, CineGAVETA, TorrentGalaxy, etc.)
+        // 2. BUSCA DIRETA EM WEB CDN PARA ANIMES (MeusAnimes - Alta velocidade e sem dependência de seeders)
+        if (isAnime) {
+            try {
+                console.log(`🎌 [Anime Direct] Consultando MeusAnimes (Web CDN) para: "${cleanQuery}" ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
+                const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
+                    nomeOriginal: originalName,
+                    season,
+                    episode,
+                    audioPreference: pref,
+                    ano,
+                    ignorarFallbackLegendado: options.ignorarFallbackLegendado,
+                    ignorarFallbackDublado: options.ignorarFallbackDublado
+                });
+
+                for (const item of animeDirectResults) {
+                    allResults.push(item);
+                }
+            } catch (e) {
+                console.warn('⚠️ Falha ao consultar AnimeExtractorService:', e.message);
+            }
+        }
+
+        let isTheatricalOnly = options.isTheatricalOnly;
+        if (isTheatricalOnly === undefined && tmdbDetails?.tmdbId && tipo === 'filme') {
+            try {
+                const relStatus = await TMDBService.checkDigitalReleaseStatus(tmdbDetails.tmdbId, pref === 'dublado');
+                isTheatricalOnly = relStatus.isTheatricalOnly;
+            } catch (e) {}
+        }
+
+        // 3. BUSCA NO TORRENTIO / STREMIO MULTI-PROVIDER (ComandoTorrents, BluDV, CineGAVETA, TorrentGalaxy, etc.)
         if (imdbId) {
             try {
                 console.log(`🌐 Consultando catálogo Stremio/Torrentio para IMDb: ${imdbId} ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
-                const torrentioResults = await this.searchTorrentio(imdbId, tipo, { forcarNaoCam, query: cleanQuery, originalName, ano, season, episode });
+                const torrentioResults = await this.searchTorrentio(imdbId, tipo, { forcarNaoCam, query: cleanQuery, originalName, ano, season, episode, isTheatricalOnly });
                 for (const item of torrentioResults) {
                     if (item.isPtBr && !seenHashes.has(item.infoHash)) {
                         seenHashes.add(item.infoHash);
@@ -185,7 +228,7 @@ class MediaSearchService {
         for (let i = 0; i < variations.length; i += batchSize) {
             const batch = variations.slice(i, i + batchSize);
             const batchPromises = batch.map(q => 
-                this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode })
+                this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode, isTheatricalOnly })
                     .catch(() => [])
             );
 
@@ -266,7 +309,7 @@ class MediaSearchService {
         }
 
         const dubComSeeds = ptBrResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
-        const shouldFetchLegendado = !options.ignorarFallbackLegendado && (ptBrResults.length === 0 || (pref === 'legendado') || (pref === 'dublado' && dubComSeeds.length === 0));
+        const shouldFetchLegendado = !options.ignorarFallbackLegendado && (!isTheatricalOnly || !forcarNaoCam) && (ptBrResults.length === 0 || (pref === 'legendado') || (pref === 'dublado' && dubComSeeds.length === 0));
 
         // Busca fallback de OpenSubtitles se não houver dublado com seeders saudáveis
         if (shouldFetchLegendado && imdbId) {
@@ -278,7 +321,9 @@ class MediaSearchService {
                     const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { 
                         season, 
                         episode,
-                        originalLanguage: options.originalLanguage || options.idiomaOriginal
+                        originalLanguage: options.originalLanguage || options.idiomaOriginal,
+                        isTheatricalOnly,
+                        allowCam: options.allowCam
                     });
                     for (const st of fallbackStreams) {
                         if (!ptBrResults.some(r => r.infoHash === st.infoHash)) {
@@ -314,8 +359,33 @@ class MediaSearchService {
         const legendados = ptBrResults.filter(r => r.isLegendado);
         console.log(`✅ Encontradas ${ptBrResults.length} opções 1080p/720p em Português (${dublados.length} Dublado(s), ${legendados.length} Legendado(s))!`);
 
+        // Diagnóstico Inteligente de Disponibilidade de Áudio para Animes
+        if (isAnime) {
+            const hasWebDirectDub = dublados.some(r => r.isDirect);
+            const hasTorrentDub = dublados.some(r => !r.isDirect);
+            const hasAnyDub = dublados.length > 0;
+
+            if (hasWebDirectDub) {
+                console.log(`🎌 [Anime Audio Intel] "${cleanQuery}": Versão Dublada disponível na CDN Web (MeusAnimes) [⚡ Download Direto]!`);
+            } else if (hasTorrentDub) {
+                console.log(`🎌 [Anime Audio Intel] "${cleanQuery}": Versão Dublada NÃO encontrada na CDN Web, mas DISPONÍVEL via Torrents Dual-Áudio!`);
+            } else if (!hasAnyDub) {
+                console.log(`🎌 [Anime Audio Intel] "${cleanQuery}": Obra EXCLUSIVAMENTE LEGENDADA (sem dublagem licenciada no Brasil). Utilizando versão oficial Legendada.`);
+            }
+        }
+
         // Ranking inteligente unificado: avalia saúde, preferência de áudio, qualidade e resolução
-        return this.rankResults(ptBrResults, cleanQuery, { ...options, tipo });
+        const ranked = this.rankResults(ptBrResults, cleanQuery, { ...options, tipo });
+
+        // Anexa diagnóstico no resultado retornado
+        if (isAnime && ranked.length > 0) {
+            const hasWebDirectDub = dublados.some(r => r.isDirect);
+            const hasTorrentDub = dublados.some(r => !r.isDirect);
+            const dubAvailability = hasWebDirectDub ? 'web_direct' : (hasTorrentDub ? 'torrent_only' : 'never_dubbed');
+            ranked.forEach(r => { r.dubAvailability = dubAvailability; });
+        }
+
+        return ranked;
     }
 
     async searchTorrentio(imdbId, tipo = 'filme', opts = {}) {
@@ -381,6 +451,11 @@ class MediaSearchService {
                 const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(rawTitle));
 
                 const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit;
+
+                const hasHardsubFlag = /\b(hc|hc[-_]?sub|hardsub|korsub|chssub|vostfr)\b/i.test(rawTitle) || /\b(hc|hc[-_]?sub|hardsub|korsub|chssub)\b/i.test(title);
+                if (opts.audioPreference === 'dublado' && hasHardsubFlag && !isBrazilianGroup) {
+                    continue; // Rejeita releases com legendas queimadas/forçadas na tela para pedidos dublados
+                }
 
                 const isExplicitLegendadoInTitle = /\b(legendado|legendas|legenda|sub[-_ ]?pt[-_ ]?br|subs?\.pob|pt[-_ ]?subs?|hc-sub)\b/i.test(title);
                 const hasPtSubFlag = (/(Multi Subs|Subtitles|Subs:?)/i.test(rawTitle)) && (isPtBrExplicit || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle)) && !isPtPtExplicit;
@@ -450,9 +525,14 @@ class MediaSearchService {
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(title);
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
-                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino)\b/i.test(title);
                 if (isScam) continue;
                 if (isRussian && !isDublado) continue;
+
+                // Se o filme só existe em cinema no mundo (Theatrical Only), descarta qualquer fake WEBRip que não venha de grupo brasileiro verificado
+                if (opts.isTheatricalOnly && !isBrazilianGroup && !opts.allowCam && !config.ALLOW_CINEMA_CAM) {
+                    continue;
+                }
 
                 const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(title) && !isCam;
                 const is4k = /\b(2160p|4k|uhd|remux\.2160p)\b/i.test(rawTitle) || /\b(2160p|4k|uhd)\b/i.test(title);
@@ -562,9 +642,14 @@ class MediaSearchService {
 
                 // Rejeita categoricamente releases russos (D, D1, D2, DVO, MVO, AVO, Line.Audio, LostFilm, etc.) e sites de apostas/scam
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
-                const isScam = /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|1x_bet|1x-bet)\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino)\b/i.test(title);
                 const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
                 if ((isRussian || isScam) && origLang !== 'ru' && origLang !== 'rus') {
+                    continue;
+                }
+
+                // Se o filme é exclusivo de cinema no mundo (Theatrical Only), descarta streams genéricos não autorizados se forcarNaoCam ou sem permissão de CAM
+                if (opts.isTheatricalOnly && (opts.forcarNaoCam || !config.ALLOW_CINEMA_CAM) && !opts.allowCam) {
                     continue;
                 }
 
@@ -761,6 +846,11 @@ class MediaSearchService {
             const isOriginalForSub = (opts.audioPreference === 'legendado' || opts.allowOriginalAudio) && !isPtPtExplicit && !/\b(hindi|telugu|tamil|russian|ita|french|german)\b/i.test(name);
             const isLegendado = !isDublado && (isLegendadoPt || isExplicitPtBrSub || isOriginalForSub) && !isPtPtExplicit;
 
+            const hasHardsubFlag = /\b(hc|hc[-_]?sub|hardsub|korsub|chssub|vostfr)\b/i.test(name);
+            if (opts.audioPreference === 'dublado' && hasHardsubFlag && !isBrazilianGroup) {
+                return;
+            }
+
             // Se não tiver nem áudio dublado nem legenda em português comprovada nem original para OpenSubtitles, descarta
             if (!isDublado && !isLegendado) {
                 return;
@@ -812,10 +902,15 @@ class MediaSearchService {
             if (sizeBytes > maxAllowedBytes) return;
 
             const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(name);
-            const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(name);
+            const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(name);
             if (isScam) return;
             const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
             if (isRussian && origLang !== 'ru' && origLang !== 'rus' && !isDublado) return;
+
+            // Se o filme só existe em cinema no mundo (Theatrical Only), descarta qualquer fake WEBRip que não venha de grupo brasileiro verificado
+            if (opts.isTheatricalOnly && !isBrazilianGroup && !opts.allowCam && !config.ALLOW_CINEMA_CAM) {
+                return;
+            }
 
             const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(name);
             const isWebDl = /\b(web-dl|webrip|bluray|brrip|bdrip|remux|hdrip)\b/i.test(name) && !isCam;
@@ -892,6 +987,10 @@ class MediaSearchService {
             let scoreA = 0;
             let scoreB = 0;
 
+            // 0. FONTES DIRETAS WEB CDN (Prioridade Máxima Absoluta - Alta Velocidade e Sem Dependência de Seeders)
+            if (a.isDirect) scoreA += 15000;
+            if (b.isDirect) scoreB += 15000;
+
             // 1. Preferência de Áudio (DUBLADO É PRIORIDADE MÁXIMA ABSOLUTA)
             if (pref === 'legendado') {
                 if (a.isLegendado) scoreA += 5000;
@@ -905,6 +1004,13 @@ class MediaSearchService {
                 if (a.isLegendado) scoreA += 300;
                 if (b.isLegendado) scoreB += 300;
             }
+
+            // 1.1 GRUPOS BRASILEIROS VERIFICADOS (Lapumia, BluDV, Comando, Wolverdon, Starck, CineGAVETA, etc.)
+            // Releases desses grupos são 100% limpos de marcas d'água, sem propagandas de apostas e com áudio oficial
+            const isBrGroupA = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(a.title) || a.isBrazilianGroup;
+            const isBrGroupB = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(b.title) || b.isBrazilianGroup;
+            if (isBrGroupA) scoreA += 4500;
+            if (isBrGroupB) scoreB += 4500;
 
             // 2. Fidelidade PT-BR vs PT-PT
             if (a.isPtBrExplicit) scoreA += 600;

@@ -943,9 +943,13 @@ class VideoProcessor {
                     '-disposition:a:0', 'default'
                 ];
 
-                // Preserva legendas embutidas (PT-BR ou multi-subs) no container MP4
-                if (info.subtitleStreams && info.subtitleStreams.length > 0) {
+                // Para vídeos Dublados, remove faixas de legenda (-sn) para não poluir a tela do usuário.
+                // Para Legendados, preserva as faixas embutidas no container.
+                const isStrictDublado = metadata.isDublado && !metadata.isLegendado;
+                if (!isStrictDublado && info.subtitleStreams && info.subtitleStreams.length > 0) {
                     remuxArgs.push('-map', '0:s?', '-c:s', 'mov_text');
+                } else if (isStrictDublado) {
+                    remuxArgs.push('-sn');
                 }
 
                 const isSimpleAacStereo = selectedAudioStream && 

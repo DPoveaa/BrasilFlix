@@ -453,10 +453,38 @@ class CatalogoManager {
         }
         const isEmLancamento = !!(s.em_lancamento || s.emLancamento);
 
-        const temporadas = Object.keys(temporadasObj || {}).map(tNum => {
-            const tMeta = temporadasMeta[tNum] || temporadasMeta[String(tNum)] || null;
-            return CatalogoManager.normalizeSeasonEpisodes(temporadasObj[tNum], tNum, tMeta, isEmLancamento);
-        }).filter(Boolean).sort((a, b) => a.numero - b.numero);
+        // 1. Coleta os números de temporada disponíveis e ordena de forma estritamente crescente
+        const rawSeasonNumbers = Object.keys(temporadasObj || {})
+            .map(n => parseInt(n, 10))
+            .filter(n => !isNaN(n) && n > 0)
+            .sort((a, b) => a - b);
+
+        const temporadas = [];
+        for (let i = 0; i < rawSeasonNumbers.length; i++) {
+            const seasonNum = rawSeasonNumbers[i];
+            const expectedConsecutiveSeason = i + 1;
+
+            // Regra Estrita de Continuidade: Temporadas devem começar na 1 e ser estritamente contínuas (1, 2, 3...)
+            // Se houver salto (ex: tem Temporada 1 e Temporada 3, mas falta Temporada 2), a Temporada 3 NÃO é exibida.
+            if (seasonNum !== expectedConsecutiveSeason) {
+                break;
+            }
+
+            const tMeta = temporadasMeta[seasonNum] || temporadasMeta[String(seasonNum)] || null;
+            const normSeason = CatalogoManager.normalizeSeasonEpisodes(temporadasObj[seasonNum], seasonNum, tMeta, isEmLancamento);
+            if (!normSeason) {
+                // Temporada inválida, incompleta ou sem Ep 1 -> interrompe a cadeia de temporadas seguintes
+                break;
+            }
+
+            temporadas.push(normSeason);
+
+            // Se esta temporada NÃO estiver completa, ela NÃO desbloqueia a exibição de temporadas superiores (ex: T3)
+            const isComplete = (normSeason.isDubladoCompleto || normSeason.isLegendadoCompleto);
+            if (!isComplete && !isEmLancamento) {
+                break;
+            }
+        }
 
         if (temporadas.length === 0) return null;
 
@@ -1131,6 +1159,53 @@ class CatalogoManager {
         const isMicro = metadados.subtipo === 'microdrama' || metadados.isMicrodrama || metadados.formato === 'vertical';
         const isDorama = metadados.isDorama || isMicro || false;
 
+        // Se a série não foi encontrada na memória, consulta o banco PostgreSQL antes de criar duplicata
+        if (!serie) {
+            try {
+                let dbCheck = null;
+                if (metadados.tmdbId) {
+                    dbCheck = await db.query(`SELECT * FROM series WHERE tmdb_id = $1 LIMIT 1`, [metadados.tmdbId]);
+                }
+                if (!dbCheck || dbCheck.rows.length === 0) {
+                    dbCheck = await db.query(`SELECT * FROM series WHERE LOWER(nome) = LOWER($1) LIMIT 1`, [serieNome.trim()]);
+                }
+                if (dbCheck && dbCheck.rows.length > 0) {
+                    const row = dbCheck.rows[0];
+                    serie = {
+                        id: row.id,
+                        tmdbId: row.tmdb_id,
+                        imdbId: row.imdb_id,
+                        nome: row.nome,
+                        nomeOriginal: row.nome_original || '',
+                        descricao: row.sinopse || '',
+                        sinopse: row.sinopse || '',
+                        posterUrl: row.poster_url,
+                        backdropUrl: row.backdrop_url,
+                        ano: row.ano || '',
+                        nota: parseFloat(row.nota || 8.0),
+                        generos: typeof row.generos === 'string' ? JSON.parse(row.generos || '[]') : (row.generos || []),
+                        isDorama: !!row.is_dorama,
+                        isAnime: !!row.is_anime,
+                        isMicrodrama: !!row.is_microdrama,
+                        subtipo: row.subtipo || 'serie',
+                        formato: row.formato || 'horizontal',
+                        origem: row.origem || 'China',
+                        plataformaOrigem: row.plataforma_origem || null,
+                        trendingScore: parseFloat(row.trending_score || 0.0),
+                        isDublado: !!row.is_dublado,
+                        isLegendado: !!row.is_legendado,
+                        tipo: row.is_microdrama ? 'dorama' : (row.is_anime ? 'anime' : (row.is_dorama ? 'dorama' : 'serie')),
+                        temporadas: [],
+                        dataAdicionado: row.created_at || new Date().toISOString(),
+                        tags: this.extrairTags(row.nome)
+                    };
+                    this.catalogo.series.push(serie);
+                }
+            } catch (errDbCheck) {
+                console.warn('⚠️ Erro ao verificar série existente no banco PostgreSQL:', errDbCheck.message);
+            }
+        }
+
         if (!serie) {
             let sId = null;
             try {
@@ -1338,9 +1413,38 @@ class CatalogoManager {
         };
 
         console.log(`✅ Episódio catalogado: ${serieNome} T${temporadaNum}E${episodioNum} [Dub: ${finalIsDub}, Leg: ${finalIsLeg}] (Msg: ${primaryMessageId})`);
-        this.notificarUsuariosPedidoConcluido(serieNome, 'serie', serie.id).catch(() => {});
-        this.verificarENotificarTemporadaCompleta(serie, temporadaNum).catch(() => {});
+        this.notificarUsuariosPedidoConcluido(serieNome, 'serie', serie.id, temporadaNum, episodioNum).catch(() => {});
+        this.notificarPublicoLancamento('serie', serie, { seasonNum: temporadaNum, audio: primaryAudio }).catch(() => {});
         return { success: true, item: epData, serieId: serie.id };
+    }
+
+    /**
+     * Alias de conveniência para adicionar episódio por ID ou Nome
+     */
+    async adicionarEpisodio(serieIdOuNome, seasonNum, epNum, metadados = {}) {
+        let serieNome = typeof serieIdOuNome === 'string' && isNaN(Number(serieIdOuNome)) ? serieIdOuNome : null;
+        if (!serieNome) {
+            const found = (this.catalogo.series || []).find(s => s.id == serieIdOuNome);
+            if (found) serieNome = found.nome;
+            else {
+                try {
+                    const dbRes = await db.query(`SELECT nome FROM series WHERE id = $1`, [serieIdOuNome]);
+                    if (dbRes.rows.length > 0) serieNome = dbRes.rows[0].nome;
+                } catch (e) {}
+            }
+        }
+        if (!serieNome) serieNome = metadados.nome || metadados.serieNome || `Série ${serieIdOuNome}`;
+        return this.adicionarEpisodioSerie(serieNome, seasonNum, epNum, metadados.messageId, metadados.fileId, metadados);
+    }
+
+    /**
+     * Alias de conveniência para adicionar série
+     */
+    async adicionarSerie(nome, sinopse, seasonNum, epNum, messageId, tipo = 'serie', forcar = false, metadados = {}) {
+        return this.adicionarEpisodioSerie(nome, seasonNum, epNum, messageId, metadados.fileId, {
+            ...metadados,
+            sinopse: sinopse || metadados.sinopse
+        });
     }
 
     async deleteStorageMessages(messageIds) {

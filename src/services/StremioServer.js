@@ -826,7 +826,7 @@ class StremioServer {
                         nomeOriginal: r.nomeOriginal,
                         tipo: r.tipo || 'filme',
                         ano: r.ano || '',
-                        poster: r.poster || '',
+                        poster: r.posterUrl || r.poster || '',
                         nota: r.nota || 0,
                         sinopse: r.sinopse || ''
                     }))

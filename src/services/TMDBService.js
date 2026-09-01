@@ -57,47 +57,67 @@ class TMDBService {
         if (!items || items.length === 0) return [];
         const qClean = this._cleanForComparison(query);
         const qTokens = qClean.split(' ').filter(Boolean);
-        const nowStr = new Date().toISOString().split('T')[0];
+        const isLatinQuery = /^[a-zA-Z0-9\s\-:.,!?'"()]+$/.test(query);
 
-        return items.sort((a, b) => {
-            let scoreA = 0;
-            let scoreB = 0;
-
-            const nameA = this._cleanForComparison(a.nome);
-            const origA = this._cleanForComparison(a.nomeOriginal);
-            const nameB = this._cleanForComparison(b.nome);
-            const origB = this._cleanForComparison(b.nomeOriginal);
+        const scored = items.map(item => {
+            let score = 0;
+            const nameClean = this._cleanForComparison(item.nome);
+            const origClean = this._cleanForComparison(item.nomeOriginal);
 
             // 1. Correspondência Exata de Título
-            if (nameA === qClean || origA === qClean) scoreA += 10000;
-            if (nameB === qClean || origB === qClean) scoreB += 10000;
+            if (nameClean === qClean || origClean === qClean) score += 10000;
+            if (nameClean.startsWith(qClean) || origClean.startsWith(qClean)) score += 3500;
 
-            // 2. Prefixo de Título
-            if (nameA.startsWith(qClean) || origA.startsWith(qClean)) scoreA += 2500;
-            if (nameB.startsWith(qClean) || origB.startsWith(qClean)) scoreB += 2500;
-
-            // 3. Contém todas as palavras da consulta
-            if (qTokens.length > 0) {
-                if (qTokens.every(tok => nameA.includes(tok) || origA.includes(tok))) scoreA += 1500;
-                if (qTokens.every(tok => nameB.includes(tok) || origB.includes(tok))) scoreB += 1500;
+            // 2. Todos os termos presentes
+            if (qTokens.length > 0 && qTokens.every(tok => nameClean.includes(tok) || origClean.includes(tok))) {
+                score += 2500;
             }
 
-            // 4. Já lançado vs Lançamento Futuro (privilegia obras já disponíveis em disco/digital)
-            if (a.dataLancamento && a.dataLancamento <= nowStr) scoreA += 2000;
-            else if (a.dataLancamento && a.dataLancamento > nowStr) scoreA -= 2000;
+            // 3. Relevância por Votos e Nota (Obras consagradas sempre no topo)
+            const votes = item.votos || 0;
+            score += Math.min(8000, Math.log10(Math.max(1, votes)) * 2000);
+            score += (item.nota || 0) * 100;
 
-            if (b.dataLancamento && b.dataLancamento <= nowStr) scoreB += 2000;
-            else if (b.dataLancamento && b.dataLancamento > nowStr) scoreB -= 2000;
+            // 4. Se a obra for a série de TV / anime principal com muitos votos
+            if ((item.tipo === 'anime' || item.tipo === 'serie') && votes >= 50) {
+                score += 2000;
+            }
 
-            // 5. Popularidade e Quantidade de Votos (obras consagradas têm prioridade sobre curtas/spin-offs)
-            scoreA += Math.min(3000, Math.log10(Math.max(1, a.votos || 0)) * 600);
-            scoreB += Math.min(3000, Math.log10(Math.max(1, b.votos || 0)) * 600);
+            // 5. Filtro de ruído: itens sem tradução ou filmes antigos homônimos com quase 0 votos
+            const hasAsianChars = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(item.nome);
+            if (isLatinQuery && hasAsianChars && votes < 50) {
+                score -= 8000;
+            }
 
-            scoreA += (a.nota || 0) * 50;
-            scoreB += (b.nota || 0) * 50;
-
-            return scoreB - scoreA;
+            return { item, score };
         });
+
+        scored.sort((a, b) => b.score - a.score);
+
+        // Deduplicação inteligente de títulos idênticos
+        const finalResults = [];
+        const seenTitles = new Map(); // normTitle -> highestVoteCount
+
+        for (const { item, score } of scored) {
+            if (score < 0) continue;
+
+            const normTitle = this._cleanForComparison(item.nome);
+            const votes = item.votos || 0;
+
+            // Se já existe um item com exatamente o mesmo título (ex: "Avatar" 2009 com 34000 votos vs "Avatar" 1916 com 18 votos)
+            if (seenTitles.has(normTitle)) {
+                const bestVotes = seenTitles.get(normTitle);
+                if (bestVotes > 200 && votes < 100) {
+                    continue; // Ignora o clone secundário obscuro
+                }
+            } else {
+                seenTitles.set(normTitle, votes);
+            }
+
+            finalResults.push(item);
+        }
+
+        return finalResults;
     }
 
     async searchMulti(query) {
@@ -338,12 +358,22 @@ class TMDBService {
     }
 
     formatItem(raw) {
-        const isMovie = raw.media_type === 'movie' || !!raw.title;
+        const isMovie = raw.media_type ? raw.media_type === 'movie' : (raw.title && !raw.name);
         const nome = raw.title || raw.name || raw.original_title || raw.original_name || 'Sem título';
         const nomeOriginal = raw.original_title || raw.original_name || '';
         const dataLancamento = raw.release_date || raw.first_air_date || '';
         const ano = dataLancamento ? dataLancamento.substring(0, 4) : '';
         
+        const genreIdMap = {
+            16: 'Animação', 28: 'Ação', 12: 'Aventura', 10759: 'Ação & Aventura',
+            35: 'Comédia', 80: 'Crime', 99: 'Documentário', 18: 'Drama',
+            10751: 'Família', 14: 'Fantasia', 36: 'História', 27: 'Terror',
+            10402: 'Música', 9648: 'Mistério', 10749: 'Romance', 878: 'Ficção Científica',
+            10765: 'Ficção & Fantasia', 10770: 'Cinema TV', 53: 'Suspense',
+            10752: 'Guerra', 10768: 'Guerra & Política', 37: 'Faroeste',
+            10762: 'Infantil', 10763: 'Notícias', 10764: 'Reality', 10766: 'Novela', 10767: 'Talk'
+        };
+
         const genreDict = {
             'action': 'Ação', 'adventure': 'Aventura', 'action & adventure': 'Ação & Aventura',
             'animation': 'Animação', 'anime': 'Anime', 'comedy': 'Comédia', 'crime': 'Crime',
@@ -354,7 +384,7 @@ class TMDBService {
             'soap': 'Novela', 'talk': 'Entrevistas', 'thriller': 'Suspense', 'tv movie': 'Cinema TV',
             'war': 'Guerra', 'war & politics': 'Guerra & Política', 'western': 'Faroeste', 'dorama': 'Dorama'
         };
-        const rawGeneros = raw.genres ? raw.genres.map(g => g.name || g) : (Array.isArray(raw.genre_ids) ? [] : []);
+        const rawGeneros = raw.genres ? raw.genres.map(g => g.name || g) : (Array.isArray(raw.genre_ids) ? raw.genre_ids.map(id => genreIdMap[id] || id) : []);
         const generos = rawGeneros.map(g => {
             const clean = String(g).trim();
             return genreDict[clean.toLowerCase()] || clean;
@@ -364,7 +394,7 @@ class TMDBService {
         const originCountries = raw.origin_country || [];
 
         // Detecção precisa de Animação
-        const hasAnimacao = generos.some(g => String(g).toLowerCase().includes('anim') || String(g).toLowerCase().includes('anime'));
+        const hasAnimacao = generos.some(g => String(g).toLowerCase().includes('anim') || String(g).toLowerCase().includes('anime')) || (Array.isArray(raw.genre_ids) && raw.genre_ids.includes(16));
         const isJapanese = lang === 'ja' || originCountries.includes('JP');
         const isKoreanOrChinese = lang === 'ko' || lang === 'zh' || originCountries.includes('KR') || originCountries.includes('CN') || originCountries.includes('TW');
 
@@ -373,7 +403,7 @@ class TMDBService {
                         (isJapanese && hasAnimacao);
 
         // 2. Dorama (K-Drama, C-Drama, J-Drama Live-Action):
-        const isDorama = !isAnime && (isKoreanOrChinese || isJapanese) && !isMovie;
+        const isDorama = !isAnime && (isKoreanOrChinese || (isJapanese && !hasAnimacao)) && !isMovie;
 
         // 3. Categoria principal
         let tipo = isMovie ? 'filme' : 'serie';
