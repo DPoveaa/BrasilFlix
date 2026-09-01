@@ -19,7 +19,7 @@ class SubtitleSync {
         }
 
         const isRefSubtitle = videoOrRefSrt.toLowerCase().endsWith('.srt') || videoOrRefSrt.toLowerCase().endsWith('.vtt') || videoOrRefSrt.toLowerCase().endsWith('.ass');
-        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 180 : 120);
+        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 120 : 30);
 
         console.log(`🎙️ [SubtitleSync] Sincronizando legenda via ${isRefSubtitle ? 'Legenda de Referência (Sub-to-Sub 100% Preciso)' : 'Análise de Voz no Áudio (VAD Audio-to-Sub)'} [Janela: ${maxOffsetSec}s]...`);
         const startTime = Date.now();

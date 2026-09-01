@@ -523,24 +523,24 @@ class VideoProcessor {
     isBrazilianPortugueseSubtitle(content) {
         if (!content || typeof content !== 'string' || content.length < 200) return false;
 
-        // 1. Padrões característicos de Português de Portugal (PT-PT)
+        // 1. Padrões característicos e inequívocos de Português de Portugal (PT-PT)
         // Gerúndio substituído por 'a + infinitivo': "estou a falar", "está a fazer", "estava a ver", "estavam a pensar"
         const ptPtGerundRegex = /\b(estou|está|estás|estava|estavam|estávamos|estiver|estiverem|andar|anda|andam|andava|andavam)\s+a\s+([a-z]{3,12}(?:ar|er|ir))\b/gi;
         const ptPtGerundMatches = (content.match(ptPtGerundRegex) || []).length;
 
-        // Conjugações e pronomes específicos de PT-PT
-        const ptPtTuRegex = /\btu\s+(estás|tens|queres|vais|sabes|podes|dizes|fazes|ouviste|viste|disseste|fizeste|estiveste|tiveste|consegues|achas|pensas)\b/gi;
-        const ptPtTuMatches = (content.match(ptPtTuRegex) || []).length;
+        // Conjugações e pronomes específicos de PT-PT com gerúndio / expressões tipicamente europeias
+        const ptPtTuGerundRegex = /\btu\s+estás\s+a\s+([a-z]{3,12}(?:ar|er|ir))\b/gi;
+        const ptPtTuGerundMatches = (content.match(ptPtTuGerundRegex) || []).length;
 
-        // Vocabulário exclusivo europeu
-        const ptPtVocabRegex = /\b(ora bem|pois bem|ó pá\b|pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno almoço|parvalhão|fato\b|facto\b|contacto|aspecto)\b/gi;
+        // Vocabulário estritamente exclusivo europeu (sem termos comuns ao PT formal)
+        const ptPtVocabRegex = /\b(ora bem|pois bem|ó pá\b|pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno almoço|parvalhão|casa de banho)\b/gi;
         const ptPtVocabMatches = (content.match(ptPtVocabRegex) || []).length;
 
-        const ptPtScore = (ptPtGerundMatches * 4) + (ptPtTuMatches * 3) + (ptPtVocabMatches * 3);
+        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtTuGerundMatches * 4) + (ptPtVocabMatches * 4);
 
         // 2. Padrões característicos de Português Brasileiro (PT-BR)
-        // Gerúndio natural: "estou fazendo", "está vendo", "estavam ouvindo"
-        const ptBrGerundRegex = /\b(estou|está|estava|estavam|estávamos)\s+([a-z]{3,12}(?:ando|endo|indo))\b/gi;
+        // Gerúndio natural brasileiro: "estou fazendo", "está vendo", "estavam ouvindo"
+        const ptBrGerundRegex = /\b(estou|está|estava|estavam|estávamos|ficou|fica|ficam)\s+([a-z]{3,12}(?:ando|endo|indo))\b/gi;
         const ptBrGerundMatches = (content.match(ptBrGerundRegex) || []).length;
 
         // Vocabulário típico brasileiro
@@ -557,15 +557,15 @@ class VideoProcessor {
         const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por favor)\b/gi;
         const genericMatches = (content.match(genericPtRegex) || []).length;
 
-        if (genericMatches < 8 && ptBrScore < 5) return false;
+        if (genericMatches < 8 && ptBrScore < 3) return false;
 
-        // Se houver indícios fortes de Português de Portugal (ex: muitas ocorrências de 'estar a <inf>' ou vocabulário PT-PT superando PT-BR), rejeita!
-        if (ptPtScore >= 12 && ptPtScore > ptBrScore) {
+        // Se houver indícios fortes e consistentes de Português de Portugal (ex: gerúndio europeu expressivo superando PT-BR), rejeita!
+        if (ptPtScore >= 15 && ptPtScore > ptBrScore * 2) {
             return false;
         }
 
-        // Se tiver gerúndio PT-PT expressivo (>= 3) e nenhum gerúndio PT-BR, é claramente PT-PT
-        if (ptPtGerundMatches >= 3 && ptBrGerundMatches === 0) {
+        // Se tiver gerúndio PT-PT expressivo (>= 4) e nenhum gerúndio PT-BR, é claramente PT-PT
+        if (ptPtGerundMatches >= 4 && ptBrGerundMatches === 0) {
             return false;
         }
 
@@ -734,8 +734,13 @@ class VideoProcessor {
 
                     if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
                         const content = await fs.readFile(srtPath, 'utf8');
-                        if (this.isBrazilianPortugueseSubtitle(content)) {
-                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada linguisticamente como Português Brasileiro (100% Sincronia de Estúdio)!`);
+                        const langTag = (ptSubStream.language || '').toLowerCase();
+                        const titleTag = (ptSubStream.title || '').toLowerCase();
+                        const isOfficialStudioPob = ['pob', 'pt-br', 'brazilian'].includes(langTag) ||
+                                                   titleTag.includes('brazil') || titleTag.includes('brasil') || titleTag.includes('pob');
+
+                        if (isOfficialStudioPob || this.isBrazilianPortugueseSubtitle(content)) {
+                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada (100% Sincronia de Estúdio)!`);
                             return srtPath;
                         } else {
                             console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída continha Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
@@ -959,10 +964,10 @@ class VideoProcessor {
                 if (isSimpleAacStereo) {
                     remuxArgs.push('-c:a', 'copy');
                 } else {
-                    remuxArgs.push('-c:a', 'aac', '-b:a', '256k', '-ac', '2', '-ar', '48000');
+                    remuxArgs.push('-c:a', 'aac', '-b:a', '256k', '-ac', '2', '-ar', '48000', '-af', 'aresample=async=1000:first_pts=0');
                 }
 
-                remuxArgs.push('-movflags', '+faststart', '-y', outputPath);
+                remuxArgs.push('-max_muxing_queue_size', '1024', '-movflags', '+faststart', '-y', outputPath);
 
                 const ffmpeg = spawn('ffmpeg', remuxArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 const totalDuration = info.duration || 1;
@@ -1154,13 +1159,15 @@ class VideoProcessor {
                     '-maxrate', `${maxVideoKbps}k`,
                     '-bufsize', `${maxVideoKbps * 2}k`,
                     '-threads', `${safeThreads}`,
+                    '-af', 'aresample=async=1000:first_pts=0',
                     '-c:a', 'aac',
                     '-b:a', `${audioBitrateKbps}k`,
                     '-ac', '2',
                     '-ar', '48000',
                     '-map', '0:v:0',
                     '-map', `0:a:${targetAudioIndex}`,
-                    '-disposition:a:0', 'default'
+                    '-disposition:a:0', 'default',
+                    '-max_muxing_queue_size', '1024'
                 ];
 
                 args.push('-movflags', '+faststart', '-y', outputPath);
