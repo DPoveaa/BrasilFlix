@@ -389,7 +389,13 @@ class QueueManager extends EventEmitter {
                         langInfo: job.langInfo,
                         customMagnet: job.customMagnet || null,
                         isManualAdd: job.isManualAdd || false,
-                        metaDetails: job.metaDetails || null
+                        metaDetails: job.metaDetails || null,
+                        // Campos de categoria (essenciais para o escalonador de faixas)
+                        isAnime: job.isAnime || false,
+                        isDorama: job.isDorama || false,
+                        isMicrodrama: job.isMicrodrama || false,
+                        subtipo: job.subtipo || null,
+                        originalLanguage: job.originalLanguage || job.idiomaOriginal || null
                     }),
                     job.error || null,
                     job.queueOrder !== undefined ? job.queueOrder : 0,
@@ -432,6 +438,13 @@ class QueueManager extends EventEmitter {
             customMagnet: extra.customMagnet || null,
             isManualAdd: extra.isManualAdd || false,
             metaDetails: extra.metaDetails || null,
+            // Campos de categoria restaurados do extra_data
+            isAnime: extra.isAnime || false,
+            isDorama: extra.isDorama || false,
+            isMicrodrama: extra.isMicrodrama || false,
+            subtipo: extra.subtipo || null,
+            originalLanguage: extra.originalLanguage || null,
+            idiomaOriginal: extra.originalLanguage || null,
             createdAt: row.created_at
         };
     }
@@ -803,6 +816,10 @@ class QueueManager extends EventEmitter {
         // Faixa 4: Animes & Doramas Tradicionais (K-Dramas / J-Animes com vaga 100% garantida)
 
         // Helper para categorização precisa do job
+        // Títulos conhecidos de Doramas (K-Dramas / C-Dramas) para fallback quando os flags não estão no BD
+        const KNOWN_DORAMA_TITLES = /^(vincenzo|pousando no amor|uma advogada extraordinária|round 6|squid game|my love from the star|goblin|crash landing on you|boys over flowers|itaewon class|start-up|hospital playlist|nevertheless|twenty-five twenty-one|extraordinary attorney woo|all of us are dead|business proposal|my mister|misaeng|signal|romance is a bonus book|something in the rain|be melodramatic|dr romantic|when the camellia blooms|arthdal chronicles|kingdom|hellbound|juvenile justice|move to heaven|my name|extracurricular|sweet home|mouse|voice|beyond evil|law of the jungle|running man|amazing saturday|homens com missão|o rato)$/i;
+        const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
+
         const checkJobCategory = (j) => {
             const isUserOrder = Number(j.priority || 4) <= 2 && (j.userId || j.isManualAdd);
             const isUpgrade = j.isUpgrade || j.extraData?.isUpgrade || j.priority === PRIORITIES.CAM_UPGRADE || j.priority === PRIORITIES.UPGRADE_DUB;
@@ -810,11 +827,13 @@ class QueueManager extends EventEmitter {
             const isAnime = !isMicrodrama && (j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
                             j.generos?.includes('Animação') || j.generos?.includes('Anime') || 
                             j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
-                            /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball|solo leveling|jujutsu|hunter x hunter|kimetsu/i.test(j.title || ''));
+                            KNOWN_ANIME_TITLES.test(j.title || '') ||
+                            /anime|shonen|seinen|isekai|kimetsu/i.test(j.title || ''));
             const isDorama = !isAnime && !isMicrodrama && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
                              j.originalLanguage === 'ko' || j.originalLanguage === 'zh' || 
                              j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' || 
-                             j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama'));
+                             j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama') ||
+                             KNOWN_DORAMA_TITLES.test(j.title || ''));
             
             if (isUserOrder || isUpgrade) return 'upgrade_ou_pedido';
             if (isMicrodrama) return 'microdrama';
