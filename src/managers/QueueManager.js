@@ -849,46 +849,45 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        // Faixa 1: Se o slot de Novos Filmes estiver livre, tenta pegar um filme novo
+        // Faixa 1: Novos Filmes (Lançamentos)
         if (activeMovies < 1) {
             const movieJob = eligibleJobs.find(j => checkJobCategory(j) === 'filme');
             if (movieJob) return movieJob;
         }
 
-        // Faixa 2: Pedidos de Usuários & Upgrades de Qualidade -> Fallback: Mini-Séries Chinesas (Microdramas)
+        // Faixa 2: Pedidos de Usuários & Upgrades de Qualidade
         if (activeUpgradesAndOrders < 1) {
             const upgradeOrOrderJob = eligibleJobs.find(j => checkJobCategory(j) === 'upgrade_ou_pedido');
             if (upgradeOrOrderJob) return upgradeOrOrderJob;
-
-            // Fallback direto da Faixa 2: Mini-Séries Chinesas (Microdramas / Duanju)
-            if (activeMicrodramas < 1) {
-                const microdramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'microdrama');
-                if (microdramaJob) return microdramaJob;
-            }
         }
 
-        // Faixa 4: Vaga Garantida para Animes & Doramas Tradicionais
-        // Se não houver anime ativo e houver anime elegível, puxa o anime imediatamente!
-        if (activeAnimes < 1) {
-            const animeJob = eligibleJobs.find(j => checkJobCategory(j) === 'anime');
-            if (animeJob) return animeJob;
-        }
-
-        // Se não houver dorama tradicional ativo e houver dorama elegível, puxa o dorama
-        if (activeDoramas < 1) {
-            const doramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'dorama');
-            if (doramaJob) return doramaJob;
-        }
-
-        // Faixa 3: Se o slot de Séries Ocidentais estiver livre, tenta pegar uma série
+        // Faixa 3: Séries Ocidentais
         if (activeSeries < 1) {
             const seriesJob = eligibleJobs.find(j => checkJobCategory(j) === 'serie');
             if (seriesJob) return seriesJob;
         }
 
+        // Faixa 4: Animes (J-Animes com slot 100% exclusivo)
+        if (activeAnimes < 1) {
+            const animeJob = eligibleJobs.find(j => checkJobCategory(j) === 'anime');
+            if (animeJob) return animeJob;
+        }
+
+        // Faixa 5: Doramas Tradicionais (K-Dramas / C-Dramas)
+        if (activeDoramas < 1) {
+            const doramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'dorama');
+            if (doramaJob) return doramaJob;
+        }
+
+        // Faixa 6: Mini-Séries Chinesas (Microdramas / Duanju)
+        if (activeMicrodramas < 1) {
+            const microdramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'microdrama');
+            if (microdramaJob) return microdramaJob;
+        }
+
         // TRANSBORDO DINÂMICO EQUILIBRADO (WORK-STEALING BALANCEADO):
-        // Se nenhuma faixa especializada precisou do slot no momento,
-        // distribui entre as categorias menos representadas nos workers ativos
+        // Se qualquer uma das 6 faixas não possuir itens pendentes no momento,
+        // distribui as vagas extras para as categorias menos representadas nos workers ativos
         const categoryCounts = {
             'anime': activeAnimes,
             'microdrama': activeMicrodramas,
@@ -967,11 +966,13 @@ class QueueManager extends EventEmitter {
         const mode = SchedulerService.getActiveMode(); // 'performance', 'eco', 'paused'
 
         // Concorrência adaptativa por etapa independente (Pipeline contínua)
-        const maxDownloads = mode === 'eco' ? 1 : (config.MAX_CONCURRENT_DOWNLOADS || 4);
-        const maxTranscodes = mode === 'eco' ? 2 : (config.MAX_CONCURRENT_TRANSCODES || 2);
-        const maxUploads = mode === 'eco' ? 1 : (this.maxConcurrentUploads || 2);
+        // No Modo Desempenho (Madrugada): 6 downloads simultâneos, 4 transcodes simultâneos, 3 uploads simultâneos
+        // No Modo Econômico: 1 download, 2 transcodes, 1 upload
+        const maxDownloads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || config.MAX_CONCURRENT_DOWNLOADS || 6);
+        const maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
+        const maxUploads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || config.MAX_CONCURRENT_UPLOADS || 3);
         // O limite global de concorrência é a soma dos slots independentes de cada fase
-        const maxConcurrent = mode === 'eco' ? (maxDownloads + maxTranscodes + maxUploads) : (this.maxConcurrentJobs || 10);
+        const maxConcurrent = mode === 'eco' ? (maxDownloads + maxTranscodes + maxUploads) : (maxDownloads + maxTranscodes + maxUploads);
 
         // Se o disco estiver acima da margem, aguarda uploads liberarem espaço antes de novos downloads
         const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);

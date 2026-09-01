@@ -8,7 +8,13 @@ let activeTranscodes = 0;
 const transcodeWaiters = [];
 
 function acquireTranscodeSlot() {
-    const maxTranscodes = config.MAX_CONCURRENT_TRANSCODES || 2;
+    let maxTranscodes = config.MAX_CONCURRENT_TRANSCODES || 4;
+    try {
+        const SchedulerService = require('./SchedulerService');
+        const mode = SchedulerService.getActiveMode();
+        maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || 4);
+    } catch (e) {}
+
     if (activeTranscodes < maxTranscodes) {
         activeTranscodes++;
         return Promise.resolve();
@@ -1120,16 +1126,20 @@ class VideoProcessor {
     async encodeVideoFull(inputPath, outputPath, info, targetAudioIndex = 0, onProgress = null, metadata = {}) {
         await acquireTranscodeSlot();
         try {
-            const os = require('os');
-            const cpuCount = os.cpus()?.length || 4;
-            // Usa as threads configuradas ou limite seguro de CPU
-            const safeThreads = config.FFMPEG_THREADS_PER_JOB || Math.max(2, Math.min(6, Math.floor(cpuCount * 0.50)));
+            let maxTranscodes = config.MAX_CONCURRENT_TRANSCODES || 4;
+            let safeThreads = config.FFMPEG_THREADS_PER_JOB || 5;
+            try {
+                const SchedulerService = require('./SchedulerService');
+                const mode = SchedulerService.getActiveMode();
+                maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || 4);
+                safeThreads = mode === 'eco' ? 4 : (config.FFMPEG_THREADS_PER_JOB || 5);
+            } catch (e) {}
 
             const optTitle = (metadata.tipo === 'serie' || metadata.season || metadata.episode)
                 ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
                 : (metadata.nome || metadata.title || path.basename(inputPath));
 
-            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${config.MAX_CONCURRENT_TRANSCODES || 2}${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
+            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${maxTranscodes}${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
             
             return await new Promise((resolve, reject) => {
                 const totalDuration = info.duration || 1;
