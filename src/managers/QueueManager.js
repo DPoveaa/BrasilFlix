@@ -796,27 +796,28 @@ class QueueManager extends EventEmitter {
             return eligibleJobs[0];
         }
 
-        // 4. Em Modo Desempenho (Madrugada com 4 slots simultâneos): FAIXAS ESPECIALIZADAS COM TRANSBORDO (Work-Stealing Equilibrado)
+        // 4. Em Modo Desempenho (Madrugada com 4 slots simultâneos): FAIXAS ESPECIALIZADAS COM TRANSBORDO
         // Faixa 1: Novos Filmes (lançamentos)
-        // Faixa 2: Upgrades de Qualidade (CAM -> 1080p WEB-DL / Dublagens) & Pedidos de Usuários
+        // Faixa 2: Pedidos de Usuários & Upgrades -> Fallback: Mini-Séries Chinesas (Microdramas / Duanju)
         // Faixa 3: Séries Ocidentais
-        // Faixa 4: Animes & Doramas (Produções Orientais com vaga 100% garantida)
+        // Faixa 4: Animes & Doramas Tradicionais (K-Dramas / J-Animes com vaga 100% garantida)
 
         // Helper para categorização precisa do job
         const checkJobCategory = (j) => {
             const isUserOrder = Number(j.priority || 4) <= 2 && (j.userId || j.isManualAdd);
             const isUpgrade = j.isUpgrade || j.extraData?.isUpgrade || j.priority === PRIORITIES.CAM_UPGRADE || j.priority === PRIORITIES.UPGRADE_DUB;
-            const isMicrodrama = j.isMicrodrama || j.extraData?.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.subtipo === 'microdrama' || j.category === 'Microdrama' || j.generos?.includes('Microdrama');
+            const isMicrodrama = j.isMicrodrama || j.extraData?.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.subtipo === 'microdrama' || j.category === 'Microdrama' || j.generos?.includes('Microdrama') || (j.runtime && j.runtime < 5);
             const isAnime = !isMicrodrama && (j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
                             j.generos?.includes('Animação') || j.generos?.includes('Anime') || 
                             j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
                             /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball|solo leveling|jujutsu|hunter x hunter|kimetsu/i.test(j.title || ''));
-            const isDorama = !isAnime && (isMicrodrama || j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
+            const isDorama = !isAnime && !isMicrodrama && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
                              j.originalLanguage === 'ko' || j.originalLanguage === 'zh' || 
                              j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' || 
                              j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama'));
             
             if (isUserOrder || isUpgrade) return 'upgrade_ou_pedido';
+            if (isMicrodrama) return 'microdrama';
             if (isAnime) return 'anime';
             if (isDorama) return 'dorama';
             if (j.type === 'filme') return 'filme';
@@ -826,6 +827,7 @@ class QueueManager extends EventEmitter {
         // Conta quantos jobs de cada categoria estão atualmente ativos
         let activeMovies = 0;
         let activeUpgradesAndOrders = 0;
+        let activeMicrodramas = 0;
         let activeSeries = 0;
         let activeDoramas = 0;
         let activeAnimes = 0;
@@ -834,6 +836,8 @@ class QueueManager extends EventEmitter {
             const cat = checkJobCategory(active);
             if (cat === 'upgrade_ou_pedido') {
                 activeUpgradesAndOrders++;
+            } else if (cat === 'microdrama') {
+                activeMicrodramas++;
             } else if (cat === 'anime') {
                 activeAnimes++;
             } else if (cat === 'dorama') {
@@ -851,20 +855,26 @@ class QueueManager extends EventEmitter {
             if (movieJob) return movieJob;
         }
 
-        // Faixa 2: Se o slot de Upgrades & Pedidos estiver livre, tenta pegar um upgrade ou pedido de usuário
+        // Faixa 2: Pedidos de Usuários & Upgrades de Qualidade -> Fallback: Mini-Séries Chinesas (Microdramas)
         if (activeUpgradesAndOrders < 1) {
-            const upgradeJob = eligibleJobs.find(j => checkJobCategory(j) === 'upgrade_ou_pedido');
-            if (upgradeJob) return upgradeJob;
+            const upgradeOrOrderJob = eligibleJobs.find(j => checkJobCategory(j) === 'upgrade_ou_pedido');
+            if (upgradeOrOrderJob) return upgradeOrOrderJob;
+
+            // Fallback direto da Faixa 2: Mini-Séries Chinesas (Microdramas / Duanju)
+            if (activeMicrodramas < 1) {
+                const microdramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'microdrama');
+                if (microdramaJob) return microdramaJob;
+            }
         }
 
-        // Faixa 4: Vaga Garantida para Conteúdo Oriental (Animes & Doramas)
+        // Faixa 4: Vaga Garantida para Animes & Doramas Tradicionais
         // Se não houver anime ativo e houver anime elegível, puxa o anime imediatamente!
         if (activeAnimes < 1) {
             const animeJob = eligibleJobs.find(j => checkJobCategory(j) === 'anime');
             if (animeJob) return animeJob;
         }
 
-        // Se não houver dorama ativo e houver dorama elegível, puxa o dorama
+        // Se não houver dorama tradicional ativo e houver dorama elegível, puxa o dorama
         if (activeDoramas < 1) {
             const doramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'dorama');
             if (doramaJob) return doramaJob;
@@ -877,25 +887,27 @@ class QueueManager extends EventEmitter {
         }
 
         // TRANSBORDO DINÂMICO EQUILIBRADO (WORK-STEALING BALANCEADO):
-        // Se slots extras estiverem vagos, distribui entre as categorias menos representadas no momento
+        // Se nenhuma faixa especializada precisou do slot no momento,
+        // distribui entre as categorias menos representadas nos workers ativos
         const categoryCounts = {
             'anime': activeAnimes,
+            'microdrama': activeMicrodramas,
             'dorama': activeDoramas,
             'filme': activeMovies,
             'upgrade_ou_pedido': activeUpgradesAndOrders,
             'serie': activeSeries
         };
 
-        // Ordena jobs elegíveis priorizando categorias com menor número de workers ativos no momento
+        // Ordena jobs elegíveis priorizando categorias com MENOS workers ativos no momento
         const balancedJob = eligibleJobs.slice().sort((a, b) => {
             const catA = checkJobCategory(a);
             const catB = checkJobCategory(b);
             const countA = categoryCounts[catA] || 0;
             const countB = categoryCounts[catB] || 0;
             if (countA !== countB) {
-                return countA - countB; // Prioriza a categoria com MENOS workers ativos
+                return countA - countB;
             }
-            return (a.priority || 5) - (b.priority || 5); // Desempata pela prioridade do job
+            return (a.priority || 5) - (b.priority || 5);
         })[0];
 
         return balancedJob || eligibleJobs[0];
