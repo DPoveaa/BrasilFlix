@@ -806,14 +806,15 @@ class QueueManager extends EventEmitter {
         const checkJobCategory = (j) => {
             const isUserOrder = Number(j.priority || 4) <= 2 && (j.userId || j.isManualAdd);
             const isUpgrade = j.isUpgrade || j.extraData?.isUpgrade || j.priority === PRIORITIES.CAM_UPGRADE || j.priority === PRIORITIES.UPGRADE_DUB;
-            const isAnime = j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
+            const isMicrodrama = j.isMicrodrama || j.extraData?.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.subtipo === 'microdrama' || j.category === 'Microdrama' || j.generos?.includes('Microdrama');
+            const isAnime = !isMicrodrama && (j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
                             j.generos?.includes('Animação') || j.generos?.includes('Anime') || 
                             j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
-                            /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball|solo leveling|jujutsu|hunter x hunter|kimetsu/i.test(j.title || '');
-            const isDorama = !isAnime && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
+                            /anime|shonen|seinen|isekai|bleach|one piece|naruto|dragon ball|solo leveling|jujutsu|hunter x hunter|kimetsu/i.test(j.title || ''));
+            const isDorama = !isAnime && (isMicrodrama || j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
                              j.originalLanguage === 'ko' || j.originalLanguage === 'zh' || 
                              j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' || 
-                             j.title?.toLowerCase().includes('dorama'));
+                             j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama'));
             
             if (isUserOrder || isUpgrade) return 'upgrade_ou_pedido';
             if (isAnime) return 'anime';
