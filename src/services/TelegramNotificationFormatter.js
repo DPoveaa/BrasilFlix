@@ -118,13 +118,14 @@ class TelegramNotificationFormatter {
      */
     static formatCompleteSeasonNotification(serie, detalhes = {}) {
         const seasonNum = detalhes.seasonNum || 1;
-        const totalEps = detalhes.totalEps || (serie.totalEpisodios || 1);
+        const tempObj = Array.isArray(serie.temporadas) ? serie.temporadas.find(t => Number(t.numero) === Number(seasonNum)) : null;
+        const totalEps = detalhes.totalEps || (tempObj?.episodios ? tempObj.episodios.length : (tempObj?.totalEpisodios || 1));
         const titleSafe = this.escapeHtml(serie.nome || 'Série');
         const yearPart = serie.ano ? ` · ${this.escapeHtml(serie.ano)}` : '';
 
-        const isDub = detalhes.audio === 'dublado' || (detalhes.isDublado ?? serie.isDublado);
-        const isLeg = detalhes.audio === 'legendado' || (detalhes.isLegendado ?? serie.isLegendado);
-        const audioText = this.formatAudioText(isDub, isLeg, detalhes.audio || serie.audio);
+        const isDub = detalhes.audio === 'dual' || detalhes.audio === 'dublado' || (detalhes.isDublado === true) || (tempObj?.isDublado === true && detalhes.isDublado !== false);
+        const isLeg = detalhes.audio === 'dual' || detalhes.audio === 'legendado' || (detalhes.isLegendado === true) || (tempObj?.isLegendado === true && detalhes.isLegendado !== false);
+        const audioText = this.formatAudioText(isDub, isLeg, detalhes.audio || tempObj?.audio || '');
 
         const rating = this.formatRating(serie.nota);
         const qual = this.formatQuality(detalhes.qualidade || serie.qualidade || '1080p');

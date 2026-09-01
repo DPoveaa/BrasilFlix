@@ -381,6 +381,7 @@ class CatalogoManager {
         const episodiosValidos = sortedEps.map(ep => {
             const epNum = Number(ep.numero);
             if (epNum > maxAnySeq) return null;
+            if (expectedEps > 0 && epNum > expectedEps) return null; // Clampa ao total real de episódios da temporada no TMDB
 
             const hasDub = CatalogoManager.hasValidDubbedMedia(ep);
             const hasLeg = CatalogoManager.hasValidSubtitledMedia(ep);
@@ -1418,7 +1419,7 @@ class CatalogoManager {
 
         console.log(`✅ Episódio catalogado: ${serieNome} T${temporadaNum}E${episodioNum} [Dub: ${finalIsDub}, Leg: ${finalIsLeg}] (Msg: ${primaryMessageId})`);
         this.notificarUsuariosPedidoConcluido(serieNome, 'serie', serie.id, temporadaNum, episodioNum).catch(() => {});
-        this.notificarPublicoLancamento('serie', serie, { seasonNum: temporadaNum, audio: primaryAudio }).catch(() => {});
+        this.verificarENotificarTemporadaCompleta(serie, temporadaNum).catch(() => {});
         return { success: true, item: epData, serieId: serie.id };
     }
 
@@ -2260,18 +2261,42 @@ class CatalogoManager {
             const epsDub = temporada.episodios.filter(e => e.isDublado || !!e.versoes?.dublado).length;
             const epsLeg = temporada.episodios.filter(e => e.isLegendado || !!e.versoes?.legendado).length;
 
-            if (expectedCount > 0 && epsDub >= expectedCount) {
+            const isDubCompleto = (expectedCount > 0 && epsDub >= expectedCount);
+            const isLegCompleto = (expectedCount > 0 && epsLeg >= expectedCount);
+            const isAnyCompleto = (expectedCount > 0 && temporada.episodios.length >= expectedCount);
+
+            if (isDubCompleto && isLegCompleto) {
+                await this.notificarPublicoLancamento('serie', serie, {
+                    seasonNum: temporadaNum,
+                    audio: 'dual',
+                    isDublado: true,
+                    isLegendado: true,
+                    totalEps: expectedCount
+                });
+            } else if (isDubCompleto) {
                 await this.notificarPublicoLancamento('serie', serie, {
                     seasonNum: temporadaNum,
                     audio: 'dublado',
+                    isDublado: true,
+                    isLegendado: false,
                     totalEps: expectedCount
                 });
-            }
-
-            if (expectedCount > 0 && epsLeg >= expectedCount) {
+            } else if (isLegCompleto) {
                 await this.notificarPublicoLancamento('serie', serie, {
                     seasonNum: temporadaNum,
                     audio: 'legendado',
+                    isDublado: false,
+                    isLegendado: true,
+                    totalEps: expectedCount
+                });
+            } else if (isAnyCompleto) {
+                const temAlgumDub = epsDub > 0;
+                const temAlgumLeg = epsLeg > 0;
+                await this.notificarPublicoLancamento('serie', serie, {
+                    seasonNum: temporadaNum,
+                    audio: (temAlgumDub && temAlgumLeg) ? 'dual' : (temAlgumDub ? 'dublado' : 'legendado'),
+                    isDublado: temAlgumDub,
+                    isLegendado: temAlgumLeg,
                     totalEps: expectedCount
                 });
             }
