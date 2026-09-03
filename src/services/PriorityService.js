@@ -13,13 +13,13 @@ const DEFAULT_PRIORITIES = {
     VIP_USER:     1,  // Pedido de Assinante VIP (Fura-fila Máximo)
     USER:         1,  // Alias de compatibilidade para VIP_USER
     CAM_UPGRADE:  2,  // Upgrade de filme de Cinema (CAM para 1080p Oficial)
-    SERIES:       3,  // Séries, Mini-Séries Chinesas e Doramas (Próx. Episódio)
+    SERIES:       3,  // Séries Ocidentais em Andamento (Próx. Episódio)
     DORAMA:       3,  // Doramas e K-Dramas / C-Dramas
     MICRODRAMA:   3,  // Mini-Séries Chinesas e Microdramas Curtos (短剧 / Duanju)
+    ANIME:        3,  // Episódios de animes
     UPGRADE_DUB:  4,  // Upgrade de dublagem (Legendado para Dublado PT-BR)
     FREE_USER:    5,  // Pedido de Usuário Gratuito / Normal
-    ANIME:        6,  // Episódios de animes
-    FEEDER:       7   // Auto-Feeder (Sugestão de novos títulos em background)
+    FEEDER:       3   // Auto-Feeder (Novos Títulos Sugeridos em background)
 };
 
 // Labels para exibição na UI

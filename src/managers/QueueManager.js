@@ -462,6 +462,12 @@ class QueueManager extends EventEmitter {
             isUpgrade: extraData.isUpgrade || priority === PRIORITIES.CAM_UPGRADE || priority === PRIORITIES.UPGRADE_DUB || false,
             allowCam: extraData.allowCam !== undefined ? extraData.allowCam : (priority !== PRIORITIES.CAM_UPGRADE),
             isDorama: extraData.isDorama || false,
+            isAnime: extraData.isAnime || false,
+            isMicrodrama: extraData.isMicrodrama || false,
+            subtipo: extraData.subtipo || null,
+            originalLanguage: extraData.originalLanguage || extraData.idiomaOriginal || null,
+            idiomaOriginal: extraData.originalLanguage || extraData.idiomaOriginal || null,
+            category: extraData.category || (extraData.isAnime ? 'Anime' : (extraData.isDorama ? 'Dorama' : (extraData.isMicrodrama ? 'Microdrama' : null))),
             userId: extraData.userId || null,
             username: extraData.username || null,
             season: type === 'serie' ? (extraData.season || 1) : null,
@@ -474,6 +480,7 @@ class QueueManager extends EventEmitter {
             customMagnet: extraData.customMagnet || extraData.magnet || null,
             isManualAdd: extraData.isManualAdd || false,
             metaDetails: extraData.metaDetails || null,
+            extraData: extraData,
             status: 'queued', // 'queued', 'downloading', 'processing', 'uploading', 'completed', 'failed'
             progress: 0,
             progressDetails: '',
@@ -682,7 +689,11 @@ class QueueManager extends EventEmitter {
     findNextJobToProcess(capacity = { canDownload: true, canTranscode: true, canUpload: true }) {
         if (this.queue.length === 0) return null;
 
-        const queuedJobs = this.queue.filter(j => j.status === 'queued' && !this.activeJobs.has(j.id));
+        // Inclui jobs em queued e também jobs em processing/downloading/uploading que ficaram órfãos (sem worker ativo)
+        const queuedJobs = this.queue.filter(j => 
+            (j.status === 'queued' || j.status === 'processing' || j.status === 'downloading' || j.status === 'uploading') && 
+            !this.activeJobs.has(j.id)
+        );
         if (queuedJobs.length === 0) return null;
 
         // Constrói um set de chaves de títulos / episódios ATIVOS para evitar qualquer concorrência sobre o mesmo item
@@ -799,24 +810,7 @@ class QueueManager extends EventEmitter {
         const uploadReady = eligibleJobs.find(j => j.optimizedPath && fs.existsSync(j.optimizedPath));
         if (uploadReady && capacity.canUpload) return uploadReady;
 
-        // 2. Prioriza jobs que já possuem arquivo bruto em disco pronto para otimizar (ex: episódios de packs já baixados)
-        const transcodeReady = eligibleJobs.find(j => j.rawFilePath && fs.existsSync(j.rawFilePath));
-        if (transcodeReady && capacity.canTranscode) return transcodeReady;
-
-        // 3. Em Modo Econômico (apenas 1 download ativo), pega o job mais prioritário da esteira
-        const currentMode = SchedulerService.getActiveMode();
-        if (currentMode === 'eco') {
-            return eligibleJobs[0];
-        }
-
-        // 4. Em Modo Desempenho (Madrugada com 4 slots simultâneos): FAIXAS ESPECIALIZADAS COM TRANSBORDO
-        // Faixa 1: Novos Filmes (lançamentos)
-        // Faixa 2: Pedidos de Usuários & Upgrades -> Fallback: Mini-Séries Chinesas (Microdramas / Duanju)
-        // Faixa 3: Séries Ocidentais
-        // Faixa 4: Animes & Doramas Tradicionais (K-Dramas / J-Animes com vaga 100% garantida)
-
         // Helper para categorização precisa do job
-        // Títulos conhecidos de Doramas (K-Dramas / C-Dramas) para fallback quando os flags não estão no BD
         const KNOWN_DORAMA_TITLES = /^(vincenzo|pousando no amor|uma advogada extraordinária|round 6|squid game|my love from the star|goblin|crash landing on you|boys over flowers|itaewon class|start-up|hospital playlist|nevertheless|twenty-five twenty-one|extraordinary attorney woo|all of us are dead|business proposal|my mister|misaeng|signal|romance is a bonus book|something in the rain|be melodramatic|dr romantic|when the camellia blooms|arthdal chronicles|kingdom|hellbound|juvenile justice|move to heaven|my name|extracurricular|sweet home|mouse|voice|beyond evil|law of the jungle|running man|amazing saturday|homens com missão|o rato)$/i;
         const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
 
@@ -841,6 +835,38 @@ class QueueManager extends EventEmitter {
             if (isDorama) return 'dorama';
             if (j.type === 'filme') return 'filme';
             return 'serie';
+        };
+
+        // Helper inteligente para selecionar o melhor job de uma categoria:
+        // Prioriza completar episódios de séries/animes que JÁ EXISTEM no catálogo (na ordem S01E01, S01E02...)
+        // antes de iniciar uma série totalmente nova do zero.
+        const findCategoryJob = (targetCategory) => {
+            const categoryJobs = eligibleJobs.filter(j => checkJobCategory(j) === targetCategory);
+            if (categoryJobs.length === 0) return null;
+
+            if (this.catalogoManager && ['anime', 'serie', 'dorama', 'microdrama'].includes(targetCategory)) {
+                // 1. Tenta encontrar jobs de séries que já possuem episódios cadastrados no catálogo
+                const existingSeriesJobs = categoryJobs.filter(j => {
+                    const found = this.catalogoManager.buscarItemExato(j.title, 'serie', j.tmdbId);
+                    return found && (found.temporadas || []).some(t => (t.episodios || []).length > 0);
+                });
+
+                if (existingSeriesJobs.length > 0) {
+                    // Ordena por temporada e episódio para preencher sequencialmente
+                    existingSeriesJobs.sort((a, b) => {
+                        const sA = a.season || 1;
+                        const sB = b.season || 1;
+                        if (sA !== sB) return sA - sB;
+                        const eA = a.episode || 1;
+                        const eB = b.episode || 1;
+                        return eA - eB;
+                    });
+                    return existingSeriesJobs[0];
+                }
+            }
+
+            // 2. Se nenhuma série da categoria tem episódios no catálogo, pega o primeiro da fila
+            return categoryJobs[0];
         };
 
         // Conta quantos jobs de cada categoria estão atualmente ativos
@@ -868,43 +894,48 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        // 2. ESCALONAMENTO POR FAIXAS DEDICADAS:
         // Faixa 1: Novos Filmes (Lançamentos)
         if (activeMovies < 1) {
-            const movieJob = eligibleJobs.find(j => checkJobCategory(j) === 'filme');
+            const movieJob = findCategoryJob('filme');
             if (movieJob) return movieJob;
         }
 
         // Faixa 2: Pedidos de Usuários & Upgrades de Qualidade
         if (activeUpgradesAndOrders < 1) {
-            const upgradeOrOrderJob = eligibleJobs.find(j => checkJobCategory(j) === 'upgrade_ou_pedido');
+            const upgradeOrOrderJob = findCategoryJob('upgrade_ou_pedido');
             if (upgradeOrOrderJob) return upgradeOrOrderJob;
         }
 
-        // Faixa 3: Séries Ocidentais
-        if (activeSeries < 1) {
-            const seriesJob = eligibleJobs.find(j => checkJobCategory(j) === 'serie');
-            if (seriesJob) return seriesJob;
-        }
-
-        // Faixa 4: Animes (J-Animes com slot 100% exclusivo)
+        // Faixa 4: Animes Japoneses (J-Animes com slot 100% exclusivo)
         if (activeAnimes < 1) {
-            const animeJob = eligibleJobs.find(j => checkJobCategory(j) === 'anime');
+            const animeJob = findCategoryJob('anime');
             if (animeJob) return animeJob;
         }
 
         // Faixa 5: Doramas Tradicionais (K-Dramas / C-Dramas)
         if (activeDoramas < 1) {
-            const doramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'dorama');
+            const doramaJob = findCategoryJob('dorama');
             if (doramaJob) return doramaJob;
         }
 
         // Faixa 6: Mini-Séries Chinesas (Microdramas / Duanju)
         if (activeMicrodramas < 1) {
-            const microdramaJob = eligibleJobs.find(j => checkJobCategory(j) === 'microdrama');
+            const microdramaJob = findCategoryJob('microdrama');
             if (microdramaJob) return microdramaJob;
         }
 
-        // TRANSBORDO DINÂMICO EQUILIBRADO (WORK-STEALING BALANCEADO):
+        // Faixa 3: Séries Ocidentais
+        if (activeSeries < 1) {
+            const seriesJob = findCategoryJob('serie');
+            if (seriesJob) return seriesJob;
+        }
+
+        // 3. Prioriza jobs que já possuem arquivo bruto em disco pronto para transcode
+        const transcodeReady = eligibleJobs.find(j => j.rawFilePath && fs.existsSync(j.rawFilePath));
+        if (transcodeReady && capacity.canTranscode) return transcodeReady;
+
+        // 4. TRANSBORDO DINÂMICO EQUILIBRADO (WORK-STEALING BALANCEADO):
         // Se qualquer uma das 6 faixas não possuir itens pendentes no momento,
         // distribui as vagas extras para as categorias menos representadas nos workers ativos
         const categoryCounts = {
@@ -1465,17 +1496,35 @@ class QueueManager extends EventEmitter {
                     } catch (e) {}
                 }
 
+                const isAnimeFlag = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
+
+                // Para animes com temporadas separadas no TMDB (ex: Bleach T2 = "Guerra Sangrenta de Mil Anos"),
+                // passa o nome da temporada para que o AnimeExtractor possa buscar com o título correto nos sites.
+                const targetSeasonNum = job.season || 1;
+                let tmdbSeasonName = null;
+                if (isAnimeFlag && targetSeasonNum > 1 && metadata.temporadas) {
+                    const seasonInfo = metadata.temporadas.find(t => t.numero === targetSeasonNum);
+                    if (seasonInfo && seasonInfo.nome && !seasonInfo.nome.match(/^temporada\s+\d+$/i)) {
+                        tmdbSeasonName = seasonInfo.nome; // ex: "Guerra Sangrenta de Mil Anos"
+                    }
+                }
+
                 sources = await MediaSearchService.search(job.title, job.type, {
                     nomeOriginal: metadata.nomeOriginal,
                     ano: metadata.ano,
                     tmdbId: metadata.tmdbId,
                     imdbId: metadata.imdbId,
-                    season: job.season || 1,
+                    season: targetSeasonNum,
                     episode: job.episode || 1,
                     audioPreference: job.audioPreference || 'dublado',
                     forcarNaoCam: forcarNaoCam,
                     ignorarFallbackLegendado: jaPossuiLegendado,
-                    ignorarFallbackDublado: jaPossuiDublado
+                    ignorarFallbackDublado: jaPossuiDublado,
+                    isAnime: isAnimeFlag,
+                    isDorama: !!(job.isDorama || metadata.isDorama),
+                    isMicrodrama: !!(job.isMicrodrama || metadata.isMicrodrama),
+                    originalLanguage: job.originalLanguage || metadata.original_language || metadata.originalLanguage || null,
+                    tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
                 });
 
                 if (jaTemCam || forcarNaoCam) {
@@ -1604,6 +1653,8 @@ class QueueManager extends EventEmitter {
                             season: job.season,
                             episode: job.episode,
                             type: job.type,
+                            provider: currentSource.provider || 'Web CDN',
+                            referer: currentSource.referer || 'https://animesdigital.org/',
                             audio: currentSource.audio,
                             isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
                             audioPreference: job.audioPreference || 'dublado',
@@ -1940,6 +1991,9 @@ class QueueManager extends EventEmitter {
                 imdbId: metadata.imdbId,
                 tmdbId: metadata.tmdbId,
                 subtitleUrl: bestSource?.subtitleUrl,
+                isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
+                hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
+                isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
                 isDublado: langInfo?.isDublado ?? true,
                 isLegendado: langInfo?.isLegendado ?? false
             });
@@ -1971,12 +2025,14 @@ class QueueManager extends EventEmitter {
             return;
         }
 
-        // Se estiver em modo econômico, aguarda rigorosamente qualquer upload anterior terminar
-        const maxUploadsAllowed = SchedulerService.getActiveMode() === 'eco' ? 1 : (this.maxConcurrentUploads || 2);
+        // Concorrência de upload adaptativa ao modo ativo:
+        // - Modo Econômico: 1 upload por vez (protege upstream residencial)
+        // - Modo Desempenho: múltiplos uploads simultâneos (PERFORMANCE_MAX_UPLOADS)
+        const maxUploadsAllowed = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || this.maxConcurrentUploads || 3);
         while (this.getActiveActualUploadsCount(job.id) >= maxUploadsAllowed) {
             job.status = 'queued';
             job.progressDetails = 'Aguardando slot de upload livre...';
-            console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} upload por vez)...`);
+            console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} uploads simultâneos)...`);
             await new Promise(r => setTimeout(r, 5000));
         }
 
@@ -2039,7 +2095,12 @@ class QueueManager extends EventEmitter {
         metadata.qualidade = isCamFinal ? 'Versão Cinema (CAM)' : (effectiveSource.quality || '1080p Full HD');
         
         // Classificação rigorosa: Ou é 100% Dublado (áudio PT-BR sem legendas na tela) ou 100% Legendado (áudio original + legendas PT-BR)
-        const isJobDublado = job.audioPreference !== 'legendado' && (langInfo ? langInfo.isDublado : true);
+        const sourceIsLegendadoOnly = (effectiveSource.isLegendado || bestSource?.isLegendado) && !(effectiveSource.isDublado || bestSource?.isDublado);
+        const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
+
+        const isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
+                             sourceIsDubladoOnly ? true :
+                             (langInfo ? langInfo.isDublado : (job.langInfo ? job.langInfo.isDublado : true));
         if (isJobDublado) {
             metadata.isDublado = true;
             metadata.isLegendado = false;
@@ -2093,6 +2154,43 @@ class QueueManager extends EventEmitter {
             if (matchEpFile) {
                 seasonNum = parseInt(matchEpFile[1], 10);
                 epNum = parseInt(matchEpFile[2], 10);
+            }
+
+            // ─────────────────────────────────────────────────────────────────────────────
+            // MAPEAMENTO DE TEMPORADA VIA TMDB: Corrige casos onde o release labela como S01
+            // uma sub-temporada que no TMDB é T2+ (ex: Bleach TYBW labela S01E01 mas é T2E01 no TMDB).
+            // Casos conhecidos: Bleach TYBW, Dragon Ball Super, Attack on Titan Final Season, etc.
+            // ─────────────────────────────────────────────────────────────────────────────
+            const KNOWN_SUBSERIES_SUFFIXES = /(thousand[- ]?year|tybw|blood war|final season|part|cour|arc|shippuden|shippuuden|super|z kai|kai)/i;
+            const releaseTitle = (bestSource?.title || job.title || '').toLowerCase();
+            const isSubSeries = KNOWN_SUBSERIES_SUFFIXES.test(releaseTitle) || KNOWN_SUBSERIES_SUFFIXES.test(filePathToCheck);
+
+            if (isSubSeries && seasonNum === 1 && metadata.tmdbId) {
+                try {
+                    const TVDetails = await TMDBService.getTVDetails(metadata.tmdbId);
+                    if (TVDetails && TVDetails.temporadas && TVDetails.temporadas.length >= 2) {
+                        // Encontra a temporada cujo nome/data de lançamento corresponde melhor ao release
+                        let bestSeasonMatch = null;
+                        for (const t of TVDetails.temporadas) {
+                            if (t.numero <= 1) continue; // Só interessa se houver T2+
+                            const tName = (t.nome || '').toLowerCase();
+                            if (KNOWN_SUBSERIES_SUFFIXES.test(tName) || KNOWN_SUBSERIES_SUFFIXES.test(releaseTitle)) {
+                                // Verifica também se o episódio existe nesta temporada
+                                const seasonDetails = await TMDBService.getSeasonDetails(metadata.tmdbId, t.numero).catch(() => null);
+                                if (seasonDetails && seasonDetails.episodios && seasonDetails.episodios.find(e => e.numero === epNum)) {
+                                    bestSeasonMatch = t.numero;
+                                    break;
+                                }
+                            }
+                        }
+                        if (bestSeasonMatch && bestSeasonMatch !== seasonNum) {
+                            console.log(`🗺️ [Season Remap] "${metadata.nome}" T${seasonNum}E${epNum} re-mapeado para T${bestSeasonMatch}E${epNum} via TMDB (release sub-série detectado: "${releaseTitle}")`);
+                            seasonNum = bestSeasonMatch;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ [Season Remap] Falha ao verificar mapeamento de temporada via TMDB:', e.message);
+                }
             }
 
             await this.catalogoManager.adicionarEpisodioSerie(

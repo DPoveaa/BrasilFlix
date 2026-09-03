@@ -191,7 +191,7 @@ class DownloaderManager extends EventEmitter {
         return false;
     }
 
-    findEpisodeFileInTorrent(files, season, episode) {
+    findEpisodeFileInTorrent(files, season, episode, options = {}) {
         if (!files || files.length === 0) return null;
         const seasonNum = parseInt(season || 1, 10);
         const epNum = parseInt(episode || 1, 10);
@@ -222,12 +222,16 @@ class DownloaderManager extends EventEmitter {
             if (seasonMatch) {
                 const foundSeason = parseInt(seasonMatch[1], 10);
                 if (foundSeason !== seasonNum) {
-                    console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é da Temporada ${foundSeason}, mas solicitamos a Temporada ${seasonNum}. Rejeitando.`);
+                    if (!options.silent) {
+                        console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é da Temporada ${foundSeason}, mas solicitamos a Temporada ${seasonNum}. Rejeitando.`);
+                    }
                     return null;
                 }
             } else if (seasonNum > 1) {
                 // Se buscamos Temporada > 1 e o arquivo único não indica nenhuma temporada, rejeita para evitar usar T1 como T2/T3/T4
-                console.warn(`⚠️ [Download] Arquivo único "${single.name}" sem identificação de temporada ao buscar Temporada ${seasonNum}. Rejeitando.`);
+                if (!options.silent) {
+                    console.warn(`⚠️ [Download] Arquivo único "${single.name}" sem identificação de temporada ao buscar Temporada ${seasonNum}. Rejeitando.`);
+                }
                 return null;
             }
 
@@ -236,7 +240,9 @@ class DownloaderManager extends EventEmitter {
             if (otherEpMatch) {
                 const foundEp = parseInt(otherEpMatch[1], 10);
                 if (foundEp !== epNum && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720) {
-                    console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é o episódio ${foundEp}, mas solicitamos ${epNum}. Rejeitando.`);
+                    if (!options.silent) {
+                        console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é o episódio ${foundEp}, mas solicitamos ${epNum}. Rejeitando.`);
+                    }
                     return null;
                 }
             }
@@ -329,12 +335,35 @@ class DownloaderManager extends EventEmitter {
         };
 
         const videoFiles = files.filter(f => !isSampleOrPromoFile(f));
+        if (videoFiles.length === 0) return {};
+
+        // Se houver apenas 1 arquivo de vídeo no torrent, mapeia apenas o episódio específico dele diretamente
+        if (videoFiles.length === 1) {
+            const single = videoFiles[0];
+            const clean = single.name
+                .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+            
+            const seasonMatch = clean.match(/s0*(\d{1,2})[._ -]*e/i) || clean.match(/\b(\d{1,2})x\d{1,3}\b/i) || clean.match(/(?:season|temporada)[._ -]*0*(\d{1,2})/i);
+            const foundSeason = seasonMatch ? parseInt(seasonMatch[1], 10) : 1;
+            
+            if (foundSeason === seasonNum) {
+                const epMatch = clean.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || clean.match(/(?:^|[._ -])(?:-\s*)?0*(\d{1,4})(?:[._ -]|$)/);
+                if (epMatch) {
+                    const epFound = parseInt(epMatch[1], 10);
+                    if (epFound < 1900 && epFound !== 1080 && epFound !== 720) {
+                        return { [epFound]: single };
+                    }
+                }
+            }
+            return {};
+        }
 
         const epMap = {};
         const usedPaths = new Set();
 
         for (let ep = 1; ep <= maxEps; ep++) {
-            const found = this.findEpisodeFileInTorrent(videoFiles, seasonNum, ep);
+            const found = this.findEpisodeFileInTorrent(videoFiles, seasonNum, ep, { silent: true });
             if (found && !usedPaths.has(found.path)) {
                 // Evita que arquivos com faixas múltiplas ou nomes genéricos ocupem múltiplos episódios se for arquivo único
                 usedPaths.add(found.path);
@@ -841,7 +870,9 @@ class DownloaderManager extends EventEmitter {
                     curRatio = curTotal > 0 ? curDownloaded / curTotal : 0;
                 } else if (targetEpisodeFile) {
                     curTotal = targetEpisodeFile.length || torrent.length;
-                    curRatio = targetEpisodeFile.progress || 0;
+                    const fileProg = targetEpisodeFile.progress || 0;
+                    const fallbackRatio = torrent.length > 0 ? (torrent.downloaded / torrent.length) : 0;
+                    curRatio = fileProg > 0 ? fileProg : fallbackRatio;
                     curDownloaded = Math.round(curRatio * curTotal);
                 } else {
                     curTotal = torrent.length || 0;
@@ -1034,9 +1065,138 @@ class DownloaderManager extends EventEmitter {
         });
     }
 
+    async _downloadStreamWithFfmpeg(streamUrl, fileName, onProgress = null, options = {}) {
+        const { spawn } = require('child_process');
+        const path = require('path');
+
+        this.ensureDirectories();
+        if (!path.extname(fileName)) {
+            fileName = `${fileName}.mp4`;
+        }
+
+        const targetPath = path.join(this.downloadDir, fileName);
+        const mediaTitle = options.title || fileName;
+        const isSerie = options.type === 'serie' || (options.season && options.episode && options.type !== 'filme');
+        const displayTitle = isSerie ? `${mediaTitle} (T${options.season || 1}E${options.episode || 1})` : mediaTitle;
+        const providerName = options.provider || 'Web CDN';
+        const referer = options.referer || 'https://animesdigital.org/';
+
+        console.log(`📥 [${providerName}] Iniciando download de alta velocidade via stream: "${displayTitle}"`);
+
+        let isCancelled = false;
+        let ffmpegProc = null;
+
+        if (options.jobId && this.activeDownloads) {
+            this.activeDownloads.set(options.jobId, {
+                cancel: () => {
+                    isCancelled = true;
+                    try { ffmpegProc && ffmpegProc.kill('SIGTERM'); } catch (e) {}
+                }
+            });
+        }
+
+        return new Promise((resolve, reject) => {
+            const args = [
+                '-y',
+                '-headers', `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\nReferer: ${referer}\r\n`,
+                '-i', streamUrl,
+                '-c', 'copy',
+                '-movflags', '+faststart',
+                targetPath
+            ];
+
+            ffmpegProc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+
+            let stderr = '';
+            let durationSec = null;
+            let lastLogTime = Date.now();
+            const downloadStartTime = Date.now();
+
+            ffmpegProc.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                stderr += chunk;
+
+                // Extract duration from ffmpeg output
+                if (!durationSec) {
+                    const durMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
+                    if (durMatch) {
+                        durationSec = parseInt(durMatch[1], 10) * 3600 + parseInt(durMatch[2], 10) * 60 + parseFloat(durMatch[3]);
+                    }
+                }
+
+                // Parse time progress: time=HH:MM:SS.ms
+                const timeMatch = chunk.match(/time=(\d+):(\d+):(\d+\.?\d*)/);
+                if (timeMatch) {
+                    const now = Date.now();
+                    const currentSec = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseFloat(timeMatch[3]);
+                    const percent = durationSec > 0 ? Math.min(99, (currentSec / durationSec) * 100) : 0;
+
+                    const elapsedSec = Math.floor((now - downloadStartTime) / 1000);
+                    const elapsedFormatted = this.formatDuration(elapsedSec);
+                    const remainingSec = durationSec > 0 && percent > 0 ? Math.floor((durationSec - currentSec) / (percent / 100)) : null;
+                    const remainingFormatted = remainingSec ? `~${this.formatDuration(remainingSec)}` : '--:--';
+
+                    const barLength = 25;
+                    const filled = Math.min(barLength, Math.round((percent / 100) * barLength));
+                    const empty = Math.max(0, barLength - filled);
+                    const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
+
+                    const logLine = `\x1b[36m📥 [DOWNLOAD: "${displayTitle}"] [🌐 ${providerName}] [${progressBar}] ${percent > 0 ? percent.toFixed(1) + '%' : `${currentSec.toFixed(0)}s`} | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted})\x1b[0m`;
+
+                    if (now - lastLogTime >= 5000) {
+                        lastLogTime = now;
+                        console.log(logLine);
+                    }
+
+                    if (onProgress) {
+                        onProgress({
+                            percent: parseFloat(percent.toFixed(1)),
+                            speed: 'Alta Velocidade (CDN Direct)',
+                            downloaded: `${currentSec.toFixed(0)}s`,
+                            total: `${durationSec ? durationSec.toFixed(0) : '?'}s`
+                        });
+                    }
+                }
+            });
+
+            ffmpegProc.on('close', (code) => {
+                if (options.jobId && this.activeDownloads) this.activeDownloads.delete(options.jobId);
+
+                if (isCancelled) {
+                    try { require('fs-extra').removeSync(targetPath); } catch (e) {}
+                    return reject(new Error('DOWNLOAD_CANCELLED'));
+                }
+
+                if (code === 0 && require('fs-extra').existsSync(targetPath)) {
+                    const stats = require('fs-extra').statSync(targetPath);
+                    if (stats.size > 1024 * 1024) { // > 1MB = valid
+                        console.log(`✅ [${providerName}] Download via Stream concluído: ${fileName} (${(stats.size / (1024 * 1024)).toFixed(1)} MB)`);
+                        return resolve({ filePath: targetPath, fileName, sizeBytes: stats.size, isDirect: true });
+                    }
+                }
+
+                if (stderr.includes('403') || stderr.includes('404') || stderr.includes('Forbidden')) {
+                    return reject(new Error('Stream URL expirou ou foi bloqueada (403/404).'));
+                }
+
+                return reject(new Error(`ffmpeg Stream download falhou (código ${code}): ${stderr.slice(-300)}`));
+            });
+
+            ffmpegProc.on('error', (err) => {
+                if (options.jobId && this.activeDownloads) this.activeDownloads.delete(options.jobId);
+                reject(new Error(`Erro ao iniciar ffmpeg para Stream: ${err.message}`));
+            });
+        });
+    }
+
     async downloadHttp(url, fileName, onProgress = null, options = {}) {
         this.ensureDirectories();
         await this.ensureDiskSpace();
+
+        // ✅ URLs m3u8 ou streams diretos de vídeo usam ffmpeg para streaming e remux direto
+        if (url && (url.includes('.m3u8') || url.includes('videoplayback') || url.includes('blogger.com') || options.isStream)) {
+            return this._downloadStreamWithFfmpeg(url, fileName, onProgress, options);
+        }
 
         // Garante extensão de vídeo se o nome vier sem ela
         if (!path.extname(fileName)) {

@@ -431,6 +431,7 @@ class VideoProcessor {
 
     validatePortugueseContent(info, rawFileName = '', source = {}, metadata = {}) {
         const lowerName = (rawFileName || '').toLowerCase();
+        const sourceTitle = (source.title || source.nome || metadata.nome || '').toLowerCase();
 
         // 0. Bloqueio imediato de áudio Russo / Scam em obras ocidentais/brasileiras
         if (this.isRussianOrScamAudio(info, rawFileName, metadata)) {
@@ -444,12 +445,40 @@ class VideoProcessor {
             };
         }
 
-        // 1. Áudio Dublado REAL verificado estritamente via ffprobe e tags do arquivo
-        const isDublado = this.hasPortugueseAudio(info, rawFileName);
+        // 0.5. Fast-path para streams diretos de CDN de anime (AnimesDigital / TopAnimes):
+        // Esses streams m3u8 raramente possuem tags de idioma corretas no ffprobe.
+        // O próprio scraper já determinou o áudio corretamente via URL/título do item.
+        // Portanto, confiamos 100% na classificação da fonte e ignoramos o ffprobe.
+        if (source.isDirect === true) {
+            if (source.isDublado === true && source.isLegendado === true) {
+                return { isValid: true, isDublado: true, isLegendado: true, hasBoth: true, audioText: 'Dual Áudio + Legendas (Dublado e Legendado PT-BR)' };
+            }
+            if (source.isDublado === true) {
+                return { isValid: true, isDublado: true, isLegendado: false, hasBoth: false, audioText: 'Dublado (Áudio PT-BR)' };
+            }
+            if (source.isLegendado === true) {
+                return { isValid: true, isDublado: false, isLegendado: true, hasBoth: false, audioText: 'Legendado (PT-BR)' };
+            }
+            // fonte direta mas sem classificação explícita — continua análise normal
+        }
+
+        // 1. Áudio Dublado REAL verificado via ffprobe, tags do arquivo ou confirmação da fonte (Web Direct / Scraper / Torrent BR)
+        const ptLanguages = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'];
+        const allTaggedAndForeign = info.audioStreams && info.audioStreams.length > 0 && 
+            info.audioStreams.every(a => {
+                const lang = (a.language || '').toLowerCase();
+                return lang !== 'und' && lang !== '' && !ptLanguages.includes(lang);
+            });
+
+        const isSourceDublado = (source.isDublado === true || source.audio?.toLowerCase().includes('dublado') || /\b(dublado|dub|nacional|pt[-_]?br)\b/i.test(sourceTitle)) && !allTaggedAndForeign;
+        const hasDirectPtAudio = this.hasPortugueseAudio(info, rawFileName);
+        const hasAudioStreams = info.audioStreams && info.audioStreams.length > 0;
+        const isDublado = !allTaggedAndForeign && (hasDirectPtAudio || (isSourceDublado && hasAudioStreams && !this.isRussianOrScamAudio(info, rawFileName, metadata)));
 
         // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada (ou original para OpenSubtitles)
         const hasPtSubsInFile = this.hasPortugueseSubtitles(info, rawFileName);
-        const isLegendado = hasPtSubsInFile || source.isLegendado === true || source.hasPtSub === true || source.isOriginal === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName);
+        const isSourceLegendado = source.isLegendado === true || source.hasPtSub === true || source.hasEmbeddedSub === true;
+        const isLegendado = hasPtSubsInFile || isSourceLegendado || source.isOriginal === true || /\b(legendado|legendas|legenda)\b/i.test(lowerName) || /\b(legendado|legendas|legenda)\b/i.test(sourceTitle);
 
         // 3. Caso contenha AMBOS (Áudio Dublado + Legenda PT-BR no mesmo arquivo)
         if (isDublado && isLegendado) {
@@ -746,7 +775,8 @@ class VideoProcessor {
                                                    titleTag.includes('brazil') || titleTag.includes('brasil') || titleTag.includes('pob');
 
                         if (isOfficialStudioPob || this.isBrazilianPortugueseSubtitle(content)) {
-                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada (100% Sincronia de Estúdio)!`);
+                            await SubtitleSync.optimizeSubtitleFile(srtPath);
+                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída, otimizada e validada (100% Sincronia de Estúdio)!`);
                             return srtPath;
                         } else {
                             console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída continha Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
@@ -763,6 +793,7 @@ class VideoProcessor {
         // 2. Verifica se o torrent já trouxe a legenda oficial PT-BR na pasta (Companion Subs do release)
         const companion = await this.findCompanionSubtitle(inputPath, metadata);
         if (companion.ptSrtPath) {
+            await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
             return companion.ptSrtPath;
         }
 
@@ -917,10 +948,13 @@ class VideoProcessor {
         const selectedAudioStream = info.audioStreams[targetAudioIndex] || info.audioStreams[0] || null;
 
         let srtPath = null;
+        const alreadyHardsubbed = metadata.isDirect || metadata.hasEmbeddedSub || metadata.isReadySub;
+        const isConfirmedDublado = metadata.isDublado === true || hasPortugueseAudio;
 
-        // Se NÃO possuir áudio em Português (ou for expressamente marcado como apenas legendado),
-        // DEVE OBRIGATORIAMENTE obter e queimar/embutir as legendas em Português Brasileiro (PT-BR)
-        if (!hasPortugueseAudio || (metadata.isLegendado && !metadata.isDublado)) {
+        // Se NÃO possuir áudio em Português e for expressamente Legendado (sem áudio dublado),
+        // DEVE OBRIGATORIAMENTE obter e queimar/embutir as legendas em Português Brasileiro (PT-BR),
+        // a menos que o vídeo seja Dublado ou venha com hardsub já embutido no stream (Web Direct).
+        if (!isConfirmedDublado && (metadata.isLegendado || !hasPortugueseAudio) && !alreadyHardsubbed) {
             if (!hasPortugueseAudio) {
                 console.log(`💬 [${optTitle}] Áudio em Português não detectado no arquivo original. Buscando e extraindo legendas oficiais PT-BR para Hardsub obrigatório...`);
             }
@@ -935,12 +969,17 @@ class VideoProcessor {
                     metadata.isDublado = false;
                 }
             }
+        } else if (alreadyHardsubbed && metadata.isLegendado && !isConfirmedDublado) {
+            console.log(`💬 [${optTitle}] Vídeo Web Direct já possui legendas oficiais PT-BR embutidas/hardsub no stream. Ignorando busca externa.`);
+        } else if (isConfirmedDublado && !metadata.isLegendado) {
+            metadata.isDublado = true;
+            metadata.isLegendado = false;
         }
 
         let finalPath;
 
         // Se for comprovadamente Dublado (e sem necessidade de queimar legendas), faz Remux Rápido quando compatível
-        if (hasPortugueseAudio && !metadata.isLegendado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
+        if (isConfirmedDublado && !metadata.isLegendado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
             console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Rápido com normalização universal de áudio AAC...`);
             console.log(`🔊 Faixa de áudio selecionada: Stream 0:a:${targetAudioIndex} [${selectedAudioStream?.codec?.toUpperCase()} | ${selectedAudioStream?.channels} canais | lang: ${selectedAudioStream?.language}]`);
 

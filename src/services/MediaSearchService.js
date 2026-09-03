@@ -42,7 +42,13 @@ class MediaSearchService {
         const pref = options.audioPreference || 'geral';
         const season = options.season || 1;
         const episode = options.episode || 1;
-        let isAnime = options.isAnime || options.is_anime || false;
+        const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
+
+        let isAnime = options.isAnime || options.is_anime || 
+                      options.originalLanguage === 'ja' || options.idiomaOriginal === 'ja' ||
+                      KNOWN_ANIME_TITLES.test(cleanQuery) || (originalName && KNOWN_ANIME_TITLES.test(originalName)) ||
+                      /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery);
+
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
         console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''} ${tipo === 'serie' ? `(T${season}E${episode})` : ''}...`);
 
@@ -51,14 +57,14 @@ class MediaSearchService {
 
         // 1. Tentar obter IMDb ID caso não tenha sido fornecido e verificar se é Anime
         let tmdbDetails = null;
-        if (!imdbId && options.tmdbId) {
+        if (options.tmdbId) {
             try {
                 if (tipo === 'filme') {
                     tmdbDetails = await TMDBService.getMovieDetails(options.tmdbId);
-                    imdbId = tmdbDetails?.imdbId;
+                    if (!imdbId) imdbId = tmdbDetails?.imdbId;
                 } else {
                     tmdbDetails = await TMDBService.getTVDetails(options.tmdbId);
-                    imdbId = tmdbDetails?.imdbId;
+                    if (!imdbId) imdbId = tmdbDetails?.imdbId;
                 }
                 if (tmdbDetails && !isAnime) {
                     const generos = tmdbDetails.generos || [];
@@ -94,16 +100,17 @@ class MediaSearchService {
             }
         }
 
-        // 2. BUSCA DIRETA EM WEB CDN PARA ANIMES (MeusAnimes - Alta velocidade e sem dependência de seeders)
-        if (isAnime) {
+        // 2. BUSCA DIRETA EM WEB CDN PARA ANIMES (Desativado por padrão para evitar marca d'água de sites como animesonline.org)
+        if (isAnime && config.ENABLE_ANIME_DIRECT) {
             try {
-                console.log(`🎌 [Anime Direct] Consultando MeusAnimes (Web CDN) para: "${cleanQuery}" ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
+                console.log(`🎌 [Anime Direct] Consultando AnimesDigital / TopAnimes (Web CDN) para: "${cleanQuery}" ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
                 const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
                     nomeOriginal: originalName,
                     season,
                     episode,
                     audioPreference: pref,
                     ano,
+                    tmdbSeasonName: options.tmdbSeasonName || null, // Nome da temporada TMDB para animes com temporadas separadas
                     ignorarFallbackLegendado: options.ignorarFallbackLegendado,
                     ignorarFallbackDublado: options.ignorarFallbackDublado
                 });
@@ -446,11 +453,19 @@ class MediaSearchService {
                 // Marcação explícita de Portugal (NUNCA aplicada a grupos brasileiros)
                 const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && (/\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title));
 
-                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
-                const isDualPtInTitle = /\b(dual)\b/i.test(title) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(rawTitle));
+                // Detecta par de idiomas estrangeiros (ex: KOR-ENG, JAP-ENG) NO TÍTULO DO RELEASE.
+                // Só é considerado bloqueante se NÃO houver nenhum indicador PT-BR explícito sobrescrevendo:
+                // - Marcação BR explícita no rawTitle (🇧🇷, PT-BR, PTBR, DUBLADO, NACIONAL, BRASILEIRO)
+                // - Grupo de lançamento 100% brasileiro (Comando, BluDV, Lapumia, etc.)
+                const hasForeignPairInTitle = /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng)\b/i.test(title) || /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng)\b/i.test(rawTitle);
+                // Par estrangeiro sem PT-BR: bloqueia somente se não houver indicador explícito de áudio PT-BR
+                const hasForeignAudioPair = hasForeignPairInTitle && !isPtBrExplicit && !isBrazilianGroup && !/\b(dublado|nacional|pt[-_]?br|ptbr|brasileiro|brazilian)\b/i.test(rawTitle);
 
-                const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit;
+                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(rawTitle));
+
+                const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit && !hasForeignAudioPair;
 
                 const hasHardsubFlag = /\b(hc|hc[-_]?sub|hardsub|korsub|chssub|vostfr)\b/i.test(rawTitle) || /\b(hc|hc[-_]?sub|hardsub|korsub|chssub)\b/i.test(title);
                 if (opts.audioPreference === 'dublado' && hasHardsubFlag && !isBrazilianGroup) {

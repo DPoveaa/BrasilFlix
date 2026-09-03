@@ -4,6 +4,142 @@ const fs = require('fs-extra');
 
 class SubtitleSync {
     /**
+     * Converte timecode SRT (00:01:23,456 ou 00:01:23.456) para milissegundos
+     */
+    parseTimecodeToMs(tc) {
+        if (!tc) return 0;
+        const parts = tc.trim().replace('.', ',').split(/[:,]/);
+        if (parts.length < 4) return 0;
+        const h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        const s = parseInt(parts[2], 10) || 0;
+        const ms = parseInt(parts[3], 10) || 0;
+        return (h * 3600 + m * 60 + s) * 1000 + ms;
+    }
+
+    /**
+     * Converte milissegundos para timecode SRT padronizado (00:01:23,456)
+     */
+    formatMsToTimecode(totalMs) {
+        if (totalMs < 0) totalMs = 0;
+        const ms = Math.floor(totalMs % 1000);
+        const totalSeconds = Math.floor(totalMs / 1000);
+        const s = totalSeconds % 60;
+        const totalMinutes = Math.floor(totalSeconds / 60);
+        const m = totalMinutes % 60;
+        const h = Math.floor(totalMinutes / 60);
+
+        const pad = (n, z = 2) => String(n).padStart(z, '0');
+        return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+    }
+
+    /**
+     * Ajusta o ritmo e tempo de exibição das legendas (CPS e Duração Mínima)
+     * Garante que legendas rápidas não desapareçam em 0.5s/1s, mantendo tempo
+     * confortável de leitura (mínimo de 1.8s a 2.0s por fala) sem sobrepor o próximo diálogo.
+     */
+    adjustSubtitleTimingAndReadability(srtContent) {
+        if (!srtContent || typeof srtContent !== 'string') return srtContent;
+
+        const normalized = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const rawBlocks = normalized.split(/\n\s*\n/);
+        const cues = [];
+
+        const tcRegex = /(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})/;
+
+        for (const block of rawBlocks) {
+            const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length < 2) continue;
+
+            let tcIndex = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (tcRegex.test(lines[i])) {
+                    tcIndex = i;
+                    break;
+                }
+            }
+
+            if (tcIndex === -1) continue;
+
+            const match = lines[tcIndex].match(tcRegex);
+            const startMs = this.parseTimecodeToMs(match[1]);
+            const endMs = this.parseTimecodeToMs(match[2]);
+            const textLines = lines.slice(tcIndex + 1);
+            const text = textLines.join('\n');
+
+            if (endMs > startMs && text.length > 0) {
+                cues.push({
+                    startMs,
+                    endMs,
+                    text
+                });
+            }
+        }
+
+        if (cues.length === 0) return srtContent;
+
+        // Ordena cronologicamente
+        cues.sort((a, b) => a.startMs - b.startMs);
+
+        const GAP_MS = 80; // Espaço limpo mínimo entre legendas consecutivas
+
+        for (let i = 0; i < cues.length; i++) {
+            const cue = cues[i];
+            const nextCue = cues[i + 1] || null;
+
+            // Remove tags HTML/formatação para contagem real de caracteres
+            const cleanText = cue.text.replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').trim();
+            const charCount = cleanText.length;
+
+            // Cálculo do tempo ideal de leitura:
+            // Base mínima de 1800ms (1.8s) + ~65ms por caractere (velocidade confortável de 15.4 CPS)
+            const idealDurationMs = Math.min(7000, Math.max(1800, charCount * 65 + 300));
+            const targetEndMs = cue.startMs + idealDurationMs;
+
+            let finalEndMs = Math.max(cue.endMs, targetEndMs);
+
+            if (nextCue) {
+                const maxAllowedEndMs = nextCue.startMs - GAP_MS;
+                if (maxAllowedEndMs > cue.startMs + 500) {
+                    finalEndMs = Math.min(finalEndMs, maxAllowedEndMs);
+                } else if (nextCue.startMs > cue.startMs) {
+                    finalEndMs = Math.min(cue.endMs, nextCue.startMs - 20);
+                }
+            }
+
+            cue.endMs = Math.max(cue.startMs + 500, finalEndMs);
+        }
+
+        // Reconstrói o arquivo SRT padronizado
+        const outputBlocks = cues.map((cue, idx) => {
+            const num = idx + 1;
+            const startTc = this.formatMsToTimecode(cue.startMs);
+            const endTc = this.formatMsToTimecode(cue.endMs);
+            return `${num}\n${startTc} --> ${endTc}\n${cue.text}`;
+        });
+
+        return outputBlocks.join('\n\n') + '\n';
+    }
+
+    /**
+     * Aplica otimização de legibilidade e tempo de leitura diretamente em um arquivo .srt
+     */
+    async optimizeSubtitleFile(srtPath) {
+        try {
+            if (!fs.existsSync(srtPath)) return srtPath;
+            const content = await fs.readFile(srtPath, 'utf8');
+            const optimized = this.adjustSubtitleTimingAndReadability(content);
+            if (optimized && optimized.length > 100) {
+                await fs.writeFile(srtPath, optimized, 'utf8');
+            }
+            return srtPath;
+        } catch (e) {
+            console.warn(`⚠️ [SubtitleSync] Falha ao otimizar tempo de leitura do SRT "${path.basename(srtPath)}":`, e.message);
+            return srtPath;
+        }
+    }
+
+    /**
      * Sincroniza um arquivo de legenda (.srt) contra um arquivo de vídeo (áudio) OU contra uma legenda de referência (.srt).
      *
      * @param {string} videoOrRefSrt Caminho do arquivo de vídeo OU legenda de referência (ex: .srt em inglês)
@@ -19,7 +155,8 @@ class SubtitleSync {
         }
 
         const isRefSubtitle = videoOrRefSrt.toLowerCase().endsWith('.srt') || videoOrRefSrt.toLowerCase().endsWith('.vtt') || videoOrRefSrt.toLowerCase().endsWith('.ass');
-        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 120 : 30);
+        // Janela expandida de 180s para capturar aberturas longas, vinhetas de estúdio (Tokyo MX / TV Tokyo) e recaps
+        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 180 : 240);
 
         console.log(`🎙️ [SubtitleSync] Sincronizando legenda via ${isRefSubtitle ? 'Legenda de Referência (Sub-to-Sub 100% Preciso)' : 'Análise de Voz no Áudio (VAD Audio-to-Sub)'} [Janela: ${maxOffsetSec}s]...`);
         const startTime = Date.now();
@@ -50,10 +187,10 @@ sys.exit(main())
                     if (!isDone) {
                         isDone = true;
                         try { pyProc.kill('SIGKILL'); } catch (e) {}
-                        console.warn('⚠️ [SubtitleSync] Timeout de 60s ao sincronizar legenda.');
+                        console.warn('⚠️ [SubtitleSync] Timeout de 90s ao sincronizar legenda.');
                         resolve(false);
                     }
-                }, 60000);
+                }, 90000);
 
                 pyProc.on('error', (err) => {
                     if (!isDone) {
@@ -80,7 +217,9 @@ sys.exit(main())
             const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
             if (success && this.validateSynchronizedSubtitle(srtOutputPath)) {
-                console.log(`✅ [SubtitleSync] Legenda sincronizada 100% com precisão matemática em ${elapsedSec}s!`);
+                // Aplica otimização de tempo de leitura na legenda sincronizada
+                await this.optimizeSubtitleFile(srtOutputPath);
+                console.log(`✅ [SubtitleSync] Legenda sincronizada e otimizada para leitura confortável em ${elapsedSec}s!`);
                 return srtOutputPath;
             } else {
                 console.warn(`⚠️ [SubtitleSync] Não foi possível garantir sincronia perfeita via análise (${elapsedSec}s).`);

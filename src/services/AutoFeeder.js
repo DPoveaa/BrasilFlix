@@ -36,32 +36,46 @@ class AutoFeeder {
             this.runCheck();
         }, 8000);
 
-        // Notificação em tempo real quando o agendador autorizar o início dos downloads (01h ou force-start)
-        SchedulerService.on('stateChange', ({ allowed }) => {
+        // Gerenciamento de ciclo dinâmico do AutoFeeder:
+        // - Modo Performance (Madrugada/Forçado): A cada 15 minutos (esteira ultra rápida para alimentar downloads e uploads)
+        // - Modo Econômico (Horário Comercial/Residencial): A cada 4 horas (varredura leve e silenciosa)
+        this.feederTimer = null;
+
+        const scheduleNextCycle = () => {
+            if (this.feederTimer) {
+                clearTimeout(this.feederTimer);
+                this.feederTimer = null;
+            }
+
+            const mode = SchedulerService.getActiveMode();
+            const intervalMs = mode === 'performance' ? (15 * 60 * 1000) : (4 * 60 * 60 * 1000);
+            const modeDesc = mode === 'performance' ? '⚡ DESEMPENHO (Ciclo: 15 min)' : '🍃 ECONÔMICO (Ciclo: 4 horas)';
+            console.log(`⏱️ [AutoFeeder Agendador] Próxima varredura configurada para modo ${modeDesc}.`);
+
+            this.feederTimer = setTimeout(async () => {
+                if (SchedulerService.isAllowedToRun()) {
+                    console.log(`⏰ [AutoFeeder] Iniciando varredura periódica (${modeDesc})...`);
+                    await this.runCheck().catch(() => {});
+                } else {
+                    console.log('🔍 [AutoFeeder Off-Hours] Varredura leve de metadados em segundo plano...');
+                    await this.runLightweightBackgroundCheck().catch(() => {});
+                }
+                scheduleNextCycle();
+            }, intervalMs);
+        };
+
+        // Notificação em tempo real quando o agendador alterar o modo ou abrir a janela
+        SchedulerService.on('stateChange', ({ allowed, mode }) => {
+            console.log(`⏰ [Scheduler -> AutoFeeder] Mudança de estado detectada: Modo = ${mode || SchedulerService.getActiveMode()} (Permitido: ${allowed})`);
+            scheduleNextCycle();
             if (allowed) {
-                console.log('⏰ [Scheduler -> AutoFeeder] Janela aberta ou force-start acionado! Disparando busca de novos episódios e pedidos...');
+                console.log('🚀 [AutoFeeder] Disparando busca imediata de novos episódios e pedidos...');
                 setTimeout(() => this.runCheck(), 3000);
             }
         });
 
-        // Verificação periódica a cada 30 minutos enquanto estiver dentro da janela permitida
-        setInterval(() => {
-            if (SchedulerService.isAllowedToRun()) {
-                console.log('⏰ [AutoFeeder] Varredura periódica da janela ativa...');
-                this.runCheck();
-            }
-        }, 30 * 60 * 1000);
-
-        // Agendamento leve a cada 2 horas (mesmo fora do horário, apenas checa metadados leves no TMDB)
-        cron.schedule('0 */2 * * *', () => {
-            if (SchedulerService.isAllowedToRun()) {
-                console.log('⏰ AutoFeeder: Ciclo de varredura completa...');
-                this.runCheck();
-            } else {
-                console.log('🔍 [AutoFeeder Off-Hours] Varredura leve de metadados (TMDB/Pedidos/Upgrades) em segundo plano...');
-                this.runLightweightBackgroundCheck();
-            }
-        });
+        // Inicia o primeiro ciclo de agendamento dinâmico
+        scheduleNextCycle();
     }
 
     async runLightweightBackgroundCheck() {
@@ -123,18 +137,13 @@ class AutoFeeder {
             // 4.3 Auto-Upgrade: Verificar se filmes apenas Dublados também ganham versão Legendada oficial
             await this.checkFilmesDubladosSemLegenda();
 
-            // Em modo econômico residencial: não introduz grandes lotes de novos títulos do TMDB
-            const isEco = SchedulerService.getActiveMode() === 'eco';
-            if (isEco) {
-                return;
-            }
-
-            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento equilibrado...');
+            console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento equilibrado de todas as faixas...');
 
             const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
             const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.isAnime && !j.isMicrodrama && !j.extraData?.isDorama && !j.extraData?.isAnime && !j.extraData?.isMicrodrama && j.status === 'queued');
             const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
             const animesInQueue = (this.queueManager.queue || []).filter(j => (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
+            const microdramasInQueue = (this.queueManager.queue || []).filter(j => (j.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.isMicrodrama || j.extraData?.subtipo === 'microdrama') && j.status === 'queued');
 
             // 6. Filmes em alta (mantém cota independente para Faixa 1)
             if (moviesInQueue.length < 6) {
@@ -599,6 +608,28 @@ class AutoFeeder {
         }
     }
 
+    /**
+     * Verifica se um título é uma adaptação live-action conhecida de um anime e extrai o titulo canônico do anime.
+     * Ex: "ONE PIECE: A Série" -> "One Piece" | "Death Note" Live Action -> "Death Note"
+     */
+    _detectLiveActionAdaptation(title, nomeOriginal, tmdbItem) {
+        const KNOWN_ANIME_ORIGINALS = /one piece|death note|naruto|bleach|dragon ball|attack on titan|fullmetal alchemist|cowboy bebop|ghost in the shell|sword art online|fairy tail|hunter x hunter|demon slayer|jujutsu kaisen|my hero academia/i;
+        const normTitle = (title || '').toLowerCase();
+        const normOriginal = (nomeOriginal || '').toLowerCase();
+
+        // Detecta Live Action: idioma original em inglês, título diferente do anime (com "a série", "the series", etc.)
+        const isEnglish = tmdbItem?.idiomaOriginal === 'en' || tmdbItem?.originalLanguage === 'en';
+        const hasSeriesSuffix = /[:–-]\s*(a série|the series|live action|la serie|la séries)/i.test(title);
+        const knowAnimeMatch = KNOWN_ANIME_ORIGINALS.exec(normTitle) || KNOWN_ANIME_ORIGINALS.exec(normOriginal);
+
+        if (isEnglish && hasSeriesSuffix && knowAnimeMatch) {
+            // Extrai o titulo canônico do anime (parte antes de ":")
+            const animeTitle = knowAnimeMatch[0].split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            return animeTitle;
+        }
+        return null;
+    }
+
     async considerItem(item, tipo, isDorama = false, isAnime = false) {
         const title = item.nome;
         if (!title) return;
@@ -611,10 +642,40 @@ class AutoFeeder {
             }
         }
 
-        // 2. Filtrar conteúdos futuros que ainda não estrearam (filmes antes da data de estreia mundial são 100% fakes/scams)
+        // 2. Filtrar conteúdos futuros que ainda não estrearam
         const nowStr = new Date().toISOString().split('T')[0];
         if (item.dataLancamento && item.dataLancamento > nowStr) {
             return;
+        }
+
+        // 3. Detectar se é um Live Action de um anime conhecido e enfileirar o anime original também
+        const animeOriginalTitle = this._detectLiveActionAdaptation(title, item.nomeOriginal, item);
+        if (animeOriginalTitle && !isAnime) {
+            // Enfileira o anime original separadamente se não estiver no catálogo/fila
+            const animeExistente = this.catalogoManager.buscarItemExato(animeOriginalTitle, 'serie');
+            const animeInQueue = this.queueManager.queue.some(j =>
+                j.title.toLowerCase() === animeOriginalTitle.toLowerCase() && j.status !== 'failed'
+            );
+            if (!animeExistente && !animeInQueue) {
+                console.log(`⛩️ [AutoFeeder] Detectado Live Action de anime! Enfileirando também o anime original: "${animeOriginalTitle}"`);
+                try {
+                    const animeResults = await TMDBService.searchTV(animeOriginalTitle);
+                    const animeResult = animeResults.find(r => r.isAnime) || animeResults[0];
+                    if (animeResult) {
+                        this.queueManager.addJob(animeResult.nome || animeOriginalTitle, 'serie', PRIORITIES.SERIES, {
+                            tmdbId: animeResult.tmdbId,
+                            isAnime: true,
+                            originalLanguage: 'ja',
+                            season: 1,
+                            episode: 1
+                        });
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ [AutoFeeder] Falha ao enfileirar anime original "${animeOriginalTitle}":`, e.message);
+                }
+            } else if (animeExistente) {
+                console.log(`ℹ️ [AutoFeeder] Anime original "${animeOriginalTitle}" já está no catálogo.`);
+            }
         }
 
         const existing = this.catalogoManager.buscarItemExato(title, tipo);
@@ -630,14 +691,18 @@ class AutoFeeder {
             return;
         }
 
-        const tag = isAnime ? 'Anime' : (isDorama ? 'Dorama' : tipo);
+        const tag = isAnime ? 'Anime' : (isDorama ? 'Dorama' : (item.isMicrodrama ? 'Microdrama' : (tipo === 'filme' ? 'Filme' : 'Série')));
         console.log(`✨ AutoFeeder adicionando à fila: "${title}" (${tag})`);
 
-        this.queueManager.addJob(title, tipo, PRIORITIES.FEEDER, {
+        const itemPrio = tipo === 'filme' ? PRIORITIES.CAM_UPGRADE : PRIORITIES.SERIES;
+
+        this.queueManager.addJob(title, tipo, itemPrio, {
             tmdbId: item.tmdbId,
             isDorama: isDorama || item.isDorama || false,
             isAnime: isAnime || item.isAnime || false,
-            originalLanguage: isAnime ? 'ja' : (isDorama ? 'ko' : null),
+            isMicrodrama: item.isMicrodrama || false,
+            subtipo: item.subtipo || (item.isMicrodrama ? 'microdrama' : null),
+            originalLanguage: isAnime ? 'ja' : (isDorama ? 'ko' : (item.idiomaOriginal || null)),
             season: 1,
             episode: tipo === 'serie' ? 1 : null
         });

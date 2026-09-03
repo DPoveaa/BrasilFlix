@@ -375,7 +375,7 @@ class CatalogoManager {
         if (maxAnySeq === 0) return null;
 
         const expectedEps = tMeta ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : 0;
-        const isCompleto = expectedEps > 0 ? (maxAnySeq >= expectedEps) : (maxAnySeq > 0);
+        const isCompleto = (expectedEps > 0) && (maxAnySeq >= expectedEps);
 
         // 2. Filtra apenas episódios pertencentes à sequência contínua utilizável
         const episodiosValidos = sortedEps.map(ep => {
@@ -443,8 +443,8 @@ class CatalogoManager {
             totalEpisodios: episodiosValidos.length,
             isDublado: maxDubSeq > 0,
             isLegendado: maxLegSeq > 0,
-            isDubladoCompleto: expectedEps > 0 ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0),
-            isLegendadoCompleto: expectedEps > 0 ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0),
+            isDubladoCompleto: (expectedEps > 0) && (maxDubSeq >= expectedEps),
+            isLegendadoCompleto: (expectedEps > 0) && (maxLegSeq >= expectedEps),
             isCompleto: isCompleto,
             episodios: episodiosValidos
         };
@@ -563,54 +563,7 @@ class CatalogoManager {
                 const seriesRes = await db.query(`SELECT * FROM series ORDER BY id DESC`);
                 const epsRes = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
 
-                // Mapeia episódios por série e temporada
-                const epsPorSerie = {};
-                for (const ep of epsRes.rows) {
-                    if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
-                    if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
-
-                    let rawVersoes = ep.versoes;
-                    let versoes = {};
-                    if (typeof rawVersoes === 'string') {
-                        try { rawVersoes = JSON.parse(rawVersoes); } catch (e) { rawVersoes = {}; }
-                    }
-                    if (rawVersoes && typeof rawVersoes === 'object' && Object.keys(rawVersoes).length > 0) {
-                        versoes = rawVersoes;
-                    } else {
-                        // Apenas em registros legados sem objeto de versões nenhum:
-                        if (ep.is_dublado && (ep.message_id || ep.file_id)) {
-                            versoes.dublado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
-                        }
-                        if (ep.is_legendado && (ep.message_id || ep.file_id)) {
-                            versoes.legendado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
-                        }
-                    }
-
-                    const hasDub = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado'))
-                        ? CatalogoManager.hasPlayableMedia(versoes.dublado)
-                        : (ep.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
-                    const hasLeg = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado'))
-                        ? CatalogoManager.hasPlayableMedia(versoes.legendado)
-                        : (ep.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
-
-                    epsPorSerie[ep.serie_id][ep.temporada_numero].push({
-                        numero: ep.numero,
-                        nome: ep.nome || `Episódio ${ep.numero}`,
-                        sinopse: ep.sinopse || '',
-                        stillUrl: ep.still_url || null,
-                        duracao: ep.duracao || null,
-                        messageId: ep.message_id ? Number(ep.message_id) : null,
-                        fileId: ep.file_id,
-                        qualidade: ep.qualidade || '1080p',
-                        audio: ep.audio || (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
-                        isDublado: hasDub,
-                        isLegendado: hasLeg,
-                        versoes: versoes,
-                        dataAdicionado: ep.created_at
-                    });
-                }
-
-                // Coleta todos os messageIds referenciados para verificação preventiva com cache
+                // Coleta todos os messageIds referenciados para verificação preventiva com cache ANTES de construir epsPorSerie
                 const allMessageIds = [];
                 for (const f of filmesRes.rows) {
                     let versoes = f.versoes || {};
@@ -656,6 +609,53 @@ class CatalogoManager {
                     } catch (tgErr) {
                         console.warn('⚠️ Aviso ao verificar status das mídias no Telegram durante carga do catálogo:', tgErr.message);
                     }
+                }
+
+                // Mapeia episódios por série e temporada (com o cache de mídias já atualizado)
+                const epsPorSerie = {};
+                for (const ep of epsRes.rows) {
+                    if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
+                    if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
+
+                    let rawVersoes = ep.versoes;
+                    let versoes = {};
+                    if (typeof rawVersoes === 'string') {
+                        try { rawVersoes = JSON.parse(rawVersoes); } catch (e) { rawVersoes = {}; }
+                    }
+                    if (rawVersoes && typeof rawVersoes === 'object' && Object.keys(rawVersoes).length > 0) {
+                        versoes = rawVersoes;
+                    } else {
+                        // Apenas em registros legados sem objeto de versões nenhum:
+                        if (ep.is_dublado && (ep.message_id || ep.file_id)) {
+                            versoes.dublado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                        }
+                        if (ep.is_legendado && (ep.message_id || ep.file_id)) {
+                            versoes.legendado = { messageId: ep.message_id ? Number(ep.message_id) : null, fileId: ep.file_id, qualidade: ep.qualidade || '1080p' };
+                        }
+                    }
+
+                    const hasDub = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.dublado)
+                        : (ep.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
+                    const hasLeg = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado'))
+                        ? CatalogoManager.hasPlayableMedia(versoes.legendado)
+                        : (ep.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
+
+                    epsPorSerie[ep.serie_id][ep.temporada_numero].push({
+                        numero: ep.numero,
+                        nome: ep.nome || `Episódio ${ep.numero}`,
+                        sinopse: ep.sinopse || '',
+                        stillUrl: ep.still_url || null,
+                        duracao: ep.duracao || null,
+                        messageId: ep.message_id ? Number(ep.message_id) : null,
+                        fileId: ep.file_id,
+                        qualidade: ep.qualidade || '1080p',
+                        audio: ep.audio || (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
+                        isDublado: hasDub,
+                        isLegendado: hasLeg,
+                        versoes: versoes,
+                        dataAdicionado: ep.created_at
+                    });
                 }
 
                 // Mapeia Séries aplicando a Fonte Única de Verdade (Continuidade Sequencial & Ponto de Entrada)
@@ -2240,25 +2240,53 @@ class CatalogoManager {
     async verificarENotificarTemporadaCompleta(serie, temporadaNum) {
         if (!serie || !temporadaNum) return;
         try {
-            const temporada = (serie.temporadas || []).find(t => t.numero === parseInt(temporadaNum, 10));
+            const tNum = parseInt(temporadaNum, 10);
+            const temporada = (serie.temporadas || []).find(t => t.numero === tNum);
             if (!temporada || !temporada.episodios || temporada.episodios.length === 0) return;
 
             let expectedCount = 0;
-            if (serie.temporadas_meta && serie.temporadas_meta[String(temporadaNum)]) {
-                expectedCount = parseInt(serie.temporadas_meta[String(temporadaNum)], 10);
-            } else if (serie.tmdbId) {
-                const sDetails = await TMDBService.getSeasonDetails(serie.tmdbId, temporadaNum);
+            if (serie.temporadas_meta && (serie.temporadas_meta[String(tNum)] || serie.temporadas_meta[tNum])) {
+                const rawMeta = serie.temporadas_meta[String(tNum)] || serie.temporadas_meta[tNum];
+                expectedCount = typeof rawMeta === 'object' ? (rawMeta.totalEps || rawMeta.totalEpisodios || 0) : parseInt(rawMeta, 10);
+            }
+            
+            const tmdbId = serie.tmdbId || serie.tmdb_id;
+            if (expectedCount <= 0 && tmdbId) {
+                const sDetails = await TMDBService.getSeasonDetails(tmdbId, tNum);
                 if (sDetails && sDetails.episodios && sDetails.episodios.length > 0) {
                     expectedCount = sDetails.episodios.length;
                     const currentMeta = serie.temporadas_meta || {};
-                    currentMeta[String(temporadaNum)] = expectedCount;
-                    await db.query(`UPDATE series SET temporadas_meta = $1 WHERE id = $2`, [JSON.stringify(currentMeta), serie.id]);
+                    currentMeta[String(tNum)] = expectedCount;
+                    await db.query(`UPDATE series SET temporadas_meta = $1 WHERE id = $2`, [JSON.stringify(currentMeta), serie.id]).catch(() => {});
                     serie.temporadas_meta = currentMeta;
                 }
+            } else if (expectedCount <= 0 && serie.nome) {
+                try {
+                    const searchRes = await TMDBService.searchTV(serie.nome);
+                    if (searchRes && searchRes.length > 0 && searchRes[0].tmdbId) {
+                        const sDetails = await TMDBService.getSeasonDetails(searchRes[0].tmdbId, tNum);
+                        if (sDetails && sDetails.episodios && sDetails.episodios.length > 0) {
+                            expectedCount = sDetails.episodios.length;
+                            const currentMeta = serie.temporadas_meta || {};
+                            currentMeta[String(tNum)] = expectedCount;
+                            await db.query(`UPDATE series SET tmdb_id = $1, temporadas_meta = $2 WHERE id = $3`, [searchRes[0].tmdbId, JSON.stringify(currentMeta), serie.id]).catch(() => {});
+                            serie.tmdbId = searchRes[0].tmdbId;
+                            serie.temporadas_meta = currentMeta;
+                        }
+                    }
+                } catch (e) {}
             }
 
-            if (expectedCount === 0) {
-                expectedCount = temporada.episodios.length;
+            // Se a contagem total oficial de episódios da temporada ainda for desconhecida, NUNCA anuncia como completa
+            if (expectedCount <= 0) {
+                console.log(`ℹ️ [AVISO PÚBLICO] Contagem total de episódios da temporada T${tNum} de "${serie.nome}" ainda não confirmada via TMDB. Anúncio ignorado.`);
+                return;
+            }
+
+            // Para animes e séries normais, se expectedCount for 1 mas a obra não for microdrama, evita falso positivo inicial
+            if (expectedCount === 1 && (serie.isAnime || (!serie.isMicrodrama && temporada.episodios.length <= 1))) {
+                console.log(`ℹ️ [AVISO PÚBLICO] Temporada T${tNum} de "${serie.nome}" possui apenas 1 episódio no registro inicial. Aguardando episódios adicionais.`);
+                return;
             }
 
             const epsDub = temporada.episodios.filter(e => e.isDublado || !!e.versoes?.dublado).length;
@@ -2270,7 +2298,7 @@ class CatalogoManager {
 
             if (isDubCompleto && isLegCompleto) {
                 await this.notificarPublicoLancamento('serie', serie, {
-                    seasonNum: temporadaNum,
+                    seasonNum: tNum,
                     audio: 'dual',
                     isDublado: true,
                     isLegendado: true,
@@ -2278,7 +2306,7 @@ class CatalogoManager {
                 });
             } else if (isDubCompleto) {
                 await this.notificarPublicoLancamento('serie', serie, {
-                    seasonNum: temporadaNum,
+                    seasonNum: tNum,
                     audio: 'dublado',
                     isDublado: true,
                     isLegendado: false,
@@ -2286,7 +2314,7 @@ class CatalogoManager {
                 });
             } else if (isLegCompleto) {
                 await this.notificarPublicoLancamento('serie', serie, {
-                    seasonNum: temporadaNum,
+                    seasonNum: tNum,
                     audio: 'legendado',
                     isDublado: false,
                     isLegendado: true,
@@ -2296,7 +2324,7 @@ class CatalogoManager {
                 const temAlgumDub = epsDub > 0;
                 const temAlgumLeg = epsLeg > 0;
                 await this.notificarPublicoLancamento('serie', serie, {
-                    seasonNum: temporadaNum,
+                    seasonNum: tNum,
                     audio: (temAlgumDub && temAlgumLeg) ? 'dual' : (temAlgumDub ? 'dublado' : 'legendado'),
                     isDublado: temAlgumDub,
                     isLegendado: temAlgumLeg,

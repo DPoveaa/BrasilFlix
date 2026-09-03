@@ -57,6 +57,7 @@ module.exports = {
     AUTO_UPGRADE_CAM: process.env.AUTO_UPGRADE_CAM !== 'false',
     AUTO_FEEDER_ENABLED: process.env.AUTO_FEEDER_ENABLED !== 'false',
     AUTO_FEEDER_INTERVAL_HOURS: parseInt(process.env.AUTO_FEEDER_INTERVAL_HOURS || '4', 10),
+    ENABLE_ANIME_DIRECT: process.env.ENABLE_ANIME_DIRECT === 'true', // Desativado por padrão para evitar streams com marca d'água (ex: animesonline)
 
     // Concorrência Paralela Desacoplada (Esteira Contínua)
     MAX_CONCURRENT_JOBS: parseInt(process.env.MAX_CONCURRENT_JOBS || '13', 10),
