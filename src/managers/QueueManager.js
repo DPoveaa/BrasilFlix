@@ -1568,11 +1568,58 @@ class QueueManager extends EventEmitter {
             }
 
             if (sources.length === 0) {
-                if (job.type === 'serie') {
-                    this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                // ── Fallback Automático: Dublado → Legendado ─────────────────────────────
+                // Se o job pediu 'dublado' mas nenhuma fonte dublada existe E ainda não há
+                // versão catalogada (primeiro download), tenta novamente com 'legendado'.
+                // Isso evita falhas para doramas, animes e filmes estrangeiros sem dublagem PT-BR.
+                if (job.audioPreference === 'dublado' && !job.isUpgrade) {
+                    // Reavalia presença no catálogo (pode ter sido computado em escopo diferente)
+                    const _filmeExist2 = job.type === 'filme' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') : null;
+                    const _serieExist2 = job.type === 'serie' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') : null;
+                    const _ep2 = job.type === 'serie' && _serieExist2 ? this.catalogoManager.buscarEpisodio(_serieExist2.id, job.season || 1, job.episode || 1) : null;
+                    const _jaTemDub = job.type === 'serie'
+                        ? !!(_ep2 && (_ep2.isDublado || !!_ep2.versoes?.dublado))
+                        : !!(_filmeExist2 && (_filmeExist2.isDublado || !!_filmeExist2.versoes?.dublado));
+                    const _jaTemLeg = job.type === 'serie'
+                        ? !!(_ep2 && (_ep2.isLegendado || !!_ep2.versoes?.legendado))
+                        : !!(_filmeExist2 && (_filmeExist2.isLegendado || !!_filmeExist2.versoes?.legendado));
+
+                    if (!_jaTemDub && !_jaTemLeg) {
+                        console.log(`ℹ️ [FALLBACK LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} — Nenhuma fonte DUBLADA encontrada. Esta obra provavelmente não possui dublagem PT-BR. Tentando versão LEGENDADA...`);
+                        try {
+                            const _isAnime2 = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
+                            const legSources = await MediaSearchService.search(job.title, job.type, {
+                                nomeOriginal: metadata.nomeOriginal,
+                                ano: metadata.ano,
+                                tmdbId: metadata.tmdbId,
+                                imdbId: metadata.imdbId,
+                                season: job.season || 1,
+                                episode: job.episode || 1,
+                                audioPreference: 'legendado',
+                                allowOriginalAudio: true,
+                                isAnime: _isAnime2,
+                                isDorama: !!(job.isDorama || metadata.isDorama),
+                            });
+                            if (legSources.length > 0) {
+                                console.log(`✅ [FALLBACK LEGENDADO] Encontradas ${legSources.length} fonte(s) legendada(s) para "${job.title}". Alterando preferência para Legendado.`);
+                                sources = legSources;
+                                job.audioPreference = 'legendado';
+                                job._fallbackToLegendado = true; // Sinaliza para o pós-processamento
+                            }
+                        } catch (fbErr) {
+                            console.warn(`⚠️ [FALLBACK LEGENDADO] Erro ao buscar fontes legendadas para "${job.title}":`, fbErr.message);
+                        }
+                    }
                 }
-                throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
+
+                if (sources.length === 0) {
+                    if (job.type === 'serie') {
+                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                    }
+                    throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
+                }
             }
+
 
             // Se a preferência for estritamente Legendado, filtra apenas fontes legendadas
             if (job.audioPreference === 'legendado') {

@@ -982,8 +982,12 @@ class VideoProcessor {
                     metadata.isDublado = false;
                 }
             }
-        } else if (alreadyHardsubbed && metadata.isLegendado && !isConfirmedDublado) {
-            console.log(`💬 [${optTitle}] Vídeo Web Direct já possui legendas oficiais PT-BR embutidas/hardsub no stream. Ignorando busca externa.`);
+        } else if (alreadyHardsubbed && !isConfirmedDublado) {
+            // Vídeo Web Direct: tem hardsub/legenda embutida no stream mas SEM áudio em Português.
+            // Independentemente da preferência do job, deve ser catalogado como Legendado.
+            console.log(`💬 [${optTitle}] Vídeo Web Direct ${metadata.isLegendado ? 'legendado' : 'sem áudio PT'} — classificando como Legendado (PT-BR) (hardsub/embedded).`);
+            metadata.isLegendado = true;
+            metadata.isDublado = false;
         } else if (isConfirmedDublado && !metadata.isLegendado) {
             metadata.isDublado = true;
             metadata.isLegendado = false;
