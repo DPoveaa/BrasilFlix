@@ -2068,7 +2068,7 @@ class QueueManager extends EventEmitter {
         const sourceTitle = effectiveSource.title || path.basename(rawFilePath || optimizedPath || '');
         const hasCamKeyword = CAM_REGEX.test(sourceTitle) || CAM_GROUPS_REGEX.test(sourceTitle) || (effectiveSource.isCam === true);
         const hasDigitalKeyword = DIGITAL_MASTER_REGEX.test(sourceTitle) && !hasCamKeyword;
-        const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(sourceTitle);
+        const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(sourceTitle);
 
         const relStatus = job.type === 'filme' ? await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference !== 'legendado') : { isTheatricalOnly: false };
         const isCamArtifacts = VideoProcessor.detectCamArtifacts(videoInfo, path.basename(rawFilePath || optimizedPath || ''), metadata);
@@ -2095,12 +2095,25 @@ class QueueManager extends EventEmitter {
         metadata.qualidade = isCamFinal ? 'Versão Cinema (CAM)' : (effectiveSource.quality || '1080p Full HD');
         
         // Classificação rigorosa: Ou é 100% Dublado (áudio PT-BR sem legendas na tela) ou 100% Legendado (áudio original + legendas PT-BR)
-        const sourceIsLegendadoOnly = (effectiveSource.isLegendado || bestSource?.isLegendado) && !(effectiveSource.isDublado || bestSource?.isDublado);
-        const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
+        // Se o VideoProcessor processou o arquivo como legendado (queimou legendas por ausência de áudio PT-BR),
+        // respeita a realidade do arquivo e não sobrescreve falsamente como Dublado!
+        const processorConfirmedLegendado = metadata.isLegendado && !metadata.isDublado;
+        const processorConfirmedDublado = metadata.isDublado && !metadata.isLegendado;
 
-        const isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
-                             sourceIsDubladoOnly ? true :
-                             (langInfo ? langInfo.isDublado : (job.langInfo ? job.langInfo.isDublado : true));
+        let isJobDublado;
+        if (processorConfirmedLegendado) {
+            isJobDublado = false;
+        } else if (processorConfirmedDublado) {
+            isJobDublado = true;
+        } else {
+            const sourceIsLegendadoOnly = (effectiveSource.isLegendado || bestSource?.isLegendado) && !(effectiveSource.isDublado || bestSource?.isDublado);
+            const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
+
+            isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
+                           sourceIsDubladoOnly ? true :
+                           (langInfo ? langInfo.isDublado : (job.langInfo ? job.langInfo.isDublado : true));
+        }
+
         if (isJobDublado) {
             metadata.isDublado = true;
             metadata.isLegendado = false;

@@ -135,7 +135,16 @@ class MediaSearchService {
         if (imdbId) {
             try {
                 console.log(`🌐 Consultando catálogo Stremio/Torrentio para IMDb: ${imdbId} ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
-                const torrentioResults = await this.searchTorrentio(imdbId, tipo, { forcarNaoCam, query: cleanQuery, originalName, ano, season, episode, isTheatricalOnly });
+                const torrentioResults = await this.searchTorrentio(imdbId, tipo, { 
+                    forcarNaoCam, 
+                    query: cleanQuery, 
+                    originalName, 
+                    ano, 
+                    season, 
+                    episode, 
+                    isTheatricalOnly,
+                    audioPreference: pref
+                });
                 for (const item of torrentioResults) {
                     if (item.isPtBr && !seenHashes.has(item.infoHash)) {
                         seenHashes.add(item.infoHash);
@@ -439,7 +448,7 @@ class MediaSearchService {
                 const title = lines[0] || '';
 
                 // Grupos de lançamento 100% brasileiros
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo/i.test(title);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo/i.test(title);
 
                 // Marcação explícita de PT-BR / Dublado
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
@@ -450,6 +459,17 @@ class MediaSearchService {
                     continue;
                 }
 
+                // Detecta e bloqueia categoricamente releases em Espanhol / Latino / Castelhano (Cinecalidad, EliteTorrent/EXT, DonTorrent, etc.)
+                // para evitar que áudios em espanhol sejam baixados no lugar de dublagem PT-BR
+                const isSpanishOrLatino = !isBrazilianGroup && !isPtBrExplicit && (
+                    /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|sub[-_ .]?esp|subs?[-_ .]?esp|kontrast|ratonera)\b/i.test(rawTitle) ||
+                    /⚙️\s*EXT\b|\bcap\.\d+/i.test(rawTitle) ||
+                    /\b(cinecalidad|elitetorrent|estrenos|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast|ratonera)\b/i.test(title)
+                );
+                if (isSpanishOrLatino) {
+                    continue; // Rejeita releases dubladas em espanhol
+                }
+
                 // Marcação explícita de Portugal (NUNCA aplicada a grupos brasileiros)
                 const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && (/\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title));
 
@@ -457,13 +477,13 @@ class MediaSearchService {
                 // Só é considerado bloqueante se NÃO houver nenhum indicador PT-BR explícito sobrescrevendo:
                 // - Marcação BR explícita no rawTitle (🇧🇷, PT-BR, PTBR, DUBLADO, NACIONAL, BRASILEIRO)
                 // - Grupo de lançamento 100% brasileiro (Comando, BluDV, Lapumia, etc.)
-                const hasForeignPairInTitle = /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng)\b/i.test(title) || /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng)\b/i.test(rawTitle);
+                const hasForeignPairInTitle = /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng|spa[-_ .]?eng|eng[-_ .]?spa|esp[-_ .]?eng|eng[-_ .]?esp)\b/i.test(title) || /\b(kor[-_ .]?eng|eng[-_ .]?kor|eng[-_ .]?hin|hin[-_ .]?eng|jap[-_ .]?eng|jpn[-_ .]?eng|chi[-_ .]?eng|zho[-_ .]?eng|spa[-_ .]?eng|eng[-_ .]?spa|esp[-_ .]?eng|eng[-_ .]?esp)\b/i.test(rawTitle);
                 // Par estrangeiro sem PT-BR: bloqueia somente se não houver indicador explícito de áudio PT-BR
                 const hasForeignAudioPair = hasForeignPairInTitle && !isPtBrExplicit && !isBrazilianGroup && !/\b(dublado|nacional|pt[-_]?br|ptbr|brasileiro|brazilian)\b/i.test(rawTitle);
 
                 const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
-                const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle) || !/\b(spanish|latino|hindi|french|german|ita|castellano)\b/i.test(rawTitle));
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
                 const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit && !hasForeignAudioPair;
 
@@ -565,7 +585,7 @@ class MediaSearchService {
                     is4k: is4k,
                     quality: is4k ? '4K UHD (Otimizando 1080p)' : (/1080p/i.test(title) ? '1080p Full HD' : (/720p/i.test(title) ? '720p HD' : 'Qualidade Digital')),
                     audio: isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
-                    isPtBr: true,
+                    isPtBr: isDublado || isExplicitLegendadoInTitle || hasPtSubFlag || isBrazilianGroup || isPtBrExplicit || (opts.audioPreference === 'legendado' && Boolean(st.hasPtSub || st.subtitleUrl)),
                     isPtBrExplicit: isPtBrExplicit || isBrazilianGroup,
                     isPtPt: isPtPtExplicit,
                     isDublado: isDublado,
@@ -658,6 +678,8 @@ class MediaSearchService {
                 // Rejeita categoricamente releases russos (D, D1, D2, DVO, MVO, AVO, Line.Audio, LostFilm, etc.) e sites de apostas/scam
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
                 const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino)\b/i.test(title);
+                const isSpanish = /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast|ratonera)\b/i.test(title) || /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|kontrast|ratonera)\b|⚙️\s*EXT\b|\bcap\.\d+/i.test(rawTitle);
+                if (isSpanish) continue;
                 const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
                 if ((isRussian || isScam) && origLang !== 'ru' && origLang !== 'rus') {
                     continue;
@@ -849,11 +871,16 @@ class MediaSearchService {
                 return;
             }
 
-            const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
+            const isBrazilianGroup = /yg⭐|dual[._ -]?yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(name);
             const isPtBrExplicit = /\b(pt[-_]?br|ptbr|pt_br|brazilian|nacional|dublado)\b/i.test(name) || isBrazilianGroup;
+
+            // Bloqueia categoricamente releases em Espanhol/Latino para evitar falso Dublado
+            const isSpanishOrLatino = !isBrazilianGroup && !isPtBrExplicit && /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|sub[-_ .]?esp)\b/i.test(name);
+            if (isSpanishOrLatino) return;
+
             const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && /\b(pt[-_]?pt|pt_pt|ptpt|dobrado|european[._ -]?portuguese)\b/i.test(name);
             const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name);
-            const isDualPtInTitle = /\b(dual)\b/i.test(name) && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
+            const isDualPtInTitle = /\b(dual)\b/i.test(name) && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
 
             const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
             const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);
@@ -1022,8 +1049,8 @@ class MediaSearchService {
 
             // 1.1 GRUPOS BRASILEIROS VERIFICADOS (Lapumia, BluDV, Comando, Wolverdon, Starck, CineGAVETA, etc.)
             // Releases desses grupos são 100% limpos de marcas d'água, sem propagandas de apostas e com áudio oficial
-            const isBrGroupA = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(a.title) || a.isBrazilianGroup;
-            const isBrGroupB = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|kyogo|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(b.title) || b.isBrazilianGroup;
+            const isBrGroupA = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(a.title) || a.isBrazilianGroup;
+            const isBrGroupB = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(b.title) || b.isBrazilianGroup;
             if (isBrGroupA) scoreA += 4500;
             if (isBrGroupB) scoreB += 4500;
 

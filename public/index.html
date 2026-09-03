@@ -16562,7 +16562,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 .replace(/[\._]/g, ' ')
                 .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\s*(?:e|ep|episodio|episódio|x)\s*\d{1,3}\b/gi, '')
                 .replace(/\b(?:s|temporada|temp|t)\s*\d{1,2}\b/gi, '')
-                .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc|ddp5\.1|dvdrip|hdtv|galaxytv|comando|comandotorrents|bludv|lapumia|starck|vizer|wolverdon|ondebaixo|kyogo|lipeh|cinegaveta|filmesmega|mmfilmes)\b/gi, '')
+                .replace(/\b(1080p|720p|2160p|4k|bluray|web-dl|webrip|dual|dublado|legendado|aac|x264|x265|hevc|ddp5\.1|dvdrip|hdtv|galaxytv|comando|comandotorrents|bludv|lapumia|starck|vizer|wolverdon|ondebaixo|lipeh|cinegaveta|filmesmega|mmfilmes)\b/gi, '')
                 .replace(/[-–—]\s*\d{4}/g, '')
                 .replace(/\b(19\d{2}|20\d{2})\b/g, '')
                 .replace(/\[[^\]]*\]|\([^\)]*\)/g, '')

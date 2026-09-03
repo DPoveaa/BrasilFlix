@@ -183,11 +183,15 @@ class VideoProcessor {
             }
         }
 
-        // 3. Regra de eliminação para arquivos DUAL AUDIO:
-        // Se um dos áudios estiver marcado explicitamente como estrangeiro (eng/spa/etc.) e o outro for 'und' (anônimo)
+        // 3. Regra de eliminação para arquivos DUAL AUDIO brasileiros:
+        // Se um dos áudios estiver marcado explicitamente como estrangeiro (eng/kor/etc.) e o outro for 'und' (anônimo)
+        // APENAS se o release não for comprovadamente espanhol/latino e tiver marcação de dublado/BR
+        const lowerName = (rawFileName || '').toLowerCase();
+        const isSpanishRelease = /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast)\b/i.test(lowerName);
+        const isExplicitPtBr = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues)\b/i.test(lowerName);
         const foreignCodes = ['eng', 'spa', 'fra', 'fre', 'deu', 'ger', 'ita', 'rus', 'jpn', 'kor', 'zho', 'chi', 'hin'];
         const foreignIdx = audioStreams.findIndex(s => foreignCodes.includes((s.language || '').toLowerCase()));
-        if (foreignIdx !== -1 && audioStreams.length === 2) {
+        if (!isSpanishRelease && isExplicitPtBr && foreignIdx !== -1 && audioStreams.length === 2) {
             const ptCandidateIdx = audioStreams.findIndex((s, idx) => idx !== foreignIdx && !foreignCodes.includes((s.language || '').toLowerCase()));
             if (ptCandidateIdx !== -1) {
                 return ptCandidateIdx;
@@ -195,8 +199,7 @@ class VideoProcessor {
         }
 
         // 4. Regra específica para releases Dual Audio brasileiros com streams anônimos (sem tag de idioma):
-        const lowerName = (rawFileName || '').toLowerCase();
-        const isBrDualRelease = /yg[^a-z]|\byg$|dual.*yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|kyogo|lipeh|bludv|guanabara|mmfilmes|overdrive|p2p[-_ ]?br/i.test(lowerName);
+        const isBrDualRelease = /yg[^a-z]|\byg$|dual.*yg|lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|lipeh|bludv|guanabara|mmfilmes|overdrive|p2p[-_ ]?br/i.test(lowerName);
         const allUndefined = audioStreams.every(s => !s.language || s.language === 'und');
 
         if (isBrDualRelease && allUndefined && audioStreams.length >= 2) {
@@ -206,7 +209,7 @@ class VideoProcessor {
 
         // Se o arquivo tiver apenas 1 stream de áudio e for de grupo BR comprovadamente dublado
         if (audioStreams.length === 1) {
-            const isBrGroup = /lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|bludv|guanabara|mmfilmes|filmesmega|overdrive/i.test(lowerName);
+            const isBrGroup = /lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|lipeh|bludv|guanabara|mmfilmes|filmesmega|overdrive/i.test(lowerName);
             const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues)\b/i.test(lowerName);
             if (isBrGroup || isExplicitDublado) {
                 return 0;
@@ -330,9 +333,16 @@ class VideoProcessor {
             return false;
         }
 
-        // 5. Se as faixas de áudio não possuem metadados de idioma (streams anônimos 'und'), verifica o selo brasileiro genuíno no nome do arquivo
-        const isBrGroup = /lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|kyogo|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(lowerName);
+        // 5. Se for release em Espanhol/Latino sem selo BR explícito, NUNCA é português
+        const isSpanishRelease = /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast)\b/i.test(lowerName);
+
+        // 6. Se as faixas de áudio não possuem metadados de idioma (streams anônimos 'und'), verifica o selo brasileiro genuíno no nome do arquivo
+        const isBrGroup = /lapumia|wolverdon|starck|vizer|ondebaixo|cinegaveta|starfilmes|lipeh|comandotorrents|bludv|guanabara|mmfilmes|filmesmega|overdrive|p2p[-_ ]?br|acervo/i.test(lowerName);
         const isExplicitDublado = /\b(dublado|nacional|pt[-_]?br|ptbr|portugues)\b/i.test(lowerName);
+
+        if (isSpanishRelease && !isExplicitDublado && !isBrGroup) {
+            return false;
+        }
 
         if (isExplicitDublado || isBrGroup) {
             return true;
@@ -949,7 +959,10 @@ class VideoProcessor {
 
         let srtPath = null;
         const alreadyHardsubbed = metadata.isDirect || metadata.hasEmbeddedSub || metadata.isReadySub;
-        const isConfirmedDublado = metadata.isDublado === true || hasPortugueseAudio;
+        // Só é confirmado dublado se o arquivo REALMENTE tiver áudio em português detectado via ffprobe
+        // e se o pedido NÃO for expressamente para a versão legendada
+        const hasVerifiedPtAudio = hasPortugueseAudio || (metadata.isDublado === true && this.hasPortugueseAudio(info, path.basename(inputPath)));
+        const isConfirmedDublado = !metadata.isLegendado && hasVerifiedPtAudio;
 
         // Se NÃO possuir áudio em Português e for expressamente Legendado (sem áudio dublado),
         // DEVE OBRIGATORIAMENTE obter e queimar/embutir as legendas em Português Brasileiro (PT-BR),
