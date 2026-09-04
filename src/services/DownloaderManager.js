@@ -916,9 +916,17 @@ class DownloaderManager extends EventEmitter {
                     const audioBadge = getAudioBadge(options);
 
                     const packCount = isSeasonPack && detectedEpisodeMap ? Object.keys(detectedEpisodeMap).length : 0;
-                    const packTitle = isSeasonPack 
-                        ? `${mediaTitle} (Temporada ${seasonNum} Completa: ${packCount} Eps)`
-                        : displayTitle;
+                    const totalSeasonEps = options.totalSeasonEpisodes || options.totalEpisodes || 0;
+                    let packTitle = displayTitle;
+                    if (isSeasonPack) {
+                        if (totalSeasonEps > 0 && packCount >= totalSeasonEps) {
+                            packTitle = `${mediaTitle} (Temporada ${seasonNum} Completa: ${packCount} Eps)`;
+                        } else if (totalSeasonEps > 0) {
+                            packTitle = `${mediaTitle} (Temporada ${seasonNum}: Pacote ${packCount}/${totalSeasonEps} Eps)`;
+                        } else {
+                            packTitle = `${mediaTitle} (Pacote Temporada ${seasonNum}: ${packCount} Eps)`;
+                        }
+                    }
 
                     const logLine = `\x1b[36m📥 [DOWNLOAD: "${packTitle}"] [${audioBadge}] [${progressBar}] ${percent}% | ${downloadedStr} / ${totalStr} | ${speedMB} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ${remainingFormatted}) | Peers: ${torrent.numPeers}\x1b[0m`;
 

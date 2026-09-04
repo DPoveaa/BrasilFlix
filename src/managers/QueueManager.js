@@ -473,19 +473,20 @@ class QueueManager extends EventEmitter {
 
     addJob(title, type = 'filme', priority = PRIORITIES.FEEDER, extraData = {}) {
         const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const isMicro = extraData.isMicrodrama || extraData.subtipo === 'microdrama' || extraData.category === 'Microdrama';
         const job = {
             id: jobId,
             title: title.trim(),
             type: type, // 'filme' ou 'serie'
             priority: priority,
-            audioPreference: extraData.audioPreference || 'dublado',
+            audioPreference: isMicro ? 'legendado' : (extraData.audioPreference || 'dublado'),
             isUpgrade: extraData.isUpgrade || priority === PRIORITIES.CAM_UPGRADE || priority === PRIORITIES.UPGRADE_DUB || false,
             allowCam: extraData.allowCam !== undefined ? extraData.allowCam : (priority !== PRIORITIES.CAM_UPGRADE),
             isDorama: extraData.isDorama || false,
             isAnime: extraData.isAnime || false,
-            isMicrodrama: extraData.isMicrodrama || false,
-            subtipo: extraData.subtipo || null,
-            originalLanguage: extraData.originalLanguage || extraData.idiomaOriginal || null,
+            isMicrodrama: isMicro,
+            subtipo: isMicro ? 'microdrama' : (extraData.subtipo || null),
+            originalLanguage: isMicro ? (extraData.originalLanguage || 'zh') : (extraData.originalLanguage || extraData.idiomaOriginal || null),
             idiomaOriginal: extraData.originalLanguage || extraData.idiomaOriginal || null,
             category: extraData.category || (extraData.isAnime ? 'Anime' : (extraData.isDorama ? 'Dorama' : (extraData.isMicrodrama ? 'Microdrama' : null))),
             userId: extraData.userId || null,
@@ -1571,6 +1572,7 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
+                const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
                 sources = await MediaSearchService.search(job.title, job.type, {
                     nomeOriginal: metadata.nomeOriginal,
                     ano: metadata.ano,
@@ -1578,14 +1580,15 @@ class QueueManager extends EventEmitter {
                     imdbId: metadata.imdbId,
                     season: targetSeasonNum,
                     episode: job.episode || 1,
-                    audioPreference: job.audioPreference || 'dublado',
+                    audioPreference: isMicroFlag ? 'legendado' : (job.audioPreference || 'dublado'),
+                    allowOriginalAudio: isMicroFlag ? true : undefined,
                     forcarNaoCam: forcarNaoCam,
                     ignorarFallbackLegendado: jaPossuiLegendado,
                     ignorarFallbackDublado: jaPossuiDublado,
                     isAnime: isAnimeFlag,
                     isDorama: !!(job.isDorama || metadata.isDorama),
-                    isMicrodrama: !!(job.isMicrodrama || metadata.isMicrodrama),
-                    originalLanguage: job.originalLanguage || metadata.original_language || metadata.originalLanguage || null,
+                    isMicrodrama: isMicroFlag,
+                    originalLanguage: isMicroFlag ? 'zh' : (job.originalLanguage || metadata.original_language || metadata.originalLanguage || null),
                     tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
                 });
 
@@ -1745,7 +1748,8 @@ class QueueManager extends EventEmitter {
                             isEpisodeMissing: isEpisodeMissing,
                             isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
                             isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
-                            runtime: metadata.runtime || metadata.duracao
+                            runtime: metadata.runtime || metadata.duracao,
+                            totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                         });
 
                     } else if (currentSource.url) {
@@ -1826,7 +1830,8 @@ class QueueManager extends EventEmitter {
                                         attemptIndex: j,
                                         totalAttempts: totalLegAttempts,
                                         mode: SchedulerService.getActiveMode(),
-                                        isEpisodeMissing: isEpisodeMissing
+                                        isEpisodeMissing: isEpisodeMissing,
+                                        totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                                     });
                                 }
                                 if (downloadedMedia && downloadedMedia.filePath) {
