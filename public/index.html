@@ -6156,6 +6156,122 @@
             margin-top: 8px;
         }
 
+        /* ═══════════════════════════════════════════════════════
+           📱 MOBILE COMPREHENSIVE OVERHAUL (< 768px and < 480px)
+           ═══════════════════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            html, body {
+                overflow-x: hidden;
+                width: 100%;
+            }
+
+            .main-container {
+                padding: 12px 10px 80px 10px !important;
+            }
+
+            header {
+                padding: 8px 12px !important;
+            }
+
+            .header-container {
+                gap: 6px !important;
+            }
+
+            .brand-logo {
+                font-size: 18px !important;
+            }
+
+            .header-actions {
+                gap: 6px !important;
+            }
+
+            .btn-header {
+                padding: 6px 10px !important;
+                font-size: 11px !important;
+            }
+
+            .table-responsive, .admin-table-wrapper, table {
+                display: block;
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .modal-card, .modal-content, .media-detail-backdrop {
+                max-width: 95vw !important;
+                margin: 0 auto !important;
+                padding: 16px 12px !important;
+                border-radius: 16px !important;
+                overflow-y: auto !important;
+                max-height: 90vh !important;
+            }
+
+            #video-player, video {
+                max-width: 100% !important;
+            }
+
+            .hero-billboard {
+                min-height: 380px !important;
+                padding: 20px 14px !important;
+            }
+
+            .search-input-box {
+                font-size: 13px !important;
+                padding: 10px 12px !important;
+            }
+
+            .detail-actions-row, .modal-actions {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+                width: 100% !important;
+            }
+
+            .detail-actions-row button,
+            .detail-actions-row a {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+                justify-content: center !important;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .catalog-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 8px !important;
+            }
+
+            .media-card-title {
+                font-size: 12px !important;
+            }
+
+            .media-card-meta {
+                font-size: 10px !important;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 6px !important;
+            }
+
+            .stat-card {
+                padding: 10px !important;
+            }
+
+            .stat-value {
+                font-size: 18px !important;
+            }
+
+            .hero-title {
+                font-size: 20px !important;
+            }
+
+            .hero-btn-play, .hero-btn-secondary {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+            }
+        }
+
     </style>
 </head>
 <body>

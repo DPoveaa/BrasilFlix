@@ -67,6 +67,7 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
+        this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
 
         // Notificação em tempo real quando o agendador autorizar ou alterar o modo da esteira
         SchedulerService.on('stateChange', async ({ allowed, mode, reason }) => {
@@ -473,19 +474,20 @@ class QueueManager extends EventEmitter {
 
     addJob(title, type = 'filme', priority = PRIORITIES.FEEDER, extraData = {}) {
         const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const isMicro = extraData.isMicrodrama || extraData.subtipo === 'microdrama' || extraData.category === 'Microdrama';
         const job = {
             id: jobId,
             title: title.trim(),
             type: type, // 'filme' ou 'serie'
             priority: priority,
-            audioPreference: extraData.audioPreference || 'dublado',
+            audioPreference: isMicro ? 'legendado' : (extraData.audioPreference || 'dublado'),
             isUpgrade: extraData.isUpgrade || priority === PRIORITIES.CAM_UPGRADE || priority === PRIORITIES.UPGRADE_DUB || false,
             allowCam: extraData.allowCam !== undefined ? extraData.allowCam : (priority !== PRIORITIES.CAM_UPGRADE),
             isDorama: extraData.isDorama || false,
             isAnime: extraData.isAnime || false,
-            isMicrodrama: extraData.isMicrodrama || false,
-            subtipo: extraData.subtipo || null,
-            originalLanguage: extraData.originalLanguage || extraData.idiomaOriginal || null,
+            isMicrodrama: isMicro,
+            subtipo: isMicro ? 'microdrama' : (extraData.subtipo || null),
+            originalLanguage: isMicro ? (extraData.originalLanguage || 'zh') : (extraData.originalLanguage || extraData.idiomaOriginal || null),
             idiomaOriginal: extraData.originalLanguage || extraData.idiomaOriginal || null,
             category: extraData.category || (extraData.isAnime ? 'Anime' : (extraData.isDorama ? 'Dorama' : (extraData.isMicrodrama ? 'Microdrama' : null))),
             userId: extraData.userId || null,
@@ -992,6 +994,33 @@ class QueueManager extends EventEmitter {
         return balancedJob || eligibleJobs[0];
     }
 
+    acquireDownloadSlot(jobId) {
+        const mode = SchedulerService.getActiveMode();
+        if (mode !== 'eco') return true;
+
+        const isDownloaderActive = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1;
+        const isDownloaderOwnsIt = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(jobId);
+
+        if (this.reservedDownloadJobId === jobId || isDownloaderOwnsIt) {
+            return true;
+        }
+
+        if (this.reservedDownloadJobId === null && (!isDownloaderActive || isDownloaderOwnsIt)) {
+            this.reservedDownloadJobId = jobId;
+            console.log(`🔒 [Slot Reservado] Job "${jobId}" reservou o slot único de download (Modo Econômico).`);
+            return true;
+        }
+
+        return false;
+    }
+
+    releaseDownloadSlot(jobId) {
+        if (this.reservedDownloadJobId === jobId) {
+            this.reservedDownloadJobId = null;
+            console.log(`🔓 [Slot Liberado] Job "${jobId}" liberou o slot de download.`);
+        }
+    }
+
     getActiveDownloadsCount() {
         let count = 0;
         for (const job of this.activeJobs.values()) {
@@ -1005,7 +1034,9 @@ class QueueManager extends EventEmitter {
                 }
             }
         }
-        return count;
+        const activeInDownloader = (DownloaderManager && DownloaderManager.activeDownloads) ? DownloaderManager.activeDownloads.size : 0;
+        const reservedCount = this.reservedDownloadJobId ? 1 : 0;
+        return Math.max(count, activeInDownloader, reservedCount);
     }
 
     getActiveOptimizationsCount() {
@@ -1511,30 +1542,40 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
-            // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
-            if (!SchedulerService.isAllowedToRun()) {
-                console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
-                job.status = 'queued';
-                job.progress = 0;
-                job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
-                await this.saveJob(job);
-                return;
+            // No Modo Econômico, garante reserva atômica de slot único sem race condition
+            if (SchedulerService.getActiveMode() === 'eco') {
+                while (!this.acquireDownloadSlot(job.id)) {
+                    console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
+                    await new Promise(r => setTimeout(r, 3000));
+                    if (!SchedulerService.isAllowedToRun()) return;
+                }
             }
 
-            if (job.customMagnet) {
-                console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
-                sources = [{
-                    title: job.title,
-                    magnet: job.customMagnet,
-                    sizeMB: 'Manual',
-                    seeders: 20,
-                    isPtBr: true,
-                    isDublado: job.audioPreference === 'dublado',
-                    isLegendado: job.audioPreference === 'legendado',
-                    audio: job.audioPreference === 'dublado' ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
-                    source: 'Manual (Admin Magnet)'
-                }];
-            } else {
+            try {
+                // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
+                if (!SchedulerService.isAllowedToRun()) {
+                    console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
+                    job.status = 'queued';
+                    job.progress = 0;
+                    job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                    await this.saveJob(job);
+                    return;
+                }
+
+                if (job.customMagnet) {
+                    console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
+                    sources = [{
+                        title: job.title,
+                        magnet: job.customMagnet,
+                        sizeMB: 'Manual',
+                        seeders: 20,
+                        isPtBr: true,
+                        isDublado: job.audioPreference === 'dublado',
+                        isLegendado: job.audioPreference === 'legendado',
+                        audio: job.audioPreference === 'dublado' ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
+                        source: 'Manual (Admin Magnet)'
+                    }];
+                } else {
                 const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
                 const jaTemCam = !!(filmeExist && filmeExist.isCam);
                 const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
@@ -1571,6 +1612,7 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
+                const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
                 sources = await MediaSearchService.search(job.title, job.type, {
                     nomeOriginal: metadata.nomeOriginal,
                     ano: metadata.ano,
@@ -1578,14 +1620,15 @@ class QueueManager extends EventEmitter {
                     imdbId: metadata.imdbId,
                     season: targetSeasonNum,
                     episode: job.episode || 1,
-                    audioPreference: job.audioPreference || 'dublado',
+                    audioPreference: isMicroFlag ? 'legendado' : (job.audioPreference || 'dublado'),
+                    allowOriginalAudio: isMicroFlag ? true : undefined,
                     forcarNaoCam: forcarNaoCam,
                     ignorarFallbackLegendado: jaPossuiLegendado,
                     ignorarFallbackDublado: jaPossuiDublado,
                     isAnime: isAnimeFlag,
                     isDorama: !!(job.isDorama || metadata.isDorama),
-                    isMicrodrama: !!(job.isMicrodrama || metadata.isMicrodrama),
-                    originalLanguage: job.originalLanguage || metadata.original_language || metadata.originalLanguage || null,
+                    isMicrodrama: isMicroFlag,
+                    originalLanguage: isMicroFlag ? 'zh' : (job.originalLanguage || metadata.original_language || metadata.originalLanguage || null),
                     tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
                 });
 
@@ -1745,7 +1788,8 @@ class QueueManager extends EventEmitter {
                             isEpisodeMissing: isEpisodeMissing,
                             isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
                             isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
-                            runtime: metadata.runtime || metadata.duracao
+                            runtime: metadata.runtime || metadata.duracao,
+                            totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                         });
 
                     } else if (currentSource.url) {
@@ -1826,7 +1870,8 @@ class QueueManager extends EventEmitter {
                                         attemptIndex: j,
                                         totalAttempts: totalLegAttempts,
                                         mode: SchedulerService.getActiveMode(),
-                                        isEpisodeMissing: isEpisodeMissing
+                                        isEpisodeMissing: isEpisodeMissing,
+                                        totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                                     });
                                 }
                                 if (downloadedMedia && downloadedMedia.filePath) {
@@ -1943,6 +1988,9 @@ class QueueManager extends EventEmitter {
                     await DownloaderManager.cleanupFile(rawFilePath);
                     throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
                 }
+            }
+            } finally {
+                this.releaseDownloadSlot(job.id);
             }
         }
 

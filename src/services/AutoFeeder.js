@@ -225,7 +225,8 @@ class AutoFeeder {
                     origem: md.origem || 'China',
                     plataformaOrigem: md.plataformaOrigem || 'DramaBox',
                     trendingScore: md.trendingScore || 95.0,
-                    audioPreference: md.isDublado ? 'dublado' : 'legendado'
+                    audioPreference: 'legendado',
+                    originalLanguage: 'zh'
                 });
                 added++;
             }

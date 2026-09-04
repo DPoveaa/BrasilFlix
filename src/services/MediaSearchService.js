@@ -34,6 +34,12 @@ class MediaSearchService {
             options = tipo;
             tipo = options.tipo || 'filme';
         }
+        const isMicrodrama = options.isMicrodrama || options.is_microdrama || options.subtipo === 'microdrama' || (options.runtime && options.runtime < 5);
+        if (isMicrodrama) {
+            options.audioPreference = 'legendado';
+            options.allowOriginalAudio = true;
+            if (!options.originalLanguage) options.originalLanguage = 'zh';
+        }
         const cleanQuery = this.cleanQuery(query);
         const originalName = options.nomeOriginal ? this.cleanQuery(options.nomeOriginal) : null;
         const ano = options.ano || options.year || '';
@@ -166,7 +172,25 @@ class MediaSearchService {
         const ePadded = episode.toString().padStart(2, '0');
         const variations = [];
 
-        if (tipo === 'serie') {
+        if (isMicrodrama) {
+            variations.push(
+                `${cleanQuery} legendado`,
+                `${cleanQuery} duanju`,
+                `${cleanQuery} short drama`,
+                `${cleanQuery} dramabox`,
+                `${cleanQuery} reelshort`,
+                `${cleanQuery} shortmax`,
+                `${cleanQuery}`
+            );
+            if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+                variations.push(
+                    `${originalName} duanju`,
+                    `${originalName} short drama`,
+                    `${originalName} legendado`,
+                    `${originalName}`
+                );
+            }
+        } else if (tipo === 'serie') {
             if (pref === 'legendado') {
                 variations.push(
                     `${cleanQuery} S${sPadded} complete`,
