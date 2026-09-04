@@ -67,6 +67,7 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
+        this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
 
         // Notificação em tempo real quando o agendador autorizar ou alterar o modo da esteira
         SchedulerService.on('stateChange', async ({ allowed, mode, reason }) => {
@@ -993,6 +994,33 @@ class QueueManager extends EventEmitter {
         return balancedJob || eligibleJobs[0];
     }
 
+    acquireDownloadSlot(jobId) {
+        const mode = SchedulerService.getActiveMode();
+        if (mode !== 'eco') return true;
+
+        const isDownloaderActive = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1;
+        const isDownloaderOwnsIt = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(jobId);
+
+        if (this.reservedDownloadJobId === jobId || isDownloaderOwnsIt) {
+            return true;
+        }
+
+        if (this.reservedDownloadJobId === null && (!isDownloaderActive || isDownloaderOwnsIt)) {
+            this.reservedDownloadJobId = jobId;
+            console.log(`🔒 [Slot Reservado] Job "${jobId}" reservou o slot único de download (Modo Econômico).`);
+            return true;
+        }
+
+        return false;
+    }
+
+    releaseDownloadSlot(jobId) {
+        if (this.reservedDownloadJobId === jobId) {
+            this.reservedDownloadJobId = null;
+            console.log(`🔓 [Slot Liberado] Job "${jobId}" liberou o slot de download.`);
+        }
+    }
+
     getActiveDownloadsCount() {
         let count = 0;
         for (const job of this.activeJobs.values()) {
@@ -1007,7 +1035,8 @@ class QueueManager extends EventEmitter {
             }
         }
         const activeInDownloader = (DownloaderManager && DownloaderManager.activeDownloads) ? DownloaderManager.activeDownloads.size : 0;
-        return Math.max(count, activeInDownloader);
+        const reservedCount = this.reservedDownloadJobId ? 1 : 0;
+        return Math.max(count, activeInDownloader, reservedCount);
     }
 
     getActiveOptimizationsCount() {
@@ -1513,39 +1542,40 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
-            // No Modo Econômico, garante estritamente que NÃO exista outro download ativo em andamento
+            // No Modo Econômico, garante reserva atômica de slot único sem race condition
             if (SchedulerService.getActiveMode() === 'eco') {
-                while (DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1 && !DownloaderManager.activeDownloads.has(job.id)) {
-                    console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando término do download ativo em andamento...`);
-                    await new Promise(r => setTimeout(r, 4000));
+                while (!this.acquireDownloadSlot(job.id)) {
+                    console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
+                    await new Promise(r => setTimeout(r, 3000));
                     if (!SchedulerService.isAllowedToRun()) return;
                 }
             }
 
-            // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
-            if (!SchedulerService.isAllowedToRun()) {
-                console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
-                job.status = 'queued';
-                job.progress = 0;
-                job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
-                await this.saveJob(job);
-                return;
-            }
+            try {
+                // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
+                if (!SchedulerService.isAllowedToRun()) {
+                    console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
+                    job.status = 'queued';
+                    job.progress = 0;
+                    job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                    await this.saveJob(job);
+                    return;
+                }
 
-            if (job.customMagnet) {
-                console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
-                sources = [{
-                    title: job.title,
-                    magnet: job.customMagnet,
-                    sizeMB: 'Manual',
-                    seeders: 20,
-                    isPtBr: true,
-                    isDublado: job.audioPreference === 'dublado',
-                    isLegendado: job.audioPreference === 'legendado',
-                    audio: job.audioPreference === 'dublado' ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
-                    source: 'Manual (Admin Magnet)'
-                }];
-            } else {
+                if (job.customMagnet) {
+                    console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
+                    sources = [{
+                        title: job.title,
+                        magnet: job.customMagnet,
+                        sizeMB: 'Manual',
+                        seeders: 20,
+                        isPtBr: true,
+                        isDublado: job.audioPreference === 'dublado',
+                        isLegendado: job.audioPreference === 'legendado',
+                        audio: job.audioPreference === 'dublado' ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)',
+                        source: 'Manual (Admin Magnet)'
+                    }];
+                } else {
                 const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
                 const jaTemCam = !!(filmeExist && filmeExist.isCam);
                 const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
@@ -1958,6 +1988,9 @@ class QueueManager extends EventEmitter {
                     await DownloaderManager.cleanupFile(rawFilePath);
                     throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
                 }
+            }
+            } finally {
+                this.releaseDownloadSlot(job.id);
             }
         }
 
