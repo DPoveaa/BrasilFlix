@@ -75,7 +75,8 @@ class VideoProcessor {
                             channels: parseInt(a.channels || 2, 10),
                             channelLayout: a.channel_layout || '',
                             language: (a.tags?.language || a.tags?.LANGUAGE || a.tags?.lang || 'und').toLowerCase(),
-                            title: (a.tags?.title || a.tags?.TITLE || a.tags?.handler_name || '').toLowerCase()
+                            title: (a.tags?.title || a.tags?.TITLE || a.tags?.handler_name || '').toLowerCase(),
+                            disposition: a.disposition || null
                         })),
                         subtitleStreams: subtitleStreams.map((s, idx) => ({
                             index: idx,
@@ -219,75 +220,340 @@ class VideoProcessor {
         return null;
     }
 
+    getLanguageKeywordMap() {
+        return {
+            en: ['eng', 'en', 'english', 'inglês', 'ingles'],
+            ko: ['kor', 'ko', 'korean', 'coreano'],
+            ja: ['jpn', 'ja', 'japanese', 'japonês', 'japones'],
+            es: ['spa', 'es', 'spanish', 'espanhol', 'castellano', 'latino'],
+            fr: ['fra', 'fre', 'fr', 'french', 'francês', 'frances'],
+            de: ['deu', 'ger', 'de', 'german', 'alemão', 'alemao'],
+            it: ['ita', 'it', 'italian', 'italiano'],
+            zh: ['zho', 'chi', 'zh', 'cmn', 'chinese', 'mandarin', 'chinês', 'chines'],
+            tr: ['tur', 'tr', 'turkish', 'turco'],
+            ru: ['rus', 'ru', 'russian', 'russo'],
+            hi: ['hin', 'hi', 'hindi'],
+            th: ['tha', 'th', 'thai', 'tailandês', 'tailandes'],
+            ar: ['ara', 'ar', 'arabic', 'árabe', 'arabe'],
+            pt: ['por', 'pob', 'pt', 'pt-br', 'pt_br', 'brazilian', 'portuguese', 'português', 'portugues']
+        };
+    }
+
+    normalizeLanguageCode(raw) {
+        if (!raw) return null;
+        const v = String(raw).toLowerCase().trim();
+        if (!v || v === 'und' || v === 'unknown') return null;
+        const langMap = this.getLanguageKeywordMap();
+        for (const [code, keywords] of Object.entries(langMap)) {
+            if (code === v || keywords.includes(v)) return code;
+        }
+        // ISO-639-1/2 leftovers (e.g. "kor", "jpn")
+        if (v.length === 2 || v.length === 3) {
+            for (const [code, keywords] of Object.entries(langMap)) {
+                if (keywords.includes(v)) return code;
+            }
+        }
+        return v.slice(0, 2);
+    }
+
+    streamMatchesLanguage(stream, langCode) {
+        if (!stream || !langCode) return false;
+        const langMap = this.getLanguageKeywordMap();
+        const keywords = langMap[langCode] || [langCode];
+        const sLang = (stream.language || '').toLowerCase();
+        const sTitle = (stream.title || '').toLowerCase();
+        return keywords.some(k => sLang === k || sLang.startsWith(k + '-') || sTitle.includes(k));
+    }
+
+    isCommentaryOrDescriptiveTrack(stream) {
+        const t = (stream?.title || '').toLowerCase();
+        return t.includes('commentary') || t.includes('comentário') || t.includes('comentario') ||
+            t.includes('description') || t.includes('descrição') || t.includes('descricao') ||
+            t.includes('audio description') || t.includes('audiodescri');
+    }
+
+    /**
+     * Resolve o idioma ORIGINAL da obra sem assumir inglês.
+     * Prioridade: metadados TMDB → flags anime/dorama → inferência das trilhas → null.
+     */
+    resolveOriginalLanguage(metadata = {}, audioStreams = []) {
+        const explicit = this.normalizeLanguageCode(metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language);
+        if (explicit && explicit !== 'pt') return explicit;
+
+        if (metadata.isAnime || metadata.is_anime) return 'ja';
+        if (metadata.isDorama || metadata.is_dorama) return 'ko';
+
+        const category = String(metadata.category || metadata.categoria || '').toLowerCase();
+        if (category.includes('anime')) return 'ja';
+        if (category.includes('dorama')) return 'ko';
+
+        // Inferência a partir das trilhas reais (dual/multi-áudio):
+        // nunca preferir inglês automaticamente quando existe ja/ko/zh/etc.
+        const detected = new Set();
+        for (const s of (audioStreams || [])) {
+            if (this.isCommentaryOrDescriptiveTrack(s)) continue;
+            const code = this.normalizeLanguageCode(s.language);
+            if (code && code !== 'pt' && code !== 'und') detected.add(code);
+            // títulos como "Japanese", "Korean", "Original"
+            for (const [langCode, keywords] of Object.entries(this.getLanguageKeywordMap())) {
+                if (langCode === 'pt') continue;
+                if (keywords.some(k => (s.title || '').includes(k))) detected.add(langCode);
+            }
+        }
+
+        const preferenceOrder = ['ja', 'ko', 'zh', 'th', 'hi', 'tr', 'ar', 'ru', 'fr', 'de', 'it', 'es', 'en'];
+        for (const pref of preferenceOrder) {
+            if (detected.has(pref)) return pref;
+        }
+
+        return null;
+    }
+
     detectTargetAudioIndex(audioStreams, metadata = {}, rawFileName = '') {
         if (!audioStreams || audioStreams.length === 0) return 0;
         if (audioStreams.length === 1) return 0;
 
         const isLegendadoOnly = metadata.isLegendado && !metadata.isDublado;
-        const targetLang = (metadata.idiomaOriginal || metadata.originalLanguage || (metadata.isDorama ? 'ko' : (metadata.isAnime ? 'ja' : 'en'))).toLowerCase();
+        const targetLang = this.resolveOriginalLanguage(metadata, audioStreams);
+        const langMap = this.getLanguageKeywordMap();
 
-        // 1. Se for DUBLADO (ou tiver preferência por dublagem), tenta encontrar a trilha de ÁUDIO em Português
+        // 1. Dublado: prioriza áudio PT-BR
         if (!isLegendadoOnly) {
             const ptIdx = this.detectPortugueseAudioIndex(audioStreams, rawFileName);
             if (ptIdx !== null) return ptIdx;
         }
 
-        // 2. Se for LEGENDADO (ou se o arquivo for em idioma estrangeiro), seleciona O ÁUDIO ORIGINAL EXATO:
-        const langMap = {
-            'en': ['eng', 'en', 'english', 'inglês', 'ingles'],
-            'ko': ['kor', 'ko', 'korean', 'coreano'],
-            'ja': ['jpn', 'ja', 'japanese', 'japonês', 'japones'],
-            'es': ['spa', 'es', 'spanish', 'espanhol', 'castellano'],
-            'fr': ['fra', 'fre', 'fr', 'french', 'francês', 'frances'],
-            'de': ['deu', 'ger', 'de', 'german', 'alemão', 'alemao'],
-            'it': ['ita', 'it', 'italian', 'italiano'],
-            'zh': ['zho', 'chi', 'zh', 'cmn', 'chinese', 'mandarin', 'chinês'],
-            'tr': ['tur', 'tr', 'turkish', 'turco'],
-            'ru': ['rus', 'ru', 'russian', 'russo']
-        };
-
-        const targetKeywords = langMap[targetLang] || [targetLang];
-
-        // A. Busca stream que case exatamente com o idioma original da obra
-        for (let i = 0; i < audioStreams.length; i++) {
-            const sLang = (audioStreams[i].language || '').toLowerCase();
-            const sTitle = (audioStreams[i].title || '').toLowerCase();
-            if (targetKeywords.some(k => sLang === k || sTitle.includes(k))) {
-                console.log(`🎙️ [Áudio Original: ${targetLang.toUpperCase()}] Selecionada trilha ${i} (${sLang || sTitle || 'original'}) para "${metadata.nome || rawFileName}"`);
-                return i;
+        // 2. Legendado / fallback: seleciona o áudio ORIGINAL (nunca assume inglês por padrão)
+        if (targetLang && langMap[targetLang]) {
+            for (let i = 0; i < audioStreams.length; i++) {
+                if (this.isCommentaryOrDescriptiveTrack(audioStreams[i])) continue;
+                if (this.streamMatchesLanguage(audioStreams[i], targetLang)) {
+                    console.log(`🎙️ [Áudio Original: ${targetLang.toUpperCase()}] Selecionada trilha ${i} (${audioStreams[i].language || audioStreams[i].title || 'tagged'}) para "${metadata.nome || rawFileName}"`);
+                    return i;
+                }
             }
         }
 
-        // B. Busca stream marcado com 'disposition: original' ou título 'original' / 'vo'
+        // 3. Disposition / título "original" / VO
         for (let i = 0; i < audioStreams.length; i++) {
-            const sTitle = (audioStreams[i].title || '').toLowerCase();
-            if (audioStreams[i].disposition?.original === 1 || sTitle.includes('original') || sTitle.includes(' v.o') || sTitle.includes('vo ')) {
-                console.log(`🎙️ [Áudio Original] Selecionada trilha ${i} com disposition original/VO para "${metadata.nome || rawFileName}"`);
-                return i;
+            const s = audioStreams[i];
+            if (this.isCommentaryOrDescriptiveTrack(s)) continue;
+            const sTitle = (s.title || '').toLowerCase();
+            if (s.disposition?.original === 1 || sTitle.includes('original') || sTitle.includes(' v.o') || sTitle.includes('vo ') || sTitle === 'vo') {
+                // Em dual-áudio, "original" nunca deve ser a trilha PT
+                if (!this.streamMatchesLanguage(s, 'pt')) {
+                    console.log(`🎙️ [Áudio Original] Selecionada trilha ${i} com disposition original/VO para "${metadata.nome || rawFileName}"`);
+                    return i;
+                }
             }
         }
 
-        // C. Se a série/filme é em inglês (ou fallback ocidental) e há trilha em inglês (eng)
-        if (targetLang === 'en' || !langMap[targetLang]) {
-            const engIdx = audioStreams.findIndex(s => {
-                const l = (s.language || '').toLowerCase();
-                const t = (s.title || '').toLowerCase();
-                return l === 'eng' || l === 'en' || t.includes('english') || t.includes('inglês');
-            });
+        // 4. Dual/multi: nunca trate 'und' como "não-inglês" (isso escolhia trilha 0 em und+und = inglês com label coreano/japonês)
+        if (targetLang && targetLang !== 'en') {
+            const engTracks = [];
+            const taggedForeign = [];
+            const undTracks = [];
+            for (let i = 0; i < audioStreams.length; i++) {
+                const s = audioStreams[i];
+                if (this.isCommentaryOrDescriptiveTrack(s) || this.streamMatchesLanguage(s, 'pt')) continue;
+                if (this.streamMatchesLanguage(s, 'en')) {
+                    engTracks.push(i);
+                    continue;
+                }
+                const norm = this.normalizeLanguageCode(s.language);
+                if (norm && norm !== 'und') taggedForeign.push(i);
+                else undTracks.push(i);
+            }
+
+            // eng + und (clássico dual sem tag do original) → und é o original
+            if (engTracks.length >= 1 && undTracks.length >= 1 && taggedForeign.length === 0) {
+                console.log(`🎙️ [Áudio Original inferido: ${targetLang.toUpperCase()}] Dual eng+und → trilha und ${undTracks[0]} para "${metadata.nome || rawFileName}"`);
+                return undTracks[0];
+            }
+            // Trilha estrangeira explicitamente tagueada (kor/jpn/...)
+            if (taggedForeign.length >= 1) {
+                console.log(`🎙️ [Áudio Original inferido: ${targetLang.toUpperCase()}] Selecionada trilha tagueada ${taggedForeign[0]} para "${metadata.nome || rawFileName}"`);
+                return taggedForeign[0];
+            }
+            // und+und em dual/multi: em releases Dual de anime/dorama a 1ª trilha costuma ser a original;
+            // se o filename marcar Dual e houver exatamente 2 áudios, prefere a NÃO-default quando disposition existir.
+            if (undTracks.length >= 2) {
+                const lowerName = (rawFileName || '').toLowerCase();
+                const looksDual = /\bdual\b|dual[-_. ]?audio|multi[-_. ]?audio/i.test(lowerName);
+                let pick = undTracks[0];
+                const withOriginalDisp = undTracks.find(i => audioStreams[i]?.disposition?.original === 1);
+                if (withOriginalDisp !== undefined) pick = withOriginalDisp;
+                else {
+                    const defaultIdx = undTracks.find(i => audioStreams[i]?.disposition?.default === 1);
+                    // Em muitos WEBRip Dual ocidentais a default é inglês; se houver default, tenta a outra
+                    if (looksDual && defaultIdx !== undefined && undTracks.length === 2) {
+                        pick = undTracks.find(i => i !== defaultIdx) ?? pick;
+                    } else if (looksDual && (metadata.isAnime || metadata.isDorama || targetLang === 'ja' || targetLang === 'ko' || targetLang === 'zh')) {
+                        // Convenção comum em Dual asiático: original na trilha 0
+                        pick = undTracks[0];
+                    }
+                }
+                console.log(`🎙️ [Áudio Original inferido: ${targetLang.toUpperCase()}] Dual und+und → trilha ${pick} para "${metadata.nome || rawFileName}"`);
+                return pick;
+            }
+        }
+
+        // 5. Somente escolhe inglês se o idioma original for inglês (ou se for a única trilha estrangeira útil)
+        if (targetLang === 'en') {
+            const engIdx = audioStreams.findIndex(s => !this.isCommentaryOrDescriptiveTrack(s) && this.streamMatchesLanguage(s, 'en'));
             if (engIdx !== -1) {
                 console.log(`🎙️ [Áudio Original: ENG] Selecionada trilha ${engIdx} em inglês para "${metadata.nome || rawFileName}"`);
                 return engIdx;
             }
         }
 
-        // D. Evita trilhas secundárias indesejadas (como comentários de diretor ou audiodescrição) se houver outra trilha principal
-        const nonCommentaryIdx = audioStreams.findIndex(s => {
-            const t = (s.title || '').toLowerCase();
-            return !t.includes('commentary') && !t.includes('comentário') && !t.includes('description') && !t.includes('descrição');
-        });
-        if (nonCommentaryIdx !== -1) return nonCommentaryIdx;
+        // 6. Evita comentários / audiodescrição
+        const nonCommentaryIdx = audioStreams.findIndex(s => !this.isCommentaryOrDescriptiveTrack(s));
+        if (nonCommentaryIdx !== -1) {
+            const picked = audioStreams[nonCommentaryIdx];
+            const pickedLang = this.normalizeLanguageCode(picked.language) || picked.language || 'und';
+            if (targetLang && targetLang !== 'en' && this.streamMatchesLanguage(picked, 'en')) {
+                console.warn(`⚠️ [Áudio] Fallback evitou inglês para obra originalmente em ${targetLang}; usando primeira trilha não-comentário com cautela (lang=${pickedLang}).`);
+            } else {
+                console.log(`🎙️ [Áudio Fallback] Selecionada trilha ${nonCommentaryIdx} (${pickedLang}) para "${metadata.nome || rawFileName}"`);
+            }
+            return nonCommentaryIdx;
+        }
 
         return 0;
+    }
+
+    describeLanguageLabel(langCode) {
+        const labels = {
+            en: 'Inglês', ko: 'Coreano', ja: 'Japonês', es: 'Espanhol', fr: 'Francês',
+            de: 'Alemão', it: 'Italiano', zh: 'Chinês', tr: 'Turco', ru: 'Russo',
+            hi: 'Hindi', th: 'Tailandês', ar: 'Árabe', pt: 'Português (PT-BR)'
+        };
+        return labels[langCode] || (langCode ? langCode.toUpperCase() : 'Original');
+    }
+
+    /**
+     * Valida se a trilha selecionada é coerente com dublado/legendado + idioma original.
+     * Retorna { ok, reason, selectedLang }.
+     */
+    validateSelectedAudioTrack(selectedStream, metadata = {}, audioStreams = []) {
+        if (!selectedStream) return { ok: false, reason: 'Nenhuma trilha de áudio selecionada', selectedLang: null };
+        const selectedLang = this.normalizeLanguageCode(selectedStream.language) ||
+            (this.streamMatchesLanguage(selectedStream, 'pt') ? 'pt' :
+                (this.streamMatchesLanguage(selectedStream, 'en') ? 'en' : null));
+        const isLegendadoOnly = metadata.isLegendado && !metadata.isDublado;
+        const originalLang = this.resolveOriginalLanguage(metadata, audioStreams);
+
+        if (!isLegendadoOnly) {
+            // Dublado: deve ser PT-BR quando houver trilha PT disponível
+            const hasPt = (audioStreams || []).some(s => this.streamMatchesLanguage(s, 'pt')) ||
+                this.detectPortugueseAudioIndex(audioStreams, metadata.rawFileName || '') !== null;
+            if (hasPt && selectedLang && selectedLang !== 'pt' && !this.streamMatchesLanguage(selectedStream, 'pt')) {
+                return { ok: false, reason: `Dublado exige áudio PT-BR, mas foi selecionado ${selectedLang}`, selectedLang };
+            }
+            return { ok: true, reason: null, selectedLang: selectedLang || 'pt' };
+        }
+
+        // Legendado: não pode ser PT-BR; se soubermos o original, não pode ser inglês quando há alternativa
+        if (this.streamMatchesLanguage(selectedStream, 'pt')) {
+            return { ok: false, reason: 'Legendado não deve usar áudio PT-BR', selectedLang: 'pt' };
+        }
+        if (originalLang && originalLang !== 'en' && this.streamMatchesLanguage(selectedStream, 'en')) {
+            const hasOriginalTrack = (audioStreams || []).some(s => this.streamMatchesLanguage(s, originalLang));
+            const hasUndAlt = (audioStreams || []).some(s =>
+                !this.isCommentaryOrDescriptiveTrack(s) &&
+                !this.streamMatchesLanguage(s, 'pt') &&
+                !this.streamMatchesLanguage(s, 'en') &&
+                (!this.normalizeLanguageCode(s.language) || s.language === 'und')
+            );
+            if (hasOriginalTrack || hasUndAlt) {
+                return { ok: false, reason: `Legendado deveria usar ${originalLang}, mas inglês foi selecionado`, selectedLang: 'en' };
+            }
+        }
+        return { ok: true, reason: null, selectedLang: selectedLang || null };
+    }
+
+    /**
+     * Duração mínima aceitável genérica (anti-trailer / anti-arquivo incompleto).
+     * Usa razão sobre a duração esperada (TMDB) + pisos absolutos por faixa.
+     */
+    computeMinAcceptableDurationSec({ type = 'serie', expectedMin = 45, isMicrodrama = false } = {}) {
+        if (isMicrodrama) return 40;
+        if (type === 'filme') {
+            if (expectedMin >= 120) return Math.floor(expectedMin * 60 * 0.65);
+            if (expectedMin <= 80) return Math.max(2400, Math.floor(expectedMin * 60 * 0.50));
+            return 3600;
+        }
+        // Séries / animes / doramas
+        if (expectedMin <= 12) {
+            // Episódios muito curtos (alguns animes especiais / kids)
+            return Math.max(180, Math.floor(expectedMin * 60 * 0.55));
+        }
+        if (expectedMin <= 30) {
+            // Anime / episódios ~20-25 min: exige >= 55% (ex.: 24min → ~13min) e piso de 10 min
+            return Math.max(600, Math.floor(expectedMin * 60 * 0.55));
+        }
+        // Drama / episódios longos (ex.: House of the Dragon ~60min): exige >= 55% sem teto artificial de 10 min
+        // Ex.: 60min → 33min mínimo (rejeita arquivo de 13 min)
+        return Math.max(1200, Math.floor(expectedMin * 60 * 0.55));
+    }
+
+    /**
+     * Converte SRT → ASS com PlayRes igual à resolução de saída, evitando FontSize
+     * gigante do libass (default PlayResY=288 + force_style).
+     */
+    async buildHardsubAssFromSrt(srtPath, outputWidth, outputHeight) {
+        const outW = Math.max(640, Math.min(1920, parseInt(outputWidth, 10) || 1920));
+        const outH = Math.max(360, parseInt(outputHeight, 10) || 1080);
+        // ~3.8% da altura → legível sem dominar a tela (~41px em 1080p)
+        const fontSize = Math.max(28, Math.min(52, Math.round(outH * 0.038)));
+        const outline = Math.max(2, Math.round(fontSize / 18));
+        const marginV = Math.max(28, Math.round(outH * 0.035));
+        const assPath = srtPath.replace(/\.srt$/i, '') + `_hardsub_${outW}x${outH}.ass`;
+
+        const srtContent = await fs.readFile(srtPath, 'utf8');
+        const events = [];
+        const blocks = srtContent.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+        for (const block of blocks) {
+            const lines = block.trim().split('\n');
+            if (lines.length < 2) continue;
+            const timeLineIdx = lines.findIndex(l => l.includes('-->'));
+            if (timeLineIdx === -1) continue;
+            const timeLine = lines[timeLineIdx];
+            const m = timeLine.match(/(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/);
+            if (!m) continue;
+            const toAssTime = (h, mi, s, ms) => {
+                const cs = Math.floor(parseInt(ms, 10) / 10);
+                return `${parseInt(h, 10)}:${String(mi).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+            };
+            const start = toAssTime(m[1], m[2], m[3], m[4]);
+            const end = toAssTime(m[5], m[6], m[7], m[8]);
+            let text = lines.slice(timeLineIdx + 1).join('\\N')
+                .replace(/\{\\.*?\}/g, '') // remove overrides ASS residuais (\fs enormes etc.)
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!text) continue;
+            events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`);
+        }
+
+        const ass = `[Script Info]
+ScriptType: v4.00+
+PlayResX: ${outW}
+PlayResY: ${outH}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,${outline},1,2,40,40,${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${events.join('\n')}
+`;
+        await fs.writeFile(assPath, ass, 'utf8');
+        return assPath;
     }
 
     hasPortugueseAudio(info, rawFileName = '') {
@@ -957,17 +1223,83 @@ class VideoProcessor {
         const targetAudioIndex = this.detectTargetAudioIndex(info.audioStreams, metadata, path.basename(inputPath));
         const selectedAudioStream = info.audioStreams[targetAudioIndex] || info.audioStreams[0] || null;
 
+        const audioValidation = this.validateSelectedAudioTrack(selectedAudioStream, { ...metadata, rawFileName: path.basename(inputPath) }, info.audioStreams);
+        if (!audioValidation.ok) {
+            // Tenta auto-corrigir: se legendado pegou inglês por engano, force o índice do idioma original / und
+            const originalLang = this.resolveOriginalLanguage(metadata, info.audioStreams);
+            let correctedIdx = targetAudioIndex;
+            if (metadata.isLegendado && !metadata.isDublado && originalLang) {
+                const idx = info.audioStreams.findIndex(s => this.streamMatchesLanguage(s, originalLang));
+                if (idx !== -1) correctedIdx = idx;
+                else {
+                    // eng + und → und
+                    const undIdx = info.audioStreams.findIndex(s =>
+                        !this.isCommentaryOrDescriptiveTrack(s) &&
+                        !this.streamMatchesLanguage(s, 'pt') &&
+                        !this.streamMatchesLanguage(s, 'en') &&
+                        (!this.normalizeLanguageCode(s.language) || s.language === 'und')
+                    );
+                    if (undIdx !== -1) correctedIdx = undIdx;
+                }
+            } else if (!metadata.isLegendado || metadata.isDublado) {
+                if (portugueseAudioIndex !== null) correctedIdx = portugueseAudioIndex;
+            }
+            if (correctedIdx !== targetAudioIndex) {
+                console.warn(`⚠️ [Áudio] Correção automática: ${audioValidation.reason}. Trocando trilha ${targetAudioIndex} → ${correctedIdx}`);
+            } else {
+                console.warn(`⚠️ [Áudio] Validação falhou sem correção possível: ${audioValidation.reason}`);
+            }
+            // Reatribui com índice corrigido
+            const finalIdx = correctedIdx;
+            const finalStream = info.audioStreams[finalIdx] || selectedAudioStream;
+            const recheck = this.validateSelectedAudioTrack(finalStream, metadata, info.audioStreams);
+            if (!recheck.ok && metadata.isLegendado && !metadata.isDublado && originalLang && originalLang !== 'en') {
+                const alt = info.audioStreams.findIndex(s =>
+                    !this.isCommentaryOrDescriptiveTrack(s) &&
+                    !this.streamMatchesLanguage(s, 'pt') &&
+                    !this.streamMatchesLanguage(s, 'en')
+                );
+                if (alt !== -1) {
+                    console.warn(`⚠️ [Áudio] Fallback dual-áudio: usando trilha não-inglesa ${alt} para original ${originalLang}`);
+                    metadata._forcedAudioIndex = alt;
+                } else {
+                    throw new Error(`Seleção de áudio inválida para "${optTitle}": ${audioValidation.reason}`);
+                }
+            } else if (!recheck.ok) {
+                throw new Error(`Seleção de áudio inválida para "${optTitle}": ${audioValidation.reason}`);
+            } else {
+                metadata._forcedAudioIndex = finalIdx;
+            }
+        }
+
+        const effectiveAudioIndex = metadata._forcedAudioIndex !== undefined ? metadata._forcedAudioIndex : targetAudioIndex;
+        const effectiveAudioStream = info.audioStreams[effectiveAudioIndex] || selectedAudioStream;
+        const resolvedOriginalLang = this.resolveOriginalLanguage(metadata, info.audioStreams);
+        metadata.idiomaOriginal = metadata.idiomaOriginal || metadata.originalLanguage || resolvedOriginalLang || null;
+        metadata.originalLanguage = metadata.idiomaOriginal;
+        // Nunca inventar o idioma da trilha a partir do idioma original da obra (causava "Coreano" com áudio inglês)
+        const detectedSelLang = this.normalizeLanguageCode(effectiveAudioStream?.language) ||
+            (this.streamMatchesLanguage(effectiveAudioStream, 'pt') ? 'pt' :
+                (this.streamMatchesLanguage(effectiveAudioStream, 'en') ? 'en' : null));
+        metadata.idiomaAudioSelecionado = detectedSelLang || 'und';
+        metadata.idiomaAudioLabel = detectedSelLang
+            ? this.describeLanguageLabel(detectedSelLang)
+            : (resolvedOriginalLang ? `${this.describeLanguageLabel(resolvedOriginalLang)}?` : 'Original');
+        console.log(`🔊 [${optTitle}] Áudio final: index=${effectiveAudioIndex} tag=${effectiveAudioStream?.language || 'und'} detectado=${metadata.idiomaAudioSelecionado} originalObra=${metadata.idiomaOriginal || 'n/a'}`);
+
         let srtPath = null;
         const alreadyHardsubbed = metadata.isDirect || metadata.hasEmbeddedSub || metadata.isReadySub;
         // Só é confirmado dublado se o arquivo REALMENTE tiver áudio em português detectado via ffprobe
-        // e se o pedido NÃO for expressamente para a versão legendada
+        // e se o pedido NÃO for expressamente SOMENTE legendado (sem dublagem).
+        // Releases Dual com PT-BR + softsubs NÃO devem queimar legenda: dublado = áudio PT sem legenda na tela.
         const hasVerifiedPtAudio = hasPortugueseAudio || (metadata.isDublado === true && this.hasPortugueseAudio(info, path.basename(inputPath)));
-        const isConfirmedDublado = !metadata.isLegendado && hasVerifiedPtAudio;
+        const wantLegendadoOnly = metadata.isLegendado === true && metadata.isDublado === false;
+        const isConfirmedDublado = hasVerifiedPtAudio && !wantLegendadoOnly;
 
         // Se NÃO possuir áudio em Português e for expressamente Legendado (sem áudio dublado),
         // DEVE OBRIGATORIAMENTE obter e queimar/embutir as legendas em Português Brasileiro (PT-BR),
         // a menos que o vídeo seja Dublado ou venha com hardsub já embutido no stream (Web Direct).
-        if (!isConfirmedDublado && (metadata.isLegendado || !hasPortugueseAudio) && !alreadyHardsubbed) {
+        if (!isConfirmedDublado && (wantLegendadoOnly || !hasPortugueseAudio) && !alreadyHardsubbed) {
             if (!hasPortugueseAudio) {
                 console.log(`💬 [${optTitle}] Áudio em Português não detectado no arquivo original. Buscando e extraindo legendas oficiais PT-BR para Hardsub obrigatório...`);
             }
@@ -988,17 +1320,21 @@ class VideoProcessor {
             console.log(`💬 [${optTitle}] Vídeo Web Direct ${metadata.isLegendado ? 'legendado' : 'sem áudio PT'} — classificando como Legendado (PT-BR) (hardsub/embedded).`);
             metadata.isLegendado = true;
             metadata.isDublado = false;
-        } else if (isConfirmedDublado && !metadata.isLegendado) {
+        } else if (isConfirmedDublado) {
+            // Dual com PT-BR (+ softsubs): cataloga/processa como Dublado limpo — sem hardsub e sem softsubs
             metadata.isDublado = true;
             metadata.isLegendado = false;
+            metadata.srtPath = null;
+            srtPath = null;
+            console.log(`🇧🇷 [${optTitle}] Áudio PT-BR confirmado → processando como Dublado SEM legendas (softsubs/hardsub removidos).`);
         }
 
         let finalPath;
 
         // Se for comprovadamente Dublado (e sem necessidade de queimar legendas), faz Remux Rápido quando compatível
-        if (isConfirmedDublado && !metadata.isLegendado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
+        if (isConfirmedDublado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
             console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Rápido com normalização universal de áudio AAC...`);
-            console.log(`🔊 Faixa de áudio selecionada: Stream 0:a:${targetAudioIndex} [${selectedAudioStream?.codec?.toUpperCase()} | ${selectedAudioStream?.channels} canais | lang: ${selectedAudioStream?.language}]`);
+            console.log(`🔊 Faixa de áudio selecionada: Stream 0:a:${effectiveAudioIndex} [${effectiveAudioStream?.codec?.toUpperCase()} | ${effectiveAudioStream?.channels} canais | lang: ${effectiveAudioStream?.language}]`);
 
             finalPath = await new Promise((resolve, reject) => {
                 const remuxArgs = [
@@ -1006,22 +1342,14 @@ class VideoProcessor {
                     '-i', inputPath,
                     '-c:v', 'copy', // Cópia direta do vídeo sem reprocessamento
                     '-map', '0:v:0',
-                    '-map', `0:a:${targetAudioIndex}`,
-                    '-disposition:a:0', 'default'
+                    '-map', `0:a:${effectiveAudioIndex}`,
+                    '-disposition:a:0', 'default',
+                    '-sn' // Dublado: nunca embutir softsubs (evita PT Forced/Full na tela)
                 ];
 
-                // Para vídeos Dublados, remove faixas de legenda (-sn) para não poluir a tela do usuário.
-                // Para Legendados, preserva as faixas embutidas no container.
-                const isStrictDublado = metadata.isDublado && !metadata.isLegendado;
-                if (!isStrictDublado && info.subtitleStreams && info.subtitleStreams.length > 0) {
-                    remuxArgs.push('-map', '0:s?', '-c:s', 'mov_text');
-                } else if (isStrictDublado) {
-                    remuxArgs.push('-sn');
-                }
-
-                const isSimpleAacStereo = selectedAudioStream && 
-                    selectedAudioStream.codec === 'aac' && 
-                    selectedAudioStream.channels <= 2;
+                const isSimpleAacStereo = effectiveAudioStream && 
+                    effectiveAudioStream.codec === 'aac' && 
+                    effectiveAudioStream.channels <= 2;
 
                 if (isSimpleAacStereo) {
                     remuxArgs.push('-c:a', 'copy');
@@ -1080,29 +1408,33 @@ class VideoProcessor {
                                 process.stdout.write('\n');
                                 console.warn(`⚠️ [Remux Incompleto] Remux gerou apenas ${remuxInfo?.durationFormatted || 'incompleto'} (< ${this.formatDuration(totalDuration)}). Fazendo fallback automático para codificação completa 1080p...`);
                                 await fs.remove(outputPath).catch(() => {});
-                                return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                                return this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                             }
                         } catch (e) {
-                            return this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                            return this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                         }
                     } else {
                         process.stdout.write('\n');
                         console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
-                        this.encodeVideoFull(inputPath, outputPath, info, portugueseAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                        this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                     }
                 });
                 ffmpeg.on('error', () => {
                     process.stdout.write('\n');
-                    this.encodeVideoFull(inputPath, outputPath, info, targetAudioIndex, onProgress, metadata).then(resolve).catch(reject);
+                    this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
             });
         } else {
-            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, targetAudioIndex, onProgress, metadata);
+            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
         }
 
-        // Limpa arquivo temporário de legenda .srt após a codificação
+        // Limpa arquivos temporários de legenda (.srt / .ass) após a codificação
         if (srtPath && fs.existsSync(srtPath)) {
             await fs.remove(srtPath).catch(() => {});
+        }
+        if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
+            await fs.remove(metadata._hardsubAssPath).catch(() => {});
+            delete metadata._hardsubAssPath;
         }
 
         // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
@@ -1197,6 +1529,23 @@ class VideoProcessor {
 
             console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${maxTranscodes}${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
             
+            // Escala alvo para hardsub (PlayRes do ASS deve bater com o frame de saída)
+            const outW = Math.min(1920, info.width || 1920);
+            const outH = info.height && info.width
+                ? Math.round((Math.min(1920, info.width) / info.width) * info.height)
+                : (info.height || 1080);
+
+            let hardsubPath = null;
+            if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                try {
+                    hardsubPath = await this.buildHardsubAssFromSrt(metadata.srtPath, outW, outH);
+                    metadata._hardsubAssPath = hardsubPath;
+                    console.log(`📝 [Hardsub] ASS gerado com PlayRes ${outW}x${outH} (fonte proporcional à resolução)`);
+                } catch (e) {
+                    console.warn(`⚠️ [Hardsub] Falha ao gerar ASS tipográfico, usando SRT com force_style escalado: ${e.message}`);
+                }
+            }
+
             return await new Promise((resolve, reject) => {
                 const totalDuration = info.duration || 1;
 
@@ -1205,11 +1554,16 @@ class VideoProcessor {
                 const audioBitrateKbps = 192;
                 const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
 
-                // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub Profissionais)
+                // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub com PlayRes correto)
                 let vfFilter = "scale='min(1920,iw)':-2";
-                if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                if (hardsubPath && fs.existsSync(hardsubPath)) {
+                    const assEscaped = hardsubPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+                    vfFilter += `,ass='${assEscaped}'`;
+                } else if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                    // Fallback: force_style com FontSize relativo ao PlayResY padrão (288)
+                    const scaledFont = Math.max(12, Math.min(18, Math.round(outH * 0.038 * 288 / Math.max(outH, 1))));
                     const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=1.8,Shadow=1,MarginV=32,Alignment=2,Bold=0'`;
+                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=1.5,Shadow=0.8,MarginV=28,Alignment=2,Bold=0'`;
                 }
 
                 const args = [
@@ -1279,6 +1633,9 @@ class VideoProcessor {
                 });
 
                 ffmpeg.on('close', (code) => {
+                    if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
+                        fs.remove(metadata._hardsubAssPath).catch(() => {});
+                    }
                     if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                         fs.remove(metadata.srtPath).catch(() => {});
                     }

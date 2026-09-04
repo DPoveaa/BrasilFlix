@@ -1344,7 +1344,10 @@ class CatalogoManager {
                     if (epTmdb.nome) metadados.episodioNome = epTmdb.nome;
                     if (epTmdb.sinopse) metadados.episodioSinopse = epTmdb.sinopse;
                     if (epTmdb.stillUrl) metadados.stillUrl = epTmdb.stillUrl;
-                    if (epTmdb.duracaoMinutos || epTmdb.runtime) metadados.duracao = epTmdb.duracaoMinutos || epTmdb.runtime;
+                    // Só usa duração TMDB se a duração real do arquivo ainda não foi medida
+                    if (!metadados.duracao && (epTmdb.duracaoMinutos || epTmdb.runtime)) {
+                        metadados.duracao = epTmdb.duracaoMinutos || epTmdb.runtime;
+                    }
                 }
             } catch (e) {}
         }
@@ -1535,10 +1538,19 @@ class CatalogoManager {
         let serieId = null;
 
         try {
-            const epRes = await db.query(`SELECT id, serie_id, message_id FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+            const epRes = await db.query(
+                `SELECT id, serie_id, message_id, versoes FROM episodios WHERE id = $1 OR message_id = $1`,
+                [target]
+            );
             for (const r of epRes.rows) {
                 if (r.serie_id) serieId = r.serie_id;
-                if (r.message_id) messagesToDelete.push(r.message_id);
+                if (r.message_id) messagesToDelete.push(Number(r.message_id));
+                let versoes = r.versoes || {};
+                if (typeof versoes === 'string') {
+                    try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+                }
+                if (versoes?.dublado?.messageId) messagesToDelete.push(Number(versoes.dublado.messageId));
+                if (versoes?.legendado?.messageId) messagesToDelete.push(Number(versoes.legendado.messageId));
             }
             await db.query(`DELETE FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
 
@@ -1568,11 +1580,120 @@ class CatalogoManager {
         await this.loadCatalogo();
 
         if (messagesToDelete.length > 0) {
-            const uniqueMsgIds = [...new Set(messagesToDelete)];
+            const uniqueMsgIds = [...new Set(messagesToDelete.filter(Boolean))];
             await this.deleteStorageMessages(uniqueMsgIds);
         }
 
         return true;
+    }
+
+    /**
+     * Remove UMA versão específica (dublado|legendado) de um episódio, com verificação
+     * de messageId. Se ambas as versões forem removidas, apaga o episódio.
+     * @returns {{ success: boolean, deletedMessageIds: number[], reason?: string }}
+     */
+    async removerVersaoEpisodio({ serieId, temporada, episodio, versao, expectedMessageId = null }) {
+        const deletedMessageIds = [];
+        const vKey = String(versao || '').toLowerCase() === 'dublado' ? 'dublado' : 'legendado';
+        const sId = Number(serieId);
+        const tNum = Number(temporada);
+        const eNum = Number(episodio);
+
+        try {
+            const epRes = await db.query(
+                `SELECT id, serie_id, temporada_numero, numero, message_id, file_id, versoes, is_dublado, is_legendado, audio
+                 FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3`,
+                [sId, tNum, eNum]
+            );
+            if (!epRes.rows.length) {
+                return { success: false, deletedMessageIds, reason: 'episodio_nao_encontrado' };
+            }
+            const row = epRes.rows[0];
+            let versoes = row.versoes || {};
+            if (typeof versoes === 'string') {
+                try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+            }
+
+            const target = versoes[vKey];
+            if (!target || !(target.messageId || target.fileId)) {
+                return { success: false, deletedMessageIds, reason: 'versao_ausente' };
+            }
+
+            if (expectedMessageId != null && Number(target.messageId) !== Number(expectedMessageId)) {
+                return {
+                    success: false,
+                    deletedMessageIds,
+                    reason: `messageId_mismatch: esperado ${expectedMessageId}, encontrado ${target.messageId}`
+                };
+            }
+
+            if (target.messageId) deletedMessageIds.push(Number(target.messageId));
+            versoes[vKey] = null;
+
+            const hasDub = !!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId));
+            const hasLeg = !!(versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId));
+
+            if (!hasDub && !hasLeg) {
+                await db.query(`DELETE FROM episodios WHERE id = $1`, [row.id]);
+                const countRes = await db.query(`SELECT COUNT(*) as total FROM episodios WHERE serie_id = $1`, [sId]);
+                if (parseInt(countRes.rows[0]?.total || '0', 10) === 0) {
+                    await db.query(`DELETE FROM series WHERE id = $1`, [sId]);
+                } else {
+                    await db.query(`
+                        UPDATE series SET
+                            total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                            total_episodios = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                            is_dublado = COALESCE((SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1), false),
+                            is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                            updated_at = NOW()
+                        WHERE id = $1
+                    `, [sId]);
+                }
+            } else {
+                const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || null;
+                const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+                const primaryAudio = (hasDub && hasLeg)
+                    ? 'Dub/Leg (Dublado + Legendado)'
+                    : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+
+                // Se o message_id primário era o da versão removida, atualiza para o remanescente
+                await db.query(`
+                    UPDATE episodios SET
+                        versoes = $1,
+                        is_dublado = $2,
+                        is_legendado = $3,
+                        message_id = $4,
+                        file_id = $5,
+                        audio = $6
+                    WHERE id = $7
+                `, [
+                    JSON.stringify({
+                        dublado: hasDub ? versoes.dublado : null,
+                        legendado: hasLeg ? versoes.legendado : null
+                    }),
+                    hasDub, hasLeg,
+                    primaryMessageId, primaryFileId, primaryAudio,
+                    row.id
+                ]);
+
+                await db.query(`
+                    UPDATE series SET
+                        is_dublado = COALESCE((SELECT bool_or(is_dublado) FROM episodios WHERE serie_id = $1), false),
+                        is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                        updated_at = NOW()
+                    WHERE id = $1
+                `, [sId]);
+            }
+
+            await this.loadCatalogo();
+            if (deletedMessageIds.length > 0) {
+                await this.deleteStorageMessages([...new Set(deletedMessageIds)]);
+            }
+            return { success: true, deletedMessageIds: [...new Set(deletedMessageIds)] };
+        } catch (e) {
+            console.error('❌ Erro em removerVersaoEpisodio:', e.message);
+            return { success: false, deletedMessageIds, reason: e.message };
+        }
     }
 
     getItemPorId(id) {

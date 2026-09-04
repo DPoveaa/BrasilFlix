@@ -44,10 +44,15 @@ class MediaSearchService {
         const episode = options.episode || 1;
         const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
 
-        let isAnime = options.isAnime || options.is_anime || 
+        const isLiveActionExplicit = /live[-_ .]?action/i.test(cleanQuery) || 
+                                     /live[-_ .]?action/i.test(originalName || '') || 
+                                     (options.originalLanguage === 'en' && ano >= 2023) ||
+                                     options.tmdbId === 111110;
+
+        let isAnime = !isLiveActionExplicit && (options.isAnime || options.is_anime || 
                       options.originalLanguage === 'ja' || options.idiomaOriginal === 'ja' ||
                       KNOWN_ANIME_TITLES.test(cleanQuery) || (originalName && KNOWN_ANIME_TITLES.test(originalName)) ||
-                      /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery);
+                      /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery));
 
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
         console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''} ${tipo === 'serie' ? `(T${season}E${episode})` : ''}...`);
@@ -169,8 +174,7 @@ class MediaSearchService {
                     `${cleanQuery} temporada ${season} completa legendado`,
                     `${cleanQuery} season ${season} complete`,
                     `${cleanQuery} S${sPadded}E${ePadded} legendado`,
-                    `${cleanQuery} S${sPadded}E${ePadded}`,
-                    `${cleanQuery} 1080p legendado`
+                    `${cleanQuery} S${sPadded}E${ePadded}`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
@@ -193,10 +197,7 @@ class MediaSearchService {
                     `${cleanQuery} temporada ${season} dublado`,
                     `${cleanQuery} temporada ${season} completa`,
                     `${cleanQuery} season ${season} dual`,
-                    `${cleanQuery} S${sPadded} 1080p dual`,
-                    `${cleanQuery} 1080p dual`,
-                    `${cleanQuery} dual audio`,
-                    `${cleanQuery} dublado`
+                    `${cleanQuery} S${sPadded} 1080p dual`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
@@ -206,8 +207,7 @@ class MediaSearchService {
                         `${originalName} S${sPadded} dual`,
                         `${originalName} S${sPadded} dublado`,
                         `${originalName} S${sPadded} complete`,
-                        `${originalName} season ${season} dual`,
-                        `${originalName} dual`
+                        `${originalName} season ${season} dual`
                     );
                 }
             }
@@ -306,6 +306,41 @@ class MediaSearchService {
                         if (foundS !== sNum) return false;
                     }
                 }
+
+                // 5. Validação de Ano para Séries (impede confusão de anos distantes, ex: One Piece 1999 vs 2023)
+                if (ano) {
+                    const expectedYear = parseInt(ano, 10);
+                    const titleYearMatch = r.title.match(/\b(19\d{2}|20\d{2})\b/);
+                    if (titleYearMatch) {
+                        const releaseYear = parseInt(titleYearMatch[1], 10);
+                        if (Math.abs(releaseYear - expectedYear) > 1) return false;
+                    }
+                }
+
+                // 6. Blindagem Anime vs Live-Action
+                if (isAnime && /\b(live[-_ .]?action)\b/i.test(r.title)) {
+                    return false;
+                }
+                if (!isAnime && isLiveActionExplicit && /\b(anime)\b/i.test(r.title)) {
+                    return false;
+                }
+
+                // 7. Validação de Episódio Específico (quando o release é de episódio único e não pack)
+                if (episode) {
+                    const epNum = parseInt(episode, 10);
+                    const titleLower = r.title.toLowerCase();
+                    const epSingleMatch = titleLower.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i);
+                    const isPackTitle = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(titleLower) ||
+                                        /(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/i.test(titleLower) ||
+                                        /\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i.test(titleLower);
+
+                    if (epSingleMatch && !isPackTitle) {
+                        const foundEp = parseInt(epSingleMatch[1], 10);
+                        if (foundEp !== epNum && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                            return false;
+                        }
+                    }
+                }
             }
 
             return true;
@@ -337,12 +372,23 @@ class MediaSearchService {
                     const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { 
                         season, 
                         episode,
+                        ano,
+                        isAnime,
+                        isLiveActionExplicit,
                         originalLanguage: options.originalLanguage || options.idiomaOriginal,
                         isTheatricalOnly,
                         allowCam: options.allowCam
                     });
                     for (const st of fallbackStreams) {
                         if (!ptBrResults.some(r => r.infoHash === st.infoHash)) {
+                            // Validação estrita de temporada no fallback para séries
+                            if (tipo === 'serie' && season) {
+                                const sNum = parseInt(season, 10);
+                                const sMatch = st.title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i);
+                                if (sMatch && parseInt(sMatch[1], 10) !== sNum) {
+                                    continue;
+                                }
+                            }
                             st.isPtBr = true;
                             st.isLegendado = true;
                             st.isDublado = false;
@@ -531,27 +577,56 @@ class MediaSearchService {
                     continue;
                 }
 
-                if (tipo === 'serie' && episode) {
-                    const epInt = parseInt(episode, 10);
-                    // Match de faixa de episódios com ou sem prefixo "e/ep" (ex: "0892 ~ 1089", "E01-E24", "01-12", "0892-1089")
-                    const cleanTitleForEp = title
-                        .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
-                        .replace(/\b(19\d{2}|20\d{2})\b/g, '');
-
-                    const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
-                    const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
-                                    cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
-
-                    if (rangeMatch) {
-                        const startEp = parseInt(rangeMatch[1], 10);
-                        const endEp = parseInt(rangeMatch[2], 10);
-                        if (epInt < startEp || epInt > endEp) {
-                            continue; // Rejeita lotes que não contêm o episódio desejado
+                if (tipo === 'serie') {
+                    // 1. Validação de Temporada Solicitada
+                    if (opts.season) {
+                        const reqSeason = parseInt(opts.season, 10);
+                        const sMatch = title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i);
+                        if (sMatch && parseInt(sMatch[1], 10) !== reqSeason) {
+                            continue; // Rejeita stream que aponta para outra temporada
                         }
-                    } else if (epMatch) {
-                        const foundEp = parseInt(epMatch[1], 10);
-                        if (foundEp !== epInt && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
-                            continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
+                    }
+
+                    // 2. Validação de Ano para Séries
+                    if (opts.ano) {
+                        const expectedYear = parseInt(opts.ano, 10);
+                        const yMatch = title.match(/\b(19\d{2}|20\d{2})\b/);
+                        if (yMatch && Math.abs(parseInt(yMatch[1], 10) - expectedYear) > 1) {
+                            continue;
+                        }
+                    }
+
+                    // 3. Blindagem Anime vs Live-Action
+                    if (opts.isAnime && /\b(live[-_ .]?action)\b/i.test(title)) {
+                        continue;
+                    }
+                    if (!opts.isAnime && opts.isLiveActionExplicit && /\b(anime)\b/i.test(title)) {
+                        continue;
+                    }
+
+                    // 4. Validação de Episódio
+                    if (episode) {
+                        const epInt = parseInt(episode, 10);
+                        // Match de faixa de episódios com ou sem prefixo "e/ep" (ex: "0892 ~ 1089", "E01-E24", "01-12", "0892-1089")
+                        const cleanTitleForEp = title
+                            .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                            .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+
+                        const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
+                        const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
+                                        cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+
+                        if (rangeMatch) {
+                            const startEp = parseInt(rangeMatch[1], 10);
+                            const endEp = parseInt(rangeMatch[2], 10);
+                            if (epInt < startEp || epInt > endEp) {
+                                continue; // Rejeita lotes que não contêm o episódio desejado
+                            }
+                        } else if (epMatch) {
+                            const foundEp = parseInt(epMatch[1], 10);
+                            if (foundEp !== epInt && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                                continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
+                            }
                         }
                     }
                 }
@@ -709,6 +784,59 @@ class MediaSearchService {
                 if (tipo === 'filme' && parseFloat(sizeMB) > 5500) continue;
                 if (tipo === 'filme' && parseFloat(sizeMB) < 400) continue;
                 if (tipo === 'serie' && parseFloat(sizeMB) > 0 && parseFloat(sizeMB) < 150) continue;
+
+                if (tipo === 'serie') {
+                    // 1. Validação de Temporada
+                    if (opts.season) {
+                        const reqSeason = parseInt(opts.season, 10);
+                        const sMatch = title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i);
+                        if (sMatch && parseInt(sMatch[1], 10) !== reqSeason) {
+                            continue;
+                        }
+                    }
+
+                    // 2. Validação de Ano
+                    if (opts.ano) {
+                        const expectedYear = parseInt(opts.ano, 10);
+                        const yMatch = title.match(/\b(19\d{2}|20\d{2})\b/);
+                        if (yMatch && Math.abs(parseInt(yMatch[1], 10) - expectedYear) > 1) {
+                            continue;
+                        }
+                    }
+
+                    // 3. Blindagem Anime vs Live Action
+                    if (opts.isAnime && /\b(live[-_ .]?action)\b/i.test(title)) {
+                        continue;
+                    }
+                    if (!opts.isAnime && opts.isLiveActionExplicit && /\b(anime)\b/i.test(title)) {
+                        continue;
+                    }
+
+                    // 4. Validação de Episódio
+                    if (opts.episode) {
+                        const epInt = parseInt(opts.episode, 10);
+                        const cleanTitleForEp = title
+                            .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                            .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+
+                        const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
+                        const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
+                                        cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+
+                        if (rangeMatch) {
+                            const startEp = parseInt(rangeMatch[1], 10);
+                            const endEp = parseInt(rangeMatch[2], 10);
+                            if (epInt < startEp || epInt > endEp) {
+                                continue;
+                            }
+                        } else if (epMatch) {
+                            const foundEp = parseInt(epMatch[1], 10);
+                            if (foundEp !== epInt && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                                continue;
+                            }
+                        }
+                    }
+                }
 
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(title)}`;
                 const sourceGroup = rawTitle.match(/⚙️\s*([^\n\r]+)/)?.[1]?.trim() || 'Stremio 1080p';

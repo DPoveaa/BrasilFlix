@@ -32,6 +32,26 @@ function normalizeTitle(title) {
         .trim();
 }
 
+/** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
+function parseSeasonEpisodeFromPath(filePath) {
+    if (!filePath) return null;
+    const base = String(filePath).replace(/\\/g, '/');
+    const patterns = [
+        /\b(?:s|temporada|temp|t)\s*0*(\d{1,2})\s*(?:[._ -]*)(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\b/i,
+        /\b(\d{1,2})\s*[x×]\s*0*(\d{1,3})\b/i,
+        /\bS0*(\d{1,2})E0*(\d{1,3})\b/i
+    ];
+    for (const re of patterns) {
+        const m = base.match(re);
+        if (m) {
+            const season = parseInt(m[1], 10);
+            const episode = parseInt(m[2], 10);
+            if (season > 0 && episode > 0) return { season, episode };
+        }
+    }
+    return null;
+}
+
 class QueueManager extends EventEmitter {
     constructor(bot, catalogoManager, pedidosManager = null, favoritosManager = null) {
         super();
@@ -533,6 +553,16 @@ class QueueManager extends EventEmitter {
                 existing.error = null;
                 if (extraData.metaDetails) existing.metaDetails = extraData.metaDetails;
                 if (extraData.tmdbId) existing.tmdbId = extraData.tmdbId;
+                // Se o arquivo possui marcação SxxExx diferente do job, atualiza o job com os dados do arquivo.
+                // Isso evita que um arquivo de live action (S01E05) seja vinculado a um job do anime (T12E408).
+                if (type === 'serie') {
+                    const parsedFromFile = parseSeasonEpisodeFromPath(extraData.rawFilePath);
+                    if (parsedFromFile && (parsedFromFile.season !== existing.season || parsedFromFile.episode !== existing.episode)) {
+                        console.log(`🔄 [UPLOAD MANUAL] Corrigindo season/episode do job de T${existing.season}E${existing.episode} para T${parsedFromFile.season}E${parsedFromFile.episode} baseado no arquivo: ${require('path').basename(extraData.rawFilePath)}`);
+                        existing.season = parsedFromFile.season;
+                        existing.episode = parsedFromFile.episode;
+                    }
+                }
                 this.sortQueue();
                 this.saveJob(existing).catch(() => {});
                 setImmediate(() => this.processNext());
@@ -1124,14 +1154,23 @@ class QueueManager extends EventEmitter {
         // 1. Obter metadados TMDB
         let metadata = { nome: job.title, tipo: job.type };
         try {
-            if (job.type === 'filme') {
-                const results = await TMDBService.searchMovie(job.title);
+            if (job.tmdbId) {
+                // Se o job já possui tmdbId explícito, consulta DIRETO por ele para não confundir Live Action vs Anime!
+                if (job.type === 'filme') {
+                    const details = await TMDBService.getMovieDetails(job.tmdbId);
+                    if (details) metadata = details;
+                } else {
+                    const details = await TMDBService.getTVDetails(job.tmdbId);
+                    if (details) metadata = details;
+                }
+            } else if (job.type === 'filme') {
+                const results = await TMDBService.searchMovie(job.title, job.ano || job.extraData?.ano || null);
                 if (results.length > 0) {
                     const details = await TMDBService.getMovieDetails(results[0].tmdbId);
                     metadata = details || results[0];
                 }
             } else {
-                const results = await TMDBService.searchTV(job.title);
+                const results = await TMDBService.searchTV(job.title, job.ano || job.extraData?.ano || null);
                 if (results.length > 0) {
                     const details = await TMDBService.getTVDetails(results[0].tmdbId);
                     metadata = details || results[0];
@@ -1309,26 +1348,11 @@ class QueueManager extends EventEmitter {
         const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
         const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
 
-        let finalMinSec = 2700; // 45 min padrão para filmes
-        if (isMicro) {
-            finalMinSec = 40;
-        } else if (job.type === 'serie') {
-            if (effectiveExpectedMin <= 15) {
-                finalMinSec = 180; // 3 min para animes curtos
-            } else {
-                finalMinSec = Math.min(600, Math.max(300, Math.floor(effectiveExpectedMin * 60 * 0.35)));
-            }
-        } else {
-            // Para FILMES:
-            if (effectiveExpectedMin >= 120) {
-                // Filmes longos (ex: Duna 2 com 166 min, Vingadores com 180 min): exige no mínimo 65% da duração (~100 min / 6000s)
-                finalMinSec = Math.floor(effectiveExpectedMin * 60 * 0.65);
-            } else if (effectiveExpectedMin <= 80) {
-                finalMinSec = Math.max(2400, Math.floor(effectiveExpectedMin * 60 * 0.50));
-            } else {
-                finalMinSec = 3600; // Mínimo 60 minutos para filmes normais
-            }
-        }
+        let finalMinSec = VideoProcessor.computeMinAcceptableDurationSec({
+            type: job.type,
+            expectedMin: effectiveExpectedMin,
+            isMicrodrama: isMicro
+        });
 
         // 2.5 Verificar se já existe arquivo codificado ou baixado no SSD — retomada inteligente após crash
         let resumeFromOptimized = false;
@@ -1372,20 +1396,38 @@ class QueueManager extends EventEmitter {
             const expectedOk = !job.expectedSize || rawStat.size >= job.expectedSize * 0.85;
             if (rawStat.size > 5 * 1024 * 1024 && expectedOk) {
                 try {
-                    const VideoProcessor = require('../services/VideoProcessor');
-                    const info = await VideoProcessor.getVideoInfo(rawFilePath);
-                    if (info && info.duration >= finalMinSec) {
-                        console.log(`📁 Utilizando arquivo bruto existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB, ${info.durationFormatted}): ${path.basename(rawFilePath)}`);
-                        resumeFromRaw = true;
-                        videoInfo = info;
-                        downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
-                        bestSource = job.bestSource || { title: job.title, source: 'Upload Manual', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
-                        langInfo = job.langInfo || langInfo;
-                    } else {
-                        console.warn(`🧹 Arquivo bruto em disco incompleto (${info?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado.`);
-                        await DownloaderManager.cleanupFile(rawFilePath);
+                    // Validação de segurança: ano e anime vs live action
+                    const rawBase = path.basename(rawFilePath);
+                    const rawFull = `${rawFilePath} ${rawBase}`;
+                    const fileYearMatch = rawFull.match(/\b(19\d{2}|20\d{2})\b/);
+                    const expectedYear = parseInt(metadata.ano || job.ano || job.extraData?.ano || 0, 10);
+                    const isAnimeWork = !!(job.isAnime || metadata.isAnime || job.category === 'Anime');
+                    const isLiveActionFile = /\b(live[._ -]?action|netflix|nf[._ -]web)\b/i.test(rawFull) && !/\b(anime|animation)\b/i.test(rawFull);
+
+                    if (fileYearMatch && expectedYear > 1900 && Math.abs(parseInt(fileYearMatch[1], 10) - expectedYear) > 1) {
+                        console.warn(`🧹 Arquivo bruto ${rawBase} pertence a ano divergente (${fileYearMatch[1]} vs ${expectedYear}). Descartado.`);
                         rawFilePath = null;
                         job.rawFilePath = null;
+                    } else if (isAnimeWork && isLiveActionFile && expectedYear > 0 && expectedYear < 2020) {
+                        console.warn(`🧹 Arquivo bruto ${rawBase} pertence a Live-Action enquanto a obra é Anime (${job.title}). Descartado.`);
+                        rawFilePath = null;
+                        job.rawFilePath = null;
+                    } else {
+                        const VideoProcessor = require('../services/VideoProcessor');
+                        const info = await VideoProcessor.getVideoInfo(rawFilePath);
+                        if (info && info.duration >= finalMinSec) {
+                            console.log(`📁 Utilizando arquivo bruto existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB, ${info.durationFormatted}): ${path.basename(rawFilePath)}`);
+                            resumeFromRaw = true;
+                            videoInfo = info;
+                            downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
+                            bestSource = job.bestSource || { title: job.title, source: 'Upload Manual', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
+                            langInfo = job.langInfo || langInfo;
+                        } else {
+                            console.warn(`🧹 Arquivo bruto em disco incompleto (${info?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado.`);
+                            await DownloaderManager.cleanupFile(rawFilePath);
+                            rawFilePath = null;
+                            job.rawFilePath = null;
+                        }
                     }
                 } catch (e) {
                     console.warn('⚠️ Arquivo raw inválido, descartando:', e.message);
@@ -1430,6 +1472,26 @@ class QueueManager extends EventEmitter {
                     const matchedFile = allTempFiles.find(f => {
                         const nameClean = f.name.toLowerCase().replace(/[^a-z0-9]/g, '');
                         if (!nameClean.includes(titleClean)) return false;
+
+                        // Proteção de Ano e Anime vs Live Action:
+                        // Se o arquivo ou pasta contiver ano explícito (ex: 2023) e os metadados da obra tiverem ano (ex: 1999):
+                        const fullPathStr = `${f.path} ${f.name}`;
+                        const fileYearMatch = fullPathStr.match(/\b(19\d{2}|20\d{2})\b/);
+                        const expectedYear = parseInt(metadata.ano || job.ano || job.extraData?.ano || 0, 10);
+                        if (fileYearMatch && expectedYear > 1900) {
+                            const fileYear = parseInt(fileYearMatch[1], 10);
+                            if (Math.abs(fileYear - expectedYear) > 1) {
+                                return false; // Anos divergentes (ex: One Piece 1999 Anime vs 2023 Live Action)
+                            }
+                        }
+
+                        // Se a obra for Anime e o arquivo tiver indicativo explícito de Live Action:
+                        const isAnimeWork = !!(job.isAnime || metadata.isAnime || job.category === 'Anime');
+                        const isLiveActionFile = /\b(live[._ -]?action|netflix|nf[._ -]web)\b/i.test(fullPathStr) && !/\b(anime|animation)\b/i.test(fullPathStr);
+                        if (isAnimeWork && isLiveActionFile && expectedYear > 0 && expectedYear < 2020) {
+                            return false;
+                        }
+
                         const epMatch = DownloaderManager.isEpisodeFileMatch(f, job.season || 1, job.episode || 1);
                         return epMatch && f.size > 20 * 1024 * 1024;
                     });
@@ -1885,38 +1947,64 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized) {
+            // 3.4 Validação: arquivo físico deve corresponder ao episódio do job (evita S01E01 virar T1E2)
+            if (job.type === 'serie' && rawFilePath && fs.existsSync(rawFilePath)) {
+                const parsed = parseSeasonEpisodeFromPath(rawFilePath);
+                const jobSeason = job.season || 1;
+                const jobEpisode = job.episode || 1;
+                if (parsed && (parsed.season !== jobSeason || parsed.episode !== jobEpisode)) {
+                    console.warn(`⚠️ [EP MISMATCH] Job T${jobSeason}E${jobEpisode} apontava para arquivo ${path.basename(rawFilePath)} (S${parsed.season}E${parsed.episode}). Tentando corrigir...`);
+                    // Tenta achar o arquivo correto na mesma pasta do pack
+                    const dir = path.dirname(rawFilePath);
+                    let corrected = null;
+                    try {
+                        const entries = await fs.readdir(dir);
+                        for (const name of entries) {
+                            if (!/\.(mkv|mp4|avi|m4v)$/i.test(name)) continue;
+                            if (/^opt_/i.test(name)) continue;
+                            const p = parseSeasonEpisodeFromPath(name);
+                            if (p && p.season === jobSeason && p.episode === jobEpisode) {
+                                corrected = path.join(dir, name);
+                                break;
+                            }
+                        }
+                    } catch (_) {}
+
+                    if (corrected && fs.existsSync(corrected)) {
+                        console.log(`✅ [EP MISMATCH] Corrigido para arquivo certo: ${path.basename(corrected)}`);
+                        rawFilePath = corrected;
+                        job.rawFilePath = corrected;
+                        await this.saveJob(job);
+                    } else {
+                        const wrongName = path.basename(rawFilePath);
+                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => {});
+                        rawFilePath = null;
+                        job.rawFilePath = null;
+                        await this.saveJob(job);
+                        throw new Error(`Arquivo errado para o episódio: job T${jobSeason}E${jobEpisode} recebeu S${parsed.season}E${parsed.episode} (${wrongName}). Abortado para evitar catalogação incorreta.`);
+                    }
+                }
+            }
+
             // 3.5 Verificação de Integridade, Duração Mínima e Idioma PT-BR
             try {
                 videoInfo = await VideoProcessor.getVideoInfo(rawFilePath);
 
                 // Verificação de Duração Mínima Inteligente e Anti-Falsos-Positivos:
-                // Filmes: Qualquer vídeo >= 65 minutos (3900s) é garantidamente um longa-metragem completo e nunca deve ser descartado por divergência de minissérie/edição estendida no TMDB.
-                // Apenas descartar como corte/sample se o filme for < 45 minutos (2700s) ou < 50% de um filme curto (< 65min).
-                // Mini-Séries Chinesas / Microdramas: Mínimo 40s (episódios curtos de 1 a 5 min).
-                // Séries/Doramas Normais: Mínimo 10 minutos (600s) ou 35% da duração esperada (animes curtos <= 15min: 180s).
+                // Usa razão sobre duração TMDB + pisos absolutos (sem teto artificial de 10 min para dramas longos).
                 const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (tmdbExpectedDurationMin || 0) <= 10);
                 const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
                 const effectiveExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : defaultExpectedMin;
 
-                let finalMinSec = 2700; // 45 min padrão para filmes
-                if (isMicro) {
-                    finalMinSec = 40;
-                } else if (job.type === 'serie') {
-                    if (effectiveExpectedMin <= 15) {
-                        finalMinSec = 180; // 3 min para animes curtos
-                    } else {
-                        finalMinSec = Math.min(600, Math.max(300, Math.floor(effectiveExpectedMin * 60 * 0.35)));
-                    }
-                } else {
-                    // Para FILMES:
+                finalMinSec = VideoProcessor.computeMinAcceptableDurationSec({
+                    type: job.type,
+                    expectedMin: effectiveExpectedMin,
+                    isMicrodrama: isMicro
+                });
+                if (job.type === 'filme') {
+                    // Filmes: qualquer vídeo >= 65 minutos é garantidamente longa-metragem completo
                     if (videoInfo.duration >= 3900) {
-                        // Se tem pelo menos 65 minutos (ex: The Odyssey com 86min), é um filme completo!
                         finalMinSec = 3900;
-                    } else if (effectiveExpectedMin <= 110) {
-                        finalMinSec = Math.max(2400, Math.floor(effectiveExpectedMin * 60 * 0.45));
-                    } else {
-                        // Se o TMDB disser que tem 172 min (minissérie), mas o vídeo tem 65+ min, aceita. Caso contrário, exige pelo menos 45 min.
-                        finalMinSec = 2700;
                     }
                 }
 
@@ -1925,6 +2013,16 @@ class QueueManager extends EventEmitter {
                     console.warn(`⚠️ Arquivo descartado: Duração inválida detectada (${videoInfo.durationFormatted} / ~${durAtualMin} min). Esperado para "${job.title}": ~${effectiveExpectedMin} min (Mínimo aceito: ${Math.round(finalMinSec / 60)} min). Corte/amostra/incompleto descartado.`);
                     await DownloaderManager.cleanupFile(rawFilePath);
                     throw new Error(`Vídeo com duração insuficiente (${videoInfo.durationFormatted} vs ~${effectiveExpectedMin} min esperados). Arquivo incompleto descartado.`);
+                }
+
+                // Outlier: rejeita se duração for < 40% do esperado (mesmo acima do piso absoluto em casos limítrofes)
+                if (!isMicro && effectiveExpectedMin > 0 && videoInfo.duration > 0) {
+                    const ratio = videoInfo.duration / (effectiveExpectedMin * 60);
+                    if (ratio < 0.40) {
+                        console.warn(`⚠️ Arquivo descartado por outlier de duração: ${(ratio * 100).toFixed(0)}% do esperado TMDB (~${effectiveExpectedMin} min).`);
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                        throw new Error(`Vídeo com duração anômala (${videoInfo.durationFormatted} ≈ ${(ratio * 100).toFixed(0)}% de ~${effectiveExpectedMin} min). Arquivo incompleto/trailer descartado.`);
+                    }
                 }
 
                 const effectiveSource = bestSource || job.bestSource || (job.audioPreference === 'legendado' || metadata.isDorama ? { isLegendado: true } : {});
@@ -2041,8 +2139,14 @@ class QueueManager extends EventEmitter {
                 isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
                 hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
                 isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
-                isDublado: langInfo?.isDublado ?? true,
-                isLegendado: langInfo?.isLegendado ?? false
+                // Preferência do job manda: Dual com PT+subs em pedido dublado => dublado limpo (sem legenda)
+                isDublado: (job.audioPreference === 'legendado') ? false : (langInfo?.isDublado ?? true),
+                isLegendado: (job.audioPreference === 'legendado') ? true : !!(langInfo?.isLegendado && !langInfo?.isDublado),
+                idiomaOriginal: job.idiomaOriginal || job.originalLanguage || metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language || null,
+                originalLanguage: job.originalLanguage || job.idiomaOriginal || metadata.originalLanguage || metadata.idiomaOriginal || metadata.original_language || null,
+                isAnime: !!(job.isAnime || metadata.isAnime || metadata.is_anime || job.extraData?.isAnime),
+                isDorama: !!(job.isDorama || metadata.isDorama || metadata.is_dorama || job.extraData?.isDorama),
+                category: job.category || metadata.category || null
             });
 
             // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
@@ -2168,7 +2272,19 @@ class QueueManager extends EventEmitter {
         } else {
             metadata.isDublado = false;
             metadata.isLegendado = true;
-            metadata.audio = 'Legendado (PT-BR)';
+            const origLabel = metadata.idiomaAudioLabel || VideoProcessor.describeLanguageLabel(metadata.idiomaOriginal || metadata.originalLanguage);
+            metadata.audio = origLabel && origLabel !== 'Original'
+                ? `Original (${origLabel}) + Legendas PT-BR`
+                : 'Legendado (PT-BR)';
+        }
+
+        // Persistir duração REAL do arquivo de mídia (não apenas runtime TMDB)
+        if (finalOptInfo?.duration > 0) {
+            metadata.duracaoSegundos = Math.round(finalOptInfo.duration);
+            metadata.duracao = Math.max(1, Math.round(finalOptInfo.duration / 60));
+        } else if (videoInfo?.duration > 0) {
+            metadata.duracaoSegundos = Math.round(videoInfo.duration);
+            metadata.duracao = Math.max(1, Math.round(videoInfo.duration / 60));
         }
 
         const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata, (p) => {
@@ -2208,12 +2324,12 @@ class QueueManager extends EventEmitter {
             let seasonNum = job.season || 1;
             let epNum = job.episode || 1;
 
-            // Se o arquivo possui marcação explícita de temporada e episódio no caminho/nome real do arquivo baixado (ex: S04E03), usa os números reais do arquivo
-            const filePathToCheck = metadata.rawFilePath || metadata.optimizedPath || metadata.nome || '';
-            const matchEpFile = filePathToCheck.match(/\b(?:s|temporada|temp|t)\s*(\d{1,2})\s*(?:e|ep|episodio|episódio|x)\s*(\d{1,3})\b/i);
-            if (matchEpFile) {
-                seasonNum = parseInt(matchEpFile[1], 10);
-                epNum = parseInt(matchEpFile[2], 10);
+            // Se o arquivo possui marcação explícita SxxExx, ela DEVE bater com o job.
+            // (A correção de mismatch ocorre antes do encode; aqui só bloqueamos catalogação errada.)
+            const filePathToCheck = rawFilePath || optimizedPath || job.rawFilePath || job.optimizedPath || metadata.rawFilePath || metadata.optimizedPath || '';
+            const parsedEp = parseSeasonEpisodeFromPath(filePathToCheck) || parseSeasonEpisodeFromPath(sourceTitle);
+            if (parsedEp && (parsedEp.season !== seasonNum || parsedEp.episode !== epNum)) {
+                throw new Error(`Catalogação abortada: job T${seasonNum}E${epNum} mas arquivo é S${parsedEp.season}E${parsedEp.episode} (${path.basename(filePathToCheck || sourceTitle)}).`);
             }
 
             // ─────────────────────────────────────────────────────────────────────────────
@@ -2265,6 +2381,10 @@ class QueueManager extends EventEmitter {
                     qualidade: metadata.qualidade || '1080p Full HD'
                 }
             );
+            // Atualiza job.season/job.episode com os valores efetivamente catalogados (podem ter sido
+            // corrigidos pelo remapeamento TMDB ou pelo parseSeasonEpisodeFromPath do arquivo manual).
+            job.season = seasonNum;
+            job.episode = epNum;
         }
 
         // Se o arquivo possui AMBAS as versões (Dublado e Legendado) a partir do mesmo download,
@@ -2302,7 +2422,8 @@ class QueueManager extends EventEmitter {
                 if (metadata.isDublado && metadata.isLegendado) {
                     audioBloco = '🔊 <b>Áudio:</b> Dual Áudio (Dublado + Original)\n📝 <b>Legendas:</b> Português (PT-BR) [Embutida]';
                 } else if (metadata.isLegendado || !metadata.isDublado) {
-                    audioBloco = '🔊 <b>Áudio:</b> Original (Inglês)\n📝 <b>Legendas:</b> Português (PT-BR) [Embutida/Hardsub]';
+                    const origLabel = metadata.idiomaAudioLabel || VideoProcessor.describeLanguageLabel(metadata.idiomaOriginal || metadata.originalLanguage) || 'Original';
+                    audioBloco = `🔊 <b>Áudio:</b> Original (${origLabel})\n📝 <b>Legendas:</b> Português (PT-BR) [Embutida/Hardsub]`;
                 }
 
                 const qualTexto = isCamFinal ? 'Versão Cinema (CAM)' : (metadata.qualidade || '1080p Full HD');

@@ -2198,29 +2198,6 @@
             color: #fff;
         }
 
-        /* RESUME BANNER */
-        .resume-toast-banner {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(17, 24, 39, 0.94);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            backdrop-filter: blur(16px);
-            color: #fff;
-            padding: 10px 18px;
-            border-radius: 12px;
-            font-size: 13px;
-            font-weight: 700;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
-            display: none;
-            align-items: center;
-            gap: 12px;
-            z-index: 25;
-            animation: fadeIn 0.3s ease;
-        }
-
-        .resume-toast-banner.visible { display: flex; }
 
         /* SPEED & AUDIO SELECTOR MENUS */
         .speed-badge-btn {
@@ -4125,108 +4102,137 @@
         }
 
         /* BANNER ELEGANTE E FLUTUANTE DE RETOMAR ONDE PAROU */
+        /* BANNER COMPACTO E ELEGANTE DE RETOMAR ONDE PAROU */
         .resume-toast-banner {
             position: absolute;
-            bottom: 40px;
+            bottom: 35px;
             left: 50%;
-            transform: translateX(-50%) translateY(20px);
-            background: rgba(15, 23, 42, 0.92);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            transform: translateX(-50%) translateY(14px) scale(0.96);
+            background: rgba(13, 18, 30, 0.90);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.16);
             border-radius: 999px;
-            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(16, 185, 129, 0.2);
-            padding: 7px 14px 7px 18px;
-            display: flex;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 14px rgba(16, 185, 129, 0.18);
+            padding: 5px 8px 5px 14px;
+            display: inline-flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             z-index: 100;
             opacity: 0;
             visibility: hidden;
             pointer-events: none;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             white-space: nowrap;
-            max-width: 90%;
+            max-width: calc(100% - 32px);
+            box-sizing: border-box;
         }
 
         .resume-toast-banner.visible {
             opacity: 1;
             visibility: visible;
             pointer-events: all;
-            transform: translateX(-50%) translateY(0);
+            transform: translateX(-50%) translateY(0) scale(1);
         }
 
         .resume-toast-banner .resume-icon {
-            font-size: 14px;
+            font-size: 13px;
             display: flex;
             align-items: center;
+            color: #34d399;
+            flex-shrink: 0;
         }
 
         .resume-toast-banner .resume-text {
-            font-size: 12.5px;
+            font-size: 12px;
             font-weight: 700;
             color: #f1f5f9;
+            line-height: 1;
+            user-select: none;
+            margin: 0;
+            padding: 0;
         }
 
         .resume-toast-banner .resume-text strong {
             color: #34d399;
             font-weight: 900;
+            letter-spacing: 0.2px;
         }
 
         .resume-toast-banner .resume-btn-confirm {
+            all: unset;
+            box-sizing: border-box;
             background: linear-gradient(135deg, #10b981, #059669);
-            color: #fff;
-            font-size: 11.5px;
+            color: #ffffff;
+            font-size: 11px;
             font-weight: 800;
             padding: 5px 12px;
             border-radius: 999px;
-            border: none;
             cursor: pointer;
-            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
-            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
+            transition: all 0.18s ease;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            gap: 4px;
+            line-height: 1;
+            flex-shrink: 0;
+            user-select: none;
         }
 
         .resume-toast-banner .resume-btn-confirm:hover {
             filter: brightness(1.15);
             transform: scale(1.04);
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.5);
         }
 
         .resume-toast-banner .resume-btn-dismiss {
+            all: unset;
+            box-sizing: border-box;
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
             color: #94a3b8;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.18s ease;
+            line-height: 1;
+            flex-shrink: 0;
+            user-select: none;
             margin-left: -2px;
         }
 
         .resume-toast-banner .resume-btn-dismiss:hover {
-            background: rgba(239, 68, 68, 0.25);
-            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.28);
+            border-color: rgba(239, 68, 68, 0.45);
             color: #fca5a5;
-            transform: scale(1.1);
+            transform: scale(1.08);
         }
 
         @media (max-width: 600px) {
             .resume-toast-banner {
-                bottom: 25px;
-                padding: 6px 12px 6px 14px;
-                gap: 8px;
-                font-size: 11.5px;
+                bottom: 20px;
+                padding: 4px 6px 4px 11px;
+                gap: 7px;
+                max-width: 92%;
             }
             .resume-toast-banner .resume-text {
                 font-size: 11px;
+            }
+            .resume-toast-banner .resume-btn-confirm {
+                font-size: 10.5px;
+                padding: 4px 10px;
+            }
+            .resume-toast-banner .resume-btn-dismiss {
+                width: 20px;
+                height: 20px;
+                font-size: 9.5px;
             }
         }
 
@@ -4975,14 +4981,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 14px;
-            padding: 16px 20px;
+            gap: 12px;
+            padding: 14px 20px;
             background: rgba(13, 18, 28, 0.95);
             border: 1px solid var(--border-color);
             border-top: none;
             border-radius: 0 0 16px 16px;
             margin-bottom: 24px;
-            flex-wrap: wrap;
+            box-sizing: border-box;
+            width: 100%;
         }
 
         .playback-nav-btn {
@@ -4995,7 +5002,7 @@
             color: #ffffff;
             font-size: 13.5px;
             font-weight: 800;
-            padding: 11px 22px;
+            padding: 10px 20px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -5003,6 +5010,7 @@
             white-space: nowrap;
             text-decoration: none;
             box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+            line-height: 1;
         }
 
         .playback-nav-btn:hover:not(:disabled) {
@@ -5027,26 +5035,47 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            background: rgba(59, 130, 246, 0.14);
-            border: 1px solid rgba(59, 130, 246, 0.4);
-            color: #93c5fd;
-            font-size: 13.5px;
-            font-weight: 800;
-            padding: 11px 22px;
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            padding: 0;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #f1f5f9;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-            white-space: nowrap;
-            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+            flex-shrink: 0;
+            line-height: 1;
         }
 
         .playback-nav-btn-center:hover {
-            background: rgba(59, 130, 246, 0.28);
-            border-color: rgba(59, 130, 246, 0.7);
-            color: #ffffff;
+            background: rgba(59, 130, 246, 0.25);
+            border-color: rgba(59, 130, 246, 0.6);
+            color: #60a5fa;
             transform: translateY(-2px);
-            box-shadow: 0 6px 22px rgba(59, 130, 246, 0.4);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        @media (max-width: 600px) {
+            .playback-nav-bar {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+            .playback-nav-btn {
+                padding: 9px 12px;
+                font-size: 11.5px;
+                flex: 1;
+                text-align: center;
+                white-space: normal;
+                line-height: 1.2;
+            }
+            .playback-nav-btn-center {
+                width: 38px;
+                height: 38px;
+                min-width: 38px;
+            }
         }
 
         /* Cartão de Detalhes e Sinopse da Mídia */
@@ -6766,12 +6795,12 @@
                     </div>
                 </div>
 
-                <!-- BANNER ELEGANTE DE RETOMAR ONDE PAROU -->
+                <!-- BANNER COMPACTO E ELEGANTE DE RETOMAR ONDE PAROU -->
                 <div class="resume-toast-banner" id="player-resume-banner" onclick="event.stopPropagation()">
                     <span class="resume-icon">⏱️</span>
-                    <span class="resume-text">Continuar de <strong id="resume-time-str">00:00</strong>?</span>
-                    <button class="resume-btn-confirm" onclick="confirmResumePlayback(event)">▶ Continuar</button>
-                    <button class="resume-btn-dismiss" onclick="dismissResumePlayback(event)" title="Começar do início">✕</button>
+                    <span class="resume-text">Continuar em <strong id="resume-time-str">00:00</strong>?</span>
+                    <button class="resume-btn-confirm" onclick="confirmResumePlayback(event)">▶ Sim</button>
+                    <button class="resume-btn-dismiss" onclick="dismissResumePlayback(event)" title="Não, começar do início">✕</button>
                 </div>
 
                 <!-- CARD INTELIGENTE DE PRÓXIMO EPISÓDIO (ESTILO NETFLIX) -->
@@ -6850,8 +6879,12 @@
             <button id="playback-btn-prev" class="playback-nav-btn" title="Ir para o Episódio Anterior">
                 ⏮ Episódio Anterior
             </button>
-            <button id="playback-btn-series" class="playback-nav-btn-center" onclick="handleViewFullSeries()" title="Voltar para Todos os Episódios da Série">
-                <span>📺</span> <span>Voltar para a Série</span>
+            <button id="playback-btn-series" class="playback-nav-btn-center" onclick="handleViewFullSeries()" title="Ver todos os episódios da série" aria-label="Ver todos os episódios da série">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
             </button>
             <button id="playback-btn-next" class="playback-nav-btn" title="Ir para o Próximo Episódio">
                 Próximo Episódio ⏭
@@ -12737,36 +12770,39 @@ function initApp() {
 
             if (prevBtn) {
                 prevBtn.style.display = 'inline-flex';
-                if (prevInfo && prevInfo.buttonLabel) {
+                if (prevInfo) {
                     prevBtn.disabled = false;
-                    prevBtn.innerHTML = prevInfo.buttonLabel;
+                    prevBtn.innerHTML = prevInfo.buttonLabel || (prevInfo.isPrevSeason ? '⏮ Temporada Anterior' : '⏮ Episódio Anterior');
                     prevBtn.title = `Ir para T${prevInfo.seasonNum}E${prevInfo.epNum} - ${prevInfo.epNome}`;
                     prevBtn.onclick = () => openPlaybackPageForEpisode(serie.id, prevInfo.seasonNum, prevInfo.epNum);
                 } else {
                     prevBtn.disabled = true;
                     prevBtn.innerHTML = '⏮ Episódio Anterior';
                     prevBtn.title = 'Você está no primeiro episódio desta série.';
+                    prevBtn.onclick = null;
                 }
             }
 
             if (nextBtn) {
                 nextBtn.style.display = 'inline-flex';
-                if (nextInfo && nextInfo.buttonLabel) {
+                if (nextInfo) {
                     nextBtn.disabled = false;
-                    nextBtn.innerHTML = nextInfo.buttonLabel;
+                    nextBtn.innerHTML = nextInfo.buttonLabel || (nextInfo.isNextSeason ? 'Próxima Temporada ⏭' : 'Próximo Episódio ⏭');
                     nextBtn.title = `Ir para T${nextInfo.seasonNum}E${nextInfo.epNum} - ${nextInfo.epNome}`;
                     nextBtn.onclick = () => openPlaybackPageForEpisode(serie.id, nextInfo.seasonNum, nextInfo.epNum);
                 } else {
                     nextBtn.disabled = true;
                     nextBtn.innerHTML = 'Próximo Episódio ⏭';
                     nextBtn.title = 'Você está no último episódio disponível desta série.';
+                    nextBtn.onclick = null;
                 }
             }
 
             if (seriesBtn) {
                 seriesBtn.style.display = 'inline-flex';
-                seriesBtn.innerHTML = '<span>📺</span> <span>Voltar para a Série</span>';
-                seriesBtn.title = 'Voltar para todos os episódios da série';
+                seriesBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>`;
+                seriesBtn.title = 'Ver todos os episódios da série';
+                seriesBtn.setAttribute('aria-label', 'Ver todos os episódios da série');
                 seriesBtn.onclick = () => openMediaDetailPage(serie.id, 'serie');
             }
 
@@ -13993,9 +14029,16 @@ function initApp() {
         }
 
         function formatSecondsToTime(sec) {
-            const m = Math.floor(sec / 60);
-            const s = Math.floor(sec % 60);
-            return `${m}:${s < 10 ? '0' : ''}${s}`;
+            sec = Math.max(0, Math.floor(sec || 0));
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            const sPad = s < 10 ? '0' + s : s;
+            if (h > 0) {
+                const mPad = m < 10 ? '0' + m : m;
+                return `${h}:${mPad}:${sPad}`;
+            }
+            return `${m}:${sPad}`;
         }
 
         let resumeBannerTimer = null;
@@ -14021,7 +14064,7 @@ function initApp() {
             if (video && savedResumeTime > 0) {
                 video.currentTime = savedResumeTime;
                 video.play().catch(() => {});
-                showToast(`▶ Continuando de ${formatSecondsToTime(savedResumeTime)}...`, 'success');
+                showToast(`▶ Continuando em ${formatSecondsToTime(savedResumeTime)}...`, 'success');
             }
             dismissResumePlayback();
         }
@@ -14033,14 +14076,27 @@ function initApp() {
             if (banner) banner.classList.remove('visible');
         }
 
-        function getNextEpisodeInfo(serieId, currentSeasonNum, currentEpNum) {
-            const serie = (fullCatalog.series || []).find(s => String(s.id) === String(serieId));
-            if (!serie || !serie.temporadas) return null;
-            
-            const prefAudio = getUserPreferredAudio();
-            const tempAtual = serie.temporadas.find(t => t.numero === Number(currentSeasonNum));
-            if (tempAtual && tempAtual.episodios) {
-                const proxEp = tempAtual.episodios.find(e => e.numero === Number(currentEpNum) + 1);
+        function getNextEpisodeInfo(serieOrId, currentSeasonNum, currentEpNum) {
+            let serie = null;
+            if (serieOrId && typeof serieOrId === 'object' && serieOrId.id) {
+                serie = serieOrId;
+            } else if (serieOrId) {
+                serie = (fullCatalog.series || []).find(s => String(s.id) === String(serieOrId));
+            }
+            if (!serie && typeof currentPlaybackSerie !== 'undefined' && currentPlaybackSerie) {
+                serie = currentPlaybackSerie;
+            }
+            if (!serie || !serie.temporadas || !Array.isArray(serie.temporadas)) return null;
+
+            const cSeason = Number(currentSeasonNum);
+            const cEp = Number(currentEpNum);
+            const prefAudio = typeof getUserPreferredAudio === 'function' ? getUserPreferredAudio() : 'dublado';
+
+            // 1. Procura próximo episódio na mesma temporada
+            const tempAtual = serie.temporadas.find(t => Number(t.numero) === cSeason);
+            if (tempAtual && Array.isArray(tempAtual.episodios) && tempAtual.episodios.length > 0) {
+                const sortedEps = [...tempAtual.episodios].sort((a, b) => Number(a.numero) - Number(b.numero));
+                const proxEp = sortedEps.find(e => Number(e.numero) === cEp + 1);
                 if (proxEp) {
                     const hasDub = !!proxEp.versoes?.dublado || proxEp.isDublado;
                     const hasLeg = !!proxEp.versoes?.legendado || proxEp.isLegendado;
@@ -14052,69 +14108,106 @@ function initApp() {
                     return {
                         serieId: serie.id,
                         serieNome: serie.nome,
-                        seasonNum: Number(currentSeasonNum),
-                        epNum: proxEp.numero,
+                        seasonNum: cSeason,
+                        epNum: Number(proxEp.numero),
                         epNome: proxEp.nome || `Episódio ${proxEp.numero}`,
-                        audio: epAudio
+                        audio: epAudio,
+                        isNextSeason: false,
+                        buttonLabel: 'Próximo Episódio ⏭'
                     };
                 }
             }
-            
-            // Próxima temporada episódio 1
-            const proxTemp = serie.temporadas.find(t => t.numero === Number(currentSeasonNum) + 1);
-            if (proxTemp && proxTemp.episodios && proxTemp.episodios.length > 0) {
-                const proxEp = proxTemp.episodios[0];
-                const hasDub = !!proxEp.versoes?.dublado || proxEp.isDublado;
-                const hasLeg = !!proxEp.versoes?.legendado || proxEp.isLegendado;
-                let epAudio = prefAudio;
-                if (epAudio === 'dublado' && !hasDub && hasLeg) epAudio = 'legendado';
-                else if (epAudio === 'legendado' && !hasLeg && hasDub) epAudio = 'dublado';
-                else if (!hasDub && !hasLeg) epAudio = currentPlayingMedia?.audio || (serie.isDublado ? 'dublado' : 'legendado');
 
-                return {
-                    serieId: serie.id,
-                    serieNome: serie.nome,
-                    seasonNum: proxTemp.numero,
-                    epNum: proxEp.numero,
-                    epNome: proxEp.nome || `Episódio ${proxEp.numero}`,
-                    audio: epAudio
-                };
+            // 2. Se não encontrou na mesma temporada, procura na próxima temporada disponível
+            const proxTemps = [...serie.temporadas]
+                .filter(t => Number(t.numero) > cSeason && Array.isArray(t.episodios) && t.episodios.length > 0)
+                .sort((a, b) => Number(a.numero) - Number(b.numero));
+
+            if (proxTemps.length > 0) {
+                const proxTemp = proxTemps[0];
+                const sortedEps = [...proxTemp.episodios].sort((a, b) => Number(a.numero) - Number(b.numero));
+                const proxEp = sortedEps[0];
+                if (proxEp) {
+                    const hasDub = !!proxEp.versoes?.dublado || proxEp.isDublado;
+                    const hasLeg = !!proxEp.versoes?.legendado || proxEp.isLegendado;
+                    let epAudio = prefAudio;
+                    if (epAudio === 'dublado' && !hasDub && hasLeg) epAudio = 'legendado';
+                    else if (epAudio === 'legendado' && !hasLeg && hasDub) epAudio = 'dublado';
+                    else if (!hasDub && !hasLeg) epAudio = currentPlayingMedia?.audio || (serie.isDublado ? 'dublado' : 'legendado');
+
+                    return {
+                        serieId: serie.id,
+                        serieNome: serie.nome,
+                        seasonNum: Number(proxTemp.numero),
+                        epNum: Number(proxEp.numero),
+                        epNome: proxEp.nome || `Episódio ${proxEp.numero}`,
+                        audio: epAudio,
+                        isNextSeason: true,
+                        buttonLabel: 'Próxima Temporada ⏭'
+                    };
+                }
             }
+
             return null;
         }
 
-        function getPreviousEpisodeInfo(serieId, currentSeasonNum, currentEpNum) {
-            const serie = (fullCatalog.series || []).find(s => String(s.id) === String(serieId));
-            if (!serie || !serie.temporadas) return null;
+        function getPreviousEpisodeInfo(serieOrId, currentSeasonNum, currentEpNum) {
+            let serie = null;
+            if (serieOrId && typeof serieOrId === 'object' && serieOrId.id) {
+                serie = serieOrId;
+            } else if (serieOrId) {
+                serie = (fullCatalog.series || []).find(s => String(s.id) === String(serieOrId));
+            }
+            if (!serie && typeof currentPlaybackSerie !== 'undefined' && currentPlaybackSerie) {
+                serie = currentPlaybackSerie;
+            }
+            if (!serie || !serie.temporadas || !Array.isArray(serie.temporadas)) return null;
 
-            const tempAtual = serie.temporadas.find(t => t.numero === Number(currentSeasonNum));
-            if (tempAtual && tempAtual.episodios) {
-                const prevEp = tempAtual.episodios.find(e => e.numero === Number(currentEpNum) - 1);
+            const cSeason = Number(currentSeasonNum);
+            const cEp = Number(currentEpNum);
+
+            // 1. Episódio anterior na mesma temporada
+            const tempAtual = serie.temporadas.find(t => Number(t.numero) === cSeason);
+            if (tempAtual && Array.isArray(tempAtual.episodios) && tempAtual.episodios.length > 0) {
+                const sortedEps = [...tempAtual.episodios].sort((a, b) => Number(a.numero) - Number(b.numero));
+                const prevEp = sortedEps.find(e => Number(e.numero) === cEp - 1);
                 if (prevEp) {
                     return {
                         serieId: serie.id,
                         serieNome: serie.nome,
-                        seasonNum: Number(currentSeasonNum),
-                        epNum: prevEp.numero,
+                        seasonNum: cSeason,
+                        epNum: Number(prevEp.numero),
                         epNome: prevEp.nome || `Episódio ${prevEp.numero}`,
-                        audio: currentPlayingMedia?.audio || (prevEp.isDublado ? 'dublado' : 'legendado')
+                        audio: currentPlayingMedia?.audio || (prevEp.isDublado ? 'dublado' : 'legendado'),
+                        isPrevSeason: false,
+                        buttonLabel: '⏮ Episódio Anterior'
                     };
                 }
             }
 
-            // Temporada anterior último episódio
-            const prevTemp = serie.temporadas.find(t => t.numero === Number(currentSeasonNum) - 1);
-            if (prevTemp && prevTemp.episodios && prevTemp.episodios.length > 0) {
-                const prevEp = prevTemp.episodios[prevTemp.episodios.length - 1];
-                return {
-                    serieId: serie.id,
-                    serieNome: serie.nome,
-                    seasonNum: prevTemp.numero,
-                    epNum: prevEp.numero,
-                    epNome: prevEp.nome || `Episódio ${prevEp.numero}`,
-                    audio: currentPlayingMedia?.audio || (prevEp.isDublado ? 'dublado' : 'legendado')
-                };
+            // 2. Temporada anterior: último episódio da temporada anterior mais próxima
+            const prevTemps = [...serie.temporadas]
+                .filter(t => Number(t.numero) < cSeason && Array.isArray(t.episodios) && t.episodios.length > 0)
+                .sort((a, b) => Number(b.numero) - Number(a.numero)); // Decrescente para pegar a imediatamente anterior
+
+            if (prevTemps.length > 0) {
+                const prevTemp = prevTemps[0];
+                const sortedEps = [...prevTemp.episodios].sort((a, b) => Number(a.numero) - Number(b.numero));
+                const prevEp = sortedEps[sortedEps.length - 1];
+                if (prevEp) {
+                    return {
+                        serieId: serie.id,
+                        serieNome: serie.nome,
+                        seasonNum: Number(prevTemp.numero),
+                        epNum: Number(prevEp.numero),
+                        epNome: prevEp.nome || `Episódio ${prevEp.numero}`,
+                        audio: currentPlayingMedia?.audio || (prevEp.isDublado ? 'dublado' : 'legendado'),
+                        isPrevSeason: true,
+                        buttonLabel: '⏮ Temporada Anterior'
+                    };
+                }
             }
+
             return null;
         }
 
