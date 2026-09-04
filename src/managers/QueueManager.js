@@ -1006,7 +1006,8 @@ class QueueManager extends EventEmitter {
                 }
             }
         }
-        return count;
+        const activeInDownloader = (DownloaderManager && DownloaderManager.activeDownloads) ? DownloaderManager.activeDownloads.size : 0;
+        return Math.max(count, activeInDownloader);
     }
 
     getActiveOptimizationsCount() {
@@ -1512,6 +1513,15 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
+            // No Modo Econômico, garante estritamente que NÃO exista outro download ativo em andamento
+            if (SchedulerService.getActiveMode() === 'eco') {
+                while (DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1 && !DownloaderManager.activeDownloads.has(job.id)) {
+                    console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando término do download ativo em andamento...`);
+                    await new Promise(r => setTimeout(r, 4000));
+                    if (!SchedulerService.isAllowedToRun()) return;
+                }
+            }
+
             // Se estiver fora do horário de São Paulo (01h-05h), não inicia download de torrent pela rede
             if (!SchedulerService.isAllowedToRun()) {
                 console.log(`⏰ [Scheduler SP] Fora da janela de download para "${job.title}". Otimizações locais continuam ativas, mas novos downloads pela rede aguardam a janela das 01h às 05h (Horário de SP).`);
