@@ -56,7 +56,7 @@ class SchedulerService extends EventEmitter {
             horaFim: '05:30'
         };
 
-        // Overrides por data específica: chave = "YYYY-MM-DD", valor = { modo, horaInicio, horaFim, modoFora } ou false (desabilitar)
+        // Overrides por data específica: chave = "YYYY-MM-DD", valor = Array de regras [{ id, modo, horaInicio, horaFim }] ou false/array
         this.overrides = {};
 
         // Controle manual: null = seguir grade, 'performance' = forçar desempenho, 'eco' = forçar econômico, 'stop' = pausar tudo
@@ -196,28 +196,33 @@ class SchedulerService extends EventEmitter {
 
         // 1. Verifica override/exceção por data específica (YYYY-MM-DD)
         if (this.overrides.hasOwnProperty(dataKey)) {
-            const ov = this.overrides[dataKey];
-            if (ov === false) {
+            const rawOv = this.overrides[dataKey];
+            if (rawOv === false) {
                 return { allowed: false, mode: 'paused', reason: `Data ${dataKey} bloqueada por exceção manual (Pausa Total)` };
             }
-            if (typeof ov === 'object' && ov !== null) {
-                const iniMin = timeToMinutes(ov.horaInicio, 0);
-                const fimMin = timeToMinutes(ov.horaFim, 1439);
-                const inside = currentMinutes >= iniMin && currentMinutes < fimMin;
-                if (inside) {
-                    const mode = ov.modo || 'performance';
-                    return {
-                        allowed: mode !== 'paused',
-                        mode: mode,
-                        reason: `Exceção para hoje (${dataKey}): ${mode === 'eco' ? 'Modo Econômico' : 'Modo Desempenho'} das ${ov.horaInicio} às ${ov.horaFim}`
-                    };
-                }
-                // Se estiver fora do horário da exceção e tiver sido definido explicitamente um modoFora diferente do padrão (ex: 'paused'), aplica.
-                // Caso contrário, continua para a grade regular do dia da semana (respeita o horário padrão da madrugada).
-                if (ov.modoFora && ov.modoFora === 'paused') {
-                    return { allowed: false, mode: 'paused', reason: `Fora da janela de exceção de ${dataKey} (Pausado conforme configuração da exceção)` };
+
+            const intervals = Array.isArray(rawOv) ? rawOv : (rawOv && typeof rawOv === 'object' ? [rawOv] : []);
+            let activeIntervalMatch = null;
+
+            for (const item of intervals) {
+                if (item.modo === 'blocked') continue;
+                const iniMin = timeToMinutes(item.horaInicio, 0);
+                const fimMin = timeToMinutes(item.horaFim, 1439);
+                if (currentMinutes >= iniMin && currentMinutes < fimMin) {
+                    activeIntervalMatch = item;
+                    break;
                 }
             }
+
+            if (activeIntervalMatch) {
+                const mode = activeIntervalMatch.modo || 'performance';
+                return {
+                    allowed: mode !== 'paused',
+                    mode: mode,
+                    reason: `Data Especial (${dataKey}): ${mode === 'eco' ? 'Modo Econômico' : 'Modo Desempenho'} das ${activeIntervalMatch.horaInicio} às ${activeIntervalMatch.horaFim}`
+                };
+            }
+            // Fora de todas as janelas especiais da data -> segue a grade normal do dia da semana abaixo!
         }
 
         // 2. Verifica a programação por dia da semana
@@ -381,12 +386,23 @@ class SchedulerService extends EventEmitter {
         if (config === false || config === null) {
             this.overrides[data] = false;
         } else {
-            this.overrides[data] = {
+            const ruleId = config.id || `rule_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+            const newRule = {
+                id: ruleId,
                 modo: config.modo || 'performance',
                 horaInicio: config.horaInicio || '01:00',
-                horaFim: config.horaFim || '05:30',
-                modoFora: config.modoFora || 'eco'
+                horaFim: config.horaFim || '05:30'
             };
+
+            const existing = this.overrides[data];
+            if (Array.isArray(existing)) {
+                existing.push(newRule);
+                this.overrides[data] = existing;
+            } else if (existing && typeof existing === 'object') {
+                this.overrides[data] = [{ id: existing.id || `rule_legacy`, modo: existing.modo, horaInicio: existing.horaInicio, horaFim: existing.horaFim }, newRule];
+            } else {
+                this.overrides[data] = [newRule];
+            }
         }
         this._save();
         console.log(`📅 [Scheduler] Exceção salva para ${data}:`, this.overrides[data]);
@@ -394,11 +410,20 @@ class SchedulerService extends EventEmitter {
         this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: `Exceção de ${data}` });
     }
 
-    removeOverride(data) {
+    removeOverride(data, ruleId = null) {
         if (this.overrides.hasOwnProperty(data)) {
-            delete this.overrides[data];
+            if (!ruleId || this.overrides[data] === false) {
+                delete this.overrides[data];
+            } else if (Array.isArray(this.overrides[data])) {
+                this.overrides[data] = this.overrides[data].filter(r => r.id !== ruleId);
+                if (this.overrides[data].length === 0) {
+                    delete this.overrides[data];
+                }
+            } else {
+                delete this.overrides[data];
+            }
             this._save();
-            console.log(`🗑️  [Scheduler] Exceção removida para ${data}`);
+            console.log(`🗑️  [Scheduler] Exceção removida para ${data} (regra: ${ruleId || 'todas'})`);
             const current = this.getCurrentMode();
             this.emit('stateChange', { allowed: current.allowed, mode: current.mode, reason: `Exceção de ${data} removida` });
         }

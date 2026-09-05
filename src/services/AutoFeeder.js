@@ -377,7 +377,6 @@ class AutoFeeder {
                                 originalLanguage: serie.originalLanguage || (isAnime ? 'ja' : (isDorama ? 'ko' : null)),
                                 queueOrder: -1
                             });
-                            break;
                         }
                     }
                 }

@@ -7834,13 +7834,6 @@
                                     <label class="admin-label">HORA FIM:</label>
                                     <input type="time" id="sched-ov-fim-time" class="admin-input" value="05:30" style="margin-bottom: 0;">
                                 </div>
-                                <div id="sched-ov-col-fora">
-                                    <label class="admin-label">FORA DO HORÁRIO:</label>
-                                    <select id="sched-ov-fora" class="admin-select" style="width: 100%; height: 42px;">
-                                        <option value="eco">🍃 Modo Econômico</option>
-                                        <option value="paused">⏸️ Pausado</option>
-                                    </select>
-                                </div>
                             </div>
 
                             <button type="submit" class="btn-action btn-action-primary" style="padding: 10px 20px; font-size: 12px;">
@@ -17839,33 +17832,47 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                     if (entries.length === 0) {
                         ovTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 14px;">Nenhuma exceção cadastrada.</td></tr>';
                     } else {
-                        ovTbody.innerHTML = entries.sort(([a], [b]) => a.localeCompare(b)).map(([dt, ov]) => {
-                            let modoBadge = '';
-                            let horaStr = '-';
-
+                        const rows = [];
+                        entries.sort(([a], [b]) => a.localeCompare(b)).forEach(([dt, ov]) => {
                             if (ov === false) {
-                                modoBadge = '<span style="color: #f87171; font-weight: 800;">🚫 Bloqueado o Dia Inteiro</span>';
-                            } else if (typeof ov === 'object' && ov !== null) {
-                                const isPerf = ov.modo === 'performance';
-                                modoBadge = isPerf 
-                                    ? '<span style="color: #60a5fa; font-weight: 800;">⚡ Modo Desempenho</span>'
-                                    : '<span style="color: #34d399; font-weight: 800;">🍃 Modo Econômico</span>';
-                                horaStr = `🕒 ${ov.horaInicio} às ${ov.horaFim} (Fora: ${ov.modoFora === 'paused' ? 'Pausado' : 'Econômico'})`;
-                            }
+                                rows.push(`
+                                    <tr>
+                                        <td style="font-weight: 800; color: #fff;">${dt}</td>
+                                        <td><span style="color: #f87171; font-weight: 800;">🚫 Bloqueado o Dia Inteiro</span></td>
+                                        <td style="font-size: 12px; color: var(--text-muted);">00:00 às 23:59</td>
+                                        <td style="text-align: right;">
+                                            <button class="btn-action btn-action-danger" style="padding: 4px 8px; font-size: 11px;" onclick="handleDeleteSchedulerOverride('${dt}')">
+                                                🗑️ Excluir
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `);
+                            } else {
+                                const rules = Array.isArray(ov) ? ov : (ov ? [ov] : []);
+                                rules.forEach(rule => {
+                                    const isPerf = rule.modo === 'performance';
+                                    const modoBadge = isPerf
+                                        ? '<span style="color: #60a5fa; font-weight: 800;">⚡ Modo Desempenho</span>'
+                                        : '<span style="color: #34d399; font-weight: 800;">🍃 Modo Econômico</span>';
+                                    const horaStr = `🕒 ${rule.horaInicio || '00:00'} às ${rule.horaFim || '23:59'}`;
+                                    const ruleId = rule.id || '';
 
-                            return `
-                                <tr>
-                                    <td style="font-weight: 800; color: #fff;">${dt}</td>
-                                    <td>${modoBadge}</td>
-                                    <td style="font-size: 12px; color: var(--text-muted);">${horaStr}</td>
-                                    <td style="text-align: right;">
-                                        <button class="btn-action btn-action-danger" style="padding: 4px 8px; font-size: 11px;" onclick="handleDeleteSchedulerOverride('${dt}')">
-                                            🗑️ Excluir
-                                        </button>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('');
+                                    rows.push(`
+                                        <tr>
+                                            <td style="font-weight: 800; color: #fff;">${dt}</td>
+                                            <td>${modoBadge}</td>
+                                            <td style="font-size: 12px; color: var(--text-muted);">${horaStr}</td>
+                                            <td style="text-align: right;">
+                                                <button class="btn-action btn-action-danger" style="padding: 4px 8px; font-size: 11px;" onclick="handleDeleteSchedulerOverride('${dt}', '${ruleId}')">
+                                                    🗑️ Excluir
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `);
+                                });
+                            }
+                        });
+                        ovTbody.innerHTML = rows.join('');
                     }
                 }
 
@@ -17955,7 +17962,6 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             const tipo = document.getElementById('sched-ov-tipo')?.value;
             const horaInicio = document.getElementById('sched-ov-inicio-time')?.value || '01:00';
             const horaFim = document.getElementById('sched-ov-fim-time')?.value || '05:30';
-            const modoFora = document.getElementById('sched-ov-fora')?.value || 'eco';
 
             if (!data) {
                 showToast('Informe a data para a programação especial.', 'error');
@@ -17965,8 +17971,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             const payloadConfig = tipo === 'blocked' ? false : { 
                 modo: tipo,
                 horaInicio, 
-                horaFim,
-                modoFora 
+                horaFim
             };
 
             try {
@@ -17984,12 +17989,13 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             }
         }
 
-        async function handleDeleteSchedulerOverride(dt) {
+        async function handleDeleteSchedulerOverride(dt, ruleId = '') {
             if (!adminToken) return;
-            if (!confirm(`Remover a programação especial do dia ${dt}?`)) return;
+            if (!confirm(`Remover esta regra da programação especial do dia ${dt}?`)) return;
 
             try {
-                const res = await fetch(`/api/admin/scheduler/override/${dt}`, {
+                const url = ruleId ? `/api/admin/scheduler/override/${dt}?ruleId=${encodeURIComponent(ruleId)}` : `/api/admin/scheduler/override/${dt}`;
+                const res = await fetch(url, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });
