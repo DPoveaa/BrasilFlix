@@ -311,7 +311,8 @@ class StremioServer {
 
         this.app.delete('/api/admin/scheduler/override/:data', auth, (req, res) => {
             try {
-                schedulerService.removeOverride(req.params.data);
+                const ruleId = req.query.ruleId || null;
+                schedulerService.removeOverride(req.params.data, ruleId);
                 res.json({ success: true, message: `Programação especial de ${req.params.data} removida!`, scheduler: schedulerService.getStatus() });
             } catch (e) {
                 res.status(500).json({ error: e.message });

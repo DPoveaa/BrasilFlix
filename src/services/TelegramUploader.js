@@ -3,7 +3,7 @@ const path = require('path');
 const config = require('../../config');
 const VideoProcessor = require('./VideoProcessor');
 const SchedulerService = require('./SchedulerService');
-const { TelegramClient, Api } = require('telegram');
+const { TelegramClient, Api, Logger } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 
 
@@ -51,6 +51,13 @@ class TelegramUploader {
                 appVersion: '2.0.0',
                 systemVersion: 'Linux'
             });
+
+            if (typeof client.setLogLevel === 'function') {
+                client.setLogLevel('error');
+            }
+            if (client._log && typeof client._log.setLevel === 'function') {
+                client._log.setLevel('error');
+            }
 
             console.log('🔌 Conectando ao Telegram MTProto (suporte a uploads de até 4GB Premium)...');
             if (config.TELEGRAM_SESSION && config.TELEGRAM_SESSION.trim() !== '') {
