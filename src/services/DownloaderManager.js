@@ -49,6 +49,20 @@ class DownloaderManager extends EventEmitter {
         }
     }
 
+    /**
+     * Reconfigura os limites de banda e concorrência de todos os downloads ativos em tempo real
+     * ao ocorrer uma mudança de modo do Agendador ('eco' <-> 'performance').
+     */
+    applyModeLimitsToActiveDownloads(mode) {
+        if (!this.activeDownloads || this.activeDownloads.size === 0) return;
+        console.log(`⚡ [DownloaderManager] Reaplicando limites de banda para ${this.activeDownloads.size} download(s) ativo(s) -> Modo: ${mode.toUpperCase()}`);
+        for (const [jobId, item] of this.activeDownloads.entries()) {
+            if (item && typeof item.updateLimits === 'function') {
+                item.updateLimits(mode);
+            }
+        }
+    }
+
     async cleanupOrphanedFiles(maxAgeHours = 24) {
         try {
             if (!fs.existsSync(this.downloadDir)) return;
@@ -491,6 +505,41 @@ class DownloaderManager extends EventEmitter {
 
             if (options.jobId && this.activeDownloads) {
                 this.activeDownloads.set(options.jobId, {
+                    type: 'webtorrent',
+                    client: client,
+                    torrent: () => torrent,
+                    updateLimits: (mode) => {
+                        const isEco = mode === 'eco';
+                        const newMaxConns = isEco ? 12 : (config.MAX_TORRENT_PEER_CONNECTIONS || 35);
+                        const newMaxUploadBytes = isEco ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 250) * 1024);
+                        const newDownloadLimitBytes = isEco ? Math.round((config.ECO_DOWNLOAD_LIMIT_MB || 3.0) * 1024 * 1024) : -1;
+
+                        try {
+                            if (typeof client.throttleDownload === 'function') {
+                                client.throttleDownload(newDownloadLimitBytes);
+                            } else if (client.throttleGroup && client.throttleGroup.down && typeof client.throttleGroup.down.setRate === 'function') {
+                                client.throttleGroup.down.setRate(newDownloadLimitBytes > 0 ? newDownloadLimitBytes : 0);
+                            } else {
+                                client._downloadLimit = newDownloadLimitBytes;
+                            }
+
+                            if (typeof client.throttleUpload === 'function') {
+                                client.throttleUpload(newMaxUploadBytes);
+                            } else if (client.throttleGroup && client.throttleGroup.up && typeof client.throttleGroup.up.setRate === 'function') {
+                                client.throttleGroup.up.setRate(newMaxUploadBytes > 0 ? newMaxUploadBytes : 0);
+                            } else {
+                                client._uploadLimit = newMaxUploadBytes;
+                            }
+
+                            if (client._maxConns !== undefined) {
+                                client._maxConns = newMaxConns;
+                            }
+
+                            console.log(`⚡ [DownloaderManager] Reconfigurado torrent do Job #${options.jobId} ("${displayTitle}") para modo ${isEco ? '🍃 ECONÔMICO (3 MB/s / 30 KB/s)' : '⚡ DESEMPENHO (MÁXIMO)'} em tempo real sem reiniciar download.`);
+                        } catch (err) {
+                            console.warn(`⚠️ Aviso ao reconfigurar limites do WebTorrent em tempo real (Job #${options.jobId}):`, err.message);
+                        }
+                    },
                     cancel: () => {
                         finished = true;
                         safeCleanup();
