@@ -2308,12 +2308,23 @@ class QueueManager extends EventEmitter {
         } else if (processorConfirmedDublado) {
             isJobDublado = true;
         } else {
-            const sourceIsLegendadoOnly = (effectiveSource.isLegendado || bestSource?.isLegendado) && !(effectiveSource.isDublado || bestSource?.isDublado);
-            const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
+            const effectiveLang = langInfo || job.langInfo;
+            if (effectiveLang?.isDublado && job.audioPreference !== 'legendado') {
+                // Arquivo físico comprovadamente possui áudio PT-BR e o job foi solicitado como dublado
+                isJobDublado = true;
+            } else if (effectiveLang?.isLegendado && !effectiveLang?.isDublado) {
+                // Arquivo físico comprovadamente só possui legenda PT-BR (áudio original)
+                isJobDublado = false;
+            } else if (effectiveLang?.hasBoth) {
+                isJobDublado = (job.audioPreference !== 'legendado');
+            } else {
+                const sourceIsLegendadoOnly = (effectiveSource.isLegendado || bestSource?.isLegendado) && !(effectiveSource.isDublado || bestSource?.isDublado);
+                const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
 
-            isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
-                           sourceIsDubladoOnly ? true :
-                           (langInfo ? langInfo.isDublado : (job.langInfo ? job.langInfo.isDublado : true));
+                isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
+                               sourceIsDubladoOnly ? true :
+                               (effectiveLang ? effectiveLang.isDublado : true);
+            }
         }
 
         if (isJobDublado) {

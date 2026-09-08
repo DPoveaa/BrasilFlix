@@ -3021,7 +3021,7 @@
         @media (max-width: 860px) {
             .media-detail-backdrop {
                 padding: 20px 16px;
-                min-height: 520px;
+                min-height: auto;
                 border-radius: 18px;
             }
             .media-detail-hero-content {
@@ -5058,23 +5058,27 @@
             box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 640px) {
             .playback-nav-bar {
-                padding: 10px 12px;
-                gap: 8px;
+                padding: 8px 12px;
+                gap: 12px;
+                justify-content: center;
             }
             .playback-nav-btn {
-                padding: 9px 12px;
-                font-size: 11.5px;
-                flex: 1;
-                text-align: center;
-                white-space: normal;
-                line-height: 1.2;
+                padding: 9px 18px !important;
+                font-size: 15px !important;
+                min-width: 50px !important;
+                flex: 0 1 auto !important;
+                border-radius: 99px !important;
+            }
+            .playback-nav-btn .nav-text {
+                display: none !important;
             }
             .playback-nav-btn-center {
-                width: 38px;
-                height: 38px;
-                min-width: 38px;
+                width: 40px !important;
+                height: 40px !important;
+                min-width: 40px !important;
+                border-radius: 50% !important;
             }
         }
 
@@ -5329,26 +5333,44 @@
 
         @media (max-width: 768px) {
             .playback-header-bar {
-                padding: 12px 14px;
+                padding: 10px 12px;
                 border-radius: 0;
                 margin-top: 0;
             }
             .playback-nav-bar {
                 display: flex;
-                flex-direction: column;
-                gap: 10px;
-                padding: 14px;
-                border-radius: 0;
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                padding: 8px 12px;
+                border-radius: 16px;
             }
             .playback-nav-bar button {
-                width: 100%;
+                width: auto;
                 justify-content: center;
+            }
+            .playback-nav-btn {
+                padding: 8px 18px !important;
+                font-size: 15px !important;
+                min-width: 48px !important;
+                flex: 0 0 auto !important;
+                border-radius: 99px !important;
+            }
+            .playback-nav-btn .nav-text {
+                display: none !important;
+            }
+            .playback-nav-btn-center {
+                width: 40px !important;
+                height: 40px !important;
+                min-width: 40px !important;
+                border-radius: 50% !important;
             }
             .playback-episodes-grid {
                 grid-template-columns: 1fr;
             }
             .playback-main-title {
-                font-size: 19px;
+                font-size: 17px;
             }
         }
 
@@ -6197,7 +6219,7 @@
                 -webkit-overflow-scrolling: touch;
             }
 
-            .modal-card, .modal-content, .media-detail-backdrop {
+            .modal-card, .modal-content {
                 max-width: 95vw !important;
                 margin: 0 auto !important;
                 padding: 16px 12px !important;
@@ -6206,13 +6228,46 @@
                 max-height: 90vh !important;
             }
 
+            /* HERO BANNER DE DETALHES NO CELULAR: SEM ROLAGEM PRESA (PÁGINA ROLA LIVREMENTE) */
+            .media-detail-backdrop {
+                max-width: 100% !important;
+                width: 100% !important;
+                margin: 0 0 20px 0 !important;
+                padding: 20px 14px 18px 14px !important;
+                border-radius: 18px !important;
+                overflow: clip !important;
+                overflow-y: clip !important;
+                max-height: none !important;
+                min-height: auto !important;
+                touch-action: pan-y !important;
+                -webkit-overflow-scrolling: auto !important;
+            }
+
+            .media-detail-topbar .btn-back-catalog {
+                padding: 7px 12px !important;
+                font-size: 13px !important;
+                border-radius: 99px !important;
+                min-height: 36px !important;
+            }
+
+            .media-detail-topbar .btn-back-catalog .btn-text {
+                display: none !important;
+            }
+
+            .detail-poster-wrapper {
+                width: 110px !important;
+                margin: 0 auto 4px auto !important;
+            }
+
             #video-player, video {
                 max-width: 100% !important;
             }
 
             .hero-billboard {
-                min-height: 380px !important;
+                min-height: auto !important;
+                max-height: none !important;
                 padding: 20px 14px !important;
+                overflow: hidden !important;
             }
 
             .search-input-box {
@@ -6227,15 +6282,62 @@
                 width: 100% !important;
             }
 
-            .detail-actions-row button,
-            .detail-actions-row a {
+            .detail-actions-row #detail-main-play-btn,
+            .detail-actions-row .btn-play-primary {
                 flex: 1 1 100% !important;
                 width: 100% !important;
+                padding: 12px 18px !important;
+                font-size: 14px !important;
                 justify-content: center !important;
+                border-radius: 14px !important;
+            }
+
+            .detail-actions-row .btn-detail-action {
+                flex: 1 1 auto !important;
+                width: auto !important;
+                padding: 8px 12px !important;
+                font-size: 12px !important;
+                gap: 6px !important;
+                justify-content: center !important;
+                border-radius: 12px !important;
+            }
+
+            .playback-top-actions .playback-btn-text {
+                display: none !important;
+            }
+
+            .playback-top-actions .speed-badge-btn {
+                padding: 6px 10px !important;
+                font-size: 14px !important;
+                min-width: 36px !important;
+                height: 34px !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: 10px !important;
+            }
+
+            .player-footer-bar {
+                padding: 8px 12px !important;
+                gap: 8px !important;
+            }
+
+            .player-footer-bar .footer-btn-label {
+                display: none !important;
             }
         }
 
         @media (max-width: 480px) {
+            .detail-actions-row .btn-detail-action .btn-action-label {
+                display: none !important;
+            }
+
+            .detail-actions-row .btn-detail-action {
+                padding: 9px 14px !important;
+                font-size: 15px !important;
+                border-radius: 12px !important;
+            }
+
             .catalog-grid {
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 8px !important;
@@ -6266,9 +6368,23 @@
                 font-size: 20px !important;
             }
 
-            .hero-btn-play, .hero-btn-secondary {
+            .hero-actions {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+            }
+
+            .hero-btn-play {
                 flex: 1 1 100% !important;
                 width: 100% !important;
+                padding: 10px 14px !important;
+            }
+
+            .hero-btn-secondary {
+                flex: 1 1 calc(50% - 4px) !important;
+                width: auto !important;
+                padding: 8px 10px !important;
+                font-size: 12px !important;
             }
         }
 
@@ -6835,10 +6951,10 @@
                     Popout
                 </button>
                 <button class="speed-badge-btn" onclick="handleShareCurrentMedia()" title="Compartilhar Link">
-                    🔗 Compartilhar
+                    <span class="btn-icon">🔗</span> <span class="playback-btn-text">Compartilhar</span>
                 </button>
                 <button class="speed-badge-btn" id="playback-party-btn" onclick="toggleWatchPartyModal()" title="Assistir Junto com Amigos" style="background: rgba(168, 85, 247, 0.18); border-color: rgba(168, 85, 247, 0.4); color: #d8b4fe;">
-                    👥 Assistir Junto
+                    <span class="btn-icon">👥</span> <span class="playback-btn-text">Assistir Junto</span>
                 </button>
             </div>
         </div>
@@ -6948,7 +7064,7 @@
                     <!-- SELETOR DE ÁUDIO (DUBLADO / LEGENDADO) -->
                     <div style="position: relative;" id="player-audio-box">
                         <button class="speed-badge-btn" id="player-audio-btn" onclick="toggleAudioDropdown(event)" title="Alterar Idioma do Áudio">
-                            <span id="player-audio-icon">🎙️</span> <span id="player-audio-label">Idioma</span> ▾
+                            <span id="player-audio-icon">🎙️</span> <span id="player-audio-label" class="footer-btn-label">Idioma</span> ▾
                         </button>
                         <div class="speed-dropdown-menu" id="player-audio-menu">
                             <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 4px 8px 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 2px;">
@@ -6968,7 +7084,7 @@
                     <!-- VELOCIDADE DE REPRODUÇÃO -->
                     <div style="position: relative;" id="player-speed-box">
                         <button class="speed-badge-btn" id="player-speed-btn" onclick="toggleSpeedDropdown(event)" title="Alterar Velocidade de Reprodução">
-                            ⚡ Velocidade: <span id="player-speed-label">1.0x</span> ▾
+                            ⚡ <span class="footer-btn-label">Velocidade: </span><span id="player-speed-label">1.0x</span> ▾
                         </button>
                         <div class="speed-dropdown-menu" id="player-speed-menu">
                             <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 4px 8px 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 2px;">
@@ -6984,7 +7100,7 @@
                     </div>
 
                     <button class="speed-badge-btn" onclick="togglePlayerFullscreen()" title="Tela Cheia (F)">
-                        ⛶ Tela Cheia
+                        <span class="btn-icon">⛶</span><span class="footer-btn-label"> Tela Cheia</span>
                     </button>
                 </div>
             </div>
@@ -6993,7 +7109,7 @@
         <!-- BARRA DE NAVEGAÇÃO DE EPISÓDIOS (ANTERIOR / VER SÉRIE / PRÓXIMO) -->
         <div class="playback-nav-bar" id="playback-nav-controls-bar">
             <button id="playback-btn-prev" class="playback-nav-btn" title="Ir para o Episódio Anterior">
-                ⏮ Episódio Anterior
+                <span class="nav-icon">⏮</span> <span class="nav-text">Episódio Anterior</span>
             </button>
             <button id="playback-btn-series" class="playback-nav-btn-center" onclick="handleViewFullSeries()" title="Ver todos os episódios da série" aria-label="Ver todos os episódios da série">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -7003,7 +7119,7 @@
                 </svg>
             </button>
             <button id="playback-btn-next" class="playback-nav-btn" title="Ir para o Próximo Episódio">
-                Próximo Episódio ⏭
+                <span class="nav-text">Próximo Episódio</span> <span class="nav-icon">⏭</span>
             </button>
         </div>
 
@@ -8635,8 +8751,8 @@
         </div>
     </div>
 
-    <!-- MODAL DE ESCOLHA DE IDIOMA (SOBREPOSTO AO PLAYER / TELA) -->
-    <div class="modal-backdrop" id="audio-select-modal" style="z-index: 10050;" onclick="closeAudioSelectModal(event)">
+    <!-- MODAL DE ESCOLHA DE IDIOMA (DESATIVADO PARA EVITAR INTERRUPÇÕES) -->
+    <div class="modal-backdrop" id="audio-select-modal" style="display: none !important; pointer-events: none !important; z-index: -1;" onclick="closeAudioSelectModal(event)">
         <div class="modal-card" style="max-width: 430px; width: 92%; border-radius: 20px; border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 30px 80px rgba(0,0,0,0.95); background: #0b0f19;" onclick="event.stopPropagation()">
             <div class="modal-body" style="padding: 28px 24px; text-align: center;">
                 <div style="width: 58px; height: 58px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px auto;">
@@ -11933,14 +12049,15 @@ function initApp() {
 
                     <!-- BARRA SUPERIOR DA PÁGINA (VOLTAR & COMPARTILHAR) -->
                     <div class="media-detail-topbar">
-                        <button class="btn-back-catalog" onclick="returnToCatalog()">
-                            <span>←</span>
-                            <span>Voltar ao Catálogo</span>
+                        <button class="btn-back-catalog" onclick="returnToCatalog()" title="Voltar ao Catálogo">
+                            <span class="btn-icon">←</span>
+                            <span class="btn-text">Voltar ao Catálogo</span>
                         </button>
 
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <button class="btn-back-catalog" onclick="handleShareCurrentMediaDirect('${item.nome.replace(/'/g, "\\'")}', '${currentDetailType}', '${item.id}')" title="Copiar link direto">
-                                <span>🔗 Compartilhar</span>
+                            <button class="btn-back-catalog" onclick="handleShareCurrentMediaDirect('${item.nome.replace(/'/g, "\\'")}', '${currentDetailType}', '${item.id}')" title="Compartilhar Link">
+                                <span class="btn-icon">🔗</span>
+                                <span class="btn-text">Compartilhar</span>
                             </button>
                         </div>
                     </div>
@@ -11977,17 +12094,18 @@ function initApp() {
                                 </div>
 
                                 <button class="btn-detail-action" onclick="startPartyFromDetailMedia('${item.id}', '${currentDetailType}')" title="Assistir em grupo com amigos sincronizados">
-                                    <span>👥</span>
-                                    <span>Assistir Junto</span>
+                                    <span class="btn-action-icon">👥</span>
+                                    <span class="btn-action-label">Assistir Junto</span>
                                 </button>
 
-                                <button class="btn-detail-action ${isFav ? 'active' : ''}" id="detail-fav-btn" onclick="toggleUserFavorite('${item.id}', '${currentDetailType}'); updateDetailFavButton(event);">
-                                    <span>${isFav ? '❤️' : '🤍'}</span>
-                                    <span id="detail-fav-text">${isFav ? 'Salvo' : 'Minha Lista'}</span>
+                                <button class="btn-detail-action ${isFav ? 'active' : ''}" id="detail-fav-btn" onclick="toggleUserFavorite('${item.id}', '${currentDetailType}'); updateDetailFavButton(event);" title="Salvar na Minha Lista">
+                                    <span class="btn-action-icon">${isFav ? '❤️' : '🤍'}</span>
+                                    <span id="detail-fav-text" class="btn-action-label">${isFav ? 'Salvo' : 'Minha Lista'}</span>
                                 </button>
 
                                 <a href="https://t.me/BrasilFlix_bot?start=ver_${item.id}" target="_blank" class="btn-detail-action" style="text-decoration: none;" title="Assistir diretamente no Telegram">
-                                    <span>Telegram</span>
+                                    <span class="btn-action-icon">📱</span>
+                                    <span class="btn-action-label">Telegram</span>
                                 </a>
                             </div>
                         </div>
@@ -12681,16 +12799,8 @@ function initApp() {
             const savedAudioPref = getUserMediaAudioPref('filme', movie.id);
             const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
-            // ── PASSO 2: ESCOLHA DE IDIOMA (SEGUNDO) ──
-            // Se tiver áudio duplo e não houver preferência global fixa nem preferência salva nem áudio explícito
-            if (isDualAudio && !explicitAudio && !savedAudioPref && (!userPrefAudio || userPrefAudio === 'ask')) {
-                openAudioSelectModal({ id: movie.id, type: 'filme', nome: movie.nome }, (selectedAudio) => {
-                    finalizeMoviePlaybackPage(movie, selectedAudio, updateUrl, token, hasDub, hasLeg);
-                });
-                return;
-            }
-
-            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id);
+            // Seleciona áudio automaticamente sem interrupção por modal (preferência do usuário > dublado > legendado)
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id) || 'dublado';
             if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
             else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
             else if (!hasDub && !hasLeg) chosenAudio = 'dublado';
@@ -12833,16 +12943,8 @@ function initApp() {
             const savedAudioPref = getUserMediaAudioPref('serie', serie.id);
             const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
-            // ── PASSO 2: ESCOLHA DE IDIOMA (SEGUNDO) ──
-            // Se tiver áudio duplo e não houver preferência global fixa nem preferência salva nem áudio explícito
-            if (isDualAudio && !explicitAudio && !savedAudioPref && (!userPrefAudio || userPrefAudio === 'ask')) {
-                openAudioSelectModal({ id: serie.id, type: 'serie', nome: `${serie.nome} - T${sNum}E${eNum}` }, (selectedAudio) => {
-                    finalizeEpisodePlaybackPage(serie, season, episode, sNum, eNum, selectedAudio, updateUrl, token, hasDub, hasLeg);
-                });
-                return;
-            }
-
-            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('serie', serie.id);
+            // Seleciona áudio automaticamente sem interrupção por modal (preferência do usuário > dublado > legendado)
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('serie', serie.id) || (hasDub ? 'dublado' : 'legendado');
             if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
             else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
             else if (!hasDub && !hasLeg) chosenAudio = serie.isDublado ? 'dublado' : 'legendado';
@@ -12881,12 +12983,13 @@ function initApp() {
                 prevBtn.style.display = 'inline-flex';
                 if (prevInfo) {
                     prevBtn.disabled = false;
-                    prevBtn.innerHTML = prevInfo.buttonLabel || (prevInfo.isPrevSeason ? '⏮ Temporada Anterior' : '⏮ Episódio Anterior');
+                    const pLabel = prevInfo.buttonLabel ? prevInfo.buttonLabel.replace('⏮', '').trim() : (prevInfo.isPrevSeason ? 'Temporada Anterior' : 'Episódio Anterior');
+                    prevBtn.innerHTML = `<span class="nav-icon">⏮</span> <span class="nav-text">${pLabel}</span>`;
                     prevBtn.title = `Ir para T${prevInfo.seasonNum}E${prevInfo.epNum} - ${prevInfo.epNome}`;
                     prevBtn.onclick = () => openPlaybackPageForEpisode(serie.id, prevInfo.seasonNum, prevInfo.epNum);
                 } else {
                     prevBtn.disabled = true;
-                    prevBtn.innerHTML = '⏮ Episódio Anterior';
+                    prevBtn.innerHTML = '<span class="nav-icon">⏮</span> <span class="nav-text">Episódio Anterior</span>';
                     prevBtn.title = 'Você está no primeiro episódio desta série.';
                     prevBtn.onclick = null;
                 }
@@ -12896,12 +12999,13 @@ function initApp() {
                 nextBtn.style.display = 'inline-flex';
                 if (nextInfo) {
                     nextBtn.disabled = false;
-                    nextBtn.innerHTML = nextInfo.buttonLabel || (nextInfo.isNextSeason ? 'Próxima Temporada ⏭' : 'Próximo Episódio ⏭');
+                    const nLabel = nextInfo.buttonLabel ? nextInfo.buttonLabel.replace('⏭', '').trim() : (nextInfo.isNextSeason ? 'Próxima Temporada' : 'Próximo Episódio');
+                    nextBtn.innerHTML = `<span class="nav-text">${nLabel}</span> <span class="nav-icon">⏭</span>`;
                     nextBtn.title = `Ir para T${nextInfo.seasonNum}E${nextInfo.epNum} - ${nextInfo.epNome}`;
                     nextBtn.onclick = () => openPlaybackPageForEpisode(serie.id, nextInfo.seasonNum, nextInfo.epNum);
                 } else {
                     nextBtn.disabled = true;
-                    nextBtn.innerHTML = 'Próximo Episódio ⏭';
+                    nextBtn.innerHTML = '<span class="nav-text">Próximo Episódio</span> <span class="nav-icon">⏭</span>';
                     nextBtn.title = 'Você está no último episódio disponível desta série.';
                     nextBtn.onclick = null;
                 }
@@ -13233,29 +13337,12 @@ function initApp() {
 
 
         function openAudioSelectModal(mediaItem, onSelect) {
+            // Modal desativado a pedido do usuário para evitar interrupções
             const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
-            if (userPrefAudio === 'dublado' || userPrefAudio === 'legendado') {
-                if (typeof onSelect === 'function') {
-                    onSelect(userPrefAudio);
-                    return;
-                }
+            const chosen = (userPrefAudio === 'dublado' || userPrefAudio === 'legendado') ? userPrefAudio : 'dublado';
+            if (typeof onSelect === 'function') {
+                onSelect(chosen);
             }
-
-            pendingAudioChoiceMedia = { item: mediaItem, onSelect };
-            const modal = document.getElementById('audio-select-modal');
-            const desc = document.getElementById('audio-select-desc');
-            const chk = document.getElementById('chk-remember-audio-choice');
-            const lbl = document.getElementById('lbl-remember-audio-choice');
-            if (chk) chk.checked = true;
-            const nome = mediaItem?.nome || mediaItem?.title || 'este título';
-            const isSerie = mediaItem?.type === 'serie';
-            if (desc) {
-                desc.innerText = `"${nome}" está disponível em Português (Dublado) e no áudio original com Legendas. Escolha sua versão:`;
-            }
-            if (lbl) {
-                lbl.innerText = isSerie ? `Lembrar minha escolha para esta série` : `Lembrar minha escolha para este filme`;
-            }
-            if (modal) modal.classList.add('active');
         }
 
         function closeAudioSelectModal(e) {
@@ -14940,14 +15027,8 @@ function initApp() {
                         isSyncingFromRemote = false;
                     };
 
-                    if (hasBoth && !isRemembered) {
-                        openAudioSelectModal({ nome: m.title }, (audio) => {
-                            startPlaybackForMember(audio);
-                        });
-                    } else {
-                        const defaultAudio = isRemembered ? getUserPreferredAudio() : (m.audio || 'dublado');
-                        startPlaybackForMember(defaultAudio);
-                    }
+                    const defaultAudio = isRemembered ? getUserPreferredAudio() : (m.audio || 'dublado');
+                    startPlaybackForMember(defaultAudio);
                 }
             } catch (e) {
                 localStorage.removeItem('bf_party_room');
@@ -15133,14 +15214,8 @@ function initApp() {
                         showToast('🎬 O anfitrião iniciou: ' + (m.title || 'nova mídia'), 'info');
                     };
 
-                    if (hasBoth && !isRemembered) {
-                        openAudioSelectModal({ nome: m.title }, (audio) => {
-                            startPlaybackForMember(audio);
-                        });
-                    } else {
-                        const defaultAudio = isRemembered ? getUserPreferredAudio() : (m.audio || 'dublado');
-                        startPlaybackForMember(defaultAudio);
-                    }
+                    const defaultAudio = isRemembered ? getUserPreferredAudio() : (m.audio || 'dublado');
+                    startPlaybackForMember(defaultAudio);
                 }
             } else if (data.type === 'member_ready_state_changed') {
                 if (data.members) {

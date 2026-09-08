@@ -552,7 +552,7 @@ class MediaSearchService {
                 const hasForeignAudioPair = hasForeignPairInTitle && !isPtBrExplicit && !isBrazilianGroup && !/\b(dublado|nacional|pt[-_]?br|ptbr|brasileiro|brazilian)\b/i.test(rawTitle);
 
                 const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Multi[- ]?Dub|Multi[- ]?Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
                 const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
                 const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit && !hasForeignAudioPair;
