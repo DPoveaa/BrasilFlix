@@ -9562,7 +9562,8 @@ function initApp() {
             type: 'todos',
             audio: 'todos',
             quality: 'todos',
-            genre: 'todos'
+            genre: 'todos',
+            sort: 'default'
         };
 
         function setCatalogFilter(key, val, btn) {
@@ -9641,6 +9642,7 @@ function initApp() {
         }
 
         function isItemDorama(i) {
+            if (!i) return false;
             // Flag explícita no banco de dados
             if (i.isDorama || i.is_dorama || i.tipo === 'dorama') return true;
             // Nunca classificar anime como dorama
@@ -9649,26 +9651,22 @@ function initApp() {
             const gStr = (i.generos || []).join(' ').toLowerCase();
             const text = ((i.nome || '') + ' ' + (i.nomeOriginal || '')).toLowerCase();
 
-            // K-Drama, C-Drama, Dorama
-            if (/dorama|k-drama|kdrama|c-drama|cdrama/i.test(gStr)) return true;
-            if (/dorama|k-drama|kdrama|c-drama|cdrama/i.test(text)) return true;
+            // K-Drama, C-Drama, J-Drama, Dorama — tag explícita no gênero ou título
+            if (/dorama|k-drama|kdrama|c-drama|cdrama|j-drama|jdrama/i.test(gStr)) return true;
+            if (/dorama|k-drama|kdrama|c-drama|cdrama|j-drama|jdrama/i.test(text)) return true;
 
             // Séries coreanas, chinesas, tailandesas, taiwanesas (live-action asiáticas)
             if (/corean|korean|chinese|china|thailand|thai|taiwanese|taiwan|asian drama/i.test(gStr)) return true;
-
-            // J-drama: séries live-action japonesas (não-anime)
-            // Detecta origem japonesa + formato série + sem animação
-            if ((i.origem === 'Japão' || i.origem === 'Japan' || /japan|japão/i.test(gStr)) &&
-                (i.itemType === 'serie') &&
-                !gStr.includes('anime') && !gStr.includes('anim') &&
-                !(i.isAnime || i.is_anime)) {
-                return true;
-            }
 
             return false;
         }
 
         function isItemAnime(i) {
+            if (!i) return false;
+            // Live-actions de animes (ex: ONE PIECE: A Série) NUNCA são animes — são séries live-action
+            const nameLower = (i.nome || '').toLowerCase();
+            if (/live[- ]action|a série/i.test(nameLower) && !/anima/i.test(nameLower)) return false;
+
             // Flag explícita no banco de dados
             if (i.isAnime || i.is_anime || i.tipo === 'anime') return true;
 
@@ -9681,11 +9679,13 @@ function initApp() {
             // Nome/título contém 'anime'
             if (/\banime\b/i.test(text)) return true;
 
-            // Animação japonesa (animated + japan origin)
-            // Excluir live-action (One Piece série, etc.) — só conta se for animação
-            if ((gStr.includes('animation') || gStr.includes('animação') || gStr.includes('animacao') || gStr.includes('animated')) &&
-                /japon|japan/i.test(gStr) &&
-                !(i.isDorama || i.is_dorama)) {
+            // Séries animadas (Ranma 1/2, Blue Lock, Vinland Saga, Bleach, etc.)
+            if (i.itemType === 'serie' && (gStr.includes('animação') || gStr.includes('animacao') || gStr.includes('animation') || gStr.includes('animated'))) {
+                return true;
+            }
+
+            // Filmes de animação japonesa
+            if ((gStr.includes('animação') || gStr.includes('animacao') || gStr.includes('animation')) && (/japon|japan/i.test(gStr) || i.origem === 'Japão' || i.origem === 'Japan')) {
                 return true;
             }
 
@@ -9726,7 +9726,8 @@ function initApp() {
                 type: defaultType,
                 audio: 'todos',
                 quality: 'todos',
-                genre: 'todos'
+                genre: 'todos',
+                sort: 'default'
             };
 
             const searchInput = document.getElementById('catalog-search');
@@ -9856,6 +9857,11 @@ function initApp() {
             let activeCountTotal = 0;
             let chipsHtml = '';
 
+            if (catalogFilters.sort === 'em-alta') {
+                activeCountTotal++;
+                chipsHtml += `<span class="active-chip-tag" onclick="catalogFilters.sort='default';renderCatalog();">🔥 Em Alta ✕</span>`;
+            }
+
             // Se o usuário está em uma aba do cabeçalho (ex: doramas), não mostra chip redundante de tipo,
             // a não ser que esteja no modo geral
             if (catalogFilters.type !== 'todos' && currentNavMode === 'inicio') {
@@ -9919,8 +9925,11 @@ function initApp() {
                 ...(fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }))
             ];
 
-            // Ordena os mais recentemente adicionados no topo por padrão
+            // Ordenação: se sort === 'em-alta', ordena por nota decrescente
             baseList.sort((a, b) => {
+                if (catalogFilters.sort === 'em-alta') {
+                    return (Number(b.nota) || 0) - (Number(a.nota) || 0);
+                }
                 const idA = Number(a.id) || 0;
                 const idB = Number(b.id) || 0;
                 if (idA && idB && idA !== idB) return idB - idA;
@@ -10001,16 +10010,20 @@ function initApp() {
             renderActiveChips(allItems.length);
 
             if (countText) {
-                const categoryNames = {
-                    filme: 'filme(s)',
-                    serie: 'série(s)',
-                    anime: 'anime(s)',
-                    dorama: 'dorama(s)',
-                    favoritos: 'título(s) salvo(s)',
-                    todos: 'título(s)'
-                };
-                const catLabel = categoryNames[catalogFilters.type] || 'título(s)';
-                countText.innerHTML = `Mostrando <strong>${allItems.length}</strong> ${catLabel}`;
+                if (catalogFilters.sort === 'em-alta') {
+                    countText.innerHTML = `Mostrando <strong>${allItems.length}</strong> títulos em alta (mais bem avaliados)`;
+                } else {
+                    const categoryNames = {
+                        filme: 'filme(s)',
+                        serie: 'série(s)',
+                        anime: 'anime(s)',
+                        dorama: 'dorama(s)',
+                        favoritos: 'título(s) salvo(s)',
+                        todos: 'título(s)'
+                    };
+                    const catLabel = categoryNames[catalogFilters.type] || 'título(s)';
+                    countText.innerHTML = `Mostrando <strong>${allItems.length}</strong> ${catLabel}`;
+                }
             }
 
             if (allItems.length === 0) {
@@ -10156,16 +10169,23 @@ function initApp() {
                 if (railsBox) railsBox.style.display = 'block';
                 if (gridLayout) gridLayout.style.display = 'none';
                 if (typeFilterSection) typeFilterSection.style.display = 'block';
+                catalogFilters.sort = 'default';
                 renderHeroBillboard();
                 renderNetflixRails();
             } else {
                 if (heroBox) heroBox.style.display = 'none';
                 if (railsBox) railsBox.style.display = 'none';
                 if (gridLayout) gridLayout.style.display = 'flex';
-                if (typeFilterSection) typeFilterSection.style.display = 'none';
+                if (typeFilterSection) typeFilterSection.style.display = (cat === 'em-alta' || cat === 'todos') ? 'block' : 'none';
 
                 // Reseta filtros residuais para a nova categoria
-                catalogFilters.type = (cat === 'favoritos') ? 'favoritos' : cat;
+                if (cat === 'em-alta') {
+                    catalogFilters.type = 'todos';
+                    catalogFilters.sort = 'em-alta';
+                } else {
+                    catalogFilters.type = (cat === 'favoritos') ? 'favoritos' : cat;
+                    catalogFilters.sort = 'default';
+                }
                 catalogFilters.genre = 'todos';
                 catalogFilters.audio = 'todos';
                 catalogFilters.quality = 'todos';
@@ -10183,7 +10203,7 @@ function initApp() {
                 document.querySelectorAll('.catalog-sidebar .filter-link').forEach(link => {
                     const val = link.getAttribute('data-val') || '';
                     if (link.getAttribute('data-filter') === 'type') {
-                        link.classList.toggle('active', val === cat || (cat === 'favoritos' && val === 'todos'));
+                        link.classList.toggle('active', val === cat || (cat === 'favoritos' && val === 'todos') || (cat === 'em-alta' && val === 'todos'));
                     } else {
                         link.classList.toggle('active', val === 'todos');
                     }
@@ -10194,6 +10214,24 @@ function initApp() {
 
                 renderCatalog();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function openRailSeeAll(railId) {
+            if (railId === 'em-alta') {
+                switchNavCategory('em-alta');
+            } else if (railId === 'series-novas') {
+                switchNavCategory('serie');
+            } else if (railId === 'filmes-destaque') {
+                switchNavCategory('filme');
+            } else if (railId === 'doramas') {
+                switchNavCategory('dorama');
+            } else if (railId === 'animes') {
+                switchNavCategory('anime');
+            } else if (railId === 'minha-lista') {
+                switchNavCategory('favoritos');
+            } else {
+                switchNavCategory('serie');
             }
         }
 
@@ -10296,7 +10334,7 @@ function initApp() {
                 <div class="netflix-rail-section" id="rail-section-${railId}">
                     <div class="rail-header">
                         <h3 class="rail-title">${title}</h3>
-                        <span class="rail-see-all" onclick="switchNavCategory('${railId.includes('serie') ? 'serie' : (railId.includes('filme') ? 'filme' : 'inicio')}')">Ver Tudo ›</span>
+                        <span class="rail-see-all" onclick="openRailSeeAll('${railId}')">Ver Tudo ›</span>
                     </div>
                     <div class="rail-slider-container">
                         <button class="rail-arrow-btn rail-arrow-left" onclick="slideRail('${railId}', -1)" aria-label="Anterior">
