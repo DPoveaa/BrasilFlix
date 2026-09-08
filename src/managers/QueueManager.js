@@ -75,6 +75,9 @@ class QueueManager extends EventEmitter {
                 const modoDesc = mode === 'eco' ? 'ECONÔMICO (QoS Residencial - Sem Impacto na Rede)' : 'DESEMPENHO MÁXIMO (Velocidade Total)';
                 console.log(`⏰ [Scheduler -> Queue] Esteira operando em Modo ${modoDesc} (${reason}).`);
                 
+                // Atualiza em tempo real a taxa de banda e limites de downloads em andamento sem interromper o fluxo
+                DownloaderManager.applyModeLimitsToActiveDownloads(mode);
+
                 if (mode === 'eco') {
                     // Se mudou para Econômico, garante que NÃO existam múltiplos downloads/jobs rodando em paralelo
                     this.enforceConcurrencyLimits();
