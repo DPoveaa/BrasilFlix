@@ -6798,7 +6798,7 @@
                             </li>
                             <li>
                                 <button class="filter-link" data-filter="type" data-val="dorama" onclick="setCatalogFilter('type', 'dorama', this)">
-                                    <span class="filter-name">🌸 Doramas (K-Drama)</span>
+                                    <span class="filter-name">🌸 Doramas & J-Drama</span>
                                     <span class="filter-count" id="count-type-dorama">0</span>
                                 </button>
                             </li>
@@ -6919,6 +6919,15 @@
                             Carregando catálogo...
                         </span>
                         <div class="active-chips-box" id="active-chips-box"></div>
+                    </div>
+
+                    <!-- BARRA DE SUB-FILTROS: DORAMAS (exibida apenas na aba Doramas) -->
+                    <div class="dorama-filter-pills-bar" id="dorama-filter-bar" style="display: none;">
+                        <button class="dorama-filter-pill active" id="dorama-filter-todos" onclick="filterDoramasSubtype('todos')">🌸 Todos</button>
+                        <button class="dorama-filter-pill" id="dorama-filter-kdramas" onclick="filterDoramasSubtype('kdrama')">🇰🇷 K-Drama</button>
+                        <button class="dorama-filter-pill" id="dorama-filter-cdramas" onclick="filterDoramasSubtype('cdrama')">🇨🇳 C-Drama</button>
+                        <button class="dorama-filter-pill" id="dorama-filter-jdramas" onclick="filterDoramasSubtype('jdrama')">🇯🇵 J-Drama</button>
+                        <button class="dorama-filter-pill" id="dorama-filter-microdramas" onclick="filterDoramasSubtype('microdrama')">📱 Micro-Séries</button>
                     </div>
 
                     <div class="catalog-grid" id="catalog-grid-container">
@@ -9632,21 +9641,54 @@ function initApp() {
         }
 
         function isItemDorama(i) {
+            // Flag explícita no banco de dados
             if (i.isDorama || i.is_dorama || i.tipo === 'dorama') return true;
+            // Nunca classificar anime como dorama
+            if (i.isAnime || i.is_anime || i.tipo === 'anime') return false;
+
             const gStr = (i.generos || []).join(' ').toLowerCase();
-            const text = ((i.nome || '') + ' ' + (i.nomeOriginal || '') + ' ' + (i.sinopse || '')).toLowerCase();
-            if (/dorama|k-drama|kdrama|corean|korean|asiátic|asiatic/i.test(gStr)) return true;
-            if (/dorama|k-drama|kdrama/i.test(text)) return true;
+            const text = ((i.nome || '') + ' ' + (i.nomeOriginal || '')).toLowerCase();
+
+            // K-Drama, C-Drama, Dorama
+            if (/dorama|k-drama|kdrama|c-drama|cdrama/i.test(gStr)) return true;
+            if (/dorama|k-drama|kdrama|c-drama|cdrama/i.test(text)) return true;
+
+            // Séries coreanas, chinesas, tailandesas, taiwanesas (live-action asiáticas)
+            if (/corean|korean|chinese|china|thailand|thai|taiwanese|taiwan|asian drama/i.test(gStr)) return true;
+
+            // J-drama: séries live-action japonesas (não-anime)
+            // Detecta origem japonesa + formato série + sem animação
+            if ((i.origem === 'Japão' || i.origem === 'Japan' || /japan|japão/i.test(gStr)) &&
+                (i.itemType === 'serie') &&
+                !gStr.includes('anime') && !gStr.includes('anim') &&
+                !(i.isAnime || i.is_anime)) {
+                return true;
+            }
+
             return false;
         }
 
         function isItemAnime(i) {
+            // Flag explícita no banco de dados
             if (i.isAnime || i.is_anime || i.tipo === 'anime') return true;
+
             const gStr = (i.generos || []).join(' ').toLowerCase();
             const text = ((i.nome || '') + ' ' + (i.nomeOriginal || '')).toLowerCase();
+
+            // Gênero explícito 'anime'
             if (gStr.includes('anime')) return true;
-            if (/anime/i.test(text)) return true;
-            if (gStr.includes('anim') && (i.itemType === 'serie' || /japon|japan/i.test(gStr))) return true;
+
+            // Nome/título contém 'anime'
+            if (/\banime\b/i.test(text)) return true;
+
+            // Animação japonesa (animated + japan origin)
+            // Excluir live-action (One Piece série, etc.) — só conta se for animação
+            if ((gStr.includes('animation') || gStr.includes('animação') || gStr.includes('animacao') || gStr.includes('animated')) &&
+                /japon|japan/i.test(gStr) &&
+                !(i.isDorama || i.is_dorama)) {
+                return true;
+            }
+
             return false;
         }
 
@@ -9853,7 +9895,14 @@ function initApp() {
         function filterDoramasSubtype(subtype) {
             activeDoramaSubtype = subtype;
             document.querySelectorAll('.dorama-filter-pill').forEach(p => p.classList.remove('active'));
-            const activeBtn = document.getElementById('dorama-filter-' + (subtype === 'microdrama' ? 'microdramas' : (subtype === 'kdrama' ? 'kdramas' : (subtype === 'cdrama' ? 'cdramas' : 'todos'))));
+            const idMap = {
+                'microdrama': 'dorama-filter-microdramas',
+                'kdrama':     'dorama-filter-kdramas',
+                'cdrama':     'dorama-filter-cdramas',
+                'jdrama':     'dorama-filter-jdramas',
+                'todos':      'dorama-filter-todos'
+            };
+            const activeBtn = document.getElementById(idMap[subtype] || 'dorama-filter-todos');
             if (activeBtn) activeBtn.classList.add('active');
             renderCatalog();
         }
@@ -9891,7 +9940,8 @@ function initApp() {
             } else if (catalogFilters.type === 'filme') {
                 allItems = allItems.filter(i => i.itemType === 'filme' && !isItemAnime(i));
             } else if (catalogFilters.type === 'serie') {
-                allItems = allItems.filter(i => i.itemType === 'serie' && !isItemAnime(i));
+                // Séries: exclui animes E doramas para evitar duplicatas entre abas
+                allItems = allItems.filter(i => i.itemType === 'serie' && !isItemAnime(i) && !isItemDorama(i));
             } else if (catalogFilters.type === 'anime') {
                 allItems = allItems.filter(i => isItemAnime(i));
             } else if (catalogFilters.type === 'dorama') {
@@ -9905,6 +9955,13 @@ function initApp() {
                     allItems = allItems.filter(s => s.origem === 'Coreia' || (!s.isMicrodrama && s.subtipo !== 'microdrama' && (s.generos || []).some(g => /coreia|kdrama|korean/i.test(g))));
                 } else if (activeDoramaSubtype === 'cdrama') {
                     allItems = allItems.filter(s => (s.origem === 'China' || (s.generos || []).some(g => /china|cdrama|chinese/i.test(g))) && !s.isMicrodrama && s.subtipo !== 'microdrama');
+                } else if (activeDoramaSubtype === 'jdrama') {
+                    // J-Drama: séries live-action japonesas (não-anime, não-coreanas)
+                    allItems = allItems.filter(s => {
+                        const gStr = (s.generos || []).join(' ').toLowerCase();
+                        return (s.origem === 'Japão' || s.origem === 'Japan' || /japan|japão/i.test(gStr)) &&
+                               !gStr.includes('anime') && !(s.isAnime || s.is_anime);
+                    });
                 }
             } else {
                 const doramaBar = document.getElementById('dorama-filter-bar');
@@ -10112,6 +10169,12 @@ function initApp() {
                 catalogFilters.genre = 'todos';
                 catalogFilters.audio = 'todos';
                 catalogFilters.quality = 'todos';
+
+                // Reseta sub-filtro de doramas
+                activeDoramaSubtype = 'todos';
+                document.querySelectorAll('.dorama-filter-pill').forEach(p => p.classList.remove('active'));
+                const todoPill = document.getElementById('dorama-filter-todos');
+                if (todoPill) todoPill.classList.add('active');
                 
                 const searchInput = document.getElementById('catalog-search');
                 if (searchInput) searchInput.value = '';
@@ -10465,17 +10528,17 @@ function initApp() {
             // 1. Em Alta (Mais Populares / Maiores Notas)
             const emAlta = [...allCombined].sort((a, b) => (Number(b.nota) || 0) - (Number(a.nota) || 0)).slice(0, 16);
 
-            // 2. Séries com Novos Episódios / Recentes
-            const seriesRecentes = allSeries.slice(0, 16);
+            // 2. Séries em Destaque (exclui animes e doramas)
+            const seriesRecentes = allSeries.filter(s => !isItemAnime(s) && !isItemDorama(s)).slice(0, 16);
 
             // 3. Filmes em Destaque
-            const filmesDestaque = allFilmes.filter(f => !f.isCam).slice(0, 16);
+            const filmesDestaque = allFilmes.filter(f => !f.isCam && !isItemAnime(f)).slice(0, 16);
 
-            // 4. Doramas (K-Drama)
-            const doramas = allSeries.filter(s => s.isDorama && !s.isAnime).slice(0, 16);
+            // 4. Doramas & Séries Asiáticas (K-Drama, C-Drama, J-Drama)
+            const doramas = allSeries.filter(s => isItemDorama(s) && !isItemAnime(s)).slice(0, 16);
 
-            // 5. Animes
-            const animes = allSeries.filter(s => s.isAnime).slice(0, 16);
+            // 5. Animes (somente animações japonesas)
+            const animes = allSeries.filter(s => isItemAnime(s)).slice(0, 16);
 
             // 6. Minha Lista
             const meusFavoritos = allCombined.filter(i => userFavorites.some(f => String(f.id) === String(i.id)));
