@@ -6805,6 +6805,38 @@
                         </ul>
                     </div>
 
+                    <!-- SUB-FILTRO DEDICADO: ORIGEM / SUBTIPO DE DORAMAS (visível estritamente na aba Doramas) -->
+                    <div class="filter-section" id="sidebar-filter-section-dorama" style="display: none;">
+                        <h4 class="filter-title">🌸 Tipo de Dorama</h4>
+                        <ul class="filter-list">
+                            <li>
+                                <button class="filter-link active" data-dorama-subtype="todos" onclick="filterDoramasSubtype('todos', this)">
+                                    <span class="filter-name">🌸 Todos os Doramas</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-dorama-subtype="kdrama" onclick="filterDoramasSubtype('kdrama', this)">
+                                    <span class="filter-name">🇰🇷 K-Drama (Coreano)</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-dorama-subtype="cdrama" onclick="filterDoramasSubtype('cdrama', this)">
+                                    <span class="filter-name">🇨🇳 C-Drama (Chinês)</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-dorama-subtype="jdrama" onclick="filterDoramasSubtype('jdrama', this)">
+                                    <span class="filter-name">🇯🇵 J-Drama (Japonês)</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="filter-link" data-dorama-subtype="microdrama" onclick="filterDoramasSubtype('microdrama', this)">
+                                    <span class="filter-name">📱 Micro-Séries</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
                     <!-- 2. ÁUDIO & IDIOMA -->
                     <div class="filter-section">
                         <h4 class="filter-title">🔊 Áudio & Idioma</h4>
@@ -6919,15 +6951,6 @@
                             Carregando catálogo...
                         </span>
                         <div class="active-chips-box" id="active-chips-box"></div>
-                    </div>
-
-                    <!-- BARRA DE SUB-FILTROS: DORAMAS (exibida apenas na aba Doramas) -->
-                    <div class="dorama-filter-pills-bar" id="dorama-filter-bar" style="display: none;">
-                        <button class="dorama-filter-pill active" id="dorama-filter-todos" onclick="filterDoramasSubtype('todos')">🌸 Todos</button>
-                        <button class="dorama-filter-pill" id="dorama-filter-kdramas" onclick="filterDoramasSubtype('kdrama')">🇰🇷 K-Drama</button>
-                        <button class="dorama-filter-pill" id="dorama-filter-cdramas" onclick="filterDoramasSubtype('cdrama')">🇨🇳 C-Drama</button>
-                        <button class="dorama-filter-pill" id="dorama-filter-jdramas" onclick="filterDoramasSubtype('jdrama')">🇯🇵 J-Drama</button>
-                        <button class="dorama-filter-pill" id="dorama-filter-microdramas" onclick="filterDoramasSubtype('microdrama')">📱 Micro-Séries</button>
                     </div>
 
                     <div class="catalog-grid" id="catalog-grid-container">
@@ -9744,6 +9767,13 @@ function initApp() {
                 }
             });
 
+            // Reseta sub-filtro de doramas
+            activeDoramaSubtype = 'todos';
+            document.querySelectorAll('#sidebar-filter-section-dorama .filter-link').forEach(link => {
+                const val = link.getAttribute('data-dorama-subtype');
+                link.classList.toggle('active', val === 'todos');
+            });
+
             renderCatalog();
         }
 
@@ -9889,6 +9919,12 @@ function initApp() {
                 chipsHtml += `<span class="active-chip-tag" onclick="setCatalogFilter('genre', 'todos')">${catalogFilters.genre} ✕</span>`;
             }
 
+            if (catalogFilters.type === 'dorama' && activeDoramaSubtype !== 'todos') {
+                activeCountTotal++;
+                const subLabels = { kdrama: '🇰🇷 K-Drama', cdrama: '🇨🇳 C-Drama', jdrama: '🇯🇵 J-Drama', microdrama: '📱 Micro-Séries' };
+                chipsHtml += `<span class="active-chip-tag" onclick="filterDoramasSubtype('todos')">${subLabels[activeDoramaSubtype] || activeDoramaSubtype} ✕</span>`;
+            }
+
             chipsBox.innerHTML = chipsHtml;
 
             const badge = document.getElementById('mobile-filter-badge');
@@ -9898,18 +9934,24 @@ function initApp() {
         
         let activeDoramaSubtype = 'todos';
 
-        function filterDoramasSubtype(subtype) {
+        function filterDoramasSubtype(subtype, btn) {
             activeDoramaSubtype = subtype;
-            document.querySelectorAll('.dorama-filter-pill').forEach(p => p.classList.remove('active'));
-            const idMap = {
-                'microdrama': 'dorama-filter-microdramas',
-                'kdrama':     'dorama-filter-kdramas',
-                'cdrama':     'dorama-filter-cdramas',
-                'jdrama':     'dorama-filter-jdramas',
-                'todos':      'dorama-filter-todos'
-            };
-            const activeBtn = document.getElementById(idMap[subtype] || 'dorama-filter-todos');
-            if (activeBtn) activeBtn.classList.add('active');
+            document.querySelectorAll('#sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
+            if (btn) {
+                btn.classList.add('active');
+            } else {
+                const target = document.querySelector(`#sidebar-filter-section-dorama .filter-link[data-dorama-subtype="${subtype}"]`);
+                if (target) target.classList.add('active');
+            }
+
+            // Fecha sidebar no mobile se estiver aberta
+            const sidebar = document.getElementById('catalog-sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            if (sidebar && sidebar.classList.contains('mobile-open')) {
+                sidebar.classList.remove('mobile-open');
+                if (backdrop) backdrop.classList.remove('active');
+            }
+
             renderCatalog();
         }
 
@@ -9919,6 +9961,12 @@ function initApp() {
             const grid = document.getElementById('catalog-grid-container');
             const countText = document.getElementById('catalog-count-text');
             if (!grid) return;
+
+            // Seção de sub-filtro de Doramas na sidebar aparece apenas na categoria Doramas
+            const doramaSidebar = document.getElementById('sidebar-filter-section-dorama');
+            if (doramaSidebar) {
+                doramaSidebar.style.display = (catalogFilters.type === 'dorama') ? 'block' : 'none';
+            }
 
             const baseList = [
                 ...(fullCatalog.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
@@ -9954,9 +10002,6 @@ function initApp() {
             } else if (catalogFilters.type === 'anime') {
                 allItems = allItems.filter(i => isItemAnime(i));
             } else if (catalogFilters.type === 'dorama') {
-                const doramaBar = document.getElementById('dorama-filter-bar');
-                if (doramaBar) doramaBar.style.display = 'flex';
-
                 allItems = allItems.filter(i => isItemDorama(i) && !isItemAnime(i));
                 if (activeDoramaSubtype === 'microdrama') {
                     allItems = allItems.filter(s => s.subtipo === 'microdrama' || s.isMicrodrama || s.formato === 'vertical' || (s.totalEpisodios >= 35 && s.tipo === 'dorama'));
@@ -9972,9 +10017,6 @@ function initApp() {
                                !gStr.includes('anime') && !(s.isAnime || s.is_anime);
                     });
                 }
-            } else {
-                const doramaBar = document.getElementById('dorama-filter-bar');
-                if (doramaBar) doramaBar.style.display = 'none';
             }
 
             // 2. Filtro de Áudio
@@ -10192,9 +10234,9 @@ function initApp() {
 
                 // Reseta sub-filtro de doramas
                 activeDoramaSubtype = 'todos';
-                document.querySelectorAll('.dorama-filter-pill').forEach(p => p.classList.remove('active'));
-                const todoPill = document.getElementById('dorama-filter-todos');
-                if (todoPill) todoPill.classList.add('active');
+                document.querySelectorAll('#sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
+                const todoDoramaLink = document.querySelector('#sidebar-filter-section-dorama .filter-link[data-dorama-subtype="todos"]');
+                if (todoDoramaLink) todoDoramaLink.classList.add('active');
                 
                 const searchInput = document.getElementById('catalog-search');
                 if (searchInput) searchInput.value = '';
