@@ -1337,42 +1337,134 @@
         /* ═══════════════════════════════════════════════════════════════════════
            🛡️ ADMIN PANEL STYLES
            ═══════════════════════════════════════════════════════════════════════ */
-        .admin-nav {
+        /* Layout Lateral do Painel Admin */
+        .admin-layout-wrapper {
             display: flex;
-            align-items: center;
-            gap: 8px;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 6px;
-            margin-bottom: 20px;
-            overflow-x: auto;
+            gap: 24px;
+            align-items: flex-start;
+            margin-top: 10px;
         }
 
-        .admin-nav::-webkit-scrollbar { height: 3px; }
-        .admin-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .admin-sidebar {
+            width: 250px;
+            flex-shrink: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 14px 10px;
+            position: sticky;
+            top: 80px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(12px);
+        }
+
+        .admin-sidebar-header {
+            padding: 6px 12px 12px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 8px;
+        }
+
+        .admin-sidebar-title {
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .admin-sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
 
         .admin-sub-btn {
             background: transparent;
-            border: none;
-            color: var(--text-muted);
-            padding: 8px 16px;
+            border: 1px solid transparent;
+            color: #94a3b8;
+            padding: 10px 14px;
             border-radius: 10px;
             font-size: 13px;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.18s ease;
             white-space: nowrap;
-            display: inline-flex;
+            display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 10px;
+            width: 100%;
+            text-align: left;
         }
 
-        .admin-sub-btn:hover { color: #fff; background: rgba(255,255,255,0.06); }
-        .admin-sub-btn.active {
-            background: var(--green-gradient);
+        .admin-btn-icon {
+            font-size: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            flex-shrink: 0;
+        }
+
+        .admin-btn-label {
+            flex: 1;
+            font-size: 13px;
+        }
+
+        .admin-sub-btn:hover {
             color: #fff;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.08);
+            transform: translateX(2px);
+        }
+
+        .admin-sub-btn.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 100%);
+            border-color: #10b981;
+            color: #34d399;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+            font-weight: 800;
+        }
+
+        .admin-main-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        @media (max-width: 960px) {
+            .admin-layout-wrapper {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .admin-sidebar {
+                width: 100%;
+                position: static;
+                padding: 12px;
+            }
+
+            .admin-sidebar-nav {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+                gap: 6px;
+            }
+
+            .admin-sub-btn {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 540px) {
+            .admin-sidebar-nav {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 6px;
+            }
+
+            .admin-sub-btn {
+                padding: 8px 10px;
+                font-size: 11.5px;
+                gap: 6px;
+            }
         }
 
         .admin-header-bar {
@@ -7551,36 +7643,55 @@
                     </div>
                 </div>
 
-                <!-- SUB-NAVBAR -->
-                <div class="admin-nav">
-                    <button class="admin-sub-btn active" id="admin-sub-btn-overview" onclick="switchAdminSubTab('overview')">
-                        📊 Visão Geral
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-queue" onclick="switchAdminSubTab('queue')">
-                        📥 Fila & Processamento
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-scheduler" onclick="switchAdminSubTab('scheduler')">
-                        ⏱️ Horários & Agendador
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-priorities" onclick="switchAdminSubTab('priorities')">
-                        🎯 Pesos & Prioridades
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-settings" onclick="switchAdminSubTab('settings')">
-                        ⚙️ Configurações Gerais
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
-                        💎 Assinaturas & VIPs
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-requests" onclick="switchAdminSubTab('requests')">
-                        🍿 Pedidos de Clientes
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-tickets" onclick="switchAdminSubTab('tickets')">
-                        💬 Tickets de Suporte
-                    </button>
-                    <button class="admin-sub-btn" id="admin-sub-btn-catalog" onclick="switchAdminSubTab('catalog')">
-                        🎬 Gerenciar Catálogo
-                    </button>
-                </div>
+                <!-- LAYOUT EM 2 COLUNAS: MENU LATERAL + CONTEÚDO PRINCIPAL -->
+                <div class="admin-layout-wrapper">
+                    <!-- SIDEBAR LATERAL -->
+                    <aside class="admin-sidebar">
+                        <div class="admin-sidebar-header">
+                            <span class="admin-sidebar-title">Painel de Controle</span>
+                        </div>
+                        <nav class="admin-sidebar-nav">
+                            <button class="admin-sub-btn active" id="admin-sub-btn-overview" onclick="switchAdminSubTab('overview')">
+                                <span class="admin-btn-icon">📊</span>
+                                <span class="admin-btn-label">Visão Geral</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-queue" onclick="switchAdminSubTab('queue')">
+                                <span class="admin-btn-icon">📥</span>
+                                <span class="admin-btn-label">Fila & Processamento</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-scheduler" onclick="switchAdminSubTab('scheduler')">
+                                <span class="admin-btn-icon">⏱️</span>
+                                <span class="admin-btn-label">Horários & Agendador</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-priorities" onclick="switchAdminSubTab('priorities')">
+                                <span class="admin-btn-icon">🎯</span>
+                                <span class="admin-btn-label">Pesos & Prioridades</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-settings" onclick="switchAdminSubTab('settings')">
+                                <span class="admin-btn-icon">⚙️</span>
+                                <span class="admin-btn-label">Configurações Gerais</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-subs" onclick="switchAdminSubTab('subs')">
+                                <span class="admin-btn-icon">💎</span>
+                                <span class="admin-btn-label">Assinaturas & VIPs</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-requests" onclick="switchAdminSubTab('requests')">
+                                <span class="admin-btn-icon">🍿</span>
+                                <span class="admin-btn-label">Pedidos de Clientes</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-tickets" onclick="switchAdminSubTab('tickets')">
+                                <span class="admin-btn-icon">💬</span>
+                                <span class="admin-btn-label">Tickets de Suporte</span>
+                            </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-catalog" onclick="switchAdminSubTab('catalog')">
+                                <span class="admin-btn-icon">🎬</span>
+                                <span class="admin-btn-label">Gerenciar Catálogo</span>
+                            </button>
+                        </nav>
+                    </aside>
+
+                    <!-- ÁREA DE CONTEÚDO PRINCIPAL -->
+                    <main class="admin-main-content">
 
 
                 <!-- SUB-TAB 1: VISÃO GERAL -->
@@ -8265,6 +8376,9 @@
 
                 </div>
 
+
+                    </main>
+                </div>
 
             </div>
 
@@ -9128,7 +9242,9 @@
                 }
 
                 if (key === 'admin') {
-                    return { type: 'tab', mainTab: 'tab-admin', adminSubTab: parts[1] || 'overview' };
+                    let sub = (parts[1] || 'overview').toLowerCase();
+                    if (sub === 'catalogo') sub = 'catalog';
+                    return { type: 'tab', mainTab: 'tab-admin', adminSubTab: sub };
                 }
 
                 if (['settings', 'configuracoes', 'configuracao', 'perfil', 'conta'].includes(key)) {
@@ -16497,7 +16613,9 @@ function initApp() {
                 adminToken = data.token;
                 localStorage.setItem('bf_admin_token', adminToken);
                 showToast('Login de Administrador realizado com sucesso!', 'success');
-                checkAdminAuth();
+                const rState = getRouteStateFromUrl();
+                const targetSub = (rState.mainTab === 'tab-admin' && rState.adminSubTab) ? rState.adminSubTab : null;
+                checkAdminAuth(targetSub);
             } catch (err) {
                 showToast('Erro de conexão com o servidor.', 'error');
             }
@@ -17753,12 +17871,23 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
         async function loadAdminCatalog() {
             if (!adminToken) return;
+            const tbody = document.getElementById('admin-catalog-tbody');
+            if (tbody && (!adminCatalogData?.filmes?.length && !adminCatalogData?.series?.length)) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>Carregando catálogo detalhado...</td></tr>';
+            }
             try {
                 const res = await fetch('/api/admin/catalogo', { headers: getAuthHeaders() });
-                if (!res.ok) return;
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Falha ao obter dados do catálogo: ${err.error || res.statusText}</td></tr>`;
+                    return;
+                }
                 adminCatalogData = await res.json();
                 renderAdminCatalog();
-            } catch (e) {}
+            } catch (e) {
+                console.error('Erro ao carregar catálogo:', e);
+                if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Erro de conexão com o servidor ao carregar catálogo.</td></tr>`;
+            }
         }
 
         function renderAdminCatalog() {
@@ -17828,7 +17957,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             items.forEach(i => {
                 const poster = i.posterUrl || '/logo.jpg';
                 const catBadge = i.isAnime ? '⛩️ Anime' : (i.isDorama ? '🌸 Dorama' : (i.isMicrodrama ? '⚡ Mini Série' : (i.itemType === 'filme' ? '🎬 Filme' : '📺 Série')));
-                const audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : '<span class="badge-processing">💬 Legendado</span>');
+                const audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : (i.isLegendado ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>'));
 
                 if (i.itemType === 'filme') {
                     const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem Telegram</span>`;
@@ -17845,14 +17974,17 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                 </div>
                             </td>
                             <td><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
-                            <td><span style="font-size:12px; color:var(--text-muted);">1 Filme (1080p)</span></td>
-                            <td>${audPill}</td>
+                            <td><span style="font-size:12px; color:var(--text-muted);">1 Filme (${i.qualidade || '1080p'})</span></td>
+                            <td>
+                                <div>${audPill}</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${i.qualidade || '1080p'}</div>
+                            </td>
                             <td><span style="font-size:12px;">${tgBadge}</span></td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" title="Apagar e Reenfileirar">
+                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" style="padding: 5px 10px; font-size: 11px;" title="Apagar e Reenfileirar">
                                     🔄 Rebaixar
                                 </button>
-                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Definitivo">
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Definitivo">
                                     🗑️ Excluir
                                 </button>
                             </td>
@@ -17861,13 +17993,27 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 } else {
                     // SÉRIE com acordeão de temporadas e episódios
                     const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
+                    const missingCount = (i.temporadas || []).reduce((acc, t) => acc + (t.episodiosFaltantes?.length || 0), 0);
+                    const missingBadge = missingCount > 0 
+                        ? `<span style="color: #ef4444; font-weight: 700;">⚠️ Faltam ${missingCount} ep${missingCount > 1 ? 's' : ''}</span>`
+                        : `<span style="color: #10b981; font-weight: 700;">✅ Completo</span>`;
+                    const qual = i.qualidade || '1080p Full HD';
+
+                    const epsComTelegram = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.hasTelegramLink).length, 0);
+                    const tgBadge = totalEps > 0 && epsComTelegram === totalEps
+                        ? `<span style="color:#10b981; font-weight:700;">📱 ${epsComTelegram}/${totalEps} OK</span>`
+                        : (epsComTelegram > 0 
+                            ? `<span style="color:#f59e0b; font-weight:700;">⚠️ ${epsComTelegram}/${totalEps} TG</span>`
+                            : `<span style="color:#ef4444; font-weight:700;">❌ Sem TG</span>`);
+
                     const accordionId = `serie-eps-${i.id}`;
 
                     const epsListHtml = (i.temporadas || []).map(t => {
                         return `
-                            <div style="margin-bottom: 8px;">
-                                <div style="font-weight: 800; font-size: 12px; color: #fbbf24; margin-bottom: 4px;">
-                                    Temporada ${t.numero}
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-weight: 800; font-size: 12px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>Temporada ${t.numero} (${(t.episodios || []).length} episódios)</span>
+                                    ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Faltantes: Eps ${t.episodiosFaltantes.join(', ')}</span>` : ''}
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 4px;">
                                     ${(t.episodios || []).map(e => `
@@ -17891,45 +18037,55 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                         `;
                     }).join('');
 
-                    return `
-                        <tr>
-                            <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
+                    html += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
                             <td>
-                                <strong>${i.nome}</strong> (${i.ano || '2026'})
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <img src="${poster}" style="width:36px; height:50px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1);" onerror="this.src='/logo.jpg'">
+                                    <div>
+                                        <strong style="color:#fff; font-size:14px;">${i.nome}</strong>
+                                        <div style="font-size:11px; color:var(--text-muted);">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td>
+                                <div style="font-size:12px; font-weight:600; color:#fff;">${(i.temporadas || []).length} temp • ${totalEps} eps</div>
+                                <div style="font-size:11px; margin-top:2px;">${missingBadge}</div>
                             </td>
                             <td>
-                                📺 Série (${(i.temporadas || []).length} temp, ${totalEps} eps)
+                                <div>${audPill}</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${qual}</div>
                             </td>
-                            <td>
-                                <span class="badge-completed">${qual}</span>
-                                <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
-                            </td>
-                            <td style="font-size: 11px; color: var(--text-muted);">-</td>
+                            <td><span style="font-size:12px;">${tgBadge}</span></td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-primary" onclick="toggleSerieEpisodes('${accordionId}', this)">
+                                <button class="btn-action btn-action-primary" onclick="toggleSerieEpisodes('${accordionId}', this)" style="padding: 5px 10px; font-size: 11px;">
                                     ▶ Episódios (${totalEps})
                                 </button>
-                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true)" title="Excluir Todos os Episódios e Baixar Novamente">
-                                    🔄 Rebaixar Tudo
+                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Todos os Episódios e Baixar Novamente">
+                                    🔄 Rebaixar
                                 </button>
-                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" title="Excluir Série Completa">
+                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Série Completa">
                                     🗑️
                                 </button>
                             </td>
                         </tr>
                         <tr id="${accordionId}" style="display: none;">
-                            <td colspan="6" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.2);">
-                                <div class="episodes-nested-box">
-                                    <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 10px;">
-                                        🎬 Episódios de "${i.nome}"
+                            <td colspan="6" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.25);">
+                                <div class="episodes-nested-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px; margin-top: 10px;">
+                                    <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                                        <span>🎬 Episódios de "${i.nome}"</span>
+                                        <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">${totalEps} episódios no total</span>
                                     </div>
-                                    ${epsListHtml || '<div style="color: var(--text-muted);">Nenhum episódio cadastrado.</div>'}
+                                    ${epsListHtml || '<div style="color: var(--text-muted); font-size: 12px; padding: 8px;">Nenhum episódio cadastrado.</div>'}
                                 </div>
                             </td>
                         </tr>
                     `;
                 }
-            }).join('');
+            });
+
+            tbody.innerHTML = html;
         }
 
         function toggleSerieEpisodes(accordionId, btn) {
