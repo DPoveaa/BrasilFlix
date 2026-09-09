@@ -634,9 +634,92 @@ class StremioServer {
         });
 
         // 6. Gerenciamento do Catálogo
-        this.app.get('/api/admin/catalogo', auth, (req, res) => {
+        this.app.get('/api/admin/catalogo', auth, async (req, res) => {
             try {
+                if (this.catalogoManager && typeof this.catalogoManager.getCatalogoDetalhado === 'function') {
+                    const data = await this.catalogoManager.getCatalogoDetalhado();
+                    return res.json(data);
+                }
                 res.json(this.catalogoManager?.catalogo || { filmes: [], series: [] });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Edição de episódios
+        this.app.post('/api/admin/catalogo/episodio/update', auth, async (req, res) => {
+            try {
+                const { id, nome, temporada, numero, isDublado, isLegendado, messageId, fileId, audio, qualidade } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID do episódio não informado.' });
+
+                await db.query(`
+                    UPDATE episodios SET
+                        nome = COALESCE($1, nome),
+                        temporada_numero = COALESCE($2, temporada_numero),
+                        numero = COALESCE($3, numero),
+                        is_dublado = COALESCE($4, is_dublado),
+                        is_legendado = COALESCE($5, is_legendado),
+                        message_id = COALESCE($6, message_id),
+                        file_id = COALESCE($7, file_id),
+                        audio = COALESCE($8, audio),
+                        qualidade = COALESCE($9, qualidade)
+                    WHERE id = $10
+                `, [nome, temporada, numero, isDublado, isLegendado, messageId, fileId, audio, qualidade, id]);
+
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+                res.json({ success: true, message: 'Episódio atualizado com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Edição de séries
+        this.app.post('/api/admin/catalogo/serie/update', auth, async (req, res) => {
+            try {
+                const { id, nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID da série não informado.' });
+
+                await db.query(`
+                    UPDATE series SET
+                        nome = COALESCE($1, nome),
+                        tmdb_id = COALESCE($2, tmdb_id),
+                        imdb_id = COALESCE($3, imdb_id),
+                        total_temporadas = COALESCE($4, total_temporadas),
+                        total_episodios = COALESCE($5, total_episodios),
+                        poster_url = COALESCE($6, poster_url),
+                        updated_at = NOW()
+                    WHERE id = $7
+                `, [nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl, id]);
+
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+                res.json({ success: true, message: 'Série atualizada com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Edição de filmes
+        this.app.post('/api/admin/catalogo/filme/update', auth, async (req, res) => {
+            try {
+                const { id, nome, tmdbId, imdbId, isDublado, isLegendado, messageId, fileId, posterUrl } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID do filme não informado.' });
+
+                await db.query(`
+                    UPDATE filmes SET
+                        nome = COALESCE($1, nome),
+                        tmdb_id = COALESCE($2, tmdb_id),
+                        imdb_id = COALESCE($3, imdb_id),
+                        is_dublado = COALESCE($4, is_dublado),
+                        is_legendado = COALESCE($5, is_legendado),
+                        message_id = COALESCE($6, message_id),
+                        file_id = COALESCE($7, file_id),
+                        poster_url = COALESCE($8, poster_url),
+                        updated_at = NOW()
+                    WHERE id = $9
+                `, [nome, tmdbId, imdbId, isDublado, isLegendado, messageId, fileId, posterUrl, id]);
+
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+                res.json({ success: true, message: 'Filme atualizado com sucesso.' });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
