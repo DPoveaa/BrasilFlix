@@ -871,7 +871,8 @@ ${events.join('\n')}
         if (genericMatches < 8 && ptBrScore < 3) return false;
 
         // Se houver indícios fortes e consistentes de Português de Portugal (ex: gerúndio europeu expressivo superando PT-BR), rejeita!
-        if (ptPtScore >= 15 && ptPtScore > ptBrScore * 2) {
+        // Threshold de 20 (era 15) para evitar falsos positivos com vocabulário PT-PT que também é usado no Brasil
+        if (ptPtScore >= 20 && ptPtScore > ptBrScore * 2) {
             return false;
         }
 
@@ -897,15 +898,13 @@ ${events.join('\n')}
             const ePadded = String(episode).padStart(2, '0');
             const epRegex = new RegExp(`(s0*${season}e0*${episode}|e0*${episode}|\\b0*${episode}\\b)`, 'i');
 
-            // Vasculha diretório do vídeo, pasta pai e subpastas Subs / Subtitles
+            // Vasculha diretório do vídeo e subpastas Subs / Subtitles
+            // NÃO inclui pasta pai para evitar contaminação entre episódios diferentes
             const candidateDirs = [
                 videoDir,
                 path.join(videoDir, 'Subs'),
                 path.join(videoDir, 'Subtitles'),
                 path.join(videoDir, 'subs'),
-                path.dirname(videoDir),
-                path.join(path.dirname(videoDir), 'Subs'),
-                path.join(path.dirname(videoDir), 'Subtitles')
             ];
 
             const ptNames = ['portuguese', 'português', 'pob', 'pt-br', 'pt_br', 'brazilian', '31_portuguese', '32_portuguese', 'por', 'pt'];
@@ -946,7 +945,7 @@ ${events.join('\n')}
                 if (isPtPtTag) continue;
 
                 const isPt = ptNames.some(p => item.name.includes(p) || item.dirName.includes(p));
-                const matchesEp = epRegex.test(item.name) || epRegex.test(item.dirName) || allFiles.length <= 5;
+                const matchesEp = epRegex.test(item.name) || epRegex.test(item.dirName);
                 if (isPt && matchesEp) {
                     const content = await fs.readFile(item.path, 'utf8').catch(() => '');
                     if (this.isBrazilianPortugueseSubtitle(content)) {
@@ -962,7 +961,7 @@ ${events.join('\n')}
             let refEnPath = null;
             for (const item of allFiles) {
                 const isEn = item.name.includes('english') || item.name.includes('2_english') || item.name.includes('eng') || item.name.includes('en.srt');
-                const matchesEp = epRegex.test(item.name) || epRegex.test(item.dirName) || allFiles.length <= 5;
+                const matchesEp = epRegex.test(item.name) || epRegex.test(item.dirName);
                 if (isEn && matchesEp) {
                     refEnPath = item.path;
                     break;
@@ -1076,10 +1075,14 @@ ${events.join('\n')}
         // Determina a melhor referência para sincronização (Sub-to-Sub ou Audio-to-Sub)
         let refSyncTarget = companion.refEnPath || null;
         if (!refSyncTarget) {
+            // Filtra faixas Signs & Songs / Forced que são incompatíveis com alinhamento sub-to-sub
+            // Releases de anime (EMBER, Judas, SubsPlease) costumam ter stream 0/1 com apenas 3-10 cues
             const enSubStream = (info.subtitleStreams || []).find(s => {
                 const lang = (s.language || '').toLowerCase();
                 const title = (s.title || '').toLowerCase();
-                return ['eng', 'en', 'english'].includes(lang) || title.includes('english');
+                const isBadTrack = /sign|song|s&s|forced|commentary|sdh|hearing/i.test(title);
+                const isEnglish = ['eng', 'en', 'english'].includes(lang) || title.includes('english');
+                return isEnglish && !isBadTrack;
             });
             if (enSubStream && ['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'text', 'webvtt'].includes((enSubStream.codec || '').toLowerCase())) {
                 const refEnSrtPath = path.join(path.dirname(inputPath), `ref_en_${Date.now()}.srt`);
@@ -1094,9 +1097,18 @@ ${events.join('\n')}
                         extractProc.on('close', c => { clearTimeout(timer); c === 0 ? res() : rej(); });
                         extractProc.on('error', err => { clearTimeout(timer); rej(err); });
                     });
-                    if (fs.existsSync(refEnSrtPath) && fs.statSync(refEnSrtPath).size > 500) {
-                        refSyncTarget = refEnSrtPath;
-                        console.log(`🎯 [SubtitleSync] Trilha de referência em inglês extraída para alinhamento sub-to-sub!`);
+                    if (fs.existsSync(refEnSrtPath)) {
+                        const refStats = fs.statSync(refEnSrtPath);
+                        const refContent = fs.readFileSync(refEnSrtPath, 'utf8');
+                        const cueCount = (refContent.match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/g) || []).length;
+                        // Validação: mínimo 80 cues e 15KB — rejeita faixas Signs & Songs mini-tracks
+                        if (cueCount >= 80 && refStats.size >= 15000) {
+                            refSyncTarget = refEnSrtPath;
+                            console.log(`🎯 [SubtitleSync] Trilha de referência em inglês extraída para alinhamento sub-to-sub (${cueCount} cues, ${(refStats.size/1024).toFixed(1)} KB)!`);
+                        } else {
+                            console.warn(`⚠️ [SubtitleSync] Trilha EN ignorada: apenas ${cueCount} cues / ${(refStats.size/1024).toFixed(1)} KB — provavelmente Signs & Songs ou Forced. Usando VAD de áudio.`);
+                            fs.removeSync(refEnSrtPath);
+                        }
                     }
                 } catch (e) {}
             }

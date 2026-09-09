@@ -16229,6 +16229,12 @@ function initApp() {
         }
         setupPlayerKeyboardShortcuts();
 
+        function closeAllMemberDropdowns() {
+            document.querySelectorAll('.member-action-dropdown-menu').forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+
         function toggleMemberActionDropdown(memberId, event) {
             if (event) event.stopPropagation();
             const targetDropdown = document.getElementById('member-dropdown-' + memberId);

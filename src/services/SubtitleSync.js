@@ -155,8 +155,10 @@ class SubtitleSync {
         }
 
         const isRefSubtitle = videoOrRefSrt.toLowerCase().endsWith('.srt') || videoOrRefSrt.toLowerCase().endsWith('.vtt') || videoOrRefSrt.toLowerCase().endsWith('.ass');
-        // Janela expandida de 180s para capturar aberturas longas, vinhetas de estúdio (Tokyo MX / TV Tokyo) e recaps
-        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 180 : 240);
+        // Janela conservadora: máximo 15s para sub-to-sub, 20s para audio-to-sub.
+        // Valores altos (180s/240s) causavam alinhamento falso positivo contra faixas Signs & Songs
+        // em releases EMBER/Judas de anime, deslocando legendas em 90+ segundos.
+        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 15 : 20);
 
         console.log(`🎙️ [SubtitleSync] Sincronizando legenda via ${isRefSubtitle ? 'Legenda de Referência (Sub-to-Sub 100% Preciso)' : 'Análise de Voz no Áudio (VAD Audio-to-Sub)'} [Janela: ${maxOffsetSec}s]...`);
         const startTime = Date.now();
@@ -173,6 +175,7 @@ sys.argv = [
     '-i', sys.argv[2],
     '-o', sys.argv[3],
     '--max-offset-seconds', str(${maxOffsetSec}),
+    '--no-fix-framerate',
     '--vad', 'subs_then_webrtc'
 ]
 sys.exit(main())

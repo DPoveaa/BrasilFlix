@@ -355,7 +355,6 @@ class TMDBService {
                 { nome: 'Pousando no Amor', ano: '2019', tipo: 'serie', isDorama: true, nota: 8.8, generos: ['Romance', 'Drama'] },
                 { nome: 'Vincenzo', ano: '2021', tipo: 'serie', isDorama: true, nota: 8.5, generos: ['Comédia', 'Crime'] },
                 { nome: 'Tudo Bem Não Ser Normal', ano: '2020', tipo: 'serie', isDorama: true, nota: 8.6, generos: ['Drama', 'Romance'] },
-                { nome: 'Round 6', ano: '2021', tipo: 'serie', isDorama: true, nota: 8.0, generos: ['Ação', 'Suspense'] },
                 { nome: 'Uma Advogada Extraordinária', ano: '2022', tipo: 'serie', isDorama: true, nota: 8.7, generos: ['Drama', 'Comédia'] }
             ];
         }
@@ -433,10 +432,14 @@ class TMDBService {
         // 2. Dorama (K-Drama, C-Drama, J-Drama Live-Action):
         const isDorama = !isAnime && (isKoreanOrChinese || (isJapanese && !hasAnimacao)) && !isMovie;
 
+        // Séries globalmente conhecidas de origem coreana que não devem ser classificadas como Dorama
+        const WESTERN_KNOWN_KOREAN_SERIES = /^(round 6|squid game|all of us are dead)$/i;
+        const isWesternKnown = !isMovie && WESTERN_KNOWN_KOREAN_SERIES.test(nome.trim());
+
         // 3. Categoria principal
         let tipo = isMovie ? 'filme' : 'serie';
         if (isAnime) tipo = 'anime';
-        else if (isDorama) tipo = 'dorama';
+        else if (isDorama && !isWesternKnown) tipo = 'dorama';
 
         return {
             tmdbId: raw.id,
@@ -444,7 +447,7 @@ class TMDBService {
             tipo: tipo,
             isMovie,
             isAnime,
-            isDorama,
+            isDorama: isDorama && !isWesternKnown,
             nome: nome.trim(),
             nomeOriginal: nomeOriginal.trim(),
             sinopse: raw.overview ? raw.overview.trim() : 'Sem sinopse disponível.',

@@ -504,7 +504,9 @@ class CatalogoManager {
         const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
         const isAnime = s.is_anime || s.isAnime || (hasAnimeGenre && (s.is_dorama || s.isDorama)) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
         const isMicrodrama = s.subtipo === 'microdrama' || !!(s.is_microdrama || s.isMicrodrama) || s.formato === 'vertical' || generosArr.some(g => String(g).toLowerCase().includes('microdrama') || String(g).toLowerCase().includes('duanju'));
-        const isDorama = !isAnime && (s.is_dorama || s.isDorama || isMicrodrama || false);
+        // Séries globalmente conhecidas de origem coreana que não devem ser classificadas como Dorama
+        const WESTERN_KNOWN_SERIES = /^(round 6|squid game|all of us are dead)$/i;
+        const isDorama = !isAnime && !WESTERN_KNOWN_SERIES.test(s.nome || '') && (s.is_dorama || s.isDorama || isMicrodrama || false);
         const tags = (s.nome || '') + ' ' + (s.sinopse || s.descricao || '') + ' ' + generosArr.toString() + (isMicrodrama ? ' microdrama duanju vertical 9:16' : '');
 
         return {
