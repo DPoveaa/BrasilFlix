@@ -35,6 +35,16 @@ class StremioServer {
     setupMiddlewares() {
         this.app.use(express.json());
 
+        // Normalização de trailing slashes para SEO (redireciona /assinar/ -> /assinar com 301)
+        this.app.use((req, res, next) => {
+            if (req.path.length > 1 && req.path.endsWith('/')) {
+                const query = req.url.slice(req.path.length);
+                const safepath = req.path.slice(0, -1);
+                return res.redirect(301, safepath + query);
+            }
+            next();
+        });
+
         const publicDir = path.resolve(__dirname, '../../public');
         this.app.use(express.static(publicDir));
         this.app.use('/assets', express.static(path.join(publicDir, 'assets')));
@@ -2002,6 +2012,17 @@ class StremioServer {
 
         // ═══════════════════════════════════════════════════════════════════════
 
+        // 1.5 Rotas de SEO e Sitemap
+        this.app.get('/robots.txt', (req, res) => {
+            res.type('text/plain');
+            res.sendFile(path.resolve(__dirname, '../../public/robots.txt'));
+        });
+
+        this.app.get('/sitemap.xml', (req, res) => {
+            res.type('application/xml');
+            res.sendFile(path.resolve(__dirname, '../../public/sitemap.xml'));
+        });
+
         // 2. Dashboard Web e Rotas de Navegacao
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
         this.app.get([
@@ -2435,7 +2456,7 @@ class StremioServer {
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.endsWith('.json') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health' || token === 'filme' || token === 'serie' || token === 'assistir' || token === 'sala') {
+            if (token.includes('.') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health' || token === 'filme' || token === 'serie' || token === 'assistir' || token === 'sala' || token === 'status' || token === 'fila' || token === 'catalogo' || token === 'robots.txt' || token === 'sitemap.xml') {
                 return next();
             }
             this.renderLandingPage(req, res, token);
@@ -2514,6 +2535,11 @@ class StremioServer {
                 console.error('Erro no webhook Mercado Pago:', err.message);
                 res.status(500).send('Erro interno');
             }
+        });
+
+        // 9. Handler 404 para rotas e arquivos inexistentes
+        this.app.use((req, res) => {
+            res.status(404).json({ success: false, error: 'Rota não encontrada' });
         });
     }
 
