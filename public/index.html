@@ -5429,40 +5429,48 @@
             font-weight: 800;
         }
 
-        /* Paginação em Lote de Episódios para Séries Longas (40-100+ eps) */
+        /* Paginação em Lote de Episódios para Séries Longas (ex: Eps 1-25, 26-50...) */
         .playback-batch-tabs-bar {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             overflow-x: auto;
-            padding-bottom: 8px;
-            margin-bottom: 12px;
+            padding: 4px 0 12px 0;
+            margin-bottom: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             scrollbar-width: thin;
+            width: 100%;
         }
 
         .playback-batch-btn {
             background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             color: #94a3b8;
             font-size: 12px;
             font-weight: 700;
-            padding: 6px 12px;
-            border-radius: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
             cursor: pointer;
             white-space: nowrap;
-            transition: all 0.18s ease;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
 
         .playback-batch-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.09);
             color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
         }
 
         .playback-batch-btn.active {
-            background: rgba(16, 185, 129, 0.2);
+            background: rgba(16, 185, 129, 0.18);
             border-color: #10b981;
             color: #34d399;
-            box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.28);
+            font-weight: 800;
         }
 
         /* Sub-filtros da Seção Doramas */
@@ -7188,6 +7196,10 @@
 
             <div class="playback-season-selector-bar" id="playback-season-selector-bar">
                 <!-- Botões de Temporada renderizados via JS -->
+            </div>
+
+            <div class="playback-batch-tabs-bar" id="playback-batch-selector-bar" style="display: none;">
+                <!-- Botões de Lote (Eps 1-25, etc.) renderizados via JS -->
             </div>
 
             <div class="playback-episodes-grid" id="playback-episodes-grid">
@@ -13083,6 +13095,7 @@ function initApp() {
             currentPlaybackMovie = null;
             currentPlaybackSeasonNum = sNum;
             currentPlaybackEpNum = eNum;
+            currentPlaybackBatchIndex = null;
 
             localStorage.setItem('bf_playback_type', 'serie');
             localStorage.setItem('bf_playback_serie_id', String(serieId));
@@ -13248,10 +13261,11 @@ function initApp() {
             });
         }
 
-        let currentPlaybackBatchIndex = 0;
+        let currentPlaybackBatchIndex = null;
 
         function renderPlaybackSeasonEpisodes(serie, currentSeasonNum, currentEpNum) {
             const seasonSelector = document.getElementById('playback-season-selector-bar');
+            let batchSelector = document.getElementById('playback-batch-selector-bar');
             const epGrid = document.getElementById('playback-episodes-grid');
             const countLabel = document.getElementById('playback-season-ep-count');
 
@@ -13272,7 +13286,7 @@ function initApp() {
                     seasonSelector.innerHTML = temporadas.map(t => {
                         const isActive = t.numero === activeSeason?.numero;
                         return `
-                            <button class="playback-season-btn ${isActive ? 'active' : ''}" onclick="renderPlaybackSeasonEpisodes(currentPlaybackSerie, ${t.numero}, ${isActive ? currentEpNum : 1})">
+                            <button class="playback-season-btn ${isActive ? 'active' : ''}" onclick="selectPlaybackSeason(${t.numero}, ${isActive ? currentEpNum : 1})">
                                 Temporada ${t.numero} (${t.episodios?.length || 0} eps)
                             </button>
                         `;
@@ -13283,7 +13297,20 @@ function initApp() {
             }
 
             if (!epGrid) return;
+
+            // Se o container de lotes não existir no DOM por algum motivo, insere antes do grid
+            if (!batchSelector && epGrid.parentNode) {
+                batchSelector = document.createElement('div');
+                batchSelector.id = 'playback-batch-selector-bar';
+                batchSelector.className = 'playback-batch-tabs-bar';
+                epGrid.parentNode.insertBefore(batchSelector, epGrid);
+            }
+
             if (eps.length === 0) {
+                if (batchSelector) {
+                    batchSelector.style.display = 'none';
+                    batchSelector.innerHTML = '';
+                }
                 epGrid.innerHTML = '<div style="color: var(--text-muted); padding: 20px; font-size: 13px;">Nenhum episódio cadastrado nesta temporada.</div>';
                 return;
             }
@@ -13292,34 +13319,50 @@ function initApp() {
             const BATCH_SIZE = 25;
             let displayEps = eps;
 
-            if (eps.length > 25) {
-                // Auto-ajusta para o lote que contém o episódio ativo
-                const targetBatch = Math.floor((currentEpNum - 1) / BATCH_SIZE);
-                if (currentPlaybackBatchIndex === null || currentPlaybackBatchIndex === undefined || currentPlaybackBatchIndex < 0) {
-                    currentPlaybackBatchIndex = targetBatch;
+            if (eps.length > BATCH_SIZE) {
+                const totalBatches = Math.ceil(eps.length / BATCH_SIZE);
+                // Auto-ajusta para o lote que contém o episódio ativo se não estiver definido ou fora do range
+                if (currentPlaybackBatchIndex === null || currentPlaybackBatchIndex === undefined || currentPlaybackBatchIndex < 0 || currentPlaybackBatchIndex >= totalBatches) {
+                    const targetBatch = Math.floor(Math.max(0, (currentEpNum - 1)) / BATCH_SIZE);
+                    currentPlaybackBatchIndex = Math.min(targetBatch, totalBatches - 1);
                 }
 
-                const totalBatches = Math.ceil(eps.length / BATCH_SIZE);
-                let batchTabsHtml = '<div class="playback-batch-tabs-bar">';
+                let batchButtonsHtml = '';
                 for (let b = 0; b < totalBatches; b++) {
                     const startEp = b * BATCH_SIZE + 1;
                     const endEp = Math.min((b + 1) * BATCH_SIZE, eps.length);
                     const isBatchActive = b === currentPlaybackBatchIndex;
-                    batchTabsHtml += `
+                    batchButtonsHtml += `
                         <button class="playback-batch-btn ${isBatchActive ? 'active' : ''}" onclick="setPlaybackBatch(${b})">
                             Eps ${startEp}-${endEp}
                         </button>
                     `;
                 }
-                batchTabsHtml += '</div>';
+
+                if (batchSelector) {
+                    batchSelector.style.display = 'flex';
+                    batchSelector.innerHTML = batchButtonsHtml;
+                }
 
                 const startIdx = currentPlaybackBatchIndex * BATCH_SIZE;
                 const endIdx = startIdx + BATCH_SIZE;
                 displayEps = eps.slice(startIdx, endIdx);
 
-                epGrid.innerHTML = batchTabsHtml + renderEpisodeCardsList(displayEps, serie, activeSeason, currentSeasonNum, currentEpNum);
-            } else {
                 epGrid.innerHTML = renderEpisodeCardsList(displayEps, serie, activeSeason, currentSeasonNum, currentEpNum);
+            } else {
+                if (batchSelector) {
+                    batchSelector.style.display = 'none';
+                    batchSelector.innerHTML = '';
+                }
+                epGrid.innerHTML = renderEpisodeCardsList(displayEps, serie, activeSeason, currentSeasonNum, currentEpNum);
+            }
+        }
+
+        function selectPlaybackSeason(seasonNum, epNum = 1) {
+            currentPlaybackSeasonNum = seasonNum;
+            currentPlaybackBatchIndex = null;
+            if (currentPlaybackSerie) {
+                renderPlaybackSeasonEpisodes(currentPlaybackSerie, seasonNum, epNum);
             }
         }
 
