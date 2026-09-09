@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /configure
+Allow: /assinar
+Allow: /status
+Allow: /fila
+Allow: /catalogo
+Allow: /filme/
+Allow: /serie/
+Allow: /assistir
+Disallow: /api/
+Disallow: /admin
+
+Sitemap: https://brasilflix.online/sitemap.xml

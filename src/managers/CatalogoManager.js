@@ -2004,6 +2004,174 @@ class CatalogoManager {
         };
     }
 
+    async getCatalogoDetalhado() {
+        const filmesRes = await db.query(`
+            SELECT f.*
+            FROM filmes f
+            ORDER BY f.updated_at DESC, f.id DESC
+        `);
+
+        const seriesRes = await db.query(`
+            SELECT s.*
+            FROM series s
+            ORDER BY s.updated_at DESC, s.id DESC
+        `);
+
+        const episodiosRes = await db.query(`
+            SELECT e.*
+            FROM episodios e
+            ORDER BY e.serie_id ASC, e.temporada_numero ASC, e.numero ASC
+        `);
+
+        const episodiosPorSerie = new Map();
+        for (const ep of episodiosRes.rows) {
+            let versoes = ep.versoes || {};
+            if (typeof versoes === 'string') {
+                try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+            }
+            ep.versoes = versoes;
+
+            const hasDub = !!(ep.is_dublado || (versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId)));
+            const hasLeg = !!(ep.is_legendado || (versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId)));
+            const primaryMsgId = ep.message_id || versoes.dublado?.messageId || versoes.legendado?.messageId || null;
+            const primaryFileId = ep.file_id || versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+
+            const epObj = {
+                id: ep.id,
+                serieId: ep.serie_id,
+                temporada: ep.temporada_numero,
+                numero: ep.numero,
+                nome: ep.nome || `Episódio ${ep.numero}`,
+                sinopse: ep.sinopse || '',
+                messageId: primaryMsgId,
+                fileId: primaryFileId,
+                qualidade: ep.qualidade || '1080p',
+                audio: ep.audio,
+                isDublado: hasDub,
+                isLegendado: hasLeg,
+                versoes: versoes,
+                stillUrl: ep.still_url,
+                duracao: ep.duracao,
+                formato: ep.formato,
+                createdAt: ep.created_at,
+                hasTelegramLink: !!(primaryMsgId || primaryFileId)
+            };
+
+            if (!episodiosPorSerie.has(ep.serie_id)) {
+                episodiosPorSerie.set(ep.serie_id, []);
+            }
+            episodiosPorSerie.get(ep.serie_id).push(epObj);
+        }
+
+        const seriesFormatted = seriesRes.rows.map(s => {
+            const eps = episodiosPorSerie.get(s.id) || [];
+
+            const temporadasMap = new Map();
+            for (const ep of eps) {
+                if (!temporadasMap.has(ep.temporada)) {
+                    temporadasMap.set(ep.temporada, []);
+                }
+                temporadasMap.get(ep.temporada).push(ep);
+            }
+
+            const totalSeasons = Math.max(s.total_temporadas || 1, ...Array.from(temporadasMap.keys()), 1);
+            const temporadas = [];
+
+            for (let tNum = 1; tNum <= totalSeasons; tNum++) {
+                const seasonEps = temporadasMap.get(tNum) || [];
+                const epNumsFound = new Set(seasonEps.map(e => e.numero));
+                const maxEpNum = Math.max(0, ...Array.from(epNumsFound));
+                const missingEpNums = [];
+                for (let eIdx = 1; eIdx <= maxEpNum; eIdx++) {
+                    if (!epNumsFound.has(eIdx)) {
+                        missingEpNums.push(eIdx);
+                    }
+                }
+
+                temporadas.push({
+                    numero: tNum,
+                    totalEpisodios: seasonEps.length,
+                    maxEpisodioNumero: maxEpNum,
+                    episodiosFaltantes: missingEpNums,
+                    episodios: seasonEps
+                });
+            }
+
+            let tempMeta = s.temporadas_meta || {};
+            if (typeof tempMeta === 'string') {
+                try { tempMeta = JSON.parse(tempMeta); } catch (_) { tempMeta = {}; }
+            }
+
+            return {
+                id: s.id,
+                nome: s.nome,
+                nomeOriginal: s.nome_original,
+                ano: s.ano,
+                generos: s.generos || [],
+                sinopse: s.sinopse,
+                posterUrl: s.poster_url,
+                backdropUrl: s.backdrop_url,
+                nota: s.nota,
+                tmdbId: s.tmdb_id,
+                imdbId: s.imdb_id,
+                totalTemporadas: s.total_temporadas,
+                totalEpisodios: s.total_episodios,
+                isAnime: s.is_anime,
+                isDorama: s.is_dorama,
+                isMicrodrama: s.is_microdrama,
+                isDublado: s.is_dublado,
+                isLegendado: s.is_legendado,
+                statusSerie: s.status_serie,
+                emLancamento: s.em_lancamento,
+                createdAt: s.created_at,
+                updatedAt: s.updated_at,
+                temporadasMeta: tempMeta,
+                temporadas: temporadas
+            };
+        });
+
+        const filmesFormatted = filmesRes.rows.map(f => {
+            let versoes = f.versoes || {};
+            if (typeof versoes === 'string') {
+                try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+            }
+            const primaryMsgId = f.message_id || versoes.dublado?.messageId || versoes.legendado?.messageId || null;
+            const primaryFileId = f.file_id || versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+
+            return {
+                id: f.id,
+                nome: f.nome,
+                nomeOriginal: f.nome_original,
+                ano: f.ano,
+                generos: f.generos || [],
+                sinopse: f.sinopse,
+                posterUrl: f.poster_url,
+                backdropUrl: f.backdrop_url,
+                nota: f.nota,
+                tmdbId: f.tmdb_id,
+                imdbId: f.imdb_id,
+                messageId: primaryMsgId,
+                fileId: primaryFileId,
+                qualidade: f.qualidade || '1080p',
+                audio: f.audio,
+                isDublado: f.is_dublado,
+                isLegendado: f.is_legendado,
+                isCam: f.is_cam,
+                versoes: versoes,
+                isAnime: f.is_anime,
+                isDorama: f.is_dorama,
+                createdAt: f.created_at,
+                updatedAt: f.updated_at,
+                hasTelegramLink: !!(primaryMsgId || primaryFileId)
+            };
+        });
+
+        return {
+            filmes: filmesFormatted,
+            series: seriesFormatted
+        };
+    }
+
     getFilmesNormais() {
         return (this.catalogo.filmes || []).filter(f => !f.isAnime);
     }

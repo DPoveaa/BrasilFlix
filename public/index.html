@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BrasilFlix • Status, Fila & Catálogo Oficial</title>
     <meta name="description" content="Acompanhe em tempo real o status de processamento, a fila de downloads e navegue por todo o catálogo de filmes, séries e doramas 1080p do BrasilFlix.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://brasilflix.online/">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -6536,6 +6538,21 @@
         </div>
     </div>
 
+    <!-- MODAL 5: DETALHES E EDIÇÃO DE EPISÓDIO -->
+    <div class="modal-backdrop" id="admin-modal-episode-details" onclick="closeAdminModalOnClick(event, 'admin-modal-episode-details')">
+        <div class="modal-card" style="max-width: 650px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeAdminModal('admin-modal-episode-details')">✕</button>
+            <div class="modal-body" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 16px;" id="adm-ep-modal-title">
+                    📝 Detalhes e Edição do Episódio
+                </h2>
+                <div id="adm-ep-modal-content">
+                    <!-- Conteúdo gerado via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     
     
     <!-- MODAL DA ROLETA DO GRUPO (ASSISTIR JUNTO) -->
@@ -7793,16 +7810,16 @@
                     </div>
                 </div>
 
-                <!-- SUB-TAB 5: GERENCIAR CATÁLOGO -->
+                <!-- SUB-TAB 5: GERENCIAR CATÁLOGO COMPLETO -->
                 <div id="admin-subtab-catalog" class="admin-subtab-content" style="display: none;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
                         <div>
-                            <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🎬 Catálogo & Gerenciamento de Episódios</h3>
-                            <p style="font-size: 12px; color: var(--text-muted);">Clique em <strong>▶ Episódios</strong> para gerenciar ou excluir episódios individuais. Clique em <strong>🔄 Rebaixar</strong> para apagar do Armazém e reenfileirar imediatamente para download.</p>
+                            <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🎬 Painel de Controle de Catálogo, Temporadas & Mídias</h3>
+                            <p style="font-size: 12px; color: var(--text-muted);">Inspecione e gerencie séries, temporadas, episódios faltantes, versões dubladas/legendadas e vínculos com o Telegram.</p>
                         </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                             <button class="btn-action btn-action-primary" onclick="openAdminModal('admin-modal-add-job')">
-                                ➕ Adicionar Filme / Série (TMDB)
+                                ➕ Adicionar Mídia (TMDB)
                             </button>
                             <button class="btn-action" onclick="handleResyncCatalog()">
                                 🔄 Re-sincronizar Banco
@@ -7810,26 +7827,51 @@
                         </div>
                     </div>
 
-                    <div class="search-box" style="margin-bottom: 14px;">
-                        <span class="search-icon">🔍</span>
-                        <input type="text" id="admin-catalog-search" class="search-input" placeholder="Filtrar catálogo por nome..." oninput="renderAdminCatalog()">
+                    <!-- BARRA DE FILTROS E BUSCA AVANÇADA -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
+                        <div class="search-box" style="flex: 1; min-width: 240px; margin-bottom: 0;">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="admin-catalog-search" class="search-input" placeholder="Buscar filmes, séries, episódios..." oninput="renderAdminCatalog()">
+                        </div>
+
+                        <select id="admin-catalog-type-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 10px 12px; margin-bottom: 0;" onchange="renderAdminCatalog()">
+                            <option value="all">📺 Todos os Tipos</option>
+                            <option value="filme">🎬 Filmes</option>
+                            <option value="serie">📺 Séries</option>
+                            <option value="anime">⛩️ Animes</option>
+                            <option value="dorama">🌸 Doramas</option>
+                            <option value="microdrama">⚡ Mini Séries</option>
+                        </select>
+
+                        <select id="admin-catalog-status-filter" class="admin-input" style="width: auto; min-width: 160px; padding: 10px 12px; margin-bottom: 0;" onchange="renderAdminCatalog()">
+                            <option value="all">🔍 Todos os Status</option>
+                            <option value="missing_eps">⚠️ Com Episódios Faltantes</option>
+                            <option value="no_telegram">📱 Sem Vínculo Telegram</option>
+                            <option value="complete">✅ Completos & OK</option>
+                        </select>
+
+                        <select id="admin-catalog-audio-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 10px 12px; margin-bottom: 0;" onchange="renderAdminCatalog()">
+                            <option value="all">🎧 Áudio & Legenda</option>
+                            <option value="dublado">🔊 Dublados (PT-BR)</option>
+                            <option value="legendado">💬 Legendados (PT-BR)</option>
+                        </select>
                     </div>
 
-                    <div class="admin-table-container">
-                        <div style="overflow-x: auto;">
+                    <div id="admin-catalog-container">
+                        <div class="admin-table-container">
                             <table class="admin-table">
                                 <thead>
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Título</th>
-                                        <th>Tipo / Estrutura</th>
-                                        <th>Qualidade & Áudio</th>
-                                        <th>Message ID</th>
+                                        <th>Mídia / Título</th>
+                                        <th>Tipo / Categoria</th>
+                                        <th>Estrutura & Faltantes</th>
+                                        <th>Idiomas & Qualidade</th>
+                                        <th>Status Telegram</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody id="admin-catalog-tbody">
-                                    <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando catálogo...</td></tr>
+                                    <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando catálogo detalhado...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -17667,37 +17709,90 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             if (!tbody) return;
 
             const q = (document.getElementById('admin-catalog-search')?.value || '').toLowerCase().trim();
-            const items = [
-                ...(adminCatalogData.filmes || []).map(f => ({ ...f, itemType: 'filme' })),
-                ...(adminCatalogData.series || []).map(s => ({ ...s, itemType: 'serie' }))
-            ];
+            const typeFilter = document.getElementById('admin-catalog-type-filter')?.value || 'all';
+            const statusFilter = document.getElementById('admin-catalog-status-filter')?.value || 'all';
+            const audioFilter = document.getElementById('admin-catalog-audio-filter')?.value || 'all';
 
-            const filtered = q ? items.filter(i => (i.nome || '').toLowerCase().includes(q)) : items;
+            const filmes = (adminCatalogData.filmes || []).map(f => ({ ...f, itemType: 'filme' }));
+            const series = (adminCatalogData.series || []).map(s => ({ ...s, itemType: 'serie' }));
 
-            if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum título encontrado.</td></tr>';
+            let items = [...filmes, ...series];
+
+            if (typeFilter !== 'all') {
+                if (typeFilter === 'filme') {
+                    items = items.filter(i => i.itemType === 'filme' && !i.isAnime);
+                } else if (typeFilter === 'serie') {
+                    items = items.filter(i => i.itemType === 'serie' && !i.isAnime && !i.isDorama && !i.isMicrodrama);
+                } else if (typeFilter === 'anime') {
+                    items = items.filter(i => i.isAnime);
+                } else if (typeFilter === 'dorama') {
+                    items = items.filter(i => i.isDorama);
+                } else if (typeFilter === 'microdrama') {
+                    items = items.filter(i => i.isMicrodrama);
+                }
+            }
+
+            if (audioFilter !== 'all') {
+                if (audioFilter === 'dublado') {
+                    items = items.filter(i => i.isDublado || !!i.versoes?.dublado);
+                } else if (audioFilter === 'legendado') {
+                    items = items.filter(i => i.isLegendado || !!i.versoes?.legendado);
+                }
+            }
+
+            if (statusFilter !== 'all') {
+                if (statusFilter === 'missing_eps') {
+                    items = items.filter(i => i.itemType === 'serie' && (i.temporadas || []).some(t => t.episodiosFaltantes && t.episodiosFaltantes.length > 0));
+                } else if (statusFilter === 'no_telegram') {
+                    items = items.filter(i => !i.hasTelegramLink && !i.messageId);
+                } else if (statusFilter === 'complete') {
+                    items = items.filter(i => i.hasTelegramLink || (i.temporadas || []).every(t => !t.episodiosFaltantes || t.episodiosFaltantes.length === 0));
+                }
+            }
+
+            if (q) {
+                items = items.filter(i => {
+                    const nameMatch = (i.nome || '').toLowerCase().includes(q) || (i.nomeOriginal || '').toLowerCase().includes(q);
+                    const idMatch = String(i.id) === q || String(i.tmdbId) === q || String(i.imdbId || '').toLowerCase().includes(q);
+                    if (nameMatch || idMatch) return true;
+                    if (i.itemType === 'serie') {
+                        return (i.temporadas || []).some(t => (t.episodios || []).some(e => (e.nome || '').toLowerCase().includes(q) || String(e.id) === q));
+                    }
+                    return false;
+                });
+            }
+
+            if (items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">Nenhum título localizado com os filtros selecionados.</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = filtered.map(i => {
-                const qual = i.qualidade || (i.isCam ? 'CAM' : '1080p');
-                const aud = i.audioBadge || (i.isDublado ? 'Dublado' : 'Legendado');
+            let html = '';
+            items.forEach(i => {
+                const poster = i.posterUrl || '/logo.jpg';
+                const catBadge = i.isAnime ? '⛩️ Anime' : (i.isDorama ? '🌸 Dorama' : (i.isMicrodrama ? '⚡ Mini Série' : (i.itemType === 'filme' ? '🎬 Filme' : '📺 Série')));
+                const audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : '<span class="badge-processing">💬 Legendado</span>');
 
                 if (i.itemType === 'filme') {
-                    return `
-                        <tr>
-                            <td style="color: var(--text-muted); font-size: 11px;">#${i.id}</td>
+                    const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem Telegram</span>`;
+
+                    html += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
                             <td>
-                                <strong>${i.nome}</strong> (${i.ano || '2026'})
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <img src="${poster}" style="width:36px; height:50px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1);" onerror="this.src='/logo.jpg'">
+                                    <div>
+                                        <strong style="color:#fff; font-size:14px;">${i.nome}</strong>
+                                        <div style="font-size:11px; color:var(--text-muted);">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
+                                    </div>
+                                </div>
                             </td>
-                            <td>🎬 Filme</td>
-                            <td>
-                                <span class="badge-completed">${qual}</span>
-                                <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">${aud}</span>
-                            </td>
-                            <td style="font-size: 11px; color: var(--text-muted);">${i.messageId || '-'}</td>
+                            <td><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td><span style="font-size:12px; color:var(--text-muted);">1 Filme (1080p)</span></td>
+                            <td>${audPill}</td>
+                            <td><span style="font-size:12px;">${tgBadge}</span></td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" title="Excluir do Armazém e Baixar Novamente">
+                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" title="Apagar e Reenfileirar">
                                     🔄 Rebaixar
                                 </button>
                                 <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Definitivo">
