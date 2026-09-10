@@ -1577,15 +1577,38 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 16px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
             margin-bottom: 20px;
+            width: 100%;
         }
+
+        .admin-table-container::-webkit-scrollbar { height: 6px; }
+        .admin-table-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 
         .admin-table {
             width: 100%;
+            min-width: 820px;
             border-collapse: collapse;
             text-align: left;
             font-size: 13px;
+        }
+
+        .btn-icon-compact {
+            padding: 4px 8px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            border-radius: 6px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 3px !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+            min-height: 26px !important;
+            cursor: pointer !important;
         }
 
         .admin-table th {
@@ -7955,6 +7978,18 @@
                             <button class="btn-action" onclick="handleResyncCatalog()">
                                 🔄 Re-sincronizar Banco
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- BANNER EXPLICATIVO: REBAIXAR VS EXCLUIR -->
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 10px 16px; margin-bottom: 14px; font-size: 12px; line-height: 1.5;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 800; color: #34d399; margin-bottom: 2px;">
+                            <span>💡 Entenda os Botões de Ação:</span>
+                        </div>
+                        <div style="color: #cbd5e1;">
+                            <strong style="color: #6ee7b7;">🔄 Rebaixar:</strong> Exclui o arquivo/versão atual do Armazém e <strong>recria o trabalho na fila com Prioridade 1</strong> para que o robô faça o download de uma nova fonte. É possível rebaixar <strong>apenas a versão Dublada</strong> (🔄 Dub) ou <strong>apenas a Legendada</strong> (🔄 Leg), mantendo a outra versão intacta!
+                            <br>
+                            <strong style="color: #f87171;">🗑️ Excluir:</strong> Remove permanentemente a mídia do banco de dados e do Telegram, <strong>sem</strong> reenfileirar para download.
                         </div>
                     </div>
 
@@ -17960,7 +17995,34 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 const audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : (i.isLegendado ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>'));
 
                 if (i.itemType === 'filme') {
-                    const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem Telegram</span>`;
+                    const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem TG</span>`;
+                    
+                    const hasDub = !!i.isDublado || !!(i.versoes?.dublado?.messageId || i.versoes?.dublado?.fileId);
+                    const hasLeg = !!i.isLegendado || !!(i.versoes?.legendado?.messageId || i.versoes?.legendado?.fileId);
+                    
+                    let rebaixarButtons = '';
+                    if (hasDub && hasLeg) {
+                        rebaixarButtons = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar apenas Dublado (mantém o legendado)">
+                                🔄 Dub
+                            </button>
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar apenas Legendado (mantém o dublado)">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else if (hasLeg && !hasDub) {
+                        rebaixarButtons = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar Legendado">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else {
+                        rebaixarButtons = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar Dublado">
+                                🔄 Dub
+                            </button>
+                        `;
+                    }
 
                     html += `
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
@@ -17981,12 +18043,12 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                             </td>
                             <td><span style="font-size:12px;">${tgBadge}</span></td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true)" style="padding: 5px 10px; font-size: 11px;" title="Apagar e Reenfileirar">
-                                    🔄 Rebaixar
-                                </button>
-                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Definitivo">
-                                    🗑️ Excluir
-                                </button>
+                                <div style="display:inline-flex; align-items:center; gap:4px;">
+                                    ${rebaixarButtons}
+                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo Definitivo">
+                                        🗑️
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `;
@@ -18016,26 +18078,82 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                     ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Faltantes: Eps ${t.episodiosFaltantes.join(', ')}</span>` : ''}
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    ${(t.episodios || []).map(e => `
-                                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 10px; font-size: 12px;">
-                                            <div>
-                                                <strong>T${t.numero}E${e.numero}</strong> • ${e.nome || `Episódio ${e.numero}`}
-                                                <span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">(Msg: ${e.messageId || '-'})</span>
-                                            </div>
-                                            <div style="display: flex; gap: 6px;">
-                                                <button class="btn-action btn-action-rebaixar" style="padding: 3px 8px; font-size: 11px;" onclick="handleDeleteEpisode('${e.id || e.messageId}', true)" title="Excluir e Rebaixar Episódio">
-                                                    🔄 Rebaixar
+                                    ${(t.episodios || []).map(e => {
+                                        const epDub = !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId);
+                                        const epLeg = !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId);
+                                        const epAudBadge = (epDub && epLeg) ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">Dual</span>' : (epDub ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">Dub</span>' : (epLeg ? '<span class="badge-processing" style="font-size:10px; padding:2px 6px;">Leg</span>' : ''));
+
+                                        let epRebaixarBtns = '';
+                                        if (epDub && epLeg) {
+                                            epRebaixarBtns = `
+                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar apenas Dublado">
+                                                    🔄 Dub
                                                 </button>
-                                                <button class="btn-action btn-action-danger" style="padding: 3px 8px; font-size: 11px;" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
-                                                    🗑️
+                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar apenas Legendado">
+                                                    🔄 Leg
                                                 </button>
+                                            `;
+                                        } else if (epLeg && !epDub) {
+                                            epRebaixarBtns = `
+                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar Legendado">
+                                                    🔄 Leg
+                                                </button>
+                                            `;
+                                        } else {
+                                            epRebaixarBtns = `
+                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar Dublado">
+                                                    🔄 Dub
+                                                </button>
+                                            `;
+                                        }
+
+                                        return `
+                                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 10px; font-size: 12px; gap:8px;">
+                                                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                                                    <strong style="white-space:nowrap;">T${t.numero}E${e.numero}</strong>
+                                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${e.nome || `Episódio ${e.numero}`}</span>
+                                                    ${epAudBadge}
+                                                    <span style="font-size: 10px; color: var(--text-muted); white-space:nowrap;">(Msg: ${e.messageId || '-'})</span>
+                                                </div>
+                                                <div style="display: flex; gap: 4px; flex-shrink:0;">
+                                                    ${epRebaixarBtns}
+                                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
+                                                        🗑️
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    `).join('')}
+                                        `;
+                                    }).join('')}
                                 </div>
                             </div>
                         `;
                     }).join('');
+
+                    const sDub = !!i.isDublado;
+                    const sLeg = !!i.isLegendado;
+                    let serieRebaixarBtns = '';
+                    if (sDub && sLeg) {
+                        serieRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar todos os eps Dublados">
+                                🔄 Dub
+                            </button>
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar todos os eps Legendados">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else if (sLeg && !sDub) {
+                        serieRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar série Legendada">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else {
+                        serieRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar série Dublada">
+                                🔄 Dub
+                            </button>
+                        `;
+                    }
 
                     html += `
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
@@ -18059,15 +18177,15 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                             </td>
                             <td><span style="font-size:12px;">${tgBadge}</span></td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <button class="btn-action btn-action-primary" onclick="toggleSerieEpisodes('${accordionId}', this)" style="padding: 5px 10px; font-size: 11px;">
-                                    ▶ Episódios (${totalEps})
-                                </button>
-                                <button class="btn-action btn-action-rebaixar" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Todos os Episódios e Baixar Novamente">
-                                    🔄 Rebaixar
-                                </button>
-                                <button class="btn-action btn-action-danger" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" style="padding: 5px 10px; font-size: 11px;" title="Excluir Série Completa">
-                                    🗑️
-                                </button>
+                                <div style="display:inline-flex; align-items:center; gap:4px;">
+                                    <button class="btn-action btn-action-primary btn-icon-compact" onclick="toggleSerieEpisodes('${accordionId}', this)" title="Ver episódios">
+                                        ▶ ${totalEps}
+                                    </button>
+                                    ${serieRebaixarBtns}
+                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" title="Excluir Série Completa">
+                                        🗑️
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <tr id="${accordionId}" style="display: none;">
@@ -18100,13 +18218,24 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             }
         }
 
-        async function handleDeleteCatalogItem(id, type, rebaixar = false) {
-            const actionText = rebaixar ? 'excluir do Armazém e REBAIXAR imediatamente' : 'excluir permanentemente';
+        async function handleDeleteCatalogItem(id, type, rebaixar = false, versao = null) {
+            let actionText = '';
+            if (rebaixar) {
+                if (versao) {
+                    actionText = `excluir e REBAIXAR apenas a versão ${versao.toUpperCase()} (mantendo a outra intacta)`;
+                } else {
+                    actionText = 'excluir do Armazém e REBAIXAR imediatamente';
+                }
+            } else {
+                actionText = 'excluir permanentemente';
+            }
+
             if (!confirm(`Deseja ${actionText} este ${type}?`)) return;
 
             try {
                 const endpoint = type === 'filme' ? `/api/admin/catalogo/filme/${id}` : `/api/admin/catalogo/serie/${id}`;
-                const res = await fetch(`${endpoint}?rebaixar=${rebaixar}`, {
+                const versaoParam = versao ? `&versao=${versao}` : '';
+                const res = await fetch(`${endpoint}?rebaixar=${rebaixar}${versaoParam}`, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });
@@ -18122,12 +18251,23 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             }
         }
 
-        async function handleDeleteEpisode(id, rebaixar = false) {
-            const actionText = rebaixar ? 'excluir do Armazém e REBAIXAR este episódio' : 'excluir permanentemente este episódio';
+        async function handleDeleteEpisode(id, rebaixar = false, versao = null) {
+            let actionText = '';
+            if (rebaixar) {
+                if (versao) {
+                    actionText = `excluir e REBAIXAR apenas a versão ${versao.toUpperCase()} deste episódio`;
+                } else {
+                    actionText = 'excluir do Armazém e REBAIXAR este episódio';
+                }
+            } else {
+                actionText = 'excluir permanentemente este episódio';
+            }
+
             if (!confirm(`Deseja ${actionText}?`)) return;
 
             try {
-                const res = await fetch(`/api/admin/catalogo/episodio/${id}?rebaixar=${rebaixar}`, {
+                const versaoParam = versao ? `&versao=${versao}` : '';
+                const res = await fetch(`/api/admin/catalogo/episodio/${id}?rebaixar=${rebaixar}${versaoParam}`, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });

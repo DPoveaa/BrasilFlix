@@ -1616,9 +1616,13 @@ class CatalogoManager {
                 try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
             }
 
-            const target = versoes[vKey];
+            let target = versoes[vKey];
             if (!target || !(target.messageId || target.fileId)) {
-                return { success: false, deletedMessageIds, reason: 'versao_ausente' };
+                if ((vKey === 'dublado' && row.is_dublado) || (vKey === 'legendado' && row.is_legendado)) {
+                    target = { messageId: row.message_id, fileId: row.file_id };
+                } else {
+                    return { success: false, deletedMessageIds, reason: 'versao_ausente' };
+                }
             }
 
             if (expectedMessageId != null && Number(target.messageId) !== Number(expectedMessageId)) {
@@ -1694,6 +1698,94 @@ class CatalogoManager {
             return { success: true, deletedMessageIds: [...new Set(deletedMessageIds)] };
         } catch (e) {
             console.error('❌ Erro em removerVersaoEpisodio:', e.message);
+            return { success: false, deletedMessageIds, reason: e.message };
+        }
+    }
+
+    /**
+     * Remove UMA versão específica (dublado|legendado) de um filme.
+     * Se ambas as versões forem removidas, apaga o filme do catálogo.
+     * @returns {{ success: boolean, deletedMessageIds: number[], reason?: string }}
+     */
+    async removerVersaoFilme({ filmeId, versao }) {
+        const deletedMessageIds = [];
+        const vKey = String(versao || '').toLowerCase() === 'dublado' ? 'dublado' : 'legendado';
+        const fId = Number(filmeId);
+
+        try {
+            const fRes = await db.query(
+                `SELECT id, nome, message_id, file_id, versoes, is_dublado, is_legendado, audio
+                 FROM filmes WHERE id = $1`,
+                [fId]
+            );
+            if (!fRes.rows.length) {
+                return { success: false, deletedMessageIds, reason: 'filme_nao_encontrado' };
+            }
+            const row = fRes.rows[0];
+            let versoes = row.versoes || {};
+            if (typeof versoes === 'string') {
+                try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+            }
+
+            let target = versoes[vKey];
+            if (!target || !(target.messageId || target.fileId)) {
+                if ((vKey === 'dublado' && row.is_dublado) || (vKey === 'legendado' && row.is_legendado)) {
+                    target = { messageId: row.message_id, fileId: row.file_id };
+                }
+            }
+
+            if (target && target.messageId) {
+                deletedMessageIds.push(Number(target.messageId));
+            } else if (vKey === 'dublado' && row.is_dublado && row.message_id) {
+                deletedMessageIds.push(Number(row.message_id));
+            } else if (vKey === 'legendado' && row.is_legendado && row.message_id) {
+                deletedMessageIds.push(Number(row.message_id));
+            }
+
+            versoes[vKey] = null;
+
+            const hasDub = vKey === 'dublado' ? false : (!!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId)) || (row.is_dublado && !versoes.dublado && !versoes.legendado));
+            const hasLeg = vKey === 'legendado' ? false : (!!(versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId)) || (row.is_legendado && !versoes.dublado && !versoes.legendado));
+
+            if (!hasDub && !hasLeg) {
+                await db.query(`DELETE FROM filmes WHERE id = $1`, [fId]);
+                const idx = (this.catalogo.filmes || []).findIndex(f => f.id === fId);
+                if (idx !== -1) this.catalogo.filmes.splice(idx, 1);
+            } else {
+                const primaryMessageId = versoes.dublado?.messageId || versoes.legendado?.messageId || (hasDub ? row.message_id : null) || (hasLeg ? row.message_id : null);
+                const primaryFileId = versoes.dublado?.fileId || versoes.legendado?.fileId || (hasDub ? row.file_id : null) || (hasLeg ? row.file_id : null);
+                const primaryAudio = (hasDub && hasLeg)
+                    ? 'Dual (Dub+Leg)'
+                    : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+
+                await db.query(`
+                    UPDATE filmes SET
+                        versoes = $1,
+                        is_dublado = $2,
+                        is_legendado = $3,
+                        message_id = $4,
+                        file_id = $5,
+                        audio = $6,
+                        updated_at = NOW()
+                    WHERE id = $7
+                `, [
+                    JSON.stringify({
+                        dublado: hasDub ? (versoes.dublado || (row.is_dublado ? { messageId: row.message_id, fileId: row.file_id } : null)) : null,
+                        legendado: hasLeg ? (versoes.legendado || (row.is_legendado ? { messageId: row.message_id, fileId: row.file_id } : null)) : null
+                    }),
+                    hasDub, hasLeg,
+                    primaryMessageId, primaryFileId, primaryAudio,
+                    fId
+                ]);
+            }
+
+            await this.loadCatalogo();
+            if (deletedMessageIds.length > 0) {
+                await this.deleteStorageMessages([...new Set(deletedMessageIds.filter(Boolean))]);
+            }
+            return { success: true, deletedMessageIds: [...new Set(deletedMessageIds.filter(Boolean))] };
+        } catch (e) {
+            console.error('❌ Erro em removerVersaoFilme:', e.message);
             return { success: false, deletedMessageIds, reason: e.message };
         }
     }
