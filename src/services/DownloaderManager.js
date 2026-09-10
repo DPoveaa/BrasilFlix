@@ -632,8 +632,12 @@ class DownloaderManager extends EventEmitter {
                             isMissing = (epNumber === epNum);
                         }
 
-                        // O episódio solicitado explicitamente pelo job sempre é incluído como necessário
-                        if (epNumber === epNum) {
+                        // O episódio-alvo do job é forçado como necessário APENAS quando não há
+                        // função isEpisodeMissing configurada (fallback genérico). Quando há uma
+                        // função de verificação, ela já é a fonte de verdade e NÃO deve ser anulada
+                        // — isso evita re-baixar eps legendados que já estão no catálogo só porque
+                        // são o alvo do job (ex: job pede dublado, torrent é legendado, ep já existe).
+                        if (epNumber === epNum && typeof options.isEpisodeMissing !== 'function') {
                             isMissing = true;
                         }
 

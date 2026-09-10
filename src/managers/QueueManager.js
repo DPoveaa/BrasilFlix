@@ -271,6 +271,173 @@ class QueueManager extends EventEmitter {
             console.error('❌ Erro ao inicializar fila do banco:', e.message);
         }
         setTimeout(() => this.processNext(), 2000);
+
+        // Auto-auditoria da fila: roda 5 minutos após o boot e depois a cada 30 minutos
+        setTimeout(() => this.auditQueue(), 5 * 60 * 1000);
+        setInterval(() => this.auditQueue(), 30 * 60 * 1000);
+    }
+
+    /**
+     * Audita a fila automaticamente, cancelando:
+     *  1. Jobs DUPLICADOS (mesmo título+temporada+episódio+audioPreference) — mantém o mais antigo
+     *  2. Jobs cujo episódio/filme JÁ ESTÁ CATALOGADO com o áudio pedido — não há o que baixar
+     *  3. Jobs TRAVADOS em processing/downloading/uploading há mais de 3h sem progresso
+     *
+     * Nunca cancela jobs com progresso real em andamento nem jobs para conteúdo ainda não disponível.
+     */
+    async auditQueue() {
+        try {
+            console.log('🔍 [AuditQueue] Iniciando auditoria automática da fila...');
+
+            // Carrega todos os jobs não-finalizados do banco
+            const res = await db.query(
+                `SELECT id, title, type, season, episode, status, audio_preference, progress, progress_details, updated_at
+                 FROM queue_jobs
+                 WHERE status NOT IN ('completed', 'failed', 'cancelled')
+                 ORDER BY created_at ASC`
+            );
+            const jobs = res.rows;
+            const toCancel = new Set();
+            const reasons = {};
+
+            // ── 1. DUPLICATAS ────────────────────────────────────────────────────────
+            const seen = new Map();
+            for (const job of jobs) {
+                // Não toca em jobs ativamente executando (está sendo processado agora)
+                if (this.activeJobs.has(job.id)) continue;
+
+                const key = `${(job.title || '').toLowerCase()}|S${job.season || 0}E${job.episode || 0}|${job.audio_preference || 'dublado'}`;
+                if (seen.has(key)) {
+                    toCancel.add(job.id);
+                    reasons[job.id] = `Duplicata de ${seen.get(key)}`;
+                } else {
+                    seen.set(key, job.id);
+                }
+            }
+
+            // ── 2. JÁ CATALOGADO ─────────────────────────────────────────────────────
+            // Agrupa jobs únicos (após dedup) por série para minimizar queries
+            const uniqueJobs = jobs.filter(j => !toCancel.has(j.id) && !this.activeJobs.has(j.id));
+            const seriesTitles = [...new Set(uniqueJobs.filter(j => j.type === 'serie').map(j => (j.title || '').toLowerCase()))];
+
+            for (const serieTitle of seriesTitles) {
+                try {
+                    const epRes = await db.query(
+                        `SELECT e.temporada_numero, e.numero, e.is_dublado, e.is_legendado, e.versoes
+                         FROM episodios e
+                         JOIN series s ON s.id = e.serie_id
+                         WHERE LOWER(s.nome) = $1`,
+                        [serieTitle]
+                    );
+                    const catalogMap = {};
+                    for (const ep of epRes.rows) {
+                        const versoes = ep.versoes || {};
+                        const hasDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
+                        const hasLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
+                        catalogMap[`S${ep.temporada_numero}E${ep.numero}`] = { hasDub, hasLeg };
+                    }
+
+                    for (const job of uniqueJobs) {
+                        if ((job.title || '').toLowerCase() !== serieTitle) continue;
+                        if (toCancel.has(job.id)) continue;
+
+                        const key = `S${job.season || 1}E${job.episode || 1}`;
+                        const cat = catalogMap[key];
+                        if (!cat) continue; // ep ainda não está no catálogo → legítimo baixar
+
+                        const pref = job.audio_preference || 'dublado';
+                        if (pref === 'dublado' && cat.hasDub) {
+                            toCancel.add(job.id);
+                            reasons[job.id] = 'Ep já catalogado como Dublado';
+                        } else if (pref === 'legendado' && cat.hasLeg) {
+                            toCancel.add(job.id);
+                            reasons[job.id] = 'Ep já catalogado como Legendado';
+                        } else if (pref === 'geral' && (cat.hasDub || cat.hasLeg)) {
+                            toCancel.add(job.id);
+                            reasons[job.id] = 'Ep já catalogado (geral)';
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ [AuditQueue] Erro ao verificar catálogo de "${serieTitle}":`, e.message);
+                }
+            }
+
+            // Filmes: verifica por título exato
+            const filmeJobs = uniqueJobs.filter(j => j.type === 'filme' && !toCancel.has(j.id));
+            for (const job of filmeJobs) {
+                try {
+                    const fRes = await db.query(
+                        `SELECT f.is_dublado, f.is_legendado, f.versoes
+                         FROM filmes f
+                         WHERE LOWER(f.nome) = $1 LIMIT 1`,
+                        [(job.title || '').toLowerCase()]
+                    );
+                    if (fRes.rows.length === 0) continue;
+                    const f = fRes.rows[0];
+                    const versoes = f.versoes || {};
+                    const hasDub = f.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
+                    const hasLeg = f.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
+                    const pref = job.audio_preference || 'dublado';
+                    if ((pref === 'dublado' && hasDub) || (pref === 'legendado' && hasLeg) || (pref === 'geral' && (hasDub || hasLeg))) {
+                        toCancel.add(job.id);
+                        reasons[job.id] = `Filme já catalogado (${pref})`;
+                    }
+                } catch (e) {}
+            }
+
+            // ── 3. JOBS TRAVADOS (crash recovery contínuo) ───────────────────────────
+            const stuckThresholdMs = 3 * 60 * 60 * 1000; // 3 horas
+            const stuckStatuses = ['processing', 'downloading', 'uploading', 'searching'];
+            const toReset = [];
+            for (const job of jobs) {
+                if (!stuckStatuses.includes(job.status)) continue;
+                if (this.activeJobs.has(job.id)) continue; // está ativo de verdade
+                const updatedAt = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+                if (updatedAt && (Date.now() - updatedAt) > stuckThresholdMs) {
+                    toReset.push(job.id);
+                }
+            }
+
+            // ── Aplica ───────────────────────────────────────────────────────────────
+            let cancelledCount = 0;
+            let resetCount = 0;
+
+            if (toCancel.size > 0) {
+                const ids = [...toCancel].map(id => `'${id}'`).join(',');
+                await db.query(`UPDATE queue_jobs SET status = 'cancelled', updated_at = NOW() WHERE id IN (${ids})`);
+                // Remove da memória
+                this.queue = this.queue.filter(j => !toCancel.has(j.id));
+                cancelledCount = toCancel.size;
+                for (const [id, reason] of Object.entries(reasons)) {
+                    if (toCancel.has(id)) {
+                        const job = jobs.find(j => j.id === id);
+                        const label = job ? `"${job.title}" S${job.season || '-'}E${job.episode || '-'} (${job.audio_preference})` : id;
+                        console.log(`  🗑️  [AuditQueue] Cancelado: ${label} — ${reason}`);
+                    }
+                }
+            }
+
+            if (toReset.length > 0) {
+                const ids = toReset.map(id => `'${id}'`).join(',');
+                await db.query(`UPDATE queue_jobs SET status = 'queued', progress = 0, updated_at = NOW() WHERE id IN (${ids})`);
+                // Atualiza em memória
+                for (const j of this.queue) {
+                    if (toReset.includes(j.id)) { j.status = 'queued'; j.progress = 0; }
+                }
+                resetCount = toReset.length;
+                console.log(`  🔄 [AuditQueue] ${resetCount} jobs travados resetados para 'queued'.`);
+            }
+
+            const validCount = jobs.length - cancelledCount;
+            console.log(`✅ [AuditQueue] Concluída: ${cancelledCount} cancelados, ${resetCount} resetados. Fila com ${validCount} jobs válidos.`);
+
+            // Se cancelamos algo, tenta processar próximo job na fila
+            if ((cancelledCount > 0 || resetCount > 0) && SchedulerService.isAllowedToRun()) {
+                setImmediate(() => this.processNext());
+            }
+        } catch (e) {
+            console.error('❌ [AuditQueue] Erro na auditoria da fila:', e.message);
+        }
     }
 
     enforceConcurrencyLimits() {
