@@ -281,7 +281,7 @@
 
         @media (max-width: 768px) {
             header { padding: 10px 12px; }
-            .header-container { justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+            .header-container { justify-content: space-between; gap: 8px; flex-wrap: wrap; max-width: 100%; }
             .brand-logo { font-size: 20px; }
             .status-pill { display: none; }
             .nav-tabs { 
@@ -304,7 +304,18 @@
                 font-size: 13px; 
                 border-radius: 20px;
             }
-            .btn-vip-header { font-size: 11px; padding: 5px 10px; }
+            .header-actions {
+                order: 2;
+                max-width: calc(100% - 130px);
+                gap: 6px;
+                overflow: hidden;
+            }
+            .header-search-box {
+                order: 4;
+                width: 100%;
+                margin-top: 4px;
+            }
+            .btn-vip-header { font-size: 11px; padding: 5px 8px; }
             .user-profile-btn { padding: 4px 8px; font-size: 12px; }
         }
 
@@ -2466,12 +2477,11 @@
 
         .hero-billboard-bg {
             position: absolute;
-            inset: -4px;
-            width: calc(100% + 8px);
-            height: calc(100% + 8px);
+            inset: 0;
+            width: 100%;
+            height: 100%;
             background-size: cover;
             background-position: center 20%;
-            transform: scale(1.02);
             pointer-events: none;
             z-index: 0;
         }
@@ -6562,6 +6572,13 @@
             </div>
 
             <div class="header-actions">
+                <!-- BUSCA NO HEADER STREAMING -->
+                <div class="header-search-box" id="header-search-wrapper">
+                    <span class="header-search-icon">🔍</span>
+                    <input type="text" id="header-search-input" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" oninput="handleHeaderSearchInput(this.value)">
+                    <kbd class="header-search-kbd">Ctrl K</kbd>
+                </div>
+
                 <!-- BOTÃO DE SALA (WATCH PARTY) -->
                 <button id="party-header-btn" onclick="onPartyHeaderBtnClick()" title="Assistir Junto">
                     👥
@@ -10490,6 +10507,12 @@ function initApp() {
             }
         }
 
+        let heroCarouselItems = [];
+        let heroCarouselIndex = 0;
+        let heroCarouselTimer = null;
+        let heroCarouselTimeLeft = 8;
+        let heroIsPaused = false;
+
         function renderHeroBillboard(customItem = null) {
             const container = document.getElementById('hero-billboard-container');
             if (!container) return;
@@ -10502,49 +10525,181 @@ function initApp() {
                 return;
             }
 
-            const item = customItem || pool.find(i => i.backdropUrl && i.nota >= 7.5) || pool[0];
-            const backdrop = item.backdropUrl || item.posterUrl || '';
-            const rating = item.nota ? Number(item.nota).toFixed(1) : '8.5';
-            const ano = item.ano || '2026';
-            const isSerie = item.itemType === 'serie' || !!item.temporadas;
-            const audioBadge = item.isDublado ? 'Dublado (PT-BR)' : 'Legendado';
-            
-            let totalEps = 'Filme';
-            if (isSerie) {
-                const tempCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1);
-                const epCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.reduce((a, t) => a + (t.episodios ? t.episodios.length : 0), 0) : (item.totalEpisodios || 1);
-                totalEps = `${tempCount} Temporada${tempCount > 1 ? 's' : ''} • ${epCount} Eps`;
+            let featuredPool = pool.filter(i => i.backdropUrl || i.posterUrl);
+            featuredPool.sort((a, b) => (b.nota || 8) - (a.nota || 8));
+
+            heroCarouselItems = featuredPool.slice(0, 6);
+            if (heroCarouselItems.length === 0) heroCarouselItems = pool.slice(0, 6);
+
+            if (customItem) {
+                const existingIdx = heroCarouselItems.findIndex(i => String(i.id) === String(customItem.id));
+                if (existingIdx >= 0) {
+                    heroCarouselIndex = existingIdx;
+                } else {
+                    heroCarouselItems.unshift(customItem);
+                    heroCarouselIndex = 0;
+                }
+            } else if (heroCarouselIndex >= heroCarouselItems.length) {
+                heroCarouselIndex = 0;
             }
 
-            const isFav = userFavorites.some(f => String(f.id) === String(item.id));
+            renderHeroCarouselDOM(container);
+            startHeroTimer();
+        }
+
+        function renderHeroCarouselDOM(container) {
+            if (!container || heroCarouselItems.length === 0) return;
+
+            const slidesHtml = heroCarouselItems.map((item, idx) => {
+                const backdrop = item.backdropUrl || item.posterUrl || '';
+                const rating = item.nota ? Number(item.nota).toFixed(1) : '8.5';
+                const ano = item.ano || '2026';
+                const isSerie = item.itemType === 'serie' || !!item.temporadas;
+                const audioBadge = item.isDublado ? 'Dublado (PT-BR)' : 'Legendado';
+
+                let badgeTag = '🎬 FILME';
+                if (item.isAnime) badgeTag = '⛩️ ANIME';
+                else if (item.isDorama) badgeTag = '🌸 DORAMA';
+                else if (isSerie) badgeTag = '📺 SÉRIE';
+
+                let totalEps = 'Filme';
+                if (isSerie) {
+                    const tempCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1);
+                    const epCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.reduce((a, t) => a + (t.episodios ? t.episodios.length : 0), 0) : (item.totalEpisodios || 1);
+                    totalEps = `${tempCount} Temp • ${epCount} Eps`;
+                }
+
+                const isFav = userFavorites.some(f => String(f.id) === String(item.id));
+
+                return `
+                    <div class="hero-slide ${idx === heroCarouselIndex ? 'active' : ''}" id="hero-slide-${idx}">
+                        <div class="hero-billboard-bg" style="background-image: url('${backdrop}');"></div>
+                        <div class="hero-content">
+                            <div class="hero-badge-tag">${badgeTag}</div>
+                            <h1 class="hero-title">${item.nome}</h1>
+                            <div class="hero-meta-row">
+                                <span class="modal-pill modal-pill-rating">★ ${rating}</span>
+                                <span class="modal-pill">${ano}</span>
+                                <span class="modal-pill">${audioBadge}</span>
+                                <span class="modal-pill">${totalEps}</span>
+                            </div>
+                            <p class="hero-synopsis">${item.sinopse || item.descricao || 'Assista agora no BrasilFlix com qualidade HD.'}</p>
+                            <div class="hero-actions">
+                                <button class="hero-btn-play" onclick="openModalById('${item.id}', '${item.itemType}')">
+                                    ▶ Assistir Agora
+                                </button>
+                                <button class="hero-btn-secondary" onclick="toggleUserFavorite('${item.id}', '${item.itemType}', event)">
+                                    ${isFav ? '❤️ Na Minha Lista' : '🤍 Minha Lista'}
+                                </button>
+                                <button class="hero-btn-secondary" onclick="openModalById('${item.id}', '${item.itemType}')">
+                                    Mais Detalhes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const indicatorsHtml = heroCarouselItems.map((item, idx) => `
+                <button class="hero-indicator-btn ${idx === heroCarouselIndex ? 'active' : ''}" onclick="goToHeroSlide(${idx})" title="${item.nome}">
+                </button>
+            `).join('');
 
             container.innerHTML = `
-                <div class="hero-billboard">
-                    <div class="hero-billboard-bg" style="background-image: url('${backdrop}');"></div>
-                    <div class="hero-content">
-                        <div class="hero-badge-tag">Destaque</div>
-                        <h1 class="hero-title">${item.nome}</h1>
-                        <div class="hero-meta-row">
-                            <span class="modal-pill modal-pill-rating">★ ${rating}</span>
-                            <span class="modal-pill">${ano}</span>
-                            <span class="modal-pill">${audioBadge}</span>
-                            <span class="modal-pill">${totalEps}</span>
+                <div class="hero-carousel-wrapper" onmouseenter="pauseHeroCarousel()" onmouseleave="resumeHeroCarousel()">
+                    <button class="hero-carousel-arrow hero-arrow-left" onclick="prevHeroSlide()" aria-label="Anterior">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                    </button>
+                    <button class="hero-carousel-arrow hero-arrow-right" onclick="nextHeroSlide()" aria-label="Próximo">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </button>
+
+                    <div class="hero-slides-container">
+                        ${slidesHtml}
+                    </div>
+
+                    <div class="hero-carousel-bottom-bar">
+                        <div class="hero-carousel-indicators" id="hero-carousel-indicators">
+                            ${indicatorsHtml}
                         </div>
-                        <p class="hero-synopsis">${item.sinopse || item.descricao || 'Assista agora no BrasilFlix com áudio em português.'}</p>
-                        <div class="hero-actions">
-                            <button class="hero-btn-play" onclick="openModalById('${item.id}', '${item.itemType}')">
-                                ▶ Assistir Agora
-                            </button>
-                            <button class="hero-btn-secondary" onclick="toggleUserFavorite('${item.id}', '${item.itemType}', event)">
-                                ${isFav ? '❤️ Na Minha Lista' : '🤍 Minha Lista'}
-                            </button>
-                            <button class="hero-btn-secondary" onclick="openModalById('${item.id}', '${item.itemType}')">
-                                Mais Detalhes
-                            </button>
+                        <div class="hero-carousel-timer-badge">
+                            <span>⏳</span>
+                            <span id="hero-timer-text">Próximo em 00:08</span>
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        function updateHeroActiveSlide() {
+            if (heroCarouselItems.length === 0) return;
+            document.querySelectorAll('.hero-slide').forEach((el, idx) => {
+                el.classList.toggle('active', idx === heroCarouselIndex);
+            });
+            document.querySelectorAll('.hero-indicator-btn').forEach((btn, idx) => {
+                btn.classList.toggle('active', idx === heroCarouselIndex);
+            });
+        }
+
+        function startHeroTimer() {
+            if (heroCarouselTimer) clearInterval(heroCarouselTimer);
+            heroCarouselTimeLeft = 8;
+            updateHeroTimerText();
+
+            heroCarouselTimer = setInterval(() => {
+                if (!heroIsPaused) {
+                    heroCarouselTimeLeft--;
+                    if (heroCarouselTimeLeft <= 0) {
+                        heroCarouselIndex = (heroCarouselIndex + 1) % heroCarouselItems.length;
+                        updateHeroActiveSlide();
+                        heroCarouselTimeLeft = 8;
+                    }
+                    updateHeroTimerText();
+                }
+            }, 1000);
+        }
+
+        function updateHeroTimerText() {
+            const textEl = document.getElementById('hero-timer-text');
+            if (!textEl) return;
+            if (heroIsPaused) {
+                textEl.innerText = 'Pausado';
+            } else {
+                const sec = String(heroCarouselTimeLeft).padStart(2, '0');
+                textEl.innerText = `Próximo em 00:${sec}`;
+            }
+        }
+
+        function pauseHeroCarousel() {
+            heroIsPaused = true;
+            updateHeroTimerText();
+        }
+
+        function resumeHeroCarousel() {
+            heroIsPaused = false;
+            updateHeroTimerText();
+        }
+
+        function nextHeroSlide() {
+            if (heroCarouselItems.length === 0) return;
+            heroCarouselIndex = (heroCarouselIndex + 1) % heroCarouselItems.length;
+            updateHeroActiveSlide();
+            startHeroTimer();
+        }
+
+        function prevHeroSlide() {
+            if (heroCarouselItems.length === 0) return;
+            heroCarouselIndex = (heroCarouselIndex - 1 + heroCarouselItems.length) % heroCarouselItems.length;
+            updateHeroActiveSlide();
+            startHeroTimer();
+        }
+
+        function goToHeroSlide(idx) {
+            if (idx >= 0 && idx < heroCarouselItems.length) {
+                heroCarouselIndex = idx;
+                updateHeroActiveSlide();
+                startHeroTimer();
+            }
         }
 
         function createRailHtml(railId, title, items, badgeType = null) {
