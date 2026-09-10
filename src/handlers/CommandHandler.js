@@ -194,7 +194,7 @@ class CommandHandler {
             }
 
             // 4. Remover do catálogo JSON
-            const removido = this.catalogoManager.removerItem(item.id);
+            const removido = await this.catalogoManager.removerItem(item.id);
 
             if (removido) {
                 await this.bot.sendMessage(chatId,
@@ -212,6 +212,48 @@ class CommandHandler {
         } catch (error) {
             console.error('❌ Erro no comando /remover:', error);
             await this.bot.sendMessage(chatId, `❌ Erro ao processar remoção: ${error.message}`);
+        }
+    }
+
+    async handleLimparArmazem(msg) {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+
+        if (userId !== config.ADMIN_ID) {
+            await this.bot.sendMessage(chatId, '❌ Apenas o administrador pode executar esta rotina de limpeza.');
+            return;
+        }
+
+        const statusMsg = await this.bot.sendMessage(chatId, '🔍 *Varrendo armazém em busca de confirmações órfãs...*', { parse_mode: 'Markdown' });
+
+        try {
+            const TelegramUploader = require('../services/TelegramUploader');
+            const res = await TelegramUploader.purgeOrphanedConfirmationMessages({ limit: 400 });
+
+            if (res.error) {
+                await this.bot.editMessageText(`❌ *Erro durante a limpeza:* ${res.error}`, {
+                    chat_id: chatId,
+                    message_id: statusMsg.message_id,
+                    parse_mode: 'Markdown'
+                });
+                return;
+            }
+
+            const texto = `🧹 *Limpeza do Armazém Concluída!*\n\n` +
+                          `📊 *Confirmações analisadas:* ${res.totalFound}\n` +
+                          `🗑️ *Confirmações órfãs apagadas:* ${res.purgedCount}\n\n` +
+                          (res.purgedCount > 0 
+                              ? `✅ O grupo de armazenamento está agora livre de mensagens soltas sem mídia!`
+                              : `✅ Nenhuma mensagem órfã encontrada. Armazém 100% limpo!`);
+
+            await this.bot.editMessageText(texto, {
+                chat_id: chatId,
+                message_id: statusMsg.message_id,
+                parse_mode: 'Markdown'
+            });
+        } catch (error) {
+            console.error('❌ Erro no comando /limpar_armazem:', error);
+            await this.bot.sendMessage(chatId, `❌ Erro ao limpar armazém: ${error.message}`);
         }
     }
 
@@ -4484,7 +4526,7 @@ class CommandHandler {
             }
 
             const nomeFilme = filme.nome;
-            const sucesso = this.catalogoManager.removerItem(parseInt(filmeId));
+            const sucesso = await this.catalogoManager.removerItem(parseInt(filmeId));
             
             if (sucesso) {
                 const mensagem = `🗑️ *Filme Excluído com Sucesso!*\n\n` +
@@ -4678,7 +4720,7 @@ class CommandHandler {
             }
 
             const nomeSerie = serie.nome;
-            const sucesso = this.catalogoManager.removerItem(parseInt(serieId));
+            const sucesso = await this.catalogoManager.removerItem(parseInt(serieId));
             
             if (sucesso) {
                 const mensagem = `🗑️ *Série Excluída com Sucesso!*\n\n` +

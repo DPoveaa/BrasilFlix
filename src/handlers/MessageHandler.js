@@ -179,7 +179,10 @@ class MessageHandler {
                                `🆔 *Message ID:* ${messageId}\n\n` +
                                `🍿 *Disponível para assinantes!*`;
 
-            await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' });
+            const sentEp = await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' }).catch(() => null);
+            if (sentEp && sentEp.message_id) {
+                await this.catalogoManager.vincularNotificacaoArmazem(messageId, sentEp.message_id).catch(() => {});
+            }
         } else {
             const res = await this.catalogoManager.adicionarFilme(
                 nomeFinal,
@@ -202,7 +205,10 @@ class MessageHandler {
                                `🆔 *Message ID:* ${messageId}\n\n` +
                                `🍿 *Disponível para assinantes!*`;
 
-            await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' });
+            const sentFilme = await this.bot.sendMessage(config.STORAGE_GROUP_ID, msgConfirm, { parse_mode: 'Markdown' }).catch(() => null);
+            if (sentFilme && sentFilme.message_id) {
+                await this.catalogoManager.vincularNotificacaoArmazem(messageId, sentFilme.message_id).catch(() => {});
+            }
         }
     }
 

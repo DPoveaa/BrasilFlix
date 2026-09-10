@@ -650,6 +650,7 @@ class CatalogoManager {
                         stillUrl: ep.still_url || null,
                         duracao: ep.duracao || null,
                         messageId: ep.message_id ? Number(ep.message_id) : null,
+                        notifMessageId: ep.notif_message_id ? Number(ep.notif_message_id) : null,
                         fileId: ep.file_id,
                         qualidade: ep.qualidade || '1080p',
                         audio: ep.audio || (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
@@ -731,6 +732,7 @@ class CatalogoManager {
                         audio: f.audio || (hasPlayableDub && hasPlayableLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasPlayableDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
                         versoes: versoes,
                         messageId: f.message_id ? Number(f.message_id) : null,
+                        notifMessageId: f.notif_message_id ? Number(f.notif_message_id) : null,
                         fileId: f.file_id,
                         dataAdicionado: f.created_at,
                         tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
@@ -1076,15 +1078,18 @@ class CatalogoManager {
         const oldMsgIdsToDelete = [];
         if (isNovaDub && filme.versoes?.dublado?.messageId && Number(filme.versoes.dublado.messageId) !== Number(novaMidia.messageId)) {
             oldMsgIdsToDelete.push(filme.versoes.dublado.messageId);
+            if (filme.versoes.dublado.notifMessageId) oldMsgIdsToDelete.push(filme.versoes.dublado.notifMessageId);
         }
         if (isNovaLeg && filme.versoes?.legendado?.messageId && Number(filme.versoes.legendado.messageId) !== Number(novaMidia.messageId)) {
             oldMsgIdsToDelete.push(filme.versoes.legendado.messageId);
+            if (filme.versoes.legendado.notifMessageId) oldMsgIdsToDelete.push(filme.versoes.legendado.notifMessageId);
         }
 
         if (isNovaDub) {
             filme.isDublado = true;
             filme.versoes.dublado = {
                 messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.dublado?.messageId || filme.messageId,
+                notifMessageId: novaMidia.notifMessageId || filme.versoes?.dublado?.notifMessageId || null,
                 fileId: novaMidia.fileId || filme.versoes?.dublado?.fileId || filme.fileId,
                 qualidade: novaMidia.qualidade || filme.qualidade,
                 isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
@@ -1099,6 +1104,7 @@ class CatalogoManager {
             filme.isLegendado = true;
             filme.versoes.legendado = {
                 messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.legendado?.messageId || filme.messageId,
+                notifMessageId: novaMidia.notifMessageId || filme.versoes?.legendado?.notifMessageId || null,
                 fileId: novaMidia.fileId || filme.versoes?.legendado?.fileId || filme.fileId,
                 qualidade: novaMidia.qualidade || filme.qualidade,
                 isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
@@ -1315,17 +1321,19 @@ class CatalogoManager {
         const oldMsgIdsToDelete = [];
         if (isDub && existingVersoes.dublado?.messageId && existingVersoes.dublado.messageId !== Number(messageId)) {
             oldMsgIdsToDelete.push(existingVersoes.dublado.messageId);
+            if (existingVersoes.dublado.notifMessageId) oldMsgIdsToDelete.push(existingVersoes.dublado.notifMessageId);
         }
         if (isLeg && existingVersoes.legendado?.messageId && existingVersoes.legendado.messageId !== Number(messageId)) {
             oldMsgIdsToDelete.push(existingVersoes.legendado.messageId);
+            if (existingVersoes.legendado.notifMessageId) oldMsgIdsToDelete.push(existingVersoes.legendado.notifMessageId);
         }
 
         const versoes = {
             dublado: isDub
-                ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
+                ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
                 : ((existingVersoes.dublado && (existingVersoes.dublado.messageId || existingVersoes.dublado.fileId)) ? existingVersoes.dublado : null),
             legendado: isLeg
-                ? { messageId: messageId ? Number(messageId) : null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
+                ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
                 : ((existingVersoes.legendado && (existingVersoes.legendado.messageId || existingVersoes.legendado.fileId)) ? existingVersoes.legendado : null)
         };
 
@@ -1460,6 +1468,97 @@ class CatalogoManager {
         });
     }
 
+    /**
+     * Vincula o message_id da notificação enviada ao armazém com o registro da mídia no catálogo/PostgreSQL.
+     * @param {number|string} mediaMessageId ID da mensagem do vídeo no armazém
+     * @param {number|string} notifMessageId ID da mensagem de confirmação no armazém
+     */
+    async vincularNotificacaoArmazem(mediaMessageId, notifMessageId) {
+        if (!mediaMessageId || !notifMessageId) return false;
+        const mId = Number(mediaMessageId);
+        const nId = Number(notifMessageId);
+        if (!mId || !nId) return false;
+
+        try {
+            // 1. Atualizar em filmes
+            const fRes = await db.query(
+                `SELECT id, message_id, notif_message_id, versoes FROM filmes 
+                 WHERE message_id = $1 OR versoes::text LIKE $2`,
+                [mId, `%"messageId":${mId}%`]
+            );
+            for (const row of fRes.rows) {
+                let versoes = row.versoes || {};
+                if (typeof versoes === 'string') {
+                    try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+                }
+                if (versoes.dublado && Number(versoes.dublado.messageId) === mId) {
+                    versoes.dublado.notifMessageId = nId;
+                }
+                if (versoes.legendado && Number(versoes.legendado.messageId) === mId) {
+                    versoes.legendado.notifMessageId = nId;
+                }
+                const updateNotifCol = Number(row.message_id) === mId;
+                await db.query(
+                    `UPDATE filmes SET 
+                        versoes = $1,
+                        notif_message_id = CASE WHEN $2 THEN $3 ELSE notif_message_id END,
+                        updated_at = NOW()
+                     WHERE id = $4`,
+                    [JSON.stringify(versoes), updateNotifCol, nId, row.id]
+                );
+            }
+
+            // 2. Atualizar em episodios
+            const epRes = await db.query(
+                `SELECT id, message_id, notif_message_id, versoes FROM episodios 
+                 WHERE message_id = $1 OR versoes::text LIKE $2`,
+                [mId, `%"messageId":${mId}%`]
+            );
+            for (const row of epRes.rows) {
+                let versoes = row.versoes || {};
+                if (typeof versoes === 'string') {
+                    try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+                }
+                if (versoes.dublado && Number(versoes.dublado.messageId) === mId) {
+                    versoes.dublado.notifMessageId = nId;
+                }
+                if (versoes.legendado && Number(versoes.legendado.messageId) === mId) {
+                    versoes.legendado.notifMessageId = nId;
+                }
+                const updateNotifCol = Number(row.message_id) === mId;
+                await db.query(
+                    `UPDATE episodios SET 
+                        versoes = $1,
+                        notif_message_id = CASE WHEN $2 THEN $3 ELSE notif_message_id END
+                     WHERE id = $4`,
+                    [JSON.stringify(versoes), updateNotifCol, nId, row.id]
+                );
+            }
+
+            // 3. Atualizar em memória
+            for (const f of (this.catalogo.filmes || [])) {
+                if (Number(f.messageId) === mId) f.notifMessageId = nId;
+                if (f.versoes?.dublado && Number(f.versoes.dublado.messageId) === mId) f.versoes.dublado.notifMessageId = nId;
+                if (f.versoes?.legendado && Number(f.versoes.legendado.messageId) === mId) f.versoes.legendado.notifMessageId = nId;
+            }
+            for (const s of (this.catalogo.series || [])) {
+                for (const t of (s.temporadas || [])) {
+                    for (const ep of (t.episodios || [])) {
+                        if (Number(ep.messageId) === mId) ep.notifMessageId = nId;
+                        if (ep.versoes?.dublado && Number(ep.versoes.dublado.messageId) === mId) ep.versoes.dublado.notifMessageId = nId;
+                        if (ep.versoes?.legendado && Number(ep.versoes.legendado.messageId) === mId) ep.versoes.legendado.notifMessageId = nId;
+                    }
+                }
+            }
+            this.saveCatalogoBackup();
+            console.log(`📎 [Armazém] Notificação ${nId} vinculada com sucesso à mídia ${mId}!`);
+            return true;
+        } catch (e) {
+            console.warn(`⚠️ Erro ao vincular notificação do armazém:`, e.message);
+            return false;
+        }
+    }
+
     async deleteStorageMessages(messageIds) {
         if (!messageIds || messageIds.length === 0) return;
         try {
@@ -1477,31 +1576,52 @@ class CatalogoManager {
         const filme = (this.catalogo.filmes || []).find(f => f.id === numId || String(f.id) === String(id));
         if (filme) {
             if (filme.messageId) messagesToDelete.push(filme.messageId);
+            if (filme.notifMessageId) messagesToDelete.push(filme.notifMessageId);
             if (filme.versoes?.dublado?.messageId) messagesToDelete.push(filme.versoes.dublado.messageId);
+            if (filme.versoes?.dublado?.notifMessageId) messagesToDelete.push(filme.versoes.dublado.notifMessageId);
             if (filme.versoes?.legendado?.messageId) messagesToDelete.push(filme.versoes.legendado.messageId);
+            if (filme.versoes?.legendado?.notifMessageId) messagesToDelete.push(filme.versoes.legendado.notifMessageId);
         }
 
         const serie = (this.catalogo.series || []).find(s => s.id === numId || String(s.id) === String(id));
         if (serie) {
             if (serie.messageId) messagesToDelete.push(serie.messageId);
+            if (serie.notifMessageId) messagesToDelete.push(serie.notifMessageId);
             for (const temp of (serie.temporadas || [])) {
                 for (const ep of (temp.episodios || [])) {
                     if (ep.messageId) messagesToDelete.push(ep.messageId);
+                    if (ep.notifMessageId) messagesToDelete.push(ep.notifMessageId);
                     if (ep.versoes?.dublado?.messageId) messagesToDelete.push(ep.versoes.dublado.messageId);
+                    if (ep.versoes?.dublado?.notifMessageId) messagesToDelete.push(ep.versoes.dublado.notifMessageId);
                     if (ep.versoes?.legendado?.messageId) messagesToDelete.push(ep.versoes.legendado.messageId);
+                    if (ep.versoes?.legendado?.notifMessageId) messagesToDelete.push(ep.versoes.legendado.notifMessageId);
                 }
             }
         }
 
         // 2. Busca também no PostgreSQL para garantir que nenhum message_id fique para trás
         try {
-            const fRes = await db.query(`SELECT message_id FROM filmes WHERE id = $1`, [numId]);
+            const fRes = await db.query(`SELECT message_id, notif_message_id, versoes FROM filmes WHERE id = $1`, [numId]);
             for (const r of fRes.rows) {
                 if (r.message_id) messagesToDelete.push(r.message_id);
+                if (r.notif_message_id) messagesToDelete.push(r.notif_message_id);
+                let versoes = r.versoes || {};
+                if (typeof versoes === 'string') { try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; } }
+                if (versoes?.dublado?.messageId) messagesToDelete.push(versoes.dublado.messageId);
+                if (versoes?.dublado?.notifMessageId) messagesToDelete.push(versoes.dublado.notifMessageId);
+                if (versoes?.legendado?.messageId) messagesToDelete.push(versoes.legendado.messageId);
+                if (versoes?.legendado?.notifMessageId) messagesToDelete.push(versoes.legendado.notifMessageId);
             }
-            const epRes = await db.query(`SELECT message_id FROM episodios WHERE serie_id = $1`, [numId]);
+            const epRes = await db.query(`SELECT message_id, notif_message_id, versoes FROM episodios WHERE serie_id = $1`, [numId]);
             for (const r of epRes.rows) {
                 if (r.message_id) messagesToDelete.push(r.message_id);
+                if (r.notif_message_id) messagesToDelete.push(r.notif_message_id);
+                let versoes = r.versoes || {};
+                if (typeof versoes === 'string') { try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; } }
+                if (versoes?.dublado?.messageId) messagesToDelete.push(versoes.dublado.messageId);
+                if (versoes?.dublado?.notifMessageId) messagesToDelete.push(versoes.dublado.notifMessageId);
+                if (versoes?.legendado?.messageId) messagesToDelete.push(versoes.legendado.messageId);
+                if (versoes?.legendado?.notifMessageId) messagesToDelete.push(versoes.legendado.notifMessageId);
             }
 
             await db.query(`DELETE FROM episodios WHERE serie_id = $1`, [numId]);
@@ -1527,7 +1647,7 @@ class CatalogoManager {
 
         // 4. Apaga fisicamente do grupo de Armazenamento do Telegram apenas se o PostgreSQL removeu com sucesso
         if (messagesToDelete.length > 0) {
-            const uniqueMsgIds = [...new Set(messagesToDelete)];
+            const uniqueMsgIds = [...new Set(messagesToDelete.filter(Boolean))];
             await this.deleteStorageMessages(uniqueMsgIds);
         }
 
@@ -1541,20 +1661,23 @@ class CatalogoManager {
 
         try {
             const epRes = await db.query(
-                `SELECT id, serie_id, message_id, versoes FROM episodios WHERE id = $1 OR message_id = $1`,
+                `SELECT id, serie_id, message_id, notif_message_id, versoes FROM episodios WHERE id = $1 OR message_id = $1 OR notif_message_id = $1`,
                 [target]
             );
             for (const r of epRes.rows) {
                 if (r.serie_id) serieId = r.serie_id;
                 if (r.message_id) messagesToDelete.push(Number(r.message_id));
+                if (r.notif_message_id) messagesToDelete.push(Number(r.notif_message_id));
                 let versoes = r.versoes || {};
                 if (typeof versoes === 'string') {
                     try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
                 }
                 if (versoes?.dublado?.messageId) messagesToDelete.push(Number(versoes.dublado.messageId));
+                if (versoes?.dublado?.notifMessageId) messagesToDelete.push(Number(versoes.dublado.notifMessageId));
                 if (versoes?.legendado?.messageId) messagesToDelete.push(Number(versoes.legendado.messageId));
+                if (versoes?.legendado?.notifMessageId) messagesToDelete.push(Number(versoes.legendado.notifMessageId));
             }
-            await db.query(`DELETE FROM episodios WHERE id = $1 OR message_id = $1`, [target]);
+            await db.query(`DELETE FROM episodios WHERE id = $1 OR message_id = $1 OR notif_message_id = $1`, [target]);
 
             if (serieId) {
                 const countRes = await db.query(`SELECT COUNT(*) as total FROM episodios WHERE serie_id = $1`, [serieId]);
@@ -1634,6 +1757,7 @@ class CatalogoManager {
             }
 
             if (target.messageId) deletedMessageIds.push(Number(target.messageId));
+            if (target.notifMessageId) deletedMessageIds.push(Number(target.notifMessageId));
             versoes[vKey] = null;
 
             const hasDub = !!(versoes.dublado && (versoes.dublado.messageId || versoes.dublado.fileId));
@@ -1714,7 +1838,7 @@ class CatalogoManager {
 
         try {
             const fRes = await db.query(
-                `SELECT id, nome, message_id, file_id, versoes, is_dublado, is_legendado, audio
+                `SELECT id, nome, message_id, notif_message_id, file_id, versoes, is_dublado, is_legendado, audio
                  FROM filmes WHERE id = $1`,
                 [fId]
             );
@@ -1730,16 +1854,19 @@ class CatalogoManager {
             let target = versoes[vKey];
             if (!target || !(target.messageId || target.fileId)) {
                 if ((vKey === 'dublado' && row.is_dublado) || (vKey === 'legendado' && row.is_legendado)) {
-                    target = { messageId: row.message_id, fileId: row.file_id };
+                    target = { messageId: row.message_id, fileId: row.file_id, notifMessageId: row.notif_message_id };
                 }
             }
 
             if (target && target.messageId) {
                 deletedMessageIds.push(Number(target.messageId));
+                if (target.notifMessageId) deletedMessageIds.push(Number(target.notifMessageId));
             } else if (vKey === 'dublado' && row.is_dublado && row.message_id) {
                 deletedMessageIds.push(Number(row.message_id));
+                if (row.notif_message_id) deletedMessageIds.push(Number(row.notif_message_id));
             } else if (vKey === 'legendado' && row.is_legendado && row.message_id) {
                 deletedMessageIds.push(Number(row.message_id));
+                if (row.notif_message_id) deletedMessageIds.push(Number(row.notif_message_id));
             }
 
             versoes[vKey] = null;

@@ -968,12 +968,17 @@ class DownloaderManager extends EventEmitter {
                     const totalSeasonEps = options.totalSeasonEpisodes || options.totalEpisodes || 0;
                     let packTitle = displayTitle;
                     if (isSeasonPack) {
+                        const epNums = Object.keys(detectedEpisodeMap || {}).map(Number).sort((a, b) => a - b);
+                        const epList = epNums.map(n => `E${n}`).join(', ');
                         if (totalSeasonEps > 0 && packCount >= totalSeasonEps) {
+                            // Todos os episódios da temporada estão sendo baixados
                             packTitle = `${mediaTitle} (Temporada ${seasonNum} Completa: ${packCount} Eps)`;
                         } else if (totalSeasonEps > 0) {
-                            packTitle = `${mediaTitle} (Temporada ${seasonNum}: Pacote ${packCount}/${totalSeasonEps} Eps)`;
+                            // Parcial com total conhecido: mostra quais eps e o total da temporada
+                            packTitle = `${mediaTitle} (Temporada ${seasonNum}: ${packCount}/${totalSeasonEps} Eps [${epList}])`;
                         } else {
-                            packTitle = `${mediaTitle} (Pacote Temporada ${seasonNum}: ${packCount} Eps)`;
+                            // Parcial sem total conhecido: lista os eps que estão sendo baixados
+                            packTitle = `${mediaTitle} (Temporada ${seasonNum}: ${packCount} Eps [${epList}])`;
                         }
                     }
 

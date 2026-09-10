@@ -84,6 +84,7 @@ class BrasilFlixBot {
         this.bot.onText(/\/atualizar(?: (.+))?/, (msg, match) => this.commandHandler.handleRebaixar(msg, match));
         this.bot.onText(/\/remover(?: (.+))?/, (msg, match) => this.commandHandler.handleRemoverAdmin(msg, match));
         this.bot.onText(/\/excluir(?: (.+))?/, (msg, match) => this.commandHandler.handleRemoverAdmin(msg, match));
+        this.bot.onText(/\/limpar_armazem/, (msg) => this.commandHandler.handleLimparArmazem(msg));
 
         // Handler para callbacks dos botões
         this.bot.on('callback_query', (callbackQuery) => this.commandHandler.handleCallbackQuery(callbackQuery));

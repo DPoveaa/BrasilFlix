@@ -1741,8 +1741,11 @@ class QueueManager extends EventEmitter {
             job.status = 'downloading';
             await this.saveJob(job);
 
-            // Função auxiliar para determinar se um episódio da temporada está faltando ou sem mídia válida no catálogo
-            const isEpisodeMissing = (epNumber) => {
+            // Factory que cria a função de verificação de episódio faltante considerando o áudio real da fonte.
+            // sourceIsDublado=true  → fonte tem faixa PT-BR dublada → verifica se falta dublado no catálogo
+            // sourceIsDublado=false → fonte é legendada/original → verifica se falta legendado no catálogo
+            //   (evita re-baixar episódios já catalogados como legendado quando o release não tem dublagem)
+            const makeIsEpisodeMissing = (sourceIsDublado) => (epNumber) => {
                 if (job.type !== 'serie') return false;
                 const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
                     || (metadata.tmdbId ? this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId) : null);
@@ -1755,14 +1758,23 @@ class QueueManager extends EventEmitter {
                 const ep = (temp.episodios || []).find(e => Number(e.numero) === Number(epNumber));
                 if (!ep) return true;
 
-                const CatalogoManager = require('./CatalogoManager');
+                // Checa presença de cada versão diretamente nos campos do episódio
+                const epHasLeg = !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId || ep.is_legendado);
+                const epHasDub = !!(ep.versoes?.dublado?.messageId  || ep.versoes?.dublado?.fileId  || ep.is_dublado);
+
+                if (sourceIsDublado === false) {
+                    // Fonte só tem legenda/original → só baixar se ainda NÃO temos a versão legendada
+                    return !epHasLeg;
+                }
+
+                // Fonte tem dublagem → verificar o que o job pediu
                 const reqPref = job.audioPreference || 'dublado';
                 if (reqPref === 'dublado') {
-                    return !CatalogoManager.hasValidDubbedMedia(ep);
+                    return !epHasDub;
                 } else if (reqPref === 'legendado') {
-                    return !CatalogoManager.hasValidSubtitledMedia(ep);
+                    return !epHasLeg;
                 }
-                return !CatalogoManager.hasValidDubbedMedia(ep) && !CatalogoManager.hasValidSubtitledMedia(ep);
+                return !epHasDub && !epHasLeg;
             };
 
             let lastError = null;
@@ -1788,7 +1800,7 @@ class QueueManager extends EventEmitter {
                             attemptIndex: i,
                             totalAttempts: maxAttempts,
                             mode: SchedulerService.getActiveMode(),
-                            isEpisodeMissing: isEpisodeMissing,
+                            isEpisodeMissing: makeIsEpisodeMissing(currentSource.isDublado ?? true),
                             isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
                             isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
                             runtime: metadata.runtime || metadata.duracao,
@@ -1873,7 +1885,7 @@ class QueueManager extends EventEmitter {
                                         attemptIndex: j,
                                         totalAttempts: totalLegAttempts,
                                         mode: SchedulerService.getActiveMode(),
-                                        isEpisodeMissing: isEpisodeMissing,
+                                        isEpisodeMissing: makeIsEpisodeMissing(false),
                                         totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                                     });
                                 }
@@ -2498,13 +2510,17 @@ class QueueManager extends EventEmitter {
                                  `🆔 <b>Message ID:</b> <code>${uploadResult.messageId}</code>\n\n` +
                                  `🍿 <b>Disponível imediatamente para todos os usuários!</b>`;
 
-                await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'HTML' }).catch(async (err) => {
+                let sentNotif = await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'HTML' }).catch(async (err) => {
                     console.warn('⚠️ Falha ao enviar com HTML no armazém, tentando texto puro:', err.message);
                     const plainMsg = notifMsg.replace(/<[^>]*>/g, '');
-                    await this.bot.sendMessage(storageGroupId, plainMsg).catch(err2 => {
+                    return await this.bot.sendMessage(storageGroupId, plainMsg).catch(err2 => {
                         console.error('❌ Erro definitivo ao enviar confirmação no grupo armazém:', err2.message);
+                        return null;
                     });
                 });
+                if (sentNotif && sentNotif.message_id) {
+                    await this.catalogoManager.vincularNotificacaoArmazem(uploadResult.messageId, sentNotif.message_id).catch(() => {});
+                }
                 console.log(`📢 [ARMAZÉM] Notificação de confirmação enviada com sucesso no grupo ${storageGroupId}!`);
             }
         } catch (e) {

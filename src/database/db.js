@@ -108,6 +108,7 @@ async function createTables() {
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
 
         CREATE TABLE IF NOT EXISTS series (
             id BIGSERIAL PRIMARY KEY,
@@ -170,6 +171,7 @@ async function createTables() {
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS still_url TEXT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS formato VARCHAR(50);
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,

@@ -15,8 +15,12 @@ class TelegramUploader {
         return TelegramUploader._instance;
     }
 
-    static async deleteStorageMessages(messageIds) {
-        return TelegramUploader.getInstance().deleteStorageMessages(messageIds);
+    static async deleteStorageMessages(messageIds, options) {
+        return TelegramUploader.getInstance().deleteStorageMessages(messageIds, options);
+    }
+
+    static async purgeOrphanedConfirmationMessages(opts) {
+        return TelegramUploader.getInstance().purgeOrphanedConfirmationMessages(opts);
     }
 
     constructor(bot = null) {
@@ -283,7 +287,7 @@ class TelegramUploader {
         }
     }
 
-    async deleteStorageMessages(messageIds) {
+    async deleteStorageMessages(messageIds, options = { checkConfirmations: true }) {
         if (!messageIds) return false;
         const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [messageIds])
             .map(id => Number(id))
@@ -293,12 +297,122 @@ class TelegramUploader {
 
         try {
             const client = await this.getClient();
-            await client.deleteMessages(this.storageGroupId, ids, { revoke: true });
-            console.log(`🗑️ [Storage Group] ${ids.length} mensagem(ns) excluída(s) permanentemente do grupo de armazém:`, ids);
+            const allIdsToDelete = new Set(ids);
+
+            // Se solicitado e o cliente suportar getMessages, inspeciona e inclui mensagens de confirmação adjacentes
+            if (options && options.checkConfirmations !== false && typeof client.getMessages === 'function') {
+                try {
+                    const candidatePairs = [];
+                    for (const id of ids) {
+                        for (let offset = 1; offset <= 3; offset++) {
+                            const cId = id + offset;
+                            if (!allIdsToDelete.has(cId)) {
+                                candidatePairs.push({ targetVideoId: id, candidateId: cId });
+                            }
+                        }
+                    }
+
+                    if (candidatePairs.length > 0) {
+                        const uniqueCandidates = [...new Set(candidatePairs.map(c => c.candidateId))];
+                        const fetched = await client.getMessages(this.storageGroupId, { ids: uniqueCandidates }).catch(() => []);
+                        
+                        for (const msg of fetched) {
+                            if (!msg || msg.className === 'MessageEmpty') continue;
+                            // Deve ser estritamente mensagem de texto (sem documento de vídeo)
+                            const isTextOnly = !msg.media || msg.media.className !== 'MessageMediaDocument';
+                            const text = (msg.message || '').trim();
+                            if (!isTextOnly || !text) continue;
+
+                            const isCatalogConfirm = text.includes('Conteúdo Armazenado & Catalogado') ||
+                                                    text.includes('Catalogado com Sucesso') ||
+                                                    text.includes('Episódio de Série/Dorama Catalogado') ||
+                                                    text.includes('Filme Catalogado com Sucesso');
+
+                            if (!isCatalogConfirm) continue;
+
+                            for (const pair of candidatePairs) {
+                                if (pair.candidateId === msg.id) {
+                                    const idStr = String(pair.targetVideoId);
+                                    if (text.includes(`Message ID: ${idStr}`) || 
+                                        text.includes(`Message ID:* ${idStr}`) || 
+                                        text.includes(`>${idStr}<`) || 
+                                        text.includes(idStr)) {
+                                        allIdsToDelete.add(msg.id);
+                                        console.log(`🧹 [Storage Group] Confirmação ${msg.id} vinculada à mídia ${pair.targetVideoId} incluída para remoção.`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (confErr) {
+                    console.warn('⚠️ Aviso ao buscar mensagens de confirmação adjacentes no storage:', confErr.message);
+                }
+            }
+
+            const finalIds = Array.from(allIdsToDelete);
+            await client.deleteMessages(this.storageGroupId, finalIds, { revoke: true });
+            console.log(`🗑️ [Storage Group] ${finalIds.length} mensagem(ns) excluída(s) permanentemente do grupo de armazém:`, finalIds);
             return true;
         } catch (error) {
             console.warn(`⚠️ Aviso ao excluir mensagens ${ids.join(', ')} do storage:`, error.message);
             return false;
+        }
+    }
+
+    /**
+     * Varre o grupo de armazém e purga todas as mensagens de confirmação órfãs
+     * (aquelas cujo arquivo de vídeo referenciado já foi excluído).
+     * @param {{ limit?: number }} options
+     */
+    async purgeOrphanedConfirmationMessages({ limit = 300 } = {}) {
+        try {
+            const client = await this.getClient();
+            console.log(`🔍 [Storage Group] Iniciando varredura de confirmações órfãs (limite: ${limit})...`);
+
+            const foundConfirmations = [];
+            for await (const m of client.iterMessages(this.storageGroupId, { search: 'Conteúdo Armazenado & Catalogado com Sucesso', limit })) {
+                if (!m || !m.message) continue;
+                const match = m.message.match(/Message ID:.*?(\d+)/i);
+                const refVideoId = match ? parseInt(match[1], 10) : null;
+                if (refVideoId) {
+                    foundConfirmations.push({ notifId: m.id, refVideoId });
+                }
+            }
+
+            console.log(`🔍 [Storage Group] ${foundConfirmations.length} mensagem(ns) de confirmação encontrada(s). Verificando existência dos vídeos...`);
+            if (foundConfirmations.length === 0) return { totalFound: 0, purgedCount: 0, purgedIds: [] };
+
+            const refVideoIds = [...new Set(foundConfirmations.map(c => c.refVideoId))];
+            const batchSize = 100;
+            const existingVideoIds = new Set();
+
+            for (let i = 0; i < refVideoIds.length; i += batchSize) {
+                const batch = refVideoIds.slice(i, i + batchSize);
+                const msgs = await client.getMessages(this.storageGroupId, { ids: batch }).catch(() => []);
+                for (const vm of msgs) {
+                    if (vm && vm.className !== 'MessageEmpty' && vm.media) {
+                        existingVideoIds.add(vm.id);
+                    }
+                }
+            }
+
+            const orphanedNotifs = foundConfirmations.filter(c => !existingVideoIds.has(c.refVideoId));
+            console.log(`🧹 [Storage Group] ${orphanedNotifs.length} mensagem(ns) de confirmação órfã(s) detectada(s).`);
+
+            if (orphanedNotifs.length > 0) {
+                const idsToDelete = orphanedNotifs.map(o => o.notifId);
+                for (let i = 0; i < idsToDelete.length; i += batchSize) {
+                    const batch = idsToDelete.slice(i, i + batchSize);
+                    await client.deleteMessages(this.storageGroupId, batch, { revoke: true });
+                }
+                console.log(`✅ [Storage Group] ${idsToDelete.length} mensagem(ns) órfã(s) excluída(s) com sucesso!`);
+                return { totalFound: foundConfirmations.length, purgedCount: idsToDelete.length, purgedIds: idsToDelete };
+            }
+
+            return { totalFound: foundConfirmations.length, purgedCount: 0, purgedIds: [] };
+        } catch (error) {
+            console.error('❌ Erro ao purgar confirmações órfãs do armazém:', error.message);
+            return { totalFound: 0, purgedCount: 0, purgedIds: [], error: error.message };
         }
     }
 
