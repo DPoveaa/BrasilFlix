@@ -1734,6 +1734,19 @@ class QueueManager extends EventEmitter {
                     return;
                 }
 
+                const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
+                const jaTemCam = !!(filmeExist && filmeExist.isCam);
+                const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
+                const jaPossuiDubladoFilme = !!(filmeExist && (filmeExist.isDublado || !!filmeExist.versoes?.dublado));
+
+                const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') || this.catalogoManager.buscarItemExato(job.title, 'serie')) : null;
+                const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
+                const jaPossuiLegendadoSerie = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
+                const jaPossuiDubladoSerie = !!(epExistente && (epExistente.isDublado || !!epExistente.versoes?.dublado));
+
+                const jaPossuiLegendado = job.type === 'serie' ? jaPossuiLegendadoSerie : jaPossuiLegendadoFilme;
+                const jaPossuiDublado = job.type === 'serie' ? jaPossuiDubladoSerie : jaPossuiDubladoFilme;
+
                 if (job.customMagnet) {
                     console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
                     sources = [{
@@ -1748,20 +1761,7 @@ class QueueManager extends EventEmitter {
                         source: 'Manual (Admin Magnet)'
                     }];
                 } else {
-                const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
-                const jaTemCam = !!(filmeExist && filmeExist.isCam);
-                const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
-                const jaPossuiDubladoFilme = !!(filmeExist && (filmeExist.isDublado || !!filmeExist.versoes?.dublado));
-
-                const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') || this.catalogoManager.buscarItemExato(job.title, 'serie')) : null;
-                const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
-                const jaPossuiLegendadoSerie = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
-                const jaPossuiDubladoSerie = !!(epExistente && (epExistente.isDublado || !!epExistente.versoes?.dublado));
-
-                const jaPossuiLegendado = job.type === 'serie' ? jaPossuiLegendadoSerie : jaPossuiLegendadoFilme;
-                const jaPossuiDublado = job.type === 'serie' ? jaPossuiDubladoSerie : jaPossuiDubladoFilme;
-
-                let forcarNaoCam = jaTemCam;
+                    let forcarNaoCam = jaTemCam;
                 if (job.type === 'filme' && metadata.tmdbId) {
                     try {
                         const relStatus = await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference === 'dublado');
