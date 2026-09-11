@@ -1072,13 +1072,15 @@ class DownloaderManager extends EventEmitter {
                 const remainingBytes = Math.max(0, curTotal - curDownloaded);
                 const speedMB = torrent.downloadSpeed / (1024 * 1024);
                 const remainingSec = speedMB > 0.001 ? Math.floor(remainingBytes / (speedMB * 1024 * 1024)) : 999999;
+                const avgSpeedMB = elapsedSec > 0 ? (curDownloaded / (1024 * 1024)) / elapsedSec : 0;
+                const totalSizeGB = curTotal > 0 ? (curTotal / (1024 * 1024 * 1024)) : 1.0;
                 const hasMoreSources = options.attemptIndex !== undefined && options.totalAttempts !== undefined && (options.attemptIndex < options.totalAttempts - 1);
 
                 const isDub = options.audioPreference === 'dublado' || options.isDublado || (options.audio && options.audio.includes('Dublado'));
                 const hasProgress = fileProg >= 0.01 || curDownloaded >= 15 * 1024 * 1024;
                 const noPeerTimeoutMs = isDub ? 90000 : 60000; // 60s - 90s sem nenhum peer no início
-                // Se já tem progresso baixado, concede 15 minutos (900s) de tolerância antes de desistir por falta total de tráfego
-                const stalledTimeoutMs = hasProgress ? (15 * 60 * 1000) : (isDub ? 120000 : 90000);
+                // Se já tem progresso baixado, concede 10 minutos de tolerância sem tráfego antes de desistir
+                const stalledTimeoutMs = hasProgress ? (10 * 60 * 1000) : (isDub ? 120000 : 90000);
 
                 // Log em tempo real a cada 6s enquanto tenta conectar e receber blocos
                 if (now - lastLogTime >= 6000 && torrent.progress < 0.01) {
@@ -1096,7 +1098,7 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Torrent sem peers ativos após ${Math.round(noPeerTimeoutMs / 1000)}s.`));
                 }
 
-                // 2. Aborta se estiver completamente estagnado (sem nenhum dado novo pelo tempo limite de 15 min com progresso ou 90-120s inicial)
+                // 2. Aborta se estiver completamente estagnado (sem nenhum dado novo pelo tempo limite)
                 if (stalledMs >= stalledTimeoutMs) {
                     process.stdout.write('\n');
                     console.log(`⚠️ Download estagnado sem velocidade ativa (${torrent.numPeers} peer(s), sem tráfego por ${Math.round(stalledMs / 1000)}s). ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
@@ -1116,32 +1118,63 @@ class DownloaderManager extends EventEmitter {
                     }
                 }
 
-                // 4. Velocidade insustentável mantida continuamente por >= 15 minutos (900s):
-                // Só dispara se a velocidade for muito baixa (< 0.10 MB/s) com previsão > 2h de forma CONTÍNUA por 15 minutos.
-                const isSlow = (speedMB < 0.10 && remainingSec > 7200);
+                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso mínimo de 15 minutos):
+                // Impede que qualquer download fique preso indefinidamente (ex: 1 GB -> máx 15 min, 3 GB -> máx 45 min)
+                const maxHardTimeoutSec = Math.max(15 * 60, Math.ceil(totalSizeGB * 15 * 60));
+                if (elapsedSec >= maxHardTimeoutSec) {
+                    process.stdout.write('\n');
+                    console.log(`⏰ [HARD TIMEOUT] Download excedeu o tempo máximo proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)} baixados). ${hasMoreSources ? 'Pulando para próxima fonte...' : 'Movendo para Swarm Watcher...'}`);
+                    finished = true;
+                    safeCleanup();
+                    return reject(new Error(`Download excedeu o tempo limite proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${totalSizeGB.toFixed(2)} GB).`));
+                }
+
+                // 5. CORTE RÁPIDO POR VELOCIDADE MÉDIA ZUMBI (Early Abort após 6 a 8 minutos):
+                // Se após 6 minutos a velocidade média acumulada for ridícula (< 0.20 MB/s com previsão > 2h ou < 0.10 MB/s)
+                if (elapsedSec >= 360) {
+                    const isZombieSpeed = (avgSpeedMB < 0.20 && remainingSec > 7200) || (avgSpeedMB < 0.10);
+                    if (isZombieSpeed) {
+                        process.stdout.write('\n');
+                        if (hasMoreSources) {
+                            console.log(`⚡ [EARLY ABORT] Velocidade média insuficiente após ${Math.floor(elapsedSec / 60)} min (${avgSpeedMB.toFixed(2)} MB/s médio, baixados: ${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)}). Pulando para próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                            finished = true;
+                            safeCleanup();
+                            return reject(new Error(`Velocidade média insuficiente (${avgSpeedMB.toFixed(2)} MB/s médio após ${Math.floor(elapsedSec / 60)} min). Pulando para próxima fonte.`));
+                        } else if (elapsedSec >= 480 && avgSpeedMB < 0.12) {
+                            console.log(`⚡ [EARLY ABORT] Fonte única com velocidade média inviável (${avgSpeedMB.toFixed(2)} MB/s médio após ${Math.floor(elapsedSec / 60)} min). Movendo para Swarm Watcher...`);
+                            finished = true;
+                            safeCleanup();
+                            return reject(new Error(`Fonte com velocidade média inviável (${avgSpeedMB.toFixed(2)} MB/s médio).`));
+                        }
+                    }
+                }
+
+                // 6. Watchdog de lentidão persistente (com proteção contra oscilação pontual):
+                const isSlow = (speedMB < 0.15 && remainingSec > 5400) || (speedMB < 0.08);
                 if (isSlow) {
                     if (!slowStartTime) {
                         slowStartTime = now;
                     }
                     const slowDurationSec = Math.floor((now - slowStartTime) / 1000);
-                    const slowTimeoutSec = 15 * 60; // 15 minutos
+                    const slowTimeoutSec = 8 * 60; // 8 minutos de lentidão sustentada
 
                     if (slowDurationSec >= slowTimeoutSec) {
                         process.stdout.write('\n');
                         if (hasMoreSources) {
-                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Taxa de transferência insustentável mantida por > 15m (${speedMB.toFixed(2)} MB/s, previsão: ${this.formatDuration(remainingSec)} após ${elapsedSec}s). Abortando para tentar próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Velocidade rastejante persistente por > 8m (${speedMB.toFixed(2)} MB/s atual, ${avgSpeedMB.toFixed(2)} MB/s médio). Abortando para tentar próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(`Velocidade insustentável mantida por > 15m (${speedMB.toFixed(2)} MB/s, previsão: ${this.formatDuration(remainingSec)}).`));
+                            return reject(new Error(`Velocidade rastejante persistente por > 8m (${speedMB.toFixed(2)} MB/s).`));
                         } else {
-                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Última fonte com velocidade insustentável mantida por > 15m (${speedMB.toFixed(2)} MB/s, previsão: ${this.formatDuration(remainingSec)}). Movendo para Swarm Watcher...`);
+                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Última fonte com velocidade rastejante mantida por > 8m (${speedMB.toFixed(2)} MB/s). Movendo para Swarm Watcher...`);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(`Torrent com velocidade insuficiente mantida por > 15m (${speedMB.toFixed(2)} MB/s).`));
+                            return reject(new Error(`Torrent com velocidade insuficiente mantida por > 8m (${speedMB.toFixed(2)} MB/s).`));
                         }
                     }
-                } else {
-                    // Qualquer oscilação ou melhora de velocidade reseta a contagem de lentidão
+                } else if (speedMB >= 0.35) {
+                    // SÓ reseta o cronômetro de lentidão se a velocidade REALMENTE se restabelecer (>= 0.35 MB/s)
+                    // Pequenas oscilações ou picos momentâneos de 0.03 -> 0.11 MB/s NÃO resetam mais o watchdog!
                     slowStartTime = null;
                 }
             }, 4000);
