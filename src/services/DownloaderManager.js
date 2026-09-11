@@ -607,6 +607,16 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(torrent.files[0].length)}). Amostra/Fake descartado.`));
                 }
 
+                // Se o torrent é de arquivo único para um episódio, verifica se ele realmente está faltando no catálogo
+                if (options.episode && torrent.files.length === 1 && typeof options.isEpisodeMissing === 'function') {
+                    if (!options.isEpisodeMissing(epNum)) {
+                        console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Episódio ${epNum} já consta no catálogo com a versão solicitada. Abortando download redundante.`);
+                        finished = true;
+                        safeCleanup();
+                        return resolve({ redundant: true, filePath: null });
+                    }
+                }
+
                 if (options.episode && torrent.files && torrent.files.length > 1) {
                     // Mapeia todos os episódios disponíveis no torrent
                     detectedEpisodeMap = this.mapAllEpisodeFilesInTorrent(torrent.files, seasonNum);
@@ -679,8 +689,13 @@ class DownloaderManager extends EventEmitter {
                             isSeasonPack = true;
                             detectedEpisodeMap = neededEpisodesMap;
                         }
+                    } else if (typeof options.isEpisodeMissing === 'function' && neededCount === 0) {
+                        console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Todos os episódios encontrados neste pacote já constam no catálogo com a versão solicitada. Abortando download redundante.`);
+                        finished = true;
+                        safeCleanup();
+                        return resolve({ redundant: true, filePath: null });
                     } else {
-                        // Se não for seguro baixar múltiplos ou neededCount for 0, baixa SOMENTE o episódio alvo do job
+                        // Se não for seguro baixar múltiplos e houver episódio pendente, baixa SOMENTE o episódio alvo do job
                         const found = neededEpisodesMap[epNum] || detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
                         if (found) {
                             if (found.length < minAllowedBytes) {

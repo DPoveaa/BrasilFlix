@@ -1465,6 +1465,7 @@ class QueueManager extends EventEmitter {
                     if (pref === 'dublado') {
                         for (let ep = 1; ep <= totalEpsInS; ep++) {
                             if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
+                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) continue;
                             const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
                             if (epItem) {
                                 const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
@@ -1479,6 +1480,7 @@ class QueueManager extends EventEmitter {
                         // Passo C: Se o pedido for Legendado, verifica se algum episódio ainda não tem a opção Legendada
                         for (let ep = 1; ep <= totalEpsInS; ep++) {
                             if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
+                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) continue;
                             const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
                             if (epItem) {
                                 const epLeg = epItem.isLegendado || !!epItem.versoes?.legendado;
@@ -2000,6 +2002,16 @@ class QueueManager extends EventEmitter {
                         });
                     }
 
+                    if (downloadedMedia && downloadedMedia.redundant) {
+                        console.log(`ℹ️ [Queue Worker] "${job.title}" já está 100% atualizado no catálogo com a versão solicitada.`);
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Conteúdo já existente no catálogo';
+                        await this.saveJob(job);
+                        this.queue = this.queue.filter(j => j.id !== job.id);
+                        return;
+                    }
+
                     if (downloadedMedia && downloadedMedia.filePath) {
                         bestSource = currentSource;
                         break;
@@ -2015,8 +2027,23 @@ class QueueManager extends EventEmitter {
             }
 
             if (!downloadedMedia || !bestSource) {
-                // Se a busca inicial era Dublado e todas as fontes falharam, tenta fallback para 1080p Legendado (OpenSubtitles PT-BR)
-                if (job.audioPreference === 'dublado') {
+                // Se a busca inicial era Dublado e todas as fontes falharam:
+                // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
+                if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
+                    console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada com seeders foi encontrada no momento. Mantendo versão atual.`);
+                    job.status = 'completed';
+                    job.progress = 100;
+                    job.progressDetails = 'Mantida versão Legendada existente (fontes Dubladas sem seeders)';
+                    if (job.type === 'serie') {
+                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                    }
+                    await this.saveJob(job);
+                    this.queue = this.queue.filter(j => j.id !== job.id);
+                    return;
+                }
+
+                // Se a busca inicial era Dublado e todas as fontes falharam (e NÃO temos legendado ainda): tenta fallback para 1080p Legendado (OpenSubtitles PT-BR)
+                if (job.audioPreference === 'dublado' && !jaPossuiLegendado && !job.isUpgrade) {
                     console.log(`⚠️ Todas as fontes dubladas para "${job.title}" estavam sem seeders. Buscando fallback 1080p Legendado com OpenSubtitles PT-BR...`);
                     try {
                         const legSources = await MediaSearchService.search(job.title, job.type, {
@@ -2055,6 +2082,15 @@ class QueueManager extends EventEmitter {
                                         isEpisodeMissing: makeIsEpisodeMissing(false),
                                         totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                                     });
+                                }
+                                if (downloadedMedia && downloadedMedia.redundant) {
+                                    console.log(`ℹ️ [Queue Worker] Fallback de "${job.title}" ignorado pois o conteúdo já existe no catálogo.`);
+                                    job.status = 'completed';
+                                    job.progress = 100;
+                                    job.progressDetails = 'Conteúdo já existente no catálogo';
+                                    await this.saveJob(job);
+                                    this.queue = this.queue.filter(j => j.id !== job.id);
+                                    return;
                                 }
                                 if (downloadedMedia && downloadedMedia.filePath) {
                                     bestSource = currentLeg;
@@ -2268,7 +2304,7 @@ class QueueManager extends EventEmitter {
 
                     // 1. Verifica se o torrent já trouxe legenda companion PT-BR na pasta (Companion Subs do pack)
                     const companion = await VideoProcessor.findCompanionSubtitle(rawFilePath, { season: job.season || 1, episode: job.episode || 1 });
-                    if (companion && companion.ptSrtPath && !VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata)) {
+                    if (companion && companion.ptSrtPath && !VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata) && !jaPossuiLegendado && !job.isUpgrade) {
                         console.log(`📦 [Companion Subs] Legenda local PT-BR encontrada no pacote para "${job.title}" T${job.season || 1}E${job.episode || 1}: ${path.basename(companion.ptSrtPath)}`);
                         langInfo = {
                             isValid: true,
@@ -2294,7 +2330,7 @@ class QueueManager extends EventEmitter {
                             } catch(e) {}
                         }
                         const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
-                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado) {
+                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado && !jaPossuiLegendado && !job.isUpgrade) {
                             console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${ptSubs.length} legenda(s) PT-BR encontradas no OpenSubtitles. Processando como Legendado (PT-BR)...`);
                             langInfo = {
                                 isValid: true,
@@ -2305,7 +2341,7 @@ class QueueManager extends EventEmitter {
                             };
                             job.audioPreference = 'legendado';
                         } else {
-                            console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado nem legenda em Português detectada no download de "${job.title}".`);
+                            console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (ou item já possui Legendado).`);
                             await DownloaderManager.cleanupFile(rawFilePath);
                             if (job.type === 'serie') {
                                 this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
