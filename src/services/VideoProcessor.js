@@ -861,53 +861,59 @@ ${events.join('\n')}
         if (!content || typeof content !== 'string' || content.length < 200) return false;
 
         // 1. Padrões característicos e inequívocos de Português de Portugal (PT-PT)
-        // Gerúndio substituído por 'a + infinitivo': "estou a falar", "está a fazer", "estava a ver", "estavam a pensar"
-        const ptPtGerundRegex = /\b(estou|está|estás|estava|estavam|estávamos|estiver|estiverem|andar|anda|andam|andava|andavam)\s+a\s+([a-z]{3,12}(?:ar|er|ir))\b/gi;
+        // Gerúndio substituído por 'a + infinitivo verbal' (excluindo substantivos/adjetivos como par, lugar, circular, militar, postos)
+        const ptPtGerundRegex = /\b(estou|está|estás|estava|estavam|estávamos|estiver|estiverem|andar|ando|andas|anda|andamos|andam|andava|andavam)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|andar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir)\b/gi;
         const ptPtGerundMatches = (content.match(ptPtGerundRegex) || []).length;
 
-        // Conjugações e pronomes específicos de PT-PT com gerúndio / expressões tipicamente europeias
-        const ptPtTuGerundRegex = /\btu\s+estás\s+a\s+([a-z]{3,12}(?:ar|er|ir))\b/gi;
-        const ptPtTuGerundMatches = (content.match(ptPtTuGerundRegex) || []).length;
+        // Ênclise típica europeia com hífen
+        const ptPtEncliseRegex = /\b(diz-me|senta-te|escuta-me|cala-te|ajuda-me|lembra-te|olha-te|levanta-te|dá-me|diga-me|chama-se|encontra-se|trata-se|refere-se|trabalho\s+de\s+equipa)\b/gi;
+        const ptPtEncliseMatches = (content.match(ptPtEncliseRegex) || []).length;
 
-        // Vocabulário estritamente exclusivo europeu (sem termos comuns ao PT formal)
-        const ptPtVocabRegex = /\b(ora bem|pois bem|ó pá\b|pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno almoço|parvalhão|casa de banho)\b/gi;
+        // Vocabulário estritamente exclusivo europeu (evitando 'pá' avulso que no Brasil significa ferramenta/pá de lixo/obra)
+        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|(?:ó|epa)\s+pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno\s+almoço|parvalhão|casa\s+de\s+banho)\b/gi;
         const ptPtVocabMatches = (content.match(ptPtVocabRegex) || []).length;
 
-        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtTuGerundMatches * 4) + (ptPtVocabMatches * 4);
+        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtEncliseMatches * 3) + (ptPtVocabMatches * 4);
 
         // 2. Padrões característicos de Português Brasileiro (PT-BR)
-        // Gerúndio natural brasileiro: "estou fazendo", "está vendo", "estavam ouvindo"
-        const ptBrGerundRegex = /\b(estou|está|estava|estavam|estávamos|ficou|fica|ficam)\s+([a-z]{3,12}(?:ando|endo|indo))\b/gi;
-        const ptBrGerundMatches = (content.match(ptBrGerundRegex) || []).length;
+        // Gerúndios naturais abundantes no Brasil (-ando, -endo, -indo)
+        const ptBrAllGerundsRegex = /\b[a-z]{3,15}(?:ando|endo|indo)\b/gi;
+        const ptBrAllGerundsMatches = (content.match(ptBrAllGerundsRegex) || []).length;
 
-        // Vocabulário típico brasileiro
-        const ptBrVocabRegex = /\b(você|vocês|legal\b|cara\b|celular|ônibus|trem\b|café da manhã|banheiro|garoto|garota|moço|moça|grana|droga|beleza|valeu\b|a gente)\b/gi;
+        // Contrações e vocabulário típico brasileiro
+        const ptBrVocabRegex = /\b(você|vocês|tô|tá|tava|tavam|né|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|ônibus|trem\b|café\s+da\s+manhã|banheiro|garoto|garota|moço|moça|grana|droga|beleza|valeu\b)\b/gi;
         const ptBrVocabMatches = (content.match(ptBrVocabRegex) || []).length;
 
-        // Próclise típica brasileira
-        const ptBrProcliseRegex = /\b(me dá|te vejo|te amo|me ajuda|me diz|me fala|me conta|não me|não te)\b/gi;
+        // Próclise típica brasileira (me dá, te vejo, me ajuda)
+        const ptBrProcliseRegex = /\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|não\s+me|não\s+te)\b/gi;
         const ptBrProcliseMatches = (content.match(ptBrProcliseRegex) || []).length;
 
-        const ptBrScore = (ptBrGerundMatches * 3) + (ptBrVocabMatches * 2) + (ptBrProcliseMatches * 2);
+        const ptBrScore = (ptBrAllGerundsMatches * 2) + (ptBrVocabMatches * 2) + (ptBrProcliseMatches * 2);
 
-        // Palavras genéricas do português para validação de integridade básica
-        const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por favor)\b/gi;
+        // Palavras genéricas do português para integridade básica
+        const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
         const genericMatches = (content.match(genericPtRegex) || []).length;
 
-        if (genericMatches < 8 && ptBrScore < 3) return false;
+        if (genericMatches < 8 && ptBrScore < 5) return false;
 
-        // Se houver indícios fortes e consistentes de Português de Portugal (ex: gerúndio europeu expressivo superando PT-BR), rejeita!
-        // Threshold de 20 (era 15) para evitar falsos positivos com vocabulário PT-PT que também é usado no Brasil
-        if (ptPtScore >= 20 && ptPtScore > ptBrScore * 2) {
+        // Se houver indícios inequívocos e dominantes de Português de Portugal superando amplamente PT-BR, rejeita
+        if (ptPtScore >= 25 && ptPtScore > ptBrScore * 2.5) {
             return false;
         }
 
-        // Se tiver gerúndio PT-PT expressivo (>= 4) e nenhum gerúndio PT-BR, é claramente PT-PT
-        if (ptPtGerundMatches >= 4 && ptBrGerundMatches === 0) {
+        // Se tiver muitos gerúndios europeus (a + inf) e quase nenhum gerúndio brasileiro natural
+        if (ptPtGerundMatches >= 6 && ptBrAllGerundsMatches < 2) {
             return false;
         }
 
         return true;
+    }
+
+    isGenericPortugueseSubtitle(content) {
+        if (!content || typeof content !== 'string' || content.length < 200) return false;
+        const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
+        const matches = (content.match(genericPtRegex) || []).length;
+        return matches >= 8;
     }
 
     isPortugueseSubtitleContent(content) {
@@ -1200,23 +1206,44 @@ ${events.join('\n')}
                 if (ptSubs.length > 0) {
                     console.log(`🌐 Testando ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
 
+                    let candidateChosen = false;
+                    let fallbackPtSub = null;
+
                     for (const sub of ptSubs) {
                         try {
                             const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
-                            if (subRes.data && this.isBrazilianPortugueseSubtitle(subRes.data)) {
-                                await fs.writeFile(srtPath, subRes.data, 'utf8');
-                                console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
-                                
-                                // Sincroniza a legenda externa contra o áudio ou referência de legenda do vídeo
-                                const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
-                                const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath);
-                                if (finalSrt) {
-                                    return finalSrt;
+                            if (subRes.data && subRes.data.length > 500) {
+                                const isPtBr = this.isBrazilianPortugueseSubtitle(subRes.data);
+                                const isGenericPt = this.isGenericPortugueseSubtitle(subRes.data);
+
+                                if (isPtBr) {
+                                    await fs.writeFile(srtPath, subRes.data, 'utf8');
+                                    console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
+                                    candidateChosen = true;
+                                    break;
+                                } else if (isGenericPt && !fallbackPtSub) {
+                                    fallbackPtSub = { sub, data: subRes.data };
+                                } else {
+                                    console.warn(`⚠️ Legenda OpenSubtitles (${sub.lang}) descartada: texto não reconhecido como Português autêntico.`);
                                 }
-                            } else if (subRes.data) {
-                                console.warn(`⚠️ Legenda OpenSubtitles (${sub.lang}) descartada: texto identificado como Português de Portugal ou não autêntico PT-BR.`);
                             }
                         } catch (errSub) {}
+                    }
+
+                    // Se nenhuma passou no filtro estrito PT-BR, mas temos uma legenda válida em Português, usa como fallback seguro
+                    if (!candidateChosen && fallbackPtSub) {
+                        console.log(`ℹ️ [Hardsub Fallback] Nenhuma legenda estritamente PT-BR confirmada. Utilizando legenda em Português disponível (${fallbackPtSub.sub.lang}) para garantir Hardsub...`);
+                        await fs.writeFile(srtPath, fallbackPtSub.data, 'utf8');
+                        candidateChosen = true;
+                    }
+
+                    if (candidateChosen && fs.existsSync(srtPath)) {
+                        // Sincroniza a legenda externa contra o áudio ou referência de legenda do vídeo
+                        const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
+                        const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath);
+                        if (finalSrt) {
+                            return finalSrt;
+                        }
                     }
                 }
             } catch (e) {}

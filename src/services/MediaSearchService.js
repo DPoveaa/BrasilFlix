@@ -1,6 +1,7 @@
 const axios = require('axios');
 const config = require('../../config');
 const TMDBService = require('./TMDBService');
+const NyaaSearchService = require('./NyaaSearchService');
 const AnimeExtractorService = require('./AnimeExtractorService');
 
 class MediaSearchService {
@@ -111,26 +112,31 @@ class MediaSearchService {
             }
         }
 
-        // 2. BUSCA DIRETA EM WEB CDN PARA ANIMES (Desativado por padrão para evitar marca d'água de sites como animesonline.org)
-        if (isAnime && config.ENABLE_ANIME_DIRECT) {
+        // 2. BUSCA NO NYAA.SI PARA ANIMES (Fonte Primária Especializada P2P de Alta Qualidade e Velocidade)
+        if (isAnime) {
             try {
-                console.log(`🎌 [Anime Direct] Consultando AnimesDigital / TopAnimes (Web CDN) para: "${cleanQuery}" ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
-                const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
-                    nomeOriginal: originalName,
+                const nyaaResults = await NyaaSearchService.searchAnime(cleanQuery, tipo, {
+                    originalName,
                     season,
                     episode,
                     audioPreference: pref,
                     ano,
-                    tmdbSeasonName: options.tmdbSeasonName || null, // Nome da temporada TMDB para animes com temporadas separadas
+                    tmdbSeasonName: options.tmdbSeasonName || null,
                     ignorarFallbackLegendado: options.ignorarFallbackLegendado,
                     ignorarFallbackDublado: options.ignorarFallbackDublado
                 });
 
-                for (const item of animeDirectResults) {
-                    allResults.push(item);
+                for (const item of nyaaResults) {
+                    if (item.infoHash && !seenHashes.has(item.infoHash.toLowerCase())) {
+                        seenHashes.add(item.infoHash.toLowerCase());
+                        allResults.push(item);
+                    }
+                }
+                if (nyaaResults.length > 0) {
+                    console.log(`🎌 [Nyaa.si] ${nyaaResults.length} release(s) de anime adicionados como fonte primária.`);
                 }
             } catch (e) {
-                console.warn('⚠️ Falha ao consultar AnimeExtractorService:', e.message);
+                console.warn('⚠️ Falha ao consultar NyaaSearchService:', e.message);
             }
         }
 
@@ -1213,6 +1219,10 @@ class MediaSearchService {
             const isBrGroupB = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(b.title) || b.isBrazilianGroup;
             if (isBrGroupA) scoreA += 4500;
             if (isBrGroupB) scoreB += 4500;
+
+            // 1.2 FONTES NYAA.SI (Releases primários e dedicados de animes)
+            if (a.source === 'Nyaa.si' || a.source?.includes('Nyaa')) scoreA += 2500;
+            if (b.source === 'Nyaa.si' || b.source?.includes('Nyaa')) scoreB += 2500;
 
             // 2. Fidelidade PT-BR vs PT-PT
             if (a.isPtBrExplicit) scoreA += 600;
