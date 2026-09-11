@@ -549,6 +549,8 @@ class DownloaderManager extends EventEmitter {
             }
 
             client.on('error', (err) => {
+                // RTCDataChannel "Close called" é desconexão normal de peer WebRTC — não afeta o download
+                if (err?.code === 'ERR_DATA_CHANNEL' || err?.message?.includes('Close called')) return;
                 console.error('⚠️ Aviso do cliente WebTorrent:', err?.message || err);
             });
 
