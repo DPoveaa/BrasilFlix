@@ -322,7 +322,13 @@ class AutoFeeder {
 
             console.log(`📺 AutoFeeder: Verificando lançamentos e episódios semanais para ${seriesList.length} série(s) do catálogo...`);
 
+            let consecutiveFailures = 0;
             for (const serie of seriesList) {
+                if (consecutiveFailures >= 3) {
+                    console.warn('⚠️ [AutoFeeder] Múltiplas falhas ao consultar TMDB (API instável/offline). Postergando verificação para a próxima rodada.');
+                    break;
+                }
+
                 let tmdbData = null;
                 if (serie.tmdbId) {
                     tmdbData = await TMDBService.getTVDetails(serie.tmdbId);
@@ -333,7 +339,11 @@ class AutoFeeder {
                     }
                 }
 
-                if (!tmdbData || !tmdbData.temporadas) continue;
+                if (!tmdbData || !tmdbData.temporadas) {
+                    consecutiveFailures++;
+                    continue;
+                }
+                consecutiveFailures = 0;
 
                 const hoje = new Date().toISOString().split('T')[0];
 

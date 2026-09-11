@@ -10,9 +10,34 @@ class TMDBService {
         this.language = config.TMDB_LANGUAGE || 'pt-BR';
         this.baseUrl = 'https://api.themoviedb.org/3';
         this.imageBaseUrl = 'https://image.tmdb.org/t/p';
+        this.cache = new Map();
+        this.circuitBreakerUntil = 0;
+        this.consecutiveFailures = 0;
     }
 
-    async _getWithRetry(endpoint, params = {}, timeout = 15000, maxRetries = 2) {
+    _getFromCache(key) {
+        const item = this.cache.get(key);
+        if (item && item.expiresAt > Date.now()) {
+            return item.data;
+        }
+        if (item) this.cache.delete(key);
+        return null;
+    }
+
+    _setInCache(key, data, ttlMs = 2 * 60 * 60 * 1000) {
+        if (!data) return;
+        if (this.cache.size > 2000) {
+            const firstKeys = Array.from(this.cache.keys()).slice(0, 300);
+            firstKeys.forEach(k => this.cache.delete(k));
+        }
+        this.cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+    }
+
+    async _getWithRetry(endpoint, params = {}, timeout = 8000, maxRetries = 2) {
+        if (this.circuitBreakerUntil > Date.now()) {
+            return null;
+        }
+
         const fullParams = {
             api_key: this.apiKey,
             language: this.language,
@@ -25,11 +50,17 @@ class TMDBService {
                     timeout: timeout,
                     httpsAgent: httpsAgent
                 });
+                this.consecutiveFailures = 0;
                 return response.data;
             } catch (err) {
                 if (attempt < maxRetries) {
-                    await new Promise(r => setTimeout(r, 1200 * attempt));
+                    await new Promise(r => setTimeout(r, 1000 * attempt));
                     continue;
+                }
+                this.consecutiveFailures++;
+                if (this.consecutiveFailures >= 4) {
+                    this.circuitBreakerUntil = Date.now() + 60000; // 60s
+                    console.warn(`⚠️ [TMDBService] Detectada instabilidade na API do TMDB (4 timeouts/falhas seguidas). Circuit breaker ativado por 60s para proteger a fila.`);
                 }
                 throw err;
             }
@@ -140,6 +171,11 @@ class TMDBService {
     }
 
     async searchMovie(query, year = null) {
+        if (!query || query.trim().length === 0) return [];
+        const cacheKey = `search_movie_${query.trim().toLowerCase()}_${year || ''}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
         try {
             const params = {
                 query: query.trim(),
@@ -148,16 +184,24 @@ class TMDBService {
             if (year) params.year = year;
 
             const data = await this._getWithRetry('/search/movie', params);
-            const results = data.results || [];
+            const results = data?.results || [];
             const formatted = results.map(item => this.formatItem({ ...item, media_type: 'movie' }));
-            return this.rankSearchResults(formatted, query);
+            const ranked = this.rankSearchResults(formatted, query);
+            this._setInCache(cacheKey, ranked, 30 * 60 * 1000); // 30 min
+            return ranked;
         } catch (error) {
-            console.error('❌ Erro na busca de filme TMDB:', error.message);
+            const msg = error.code || error.message || 'Falha de conexão';
+            console.warn(`⚠️ [TMDB] Indisponibilidade na busca de filme "${query}": ${msg}`);
             return [];
         }
     }
 
     async searchTV(query, year = null) {
+        if (!query || query.trim().length === 0) return [];
+        const cacheKey = `search_tv_${query.trim().toLowerCase()}_${year || ''}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
         try {
             const params = {
                 query: query.trim(),
@@ -166,43 +210,70 @@ class TMDBService {
             if (year) params.first_air_date_year = year;
 
             const data = await this._getWithRetry('/search/tv', params);
-            const results = data.results || [];
+            const results = data?.results || [];
             const formatted = results.map(item => this.formatItem({ ...item, media_type: 'tv' }));
-            return this.rankSearchResults(formatted, query);
+            const ranked = this.rankSearchResults(formatted, query);
+            this._setInCache(cacheKey, ranked, 30 * 60 * 1000); // 30 min
+            return ranked;
         } catch (error) {
-            console.error('❌ Erro na busca de série TMDB:', error.message);
+            const msg = error.code || error.message || 'Falha de conexão';
+            console.warn(`⚠️ [TMDB] Indisponibilidade na busca de série "${query}": ${msg}`);
             return [];
         }
     }
 
     async getMovieDetails(tmdbId) {
+        if (!tmdbId) return null;
+        const cacheKey = `movie_${tmdbId}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
         try {
             const data = await this._getWithRetry(`/movie/${tmdbId}`, {
                 append_to_response: 'external_ids'
             });
-            return this.formatItem({ ...data, media_type: 'movie' });
+            if (!data) return null;
+            const formatted = this.formatItem({ ...data, media_type: 'movie' });
+            this._setInCache(cacheKey, formatted, 4 * 60 * 60 * 1000); // 4 horas
+            return formatted;
         } catch (error) {
-            console.error(`❌ Erro ao obter detalhes do filme ${tmdbId}:`, error.message);
+            const msg = error.code || error.message || 'Falha de conexão';
+            console.warn(`⚠️ [TMDB] Indisponibilidade ao obter detalhes do filme ${tmdbId}: ${msg}`);
             return null;
         }
     }
 
     async getTVDetails(tmdbId) {
+        if (!tmdbId) return null;
+        const cacheKey = `tv_${tmdbId}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
         try {
             const data = await this._getWithRetry(`/tv/${tmdbId}`, {
                 append_to_response: 'external_ids'
             });
-            return this.formatTVDetails(data);
+            if (!data) return null;
+            const formatted = this.formatTVDetails(data);
+            this._setInCache(cacheKey, formatted, 4 * 60 * 60 * 1000); // 4 horas
+            return formatted;
         } catch (error) {
-            console.error(`❌ Erro ao obter detalhes da série ${tmdbId}:`, error.message);
+            const msg = error.code || error.message || 'Falha de conexão';
+            console.warn(`⚠️ [TMDB] Indisponibilidade ao obter detalhes da série ${tmdbId}: ${msg}`);
             return null;
         }
     }
 
     async getSeasonDetails(tmdbId, seasonNumber) {
+        if (!tmdbId) return null;
+        const cacheKey = `tv_${tmdbId}_s_${seasonNumber}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
         try {
             const data = await this._getWithRetry(`/tv/${tmdbId}/season/${seasonNumber}`);
-            return {
+            if (!data) return null;
+            const formatted = {
                 temporadaNumero: data.season_number,
                 nome: data.name || `Temporada ${data.season_number}`,
                 sinopse: data.overview || '',
@@ -218,8 +289,11 @@ class TMDBService {
                     duracaoMinutos: ep.runtime || 0
                 }))
             };
+            this._setInCache(cacheKey, formatted, 2 * 60 * 60 * 1000); // 2 horas
+            return formatted;
         } catch (error) {
-            console.error(`❌ Erro ao obter temporada ${seasonNumber} de ${tmdbId}:`, error.message);
+            const msg = error.code || error.message || 'Falha de conexão';
+            console.warn(`⚠️ [TMDB] Indisponibilidade ao obter temporada ${seasonNumber} de ${tmdbId}: ${msg}`);
             return null;
         }
     }
