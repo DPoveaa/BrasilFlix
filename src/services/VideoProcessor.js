@@ -68,6 +68,7 @@ class VideoProcessor {
                         sizeMB: (sizeBytes / (1024 * 1024)).toFixed(2),
                         videoCodec: (videoStream.codec_name || '').toLowerCase(),
                         pixFmt: (videoStream.pix_fmt || 'yuv420p').toLowerCase(),
+                        tags: format.tags || {},
                         audioStreams: audioStreams.map((a, idx) => ({
                             index: idx,
                             globalIndex: a.index !== undefined ? a.index : idx,
@@ -505,10 +506,15 @@ class VideoProcessor {
     async buildHardsubAssFromSrt(srtPath, outputWidth, outputHeight) {
         const outW = Math.max(640, Math.min(1920, parseInt(outputWidth, 10) || 1920));
         const outH = Math.max(360, parseInt(outputHeight, 10) || 1080);
-        // ~3.8% da altura → legível sem dominar a tela (~41px em 1080p)
-        const fontSize = Math.max(28, Math.min(52, Math.round(outH * 0.038)));
-        const outline = Math.max(2, Math.round(fontSize / 18));
-        const marginV = Math.max(28, Math.round(outH * 0.035));
+        // Altura de referência baseada no viewport 16:9 padrão para manter escala proporcional
+        // consistente em qualquer formato (ex: cinemascope 2.39:1 1920x800, 2:1 1920x960, 4:3 1440x1080)
+        const refH = Math.max(outH, Math.round(outW * (9 / 16)));
+        // ~4.5% da altura de referência (~49px em 1080p, ~32px em 720p)
+        // Legível e confortável sem ficar nem minúsculo em filmes ultrawide nem gigante em animes
+        const fontSize = Math.max(28, Math.min(52, Math.round(refH * 0.045)));
+        const outline = Math.max(2.2, Number((fontSize / 17).toFixed(1)));
+        // Margem vertical segura (~4.8% da altura real) para não encostar na borda inferior nem sobrepor barras
+        const marginV = Math.max(32, Math.round(outH * 0.048));
         const assPath = srtPath.replace(/\.srt$/i, '') + `_hardsub_${outW}x${outH}.ass`;
 
         const srtContent = await fs.readFile(srtPath, 'utf8');
@@ -546,7 +552,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,${outline},1,2,40,40,${marginV},1
+Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,${outline},1.2,2,40,40,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -647,16 +653,32 @@ ${events.join('\n')}
         // Se a obra for legitimamente russa, o áudio russo é válido
         if (origLang === 'ru' || origLang === 'rus') return false;
 
-        // 1. Tags russas ou de casas de aposta (scams) no nome do arquivo
+        // 1. Tags russas ou de casas de aposta (scams) / dublagens fakes por IA no nome do arquivo
         const isRussianName = /\b(rus|russian|dvo|mvo|avo|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(lowerName);
-        const isScamName = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|dcprip|line\.audio|line[-_ ]audio)\b/i.test(lowerName);
+        const isScamName = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|vai[-_ ]?de[-_ ]?bet|betfair|parimatch|kto|betnacional|superbet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dub[-_ .]?ia|dublado[-_ .]?ia|dublado[-_ .]?por[-_ .]?ia|voz[-_ .]?ia|ia[-_ .]?voz|elevenlabs|voice[-_ .]?over|voiceover|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio)\b/i.test(lowerName);
 
         if (isRussianName || isScamName) {
             return true;
         }
 
-        // 2. Streams de áudio no ffprobe: detecta trilhas marcadas como 'rus', 'ru' ou com nomes russos
-        if (info.audioStreams && info.audioStreams.length > 0) {
+        // 2. Análise de tags globais do container (ads de apostas e IA embutidos em metadata)
+        if (info && info.tags) {
+            const tagsStr = JSON.stringify(info.tags).toLowerCase();
+            if (/\b(1xbet|mostbet|melbet|betboom|betano|blaze|bet365|stake|esportesdasorte|vaidebet|cassino|casino|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dublado[-_ .]?ia|elevenlabs)\b/i.test(tagsStr)) {
+                return true;
+            }
+        }
+
+        // 3. Streams de áudio no ffprobe: detecta trilhas russas ou ads/IA no título da faixa
+        if (info && info.audioStreams && info.audioStreams.length > 0) {
+            const hasScamOrAiAudioTitle = info.audioStreams.some(a => {
+                const title = (a.title || '').toLowerCase();
+                return /\b(1xbet|mostbet|melbet|betano|blaze|bet365|stake|esportesdasorte|vaidebet|cassino|casino|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dublado[-_ .]?ia|elevenlabs)\b/i.test(title);
+            });
+            if (hasScamOrAiAudioTitle) {
+                return true;
+            }
+
             const hasRussianStream = info.audioStreams.some(a => {
                 const lang = (a.language || '').toLowerCase();
                 const title = (a.title || '').toLowerCase();
@@ -717,7 +739,7 @@ ${events.join('\n')}
                 isLegendado: false,
                 isRussianScam: true,
                 hasBoth: false,
-                audioText: 'Rejeitado (Áudio Russo / Scam)'
+                audioText: 'Rejeitado (Áudio Russo / Scam / Bet / IA)'
             };
         }
 
@@ -746,10 +768,14 @@ ${events.join('\n')}
                 return lang !== 'und' && lang !== '' && !ptLanguages.includes(lang);
             });
 
+        const isBrGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(sourceTitle) || /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(lowerName);
+
         const isSourceDublado = (source.isDublado === true || source.audio?.toLowerCase().includes('dublado') || /\b(dublado|dub|nacional|pt[-_]?br)\b/i.test(sourceTitle)) && !allTaggedAndForeign;
         const hasDirectPtAudio = this.hasPortugueseAudio(info, rawFileName);
         const hasAudioStreams = info.audioStreams && info.audioStreams.length > 0;
-        const isDublado = !allTaggedAndForeign && (hasDirectPtAudio || (isSourceDublado && hasAudioStreams && !this.isRussianOrScamAudio(info, rawFileName, metadata)));
+        // Dublado só é aceito se o arquivo contiver áudio PT verificado no ffprobe OU vier de grupo brasileiro idôneo.
+        // Releases de fontes desconhecidas com áudio "und" NÃO são aceitas como dubladas sem verificação.
+        const isDublado = !allTaggedAndForeign && (hasDirectPtAudio || (isSourceDublado && hasAudioStreams && isBrGroup && !this.isRussianOrScamAudio(info, rawFileName, metadata)));
 
         // 2. Legendas em Português verificadas via ffprobe ou fonte comprovada (ou original para OpenSubtitles)
         const hasPtSubsInFile = this.hasPortugueseSubtitles(info, rawFileName);
@@ -1573,9 +1599,9 @@ ${events.join('\n')}
                     vfFilter += `,ass='${assEscaped}'`;
                 } else if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                     // Fallback: force_style com FontSize relativo ao PlayResY padrão (288)
-                    const scaledFont = Math.max(12, Math.min(18, Math.round(outH * 0.038 * 288 / Math.max(outH, 1))));
+                    const scaledFont = Math.max(12, Math.min(16, Math.round(288 * 0.045)));
                     const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=1.5,Shadow=0.8,MarginV=28,Alignment=2,Bold=0'`;
+                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,Outline=1.8,Shadow=1.0,MarginV=34,Alignment=2,Bold=0'`;
                 }
 
                 const args = [

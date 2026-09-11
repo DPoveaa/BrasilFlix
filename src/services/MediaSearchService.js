@@ -518,13 +518,13 @@ class MediaSearchService {
                 const title = lines[0] || '';
 
                 // Grupos de lançamento 100% brasileiros
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo/i.test(title);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo|cinegaveta|wolverdon|guanabara/i.test(title);
 
                 // Marcação explícita de PT-BR / Dublado
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
 
-                // Bloqueia categoricamente releases russas, scam/bookmakers e tags de áudio russo (.D., 1xbet, etc.)
-                const isRussianOrScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|rus[._ -]?sub|sub[._ -]?rus|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\)|звук|лицензия|itunes[._ -]?ru|itunes\.r|hdrip-avc|web-dlrip|web-rip\.rus)\b/i.test(rawTitle) || /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|betano|blaze|novibet|bet365|stake|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\))\b/i.test(title);
+                // Bloqueia categoricamente releases russas, scam/bookmakers, casas de aposta e dublagens falsas/IA (.D., 1xbet, etc.)
+                const isRussianOrScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|vai[-_ ]?de[-_ ]?bet|betfair|parimatch|kto|betnacional|superbet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dub[-_ .]?ia|dublado[-_ .]?ia|dublado[-_ .]?por[-_ .]?ia|voz[-_ .]?ia|ia[-_ .]?voz|elevenlabs|voice[-_ .]?over|voiceover|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|rus[._ -]?sub|sub[._ -]?rus|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\)|звук|лицензия|itunes[._ -]?ru|itunes\.r|hdrip-avc|web-dlrip|web-rip\.rus)\b/i.test(rawTitle) || /\b(1xbet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vavada|catcasino|winline|betandyou|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dublado[-_ .]?ia|\.D\.|\.D1\.|\.D2\.|\[D\]|\(D\))\b/i.test(title);
                 if (isRussianOrScam) {
                     continue;
                 }
@@ -541,7 +541,12 @@ class MediaSearchService {
                 }
 
                 // Marcação explícita de Portugal (NUNCA aplicada a grupos brasileiros)
-                const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && (/\b(PT-PT|PT_PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) || /\b(pt-pt|dobrado)\b/i.test(title));
+                // Se o release tem a bandeira de Portugal 🇵🇹 ou tag PT-PT e não tem 🇧🇷, descarta como PT-BR
+                const isPtPtExplicit = !isBrazilianGroup && (
+                    /\b(PT[-_ ]?PT|PTPT|EUROPEAN[._ -]?PORTUGUESE|DOBRADO)\b/i.test(rawTitle) ||
+                    /\b(pt[-_ ]?pt|dobrado)\b/i.test(title) ||
+                    (rawTitle.includes('🇵🇹') && !rawTitle.includes('🇧🇷'))
+                );
 
                 // Detecta par de idiomas estrangeiros (ex: KOR-ENG, JAP-ENG) NO TÍTULO DO RELEASE.
                 // Só é considerado bloqueante se NÃO houver nenhum indicador PT-BR explícito sobrescrevendo:
@@ -555,7 +560,10 @@ class MediaSearchService {
                 const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Multi[- ]?Dub|Multi[- ]?Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
                 const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
-                const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit && !hasForeignAudioPair;
+                // Releases de indexadores genéricos como EXT que não sejam de grupos brasileiros NÃO podem ser aceitas como dubladas
+                const isUntrustedExt = (rawTitle.includes('⚙️ EXT') || /⚙️\s*EXT\b/i.test(rawTitle)) && !isBrazilianGroup;
+
+                const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || hasPtAudioFlag || isDualPtInTitle) && !isPtPtExplicit && !hasForeignAudioPair && !isUntrustedExt;
 
                 const hasHardsubFlag = /\b(hc|hc[-_]?sub|hardsub|korsub|chssub|vostfr)\b/i.test(rawTitle) || /\b(hc|hc[-_]?sub|hardsub|korsub|chssub)\b/i.test(title);
                 if (opts.audioPreference === 'dublado' && hasHardsubFlag && !isBrazilianGroup) {
@@ -659,7 +667,7 @@ class MediaSearchService {
                 const magnet = `magnet:?xt=urn:btih:${st.infoHash.toLowerCase()}&dn=${encodeURIComponent(title)}`;
                 const isCam = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio|c0p|evo-cam|evo\.cam|ddhdcam|bdvd|evo-hd)\b/i.test(title);
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
-                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino)\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|vai[-_ ]?de[-_ ]?bet|betfair|parimatch|kto|betnacional|superbet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dub[-_ .]?ia|dublado[-_ .]?ia|dublado[-_ .]?por[-_ .]?ia|voz[-_ .]?ia|ia[-_ .]?voz|elevenlabs|voice[-_ .]?over|voiceover|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dublado[-_ .]?ia|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial)\b/i.test(title);
                 if (isScam) continue;
                 if (isRussian && !isDublado) continue;
 
@@ -776,7 +784,7 @@ class MediaSearchService {
 
                 // Rejeita categoricamente releases russos (D, D1, D2, DVO, MVO, AVO, Line.Audio, LostFilm, etc.) e sites de apostas/scam
                 const isRussian = /\b(rus|russian|dvo|mvo|avo|line\.audio|itunes[-_ ]?rus|itunes[-_ ]?r|hdrezka|lostfilm|redheadsound|rhs|baibako|newstudio|coldfilm|kinogo|lordfilm|rutracker|rutor)\b|\.(d|d1|d2|mvo|dvo|avo)\.|\b\d{4}\.d\b/i.test(title);
-                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|cassino|casino)\b/i.test(title);
+                const isScam = /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|linebet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|vai[-_ ]?de[-_ ]?bet|betfair|parimatch|kto|betnacional|superbet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dub[-_ .]?ia|dublado[-_ .]?ia|dublado[-_ .]?por[-_ .]?ia|voz[-_ .]?ia|ia[-_ .]?voz|elevenlabs|voice[-_ .]?over|voiceover|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial|bet\b|ads\b)\b/i.test(rawTitle) || /\b(1xbet|1x_bet|1x-bet|mostbet|pari|melbet|betboom|fonbet|pin-up|joycasino|vulkan|vavada|catcasino|winline|betandyou|apostas|betano|blaze|novibet|bet365|stake|esportesdasorte|vaidebet|cassino|casino|slot|slots|ai[-_ .]?dub|aidub|ia[-_ .]?dub|dublado[-_ .]?ia|dcprip|line\.audio|line[-_ ]audio|clean\.audio|clean[-_ ]audio|propaganda|comercial)\b/i.test(title);
                 const isSpanish = /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast|ratonera)\b/i.test(title) || /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|kontrast|ratonera)\b|⚙️\s*EXT\b|\bcap\.\d+/i.test(rawTitle);
                 if (isSpanish) continue;
                 const origLang = (opts.originalLanguage || opts.idiomaOriginal || '').toLowerCase();
