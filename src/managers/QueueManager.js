@@ -779,43 +779,73 @@ class QueueManager extends EventEmitter {
 
         // Se for série e o episódio já existir no catálogo com o áudio desejado, busca o próximo episódio pendente
         if (type === 'serie') {
-            const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
+            const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie')
+                || this.catalogoManager.buscarSeriePorTmdb(extraData.tmdbId);
             if (serieExistente) {
-                const temporada = (serieExistente.temporadas || []).find(t => t.numero === job.season);
-                const epExistente = (temporada?.episodios || []).find(e => e.numero === job.episode);
+                const pref = job.audioPreference || 'dublado';
+                // Tenta encontrar episódio em memória (incluindo todasTemporadas com fallback)
+                const epExistente = this.catalogoManager.buscarEpisodio(serieExistente.id, job.season || 1, job.episode || 1);
                 if (epExistente) {
-                    const pref = job.audioPreference || 'dublado';
-                    const epDub = epExistente.isDublado || !!epExistente.versoes?.dublado || epExistente.audio?.toLowerCase().includes('dublado');
-                    const epLeg = epExistente.isLegendado || !!epExistente.versoes?.legendado || epExistente.audio?.toLowerCase().includes('legendado');
+                    const epDub = epExistente.isDublado || !!epExistente.versoes?.dublado;
+                    const epLeg = epExistente.isLegendado || !!epExistente.versoes?.legendado;
                     const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg) || (epDub && epLeg);
 
-                    if (audioMatches) {
-                        if (!extraData.isManualAdd || (!extraData.episode && !extraData.season)) {
-                            let nextMissing = null;
-                            for (let ep = 1; ep <= 30; ep++) {
-                                const epObj = (temporada?.episodios || []).find(e => e.numero === ep);
-                                if (!epObj) {
-                                    nextMissing = ep;
-                                    break;
-                                }
-                                const isD = epObj.isDublado || !!epObj.versoes?.dublado || epObj.audio?.toLowerCase().includes('dublado');
-                                const isL = epObj.isLegendado || !!epObj.versoes?.legendado || epObj.audio?.toLowerCase().includes('legendado');
-                                if ((pref === 'dublado' && !isD) || (pref === 'legendado' && !isL)) {
-                                    nextMissing = ep;
-                                    break;
-                                }
+                    if (audioMatches && (extraData.isManualAdd && (extraData.episode || extraData.season))) {
+                        console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} (${pref}) já está cadastrado no catálogo (memória). Ignorando.`);
+                        return null;
+                    }
+                    if (audioMatches && !extraData.isManualAdd) {
+                        const temporada = (serieExistente.temporadas || []).find(t => t.numero === job.season);
+                        let nextMissing = null;
+                        for (let ep = 1; ep <= 30; ep++) {
+                            const epObj = this.catalogoManager.buscarEpisodio(serieExistente.id, job.season || 1, ep);
+                            if (!epObj) {
+                                nextMissing = ep;
+                                break;
                             }
-                            if (nextMissing) {
-                                console.log(`📺 [Fila] "${title}" T${job.season}E${job.episode} já existe com áudio ${pref}. Direcionando trabalho para o próximo episódio pendente: T${job.season}E${nextMissing}`);
-                                job.episode = nextMissing;
-                            } else {
-                                console.log(`ℹ️ [Fila] Todos os episódios da Temporada ${job.season} de "${title}" já estão no catálogo com áudio ${pref}.`);
-                                return null;
+                            const isD = epObj.isDublado || !!epObj.versoes?.dublado;
+                            const isL = epObj.isLegendado || !!epObj.versoes?.legendado;
+                            if ((pref === 'dublado' && !isD) || (pref === 'legendado' && !isL)) {
+                                nextMissing = ep;
+                                break;
                             }
+                        }
+                        if (nextMissing) {
+                            console.log(`📺 [Fila] "${title}" T${job.season}E${job.episode} já existe com áudio ${pref}. Direcionando trabalho para o próximo episódio pendente: T${job.season}E${nextMissing}`);
+                            job.episode = nextMissing;
                         } else {
-                            console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} (${pref}) já está cadastrado no catálogo. Ignorando.`);
+                            console.log(`ℹ️ [Fila] Todos os episódios da Temporada ${job.season} de "${title}" já estão no catálogo com áudio ${pref}.`);
                             return null;
                         }
+                    }
+                } else {
+                    // Fallback: verifica direto no banco de dados (cobre casos onde o episódio existe mas não aparece em memória)
+                    try {
+                        const dbSerie = await db.query(
+                            `SELECT id FROM series WHERE LOWER(nome) = LOWER($1) OR (tmdb_id IS NOT NULL AND tmdb_id = $2) LIMIT 1`,
+                            [title.trim(), extraData.tmdbId || 0]
+                        );
+                        if (dbSerie.rows.length > 0) {
+                            const sId = dbSerie.rows[0].id;
+                            const dbEp = await db.query(
+                                `SELECT id, is_dublado, is_legendado, versoes FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3 LIMIT 1`,
+                                [sId, job.season || 1, job.episode || 1]
+                            );
+                            if (dbEp.rows.length > 0) {
+                                const ep = dbEp.rows[0];
+                                const versoes = typeof ep.versoes === 'string' ? JSON.parse(ep.versoes || '{}') : (ep.versoes || {});
+                                const pref = job.audioPreference || 'dublado';
+                                const epDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
+                                const epLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
+                                const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg);
+                                if (audioMatches) {
+                                    console.log(`🛡️ [DB Skip] "${title}" T${job.season}E${job.episode} [${pref}] já existe no banco de dados. Job ignorado para evitar reprocessamento.`);
+                                    return null;
+                                }
+                            }
+                        }
+                    } catch (dbErr) {
+                        console.warn(`⚠️ [addJob DB check] Erro ao verificar episódio no banco:`, dbErr.message);
                     }
                 }
             }
@@ -2149,15 +2179,41 @@ class QueueManager extends EventEmitter {
                 for (const [epNumStr, epInfo] of Object.entries(epMap)) {
                     const epNum = parseInt(epNumStr, 10);
                     if (epNum !== (job.episode || 1) && fs.existsSync(epInfo.filePath)) {
-                        const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
+                        const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
+                            || this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId);
                         const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
                         const reqPref = job.audioPreference || 'dublado';
                         const CatalogoManager = require('./CatalogoManager');
-                        const isAlreadySatisfied = jaCatalogado && (
+                        let isAlreadySatisfied = jaCatalogado && (
                             (reqPref === 'dublado' && CatalogoManager.hasValidDubbedMedia(jaCatalogado)) ||
                             (reqPref === 'legendado' && CatalogoManager.hasValidSubtitledMedia(jaCatalogado)) ||
                             (reqPref === 'geral' && (CatalogoManager.hasValidDubbedMedia(jaCatalogado) || CatalogoManager.hasValidSubtitledMedia(jaCatalogado)))
                         );
+
+                        // Fallback: verifica no banco de dados diretamente para cobrir episódios que existem mas não aparecem em memória
+                        if (!isAlreadySatisfied) {
+                            try {
+                                const sRes = await db.query(
+                                    `SELECT e.id, e.is_dublado, e.is_legendado, e.versoes FROM episodios e 
+                                     INNER JOIN series s ON s.id = e.serie_id 
+                                     WHERE (LOWER(s.nome) = LOWER($1) OR s.tmdb_id = $2) 
+                                       AND e.temporada_numero = $3 AND e.numero = $4 LIMIT 1`,
+                                    [metadata.nome || job.title, metadata.tmdbId || 0, job.season || 1, epNum]
+                                );
+                                if (sRes.rows.length > 0) {
+                                    const ep = sRes.rows[0];
+                                    const versoes = typeof ep.versoes === 'string' ? JSON.parse(ep.versoes || '{}') : (ep.versoes || {});
+                                    const epDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
+                                    const epLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
+                                    if ((reqPref === 'dublado' && epDub) || (reqPref === 'legendado' && epLeg) || (reqPref === 'geral' && (epDub || epLeg))) {
+                                        console.log(`🛡️ [DB Pack Skip] "${job.title}" T${job.season || 1}E${epNum} [${reqPref}] já existe no banco. Não será reenfileirado.`);
+                                        isAlreadySatisfied = true;
+                                    }
+                                }
+                            } catch (dbErr) {
+                                console.warn(`⚠️ [Pack DB check] Erro ao verificar episódio E${epNum} no banco:`, dbErr.message);
+                            }
+                        }
 
                         if (!isAlreadySatisfied) {
                             try {

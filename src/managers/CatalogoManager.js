@@ -374,8 +374,10 @@ class CatalogoManager {
         // Ponto de Entrada Obrigatório: Episódio 1 DEVE ter mídia real
         if (maxAnySeq === 0) return null;
 
-        const expectedEps = tMeta ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : 0;
-        const isCompleto = (expectedEps > 0) && (maxAnySeq >= expectedEps);
+        const expectedEps = tMeta 
+            ? (typeof tMeta === 'object' ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : (parseInt(tMeta, 10) || 0)) 
+            : 0;
+        const isCompleto = (expectedEps > 0) ? (maxAnySeq >= expectedEps) : (maxAnySeq > 0 && maxAnySeq >= sortedEps.length);
 
         // 2. Filtra apenas episódios pertencentes à sequência contínua utilizável
         const episodiosValidos = sortedEps.map(ep => {
@@ -443,8 +445,8 @@ class CatalogoManager {
             totalEpisodios: episodiosValidos.length,
             isDublado: maxDubSeq > 0,
             isLegendado: maxLegSeq > 0,
-            isDubladoCompleto: (expectedEps > 0) && (maxDubSeq >= expectedEps),
-            isLegendadoCompleto: (expectedEps > 0) && (maxLegSeq >= expectedEps),
+            isDubladoCompleto: (expectedEps > 0) ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0 && maxDubSeq >= sortedEps.length),
+            isLegendadoCompleto: (expectedEps > 0) ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0 && maxLegSeq >= sortedEps.length),
             isCompleto: isCompleto,
             episodios: episodiosValidos
         };
@@ -488,9 +490,14 @@ class CatalogoManager {
             temporadas.push(normSeason);
 
             // Se esta temporada NÃO estiver completa, ela NÃO desbloqueia a exibição de temporadas superiores (ex: T3)
-            const isComplete = (normSeason.isDubladoCompleto || normSeason.isLegendadoCompleto);
+            // a não ser que a próxima temporada já possua episódios cadastrados no banco
+            const isComplete = (normSeason.isDubladoCompleto || normSeason.isLegendadoCompleto || normSeason.isCompleto);
             if (!isComplete && !isEmLancamento) {
-                break;
+                const nextSeasonNum = seasonNum + 1;
+                const hasNextSeasonInDb = rawSeasonNumbers.includes(nextSeasonNum) && (temporadasObj[nextSeasonNum]?.length > 0);
+                if (!hasNextSeasonInDb) {
+                    break;
+                }
             }
         }
 
@@ -541,6 +548,7 @@ class CatalogoManager {
             totalEpisodios: totalEps,
             tipo: isAnime ? 'anime' : (isDorama ? 'dorama' : 'serie'),
             temporadas: temporadas,
+            todasTemporadas: temporadasObj,
             dataAdicionado: s.created_at || s.dataAdicionado || new Date().toISOString(),
             audioBadge: (hasDub && hasLeg) ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : ''))
         };
@@ -1958,9 +1966,26 @@ class CatalogoManager {
     buscarEpisodio(serieId, seasonNum, epNum) {
         const serie = this.buscarSeriePorId(serieId);
         if (!serie) return null;
-        const temp = (serie.temporadas || []).find(t => t.numero === Number(seasonNum));
-        if (!temp) return null;
-        return (temp.episodios || []).find(e => e.numero === Number(epNum)) || null;
+        const sNum = Number(seasonNum);
+        const eNum = Number(epNum);
+        const temp = (serie.temporadas || []).find(t => t.numero === sNum);
+        if (temp) {
+            const ep = (temp.episodios || []).find(e => e.numero === eNum);
+            if (ep) return ep;
+        }
+        if (serie.todasTemporadas && (serie.todasTemporadas[sNum] || serie.todasTemporadas[String(sNum)])) {
+            const list = serie.todasTemporadas[sNum] || serie.todasTemporadas[String(sNum)] || [];
+            const rawEp = list.find(e => Number(e.numero) === eNum);
+            if (rawEp) {
+                return {
+                    ...rawEp,
+                    numero: eNum,
+                    isDublado: CatalogoManager.hasValidDubbedMedia(rawEp),
+                    isLegendado: CatalogoManager.hasValidSubtitledMedia(rawEp)
+                };
+            }
+        }
+        return null;
     }
 
     buscarFilmePorId(id) {
