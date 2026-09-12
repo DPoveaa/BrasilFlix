@@ -644,12 +644,21 @@ class CatalogoManager {
                         }
                     }
 
-                    const hasDub = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado'))
-                        ? CatalogoManager.hasPlayableMedia(versoes.dublado)
-                        : (ep.is_dublado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
-                    const hasLeg = (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado'))
-                        ? CatalogoManager.hasPlayableMedia(versoes.legendado)
-                        : (ep.is_legendado && CatalogoManager.hasPlayableMedia({ messageId: ep.message_id, fileId: ep.file_id }));
+                    // Critério leve para construção interna do catálogo: confia nos flags do banco (is_dublado/is_legendado)
+                    // combinados com a presença de um messageId/fileId válido. A verificação Telegram (hasPlayableMedia)
+                    // é usada apenas se o cache já tiver resposta definitiva (MISSING/INVALID) — nunca bloqueia
+                    // episódios recém-adicionados cujo cache ainda está UNVERIFIED.
+                    const _hasDubDb = !!(ep.is_dublado && (ep.message_id || ep.file_id ||
+                        versoes?.dublado?.messageId || versoes?.dublado?.fileId));
+                    const _hasLegDb = !!(ep.is_legendado && (ep.message_id || ep.file_id ||
+                        versoes?.legendado?.messageId || versoes?.legendado?.fileId));
+                    const _dubMsgId = versoes?.dublado?.messageId || (ep.is_dublado ? ep.message_id : null);
+                    const _legMsgId = versoes?.legendado?.messageId || (ep.is_legendado ? ep.message_id : null);
+                    // Invalida apenas se confirmado como MISSING/INVALID_MEDIA no cache Telegram
+                    const _dubState = _dubMsgId ? CatalogoManager.getMediaVerificationState(Number(_dubMsgId)) : null;
+                    const _legState = _legMsgId ? CatalogoManager.getMediaVerificationState(Number(_legMsgId)) : null;
+                    const hasDub = _hasDubDb && (_dubState !== 'MISSING' && _dubState !== 'INVALID_MEDIA' && _dubState !== 'FILE_ID_MISMATCH');
+                    const hasLeg = _hasLegDb && (_legState !== 'MISSING' && _legState !== 'INVALID_MEDIA' && _legState !== 'FILE_ID_MISMATCH');
 
                     epsPorSerie[ep.serie_id][ep.temporada_numero].push({
                         numero: ep.numero,
