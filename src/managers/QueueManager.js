@@ -642,7 +642,7 @@ class QueueManager extends EventEmitter {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    addJob(title, type = 'filme', priority = PRIORITIES.FEEDER, extraData = {}) {
+    async addJob(title, type = 'filme', priority = PRIORITIES.FEEDER, extraData = {}) {
         const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const isMicro = extraData.isMicrodrama || extraData.subtipo === 'microdrama' || extraData.category === 'Microdrama';
         const job = {
@@ -2231,7 +2231,7 @@ class QueueManager extends EventEmitter {
                                     existingJob.status = 'queued';
                                     await this.saveJob(existingJob);
                                 } else {
-                                    this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                                    await this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
                                         tmdbId: metadata.tmdbId,
                                         season: job.season || 1,
                                         episode: epNum,
