@@ -668,9 +668,22 @@ class DownloaderManager extends EventEmitter {
                     const isSafeToDownloadSelected = neededTotalBytes <= maxPackBytes && (currentTempBytes + neededTotalBytes * 1.3 <= maxDiskBytes * 0.75);
 
                     if (neededCount > 0 && isSafeToDownloadSelected) {
-                        // Seleciona APENAS os arquivos correspondentes aos episódios faltantes/necessários
+                        // Desmarca o torrent inteiro e todas as peças preventivamente
+                        try {
+                            if (typeof torrent.deselect === 'function') {
+                                torrent.deselect(0, torrent.pieces.length - 1, false);
+                            }
+                            for (const f of torrent.files) {
+                                try { f.deselect(); } catch (e) {}
+                            }
+                        } catch (e) {}
+
+                        // Seleciona APENAS os arquivos e peças correspondentes aos episódios faltantes/necessários
                         for (const [neededEpStr, neededFile] of Object.entries(neededEpisodesMap)) {
                             try {
+                                if (typeof torrent.select === 'function' && neededFile._startPiece !== undefined && neededFile._endPiece !== undefined) {
+                                    torrent.select(neededFile._startPiece, neededFile._endPiece, 1);
+                                }
                                 neededFile.select();
                                 neededFile.on('done', () => checkAndComplete());
                             } catch (e) {}
@@ -704,8 +717,20 @@ class DownloaderManager extends EventEmitter {
                                 safeCleanup();
                                 return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(found.length)}). Amostra/Fake descartado.`));
                             }
+                            // Desmarca todas as peças do torrent preventivamente
+                            try {
+                                if (typeof torrent.deselect === 'function') {
+                                    torrent.deselect(0, torrent.pieces.length - 1, false);
+                                }
+                                for (const f of torrent.files) {
+                                    try { f.deselect(); } catch (e) {}
+                                }
+                            } catch (e) {}
                             targetEpisodeFile = found;
                             try {
+                                if (typeof torrent.select === 'function' && found._startPiece !== undefined && found._endPiece !== undefined) {
+                                    torrent.select(found._startPiece, found._endPiece, 1);
+                                }
                                 found.select();
                                 found.on('done', () => checkAndComplete());
                                 console.log(`🎯 [Episódio Avulso] Baixando somente o episódio ${epNum}: ${found.name} (${this.formatBytes(found.length)})`);
@@ -1040,19 +1065,23 @@ class DownloaderManager extends EventEmitter {
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
 
-                const curTotal = isSeasonPack ? torrent.length : (targetEpisodeFile ? targetEpisodeFile.length : torrent.length);
+                let curTotal = 0;
                 let curDownloaded = 0;
                 let fileProg = 0;
 
-                if (isSeasonPack) {
-                    curDownloaded = torrent.downloaded || 0;
-                    fileProg = torrent.progress || 0;
+                if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 0) {
+                    const selectedFiles = Object.values(detectedEpisodeMap);
+                    curTotal = selectedFiles.reduce((acc, f) => acc + (f.length || 0), 0);
+                    curDownloaded = selectedFiles.reduce((acc, f) => acc + Math.max(0, Math.round((f.progress || 0) * (f.length || 0))), 0);
+                    fileProg = curTotal > 0 ? curDownloaded / curTotal : 0;
                 } else if (targetEpisodeFile) {
-                    fileProg = targetEpisodeFile.progress || 0;
+                    curTotal = targetEpisodeFile.length || torrent.length;
+                    fileProg = Math.max(0, targetEpisodeFile.progress || 0);
                     curDownloaded = Math.round(fileProg * curTotal);
                 } else {
-                    curDownloaded = torrent.downloaded || 0;
-                    fileProg = torrent.progress || 0;
+                    curTotal = torrent.length || 0;
+                    curDownloaded = Math.max(0, torrent.downloaded || 0);
+                    fileProg = Math.max(0, torrent.progress || 0);
                 }
 
                 if (curTotal > 0 && (fileProg >= 0.99 || curDownloaded >= curTotal * 0.99 || torrent.progress >= 0.99 || torrent.done)) {
@@ -1061,7 +1090,7 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 const now = Date.now();
-                const currentBytes = torrent.downloaded || 0;
+                const currentBytes = curDownloaded;
                 if (currentBytes !== lastBytes) {
                     lastBytes = currentBytes;
                     lastBytesChangeTime = now;
@@ -1118,15 +1147,25 @@ class DownloaderManager extends EventEmitter {
                     }
                 }
 
-                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso mínimo de 15 minutos):
-                // Impede que qualquer download fique preso indefinidamente (ex: 1 GB -> máx 15 min, 3 GB -> máx 45 min)
-                const maxHardTimeoutSec = Math.max(15 * 60, Math.ceil(totalSizeGB * 15 * 60));
+                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso de 15m, teto de 60 min):
+                // Impede que qualquer download fique preso indefinidamente (ex: 1 GB -> máx 15 min, 3 GB -> máx 45 min, packs -> máx 60 min)
+                const maxHardTimeoutSec = Math.min(60 * 60, Math.max(15 * 60, Math.ceil(totalSizeGB * 15 * 60)));
                 if (elapsedSec >= maxHardTimeoutSec) {
                     process.stdout.write('\n');
                     console.log(`⏰ [HARD TIMEOUT] Download excedeu o tempo máximo proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)} baixados). ${hasMoreSources ? 'Pulando para próxima fonte...' : 'Movendo para Swarm Watcher...'}`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error(`Download excedeu o tempo limite proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${totalSizeGB.toFixed(2)} GB).`));
+                }
+
+                // 4.1 TRAVA DE ARRANQUE MÍNIMO (Após 8 minutos, deve ter baixado ao menos 25 MB do conteúdo selecionado):
+                // Se após 8 minutos os arquivos selecionados não tiverem acumulado sequer 25 MB, o swarm está estagnado/inviável
+                if (elapsedSec >= 480 && curDownloaded < 25 * 1024 * 1024 && fileProg < 0.01) {
+                    process.stdout.write('\n');
+                    console.log(`⚡ [TRAVA DE ARRANQUE] Menos de 25 MB baixados dos arquivos selecionados após ${Math.floor(elapsedSec / 60)} min (${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)}). Abortando fonte...`);
+                    finished = true;
+                    safeCleanup();
+                    return reject(new Error(`Download sem tração inicial (${this.formatBytes(curDownloaded)} baixados em ${Math.floor(elapsedSec / 60)} min).`));
                 }
 
                 // 5. CORTE RÁPIDO POR VELOCIDADE MÉDIA ZUMBI (Early Abort após 6 a 8 minutos):
