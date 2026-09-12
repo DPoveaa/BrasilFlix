@@ -1442,8 +1442,9 @@ class QueueManager extends EventEmitter {
             const requestedEp = job.episode || 1;
             const pref = job.audioPreference || 'dublado';
 
-            const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') ||
-                                  this.catalogoManager.buscarItemExato(job.title, 'serie');
+            const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie', metadata.tmdbId) ||
+                                  this.catalogoManager.buscarItemExato(job.title, 'serie', metadata.tmdbId) ||
+                                  this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId || job.tmdbId);
             if (serieExistente) {
                 // Coleta todos os episódios que já estão ativos em outros workers para não colidir
                 const activeEpKeys = new Set();
@@ -1764,15 +1765,57 @@ class QueueManager extends EventEmitter {
                     return;
                 }
 
-                const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') || this.catalogoManager.buscarItemExato(job.title, 'filme')) : null;
+                const filmeExist = job.type === 'filme' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme', metadata.tmdbId) || this.catalogoManager.buscarItemExato(job.title, 'filme', metadata.tmdbId) || this.catalogoManager.buscarFilmePorTmdb(metadata.tmdbId)) : null;
                 const jaTemCam = !!(filmeExist && filmeExist.isCam);
-                const jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
-                const jaPossuiDubladoFilme = !!(filmeExist && (filmeExist.isDublado || !!filmeExist.versoes?.dublado));
+                let jaPossuiLegendadoFilme = !!(filmeExist && (filmeExist.isLegendado || !!filmeExist.versoes?.legendado));
+                let jaPossuiDubladoFilme = !!(filmeExist && (filmeExist.isDublado || !!filmeExist.versoes?.dublado));
 
-                const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') || this.catalogoManager.buscarItemExato(job.title, 'serie')) : null;
+                if (job.type === 'filme' && (!jaPossuiLegendadoFilme || !jaPossuiDubladoFilme)) {
+                    try {
+                        const dbFilmCheck = await db.query(
+                            `SELECT is_dublado, is_legendado, versoes, message_id, file_id FROM filmes 
+                             WHERE LOWER(nome) = LOWER($1) OR (tmdb_id IS NOT NULL AND tmdb_id = $2) LIMIT 1`,
+                            [(metadata.nome || job.title || '').trim(), metadata.tmdbId || 0]
+                        );
+                        if (dbFilmCheck.rows.length > 0) {
+                            const r = dbFilmCheck.rows[0];
+                            const v = typeof r.versoes === 'string' ? JSON.parse(r.versoes || '{}') : (r.versoes || {});
+                            if (r.is_legendado || !!(v.legendado?.messageId || v.legendado?.fileId)) jaPossuiLegendadoFilme = true;
+                            if (r.is_dublado || !!(v.dublado?.messageId || v.dublado?.fileId)) jaPossuiDubladoFilme = true;
+                        }
+                    } catch (e) {}
+                }
+
+                const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie', metadata.tmdbId) || this.catalogoManager.buscarItemExato(job.title, 'serie', metadata.tmdbId) || this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId)) : null;
                 const epExistente = job.type === 'serie' && serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, job.episode || 1) : null;
-                const jaPossuiLegendadoSerie = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
-                const jaPossuiDubladoSerie = !!(epExistente && (epExistente.isDublado || !!epExistente.versoes?.dublado));
+                let jaPossuiLegendadoSerie = !!(epExistente && (epExistente.isLegendado || !!epExistente.versoes?.legendado));
+                let jaPossuiDubladoSerie = !!(epExistente && (epExistente.isDublado || !!epExistente.versoes?.dublado));
+
+                if (job.type === 'serie' && (!jaPossuiLegendadoSerie || !jaPossuiDubladoSerie)) {
+                    try {
+                        const sId = serieExist ? serieExist.id : null;
+                        const dbEpRes = await db.query(
+                            `SELECT e.is_dublado, e.is_legendado, e.versoes, e.message_id, e.file_id 
+                             FROM episodios e
+                             LEFT JOIN series s ON s.id = e.serie_id
+                             WHERE (e.serie_id = $1 OR LOWER(s.nome) = LOWER($2) OR (s.tmdb_id IS NOT NULL AND s.tmdb_id = $3))
+                               AND e.temporada_numero = $4 AND e.numero = $5 LIMIT 1`,
+                            [sId || 0, (metadata.nome || job.title || '').trim(), metadata.tmdbId || 0, job.season || 1, job.episode || 1]
+                        );
+                        if (dbEpRes.rows.length > 0) {
+                            const dbEp = dbEpRes.rows[0];
+                            const versoes = typeof dbEp.versoes === 'string' ? JSON.parse(dbEp.versoes || '{}') : (dbEp.versoes || {});
+                            if (dbEp.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId)) {
+                                jaPossuiLegendadoSerie = true;
+                            }
+                            if (dbEp.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId)) {
+                                jaPossuiDubladoSerie = true;
+                            }
+                        }
+                    } catch (dbErr) {
+                        console.warn('⚠️ Erro ao verificar episódio no PostgreSQL:', dbErr.message);
+                    }
+                }
 
                 const jaPossuiLegendado = job.type === 'serie' ? jaPossuiLegendadoSerie : jaPossuiLegendadoFilme;
                 const jaPossuiDublado = job.type === 'serie' ? jaPossuiDubladoSerie : jaPossuiDubladoFilme;
@@ -2205,7 +2248,12 @@ class QueueManager extends EventEmitter {
                                     const versoes = typeof ep.versoes === 'string' ? JSON.parse(ep.versoes || '{}') : (ep.versoes || {});
                                     const epDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
                                     const epLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
-                                    if ((reqPref === 'dublado' && epDub) || (reqPref === 'legendado' && epLeg) || (reqPref === 'geral' && (epDub || epLeg))) {
+                                    const isPackOnlyLegendado = (bestSource?.isLegendado || job.audioPreference === 'legendado') && !bestSource?.isDublado;
+                                    const jaTemLeg = (jaCatalogado && (jaCatalogado.isLegendado || !!jaCatalogado.versoes?.legendado)) || epLeg;
+                                    if (isPackOnlyLegendado && jaTemLeg) {
+                                        console.log(`🛡️ [Pack Skip] "${job.title}" T${job.season || 1}E${epNum} já possui versão Legendada e este pacote não contém áudio Dublado. Não será reenfileirado.`);
+                                        isAlreadySatisfied = true;
+                                    } else if ((reqPref === 'dublado' && epDub) || (reqPref === 'legendado' && epLeg) || (reqPref === 'geral' && (epDub || epLeg))) {
                                         console.log(`🛡️ [DB Pack Skip] "${job.title}" T${job.season || 1}E${epNum} [${reqPref}] já existe no banco. Não será reenfileirado.`);
                                         isAlreadySatisfied = true;
                                     }
@@ -2618,6 +2666,49 @@ class QueueManager extends EventEmitter {
         } else if (videoInfo?.duration > 0) {
             metadata.duracaoSegundos = Math.round(videoInfo.duration);
             metadata.duracao = Math.max(1, Math.round(videoInfo.duration / 60));
+        }
+
+        // ── Verificação de Integridade Pré-Upload: Evita re-upload duplicado de mídias já existentes ──
+        if (job.type === 'serie') {
+            const seasonNumCheck = job.season || 1;
+            const epNumCheck = job.episode || 1;
+            let jaTemEssaVersao = false;
+            try {
+                const dbExisting = await db.query(
+                    `SELECT e.id, e.message_id, e.file_id, e.is_dublado, e.is_legendado, e.versoes 
+                     FROM episodios e 
+                     LEFT JOIN series s ON s.id = e.serie_id
+                     WHERE (LOWER(s.nome) = LOWER($1) OR (s.tmdb_id IS NOT NULL AND s.tmdb_id = $2))
+                       AND e.temporada_numero = $3 AND e.numero = $4 LIMIT 1`,
+                    [(metadata.nome || job.title || '').trim(), metadata.tmdbId || 0, seasonNumCheck, epNumCheck]
+                );
+                if (dbExisting.rows.length > 0) {
+                    const row = dbExisting.rows[0];
+                    const v = typeof row.versoes === 'string' ? JSON.parse(row.versoes || '{}') : (row.versoes || {});
+                    const temMsg = !!(row.message_id || row.file_id || v.dublado?.messageId || v.legendado?.messageId);
+                    if (temMsg) {
+                        if (metadata.isDublado && (row.is_dublado || !!v.dublado?.messageId || !!v.dublado?.fileId)) {
+                            jaTemEssaVersao = true;
+                        }
+                        if (metadata.isLegendado && (row.is_legendado || !!v.legendado?.messageId || !!v.legendado?.fileId)) {
+                            jaTemEssaVersao = true;
+                        }
+                    }
+                }
+            } catch (errCheck) {}
+
+            if (jaTemEssaVersao) {
+                console.log(`🛡️ [Upload Pre-Check] "${metadata.nome || job.title}" T${seasonNumCheck}E${epNumCheck} já possui versão ${metadata.isDublado ? 'Dublada' : 'Legendada'} cadastrada com mídia válida. Upload descartado para evitar duplicata.`);
+                try { if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath); } catch (e) {}
+                try { if (rawFilePath && fs.existsSync(rawFilePath) && !rawFilePath.includes('downloaded_media')) fs.unlinkSync(rawFilePath); } catch (e) {}
+                job.status = 'completed';
+                job.progress = 100;
+                job.progressDetails = 'Versão já catalogada no banco (upload duplicado evitado)';
+                await this.saveJob(job);
+                this.activeJobs.delete(job.id);
+                this.processNext();
+                return;
+            }
         }
 
         const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata, (p) => {

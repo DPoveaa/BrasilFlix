@@ -1964,10 +1964,10 @@ class CatalogoManager {
         const numId = Number(id);
         const strId = String(id).toLowerCase();
         return (this.catalogo.series || []).find(s => 
-            (numId && s.id === numId) || 
+            (numId && Number(s.id) === numId) || 
             String(s.id) === String(id) ||
             s.imdbId === id ||
-            (s.tmdbId && (s.tmdbId === numId || `tmdb:${s.tmdbId}` === strId)) ||
+            (s.tmdbId && (Number(s.tmdbId) === numId || `tmdb:${s.tmdbId}` === strId)) ||
             (s.nome && s.nome.toLowerCase() === strId)
         ) || null;
     }

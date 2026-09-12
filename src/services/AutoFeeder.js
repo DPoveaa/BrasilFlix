@@ -498,38 +498,32 @@ class AutoFeeder {
                 epsList.sort((a, b) => a.episode - b.episode);
                 const primeiroPendente = epsList[0];
 
-                // ── Para doramas e animes, verifica ANTES se existe realmente uma fonte dublada PT-BR ──
-                // Muitos doramas coreanos e animes japoneses nunca foram dublados em PT-BR.
-                // Fazer enfileiramento cego gera um loop infinito de tentativas sem resultado.
-                const isDoramaOrAnime = !!(primeiroPendente.isDorama || primeiroPendente.isAnime);
-                if (isDoramaOrAnime) {
-                    try {
-                        const sources = await MediaSearchService.search(primeiroPendente.serieNome, 'serie', {
-                            nomeOriginal: primeiroPendente.nomeOriginal,
-                            tmdbId: primeiroPendente.tmdbId,
-                            imdbId: primeiroPendente.imdbId,
-                            season: primeiroPendente.season,
-                            episode: primeiroPendente.episode,
-                            audioPreference: 'dublado',
-                            isDorama: primeiroPendente.isDorama,
-                            isAnime: primeiroPendente.isAnime
-                        });
-                        const dubladaSource = sources.find(s => s.isDublado && (s.seeders || 0) > 0);
-                        if (!dubladaSource) {
-                            // Nenhuma fonte dublada PT-BR disponível: esta obra provavelmente
-                            // não foi dublada no Brasil. Ignorar silenciosamente.
-                            console.log(`ℹ️ [UPGRADE DUBLADO] Nenhuma fonte dublada PT-BR encontrada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} (${primeiroPendente.isAnime ? 'Anime' : 'Dorama'} — provavelmente sem dublagem BR). Mantendo como Legendado.`);
-                            await new Promise(r => setTimeout(r, 300));
-                            continue;
-                        }
-                        console.log(`🌟 [UPGRADE DUBLADO] Fonte dublada encontrada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode}: ${dubladaSource.title}`);
-                    } catch (searchErr) {
-                        console.warn(`⚠️ [UPGRADE DUBLADO] Erro ao buscar fonte dublada para "${primeiroPendente.serieNome}":`, searchErr.message);
+                // ── Verifica ANTES se existe realmente uma fonte dublada PT-BR com seeders ativos ──
+                // Evita enfileiramentos cegos que geram loops infinitos de busca ou downloads redundantes de legendados
+                try {
+                    const sources = await MediaSearchService.search(primeiroPendente.serieNome, 'serie', {
+                        nomeOriginal: primeiroPendente.nomeOriginal,
+                        tmdbId: primeiroPendente.tmdbId,
+                        imdbId: primeiroPendente.imdbId,
+                        season: primeiroPendente.season,
+                        episode: primeiroPendente.episode,
+                        audioPreference: 'dublado',
+                        isDorama: primeiroPendente.isDorama,
+                        isAnime: primeiroPendente.isAnime
+                    });
+                    const dubladaSource = sources.find(s => s.isDublado && (s.seeders || 0) > 0);
+                    if (!dubladaSource) {
+                        console.log(`ℹ️ [UPGRADE DUBLADO] Nenhuma fonte dublada PT-BR com seeders encontrada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode}. Mantendo como Legendado.`);
                         await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
+                    console.log(`🌟 [UPGRADE DUBLADO] Fonte dublada encontrada para "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode}: ${dubladaSource.title}`);
+                } catch (searchErr) {
+                    console.warn(`⚠️ [UPGRADE DUBLADO] Erro ao buscar fonte dublada para "${primeiroPendente.serieNome}":`, searchErr.message);
                     await new Promise(r => setTimeout(r, 300));
+                    continue;
                 }
+                await new Promise(r => setTimeout(r, 300));
 
                 const jaNaFila = (this.queueManager.queue || []).some(j =>
                     j.type === 'serie' &&
