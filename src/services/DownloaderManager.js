@@ -668,12 +668,17 @@ class DownloaderManager extends EventEmitter {
                     const isSafeToDownloadSelected = neededTotalBytes <= maxPackBytes && (currentTempBytes + neededTotalBytes * 1.3 <= maxDiskBytes * 0.75);
 
                     if (neededCount > 0 && isSafeToDownloadSelected) {
-                        // Desmarca arquivos não necessários preventivamente
-                        for (const f of torrent.files) {
-                            try { f.deselect(); } catch (e) {}
-                        }
+                        // Desmarca o torrent inteiro e todas as peças preventivamente
+                        try {
+                            if (typeof torrent.deselect === 'function') {
+                                torrent.deselect(0, torrent.pieces.length - 1, false);
+                            }
+                            for (const f of torrent.files) {
+                                try { f.deselect(); } catch (e) {}
+                            }
+                        } catch (e) {}
 
-                        // Seleciona APENAS os arquivos correspondentes aos episódios faltantes/necessários
+                        // Seleciona APENAS os arquivos e peças correspondentes aos episódios faltantes/necessários
                         for (const [neededEpStr, neededFile] of Object.entries(neededEpisodesMap)) {
                             try {
                                 if (typeof torrent.select === 'function' && neededFile._startPiece !== undefined && neededFile._endPiece !== undefined) {
@@ -712,10 +717,15 @@ class DownloaderManager extends EventEmitter {
                                 safeCleanup();
                                 return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(found.length)}). Amostra/Fake descartado.`));
                             }
-                            // Desmarca outros arquivos do torrent preventivamente
-                            for (const f of torrent.files) {
-                                try { f.deselect(); } catch (e) {}
-                            }
+                            // Desmarca todas as peças do torrent preventivamente
+                            try {
+                                if (typeof torrent.deselect === 'function') {
+                                    torrent.deselect(0, torrent.pieces.length - 1, false);
+                                }
+                                for (const f of torrent.files) {
+                                    try { f.deselect(); } catch (e) {}
+                                }
+                            } catch (e) {}
                             targetEpisodeFile = found;
                             try {
                                 if (typeof torrent.select === 'function' && found._startPiece !== undefined && found._endPiece !== undefined) {
@@ -1126,7 +1136,18 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Download estagnado sem dados ativos após ${Math.round(stalledTimeoutMs / 1000)}s.`));
                 }
 
-                // 3. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso de 15m, teto de 60 min):
+                // 3. Fast-Fail INICIAL (apenas nos primeiros 35s - 55s de arranque, sem nenhum progresso e havendo outras fontes):
+                if (elapsedSec >= 35 && elapsedSec <= 55 && hasMoreSources && !hasProgress) {
+                    if (speedMB < 0.25 || remainingSec > 5400) {
+                        process.stdout.write('\n');
+                        console.log(`⏩ [WATCHDOG VELOCIDADE] Fonte não engrenou no início (${speedMB.toFixed(2)} MB/s, baixados: ${this.formatBytes(curDownloaded)} após ${elapsedSec}s). Pulando para próxima fonte da lista (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                        finished = true;
+                        safeCleanup();
+                        return reject(new Error(`Velocidade de arranque lenta (${speedMB.toFixed(2)} MB/s). Pulando para próxima fonte.`));
+                    }
+                }
+
+                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso de 15m, teto de 60 min):
                 // Impede que qualquer download fique preso indefinidamente (ex: 1 GB -> máx 15 min, 3 GB -> máx 45 min, packs -> máx 60 min)
                 const maxHardTimeoutSec = Math.min(60 * 60, Math.max(15 * 60, Math.ceil(totalSizeGB * 15 * 60)));
                 if (elapsedSec >= maxHardTimeoutSec) {
