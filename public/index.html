@@ -3197,7 +3197,7 @@
         }
 
         /* ═══════════════════════════════════════════════════════════════════════
-           📺 DEDICATED MEDIA DETAIL PAGE STYLES (NETFLIX / PRIME STYLE)
+           📺 DEDICATED MEDIA DETAIL PAGE STYLES (STREAMING PLATFORM REDESIGN)
            ═══════════════════════════════════════════════════════════════════════ */
         .media-detail-page {
             display: none;
@@ -3208,17 +3208,17 @@
         .media-detail-backdrop {
             position: relative;
             width: 100%;
-            min-height: 560px;
+            min-height: 520px;
             background-color: #07090e;
-            border-radius: 24px;
+            border-radius: 20px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             justify-content: flex-end;
-            padding: 38px;
-            box-shadow: 0 25px 60px rgba(0,0,0,0.9);
+            padding: 36px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.85);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            margin-bottom: 28px;
+            margin-bottom: 24px;
         }
 
         .media-detail-bg-image {
@@ -3226,17 +3226,18 @@
             inset: -10px;
             background-size: cover;
             background-position: center 20%;
-            transform: scale(1.05);
+            transform: scale(1.03);
             pointer-events: none;
             z-index: 0;
+            filter: brightness(0.85) contrast(1.05);
         }
 
         .backdrop-overlay-gradient {
             position: absolute;
             inset: -4px;
             background: 
-                linear-gradient(0deg, #07090e 0%, rgba(7, 9, 14, 0.5) 25%, rgba(7, 9, 14, 0.1) 50%, transparent 80%),
-                linear-gradient(90deg, rgba(7, 9, 14, 0.6) 0%, rgba(7, 9, 14, 0.1) 40%, transparent 70%);
+                linear-gradient(180deg, rgba(7, 9, 14, 0.35) 0%, rgba(7, 9, 14, 0.8) 60%, #07090e 100%),
+                linear-gradient(90deg, #07090e 0%, rgba(7, 9, 14, 0.75) 40%, transparent 80%);
             z-index: 1;
             pointer-events: none;
         }
@@ -3248,28 +3249,29 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: auto;
-            padding-bottom: 20px;
+            padding-bottom: 24px;
         }
 
         .btn-back-catalog {
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(15, 23, 42, 0.75);
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f8fafc;
             padding: 8px 18px;
             border-radius: 99px;
             font-size: 13px;
-            font-weight: 800;
+            font-weight: 700;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            transition: all 0.2s ease;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .btn-back-catalog:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: #fff;
+            background: rgba(16, 185, 129, 0.18);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #34d399;
             transform: translateX(-3px);
         }
 
@@ -3277,65 +3279,16 @@
             position: relative;
             z-index: 10;
             display: grid;
-            grid-template-columns: 220px 1fr;
+            grid-template-columns: 210px 1fr;
             gap: 32px;
             align-items: flex-end;
         }
 
-        @media (max-width: 860px) {
-            .media-detail-backdrop {
-                padding: 20px 16px;
-                min-height: auto;
-                border-radius: 18px;
-            }
-            .media-detail-hero-content {
-                grid-template-columns: 1fr;
-                gap: 18px;
-                align-items: center;
-                text-align: center;
-            }
-            .detail-poster-wrapper {
-                width: 140px;
-                margin: 0 auto 6px auto;
-                box-shadow: 0 12px 30px rgba(0, 0, 0, 0.9);
-            }
-            .detail-main-info {
-                align-items: center;
-            }
-            .detail-title {
-                font-size: 26px !important;
-                line-height: 1.2;
-                text-align: center;
-            }
-            .detail-meta-row {
-                justify-content: center;
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-            .detail-actions-row {
-                display: flex;
-                flex-wrap: wrap;
-                width: 100%;
-                gap: 8px;
-            }
-            .detail-actions-row button,
-            .detail-actions-row a {
-                flex: 1 1 auto !important;
-                justify-content: center !important;
-                padding: 10px 14px !important;
-                font-size: 12px !important;
-            }
-            .backdrop-overlay-gradient {
-                background: 
-                    linear-gradient(0deg, #07090e 0%, rgba(7, 9, 14, 0.6) 30%, rgba(7, 9, 14, 0.15) 60%, transparent 90%) !important;
-            }
-        }
-
         .detail-poster-wrapper {
             position: relative;
-            border-radius: 16px;
+            border-radius: 14px;
             overflow: hidden;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(16, 185, 129, 0.15);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85), 0 0 20px rgba(16, 185, 129, 0.12);
             border: 1px solid rgba(255, 255, 255, 0.12);
             aspect-ratio: 2/3;
         }
@@ -3353,8 +3306,24 @@
             gap: 12px;
         }
 
+        .detail-type-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #34d399;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 3px 10px;
+            border-radius: 6px;
+            width: fit-content;
+        }
+
         .detail-title {
-            font-size: 36px;
+            font-size: 38px;
             font-weight: 900;
             color: #fff;
             line-height: 1.15;
@@ -3362,18 +3331,14 @@
             text-shadow: 0 4px 20px rgba(0,0,0,0.8);
         }
 
-        @media (max-width: 600px) {
-            .detail-title { font-size: 24px; }
-        }
-
         .detail-meta-row {
             display: flex;
             align-items: center;
             flex-wrap: wrap;
-            gap: 12px;
+            gap: 10px;
             font-size: 13px;
             color: #cbd5e1;
-            font-weight: 700;
+            font-weight: 600;
         }
 
         .rating-badge-gold {
@@ -3385,54 +3350,48 @@
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.4);
+            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.3);
         }
 
         .detail-actions-row {
             display: flex;
             align-items: center;
-            flex-wrap: nowrap;
-            overflow-x: auto;
+            flex-wrap: wrap;
             gap: 10px;
             margin-top: 10px;
-            padding-bottom: 4px;
-            scrollbar-width: none;
-        }
-        .detail-actions-row::-webkit-scrollbar {
-            display: none;
         }
 
         .btn-play-primary {
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: #fff;
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            padding: 13px 26px;
-            border-radius: 12px;
-            font-size: 15px;
-            font-weight: 900;
+            border: 1px solid rgba(52, 211, 153, 0.4);
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 800;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+            gap: 8px;
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .btn-play-primary:hover {
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 12px 30px rgba(16, 185, 129, 0.55);
-            filter: brightness(1.1);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 28px rgba(16, 185, 129, 0.5);
+            filter: brightness(1.08);
         }
 
         .btn-detail-action {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f1f5f9;
             padding: 11px 18px;
-            border-radius: 12px;
+            border-radius: 10px;
             font-size: 13px;
-            font-weight: 800;
+            font-weight: 700;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
@@ -3441,8 +3400,8 @@
         }
 
         .btn-detail-action:hover {
-            background: rgba(255, 255, 255, 0.16);
-            border-color: rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.22);
             transform: translateY(-2px);
         }
 
@@ -3452,16 +3411,67 @@
             color: #34d399;
         }
 
+        /* DETAIL SECTION TABS & NAV */
+        .detail-section-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 24px;
+            padding-bottom: 4px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .detail-nav-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+        }
+
+        .detail-nav-btn:hover {
+            color: #f8fafc;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .detail-nav-btn.active {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .detail-nav-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 12px;
+            right: 12px;
+            height: 2px;
+            background: #10b981;
+            border-radius: 2px;
+            box-shadow: 0 0 10px #10b981;
+        }
+
         .detail-synopsis-box {
-            background: rgba(18, 24, 38, 0.7);
-            border: 1px solid var(--border-color);
-            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
             padding: 24px;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
         }
 
         .detail-synopsis-title {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 800;
             color: #fff;
             margin-bottom: 10px;
@@ -3471,18 +3481,49 @@
         }
 
         .detail-synopsis-text {
-            font-size: 14.5px;
-            line-height: 1.7;
+            font-size: 14px;
+            line-height: 1.75;
             color: #cbd5e1;
+        }
+
+        .detail-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .detail-info-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 10px 14px;
+        }
+
+        .detail-info-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .detail-info-val {
+            font-size: 13px;
+            font-weight: 700;
+            color: #f1f5f9;
         }
 
         /* SEASONS & EPISODES CONTAINER */
         .seasons-section {
-            background: rgba(18, 24, 38, 0.7);
-            border: 1px solid var(--border-color);
-            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
             padding: 24px;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
         }
 
         .seasons-tabs-rail {
@@ -3490,19 +3531,20 @@
             align-items: center;
             gap: 8px;
             overflow-x: auto;
-            padding-bottom: 12px;
-            margin-bottom: 20px;
+            padding-bottom: 10px;
+            margin-bottom: 16px;
             border-bottom: 1px solid rgba(255,255,255,0.06);
+            scrollbar-width: none;
         }
 
         .season-tab-btn {
             background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            padding: 8px 18px;
-            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #94a3b8;
+            padding: 8px 16px;
+            border-radius: 8px;
             font-size: 13px;
-            font-weight: 800;
+            font-weight: 700;
             cursor: pointer;
             white-space: nowrap;
             transition: all 0.2s ease;
@@ -3510,62 +3552,198 @@
 
         .season-tab-btn:hover {
             color: #fff;
-            border-color: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.2);
         }
 
         .season-tab-btn.active {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3));
+            background: rgba(16, 185, 129, 0.15);
             border-color: #10b981;
             color: #34d399;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
         }
 
-        /* ─── SELETOR DE PREFERÊNCIA DE ÁUDIO (SÉRIES) ─── */
-        .series-audio-pref-box {
-            display: inline-flex;
+        /* EPISODES GRID AND CONTROLS */
+        .episodes-controls-bar {
+            display: flex;
             align-items: center;
-            gap: 10px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 12px;
-            padding: 4px 10px;
-            backdrop-filter: blur(8px);
+            padding: 10px 14px;
         }
 
-        .audio-toggle-group {
-            display: inline-flex;
-            align-items: center;
-            background: rgba(0, 0, 0, 0.45);
+        .episodes-search-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 8px 14px;
             border-radius: 8px;
-            padding: 3px;
-            gap: 3px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 13px;
+            width: 240px;
+            outline: none;
+            transition: all 0.2s ease;
         }
 
-        .audio-toggle-btn {
-            background: transparent;
-            border: none;
-            color: #94a3b8;
-            font-size: 12px;
-            font-weight: 800;
-            padding: 5px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .audio-toggle-btn:hover {
-            color: #fff;
+        .episodes-search-input:focus {
+            border-color: #10b981;
             background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
         }
 
-        .audio-toggle-btn.active {
-            background: linear-gradient(135deg, #10b981, #059669);
+        .episodes-grid-layout {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .ep-card-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+        }
+
+        .ep-card-item:hover {
+            background: rgba(16, 185, 129, 0.06);
+            border-color: rgba(16, 185, 129, 0.35);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        .ep-card-thumb-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .ep-card-thumb-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .ep-card-item:hover .ep-card-thumb-img {
+            transform: scale(1.05);
+        }
+
+        .ep-card-play-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .ep-card-item:hover .ep-card-play-overlay {
+            opacity: 1;
+        }
+
+        .ep-card-play-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: #10b981;
             color: #fff;
-            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+        }
+
+        .ep-card-content {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .ep-card-num-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .ep-card-num-badge {
+            background: rgba(255, 255, 255, 0.1);
+            color: #38bdf8;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 5px;
+            white-space: nowrap;
+        }
+
+        .ep-card-desc {
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.45;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* REVIEWS SECTION */
+        .reviews-section {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 860px) {
+            .media-detail-backdrop {
+                padding: 20px 16px;
+                min-height: auto;
+                border-radius: 16px;
+            }
+            .media-detail-hero-content {
+                grid-template-columns: 1fr;
+                gap: 16px;
+                text-align: center;
+            }
+            .detail-poster-wrapper {
+                width: 140px;
+                margin: 0 auto;
+            }
+            .detail-type-tag {
+                margin: 0 auto;
+            }
+            .detail-title {
+                font-size: 26px !important;
+                text-align: center;
+            }
+            .detail-meta-row {
+                justify-content: center;
+            }
+            .detail-actions-row {
+                justify-content: center;
+                width: 100%;
+            }
+            .episodes-search-input {
+                width: 100%;
+            }
         }
 
         /* ═══════════════════════════════════════════════════════════════════════
@@ -12645,14 +12823,14 @@ function initApp() {
             const isFav = (userFavorites || []).some(f => String(f.id) === String(item.id));
             const isDub = item.isDublado || !!item.versoes?.dublado;
             const isLeg = item.isLegendado || !!item.versoes?.legendado;
-            const audioText = isDub && isLeg ? '🔊 Dub/Leg' : (isDub ? '🔊 Dublado' : (isLeg ? '💬 Legendado' : (item.audioBadge || '🔊 Português')));
+            const audioText = isDub && isLeg ? 'Dublado & Legendado' : (isDub ? 'Dublado' : (isLeg ? 'Legendado' : (item.audioBadge || 'Português')));
             const qualText = item.qualidade || (item.isCam ? 'CAM' : '1080p Full HD');
 
-            // Gêneros (tags visuais traduzidas)
+            // Gêneros
             const genresList = (item.generos || []).map(g => translateGenre(g));
             const genresPills = genresList.map(g => `<span class="genre-pill" style="font-size: 12px; padding: 4px 10px; cursor: default;">${g}</span>`).join('');
 
-            // Ação de Play Principal Dinâmica (Continuar Ep X / Assistir)
+            // Ação de Play Principal Dinâmica
             let playBtnHtml = '';
             if (isSerie) {
                 const resumeInfo = getResumeInfoForSerie(item);
@@ -12666,9 +12844,9 @@ function initApp() {
                 const movieProg = getMovieProgress(item.id);
                 const isCompleted = movieProg?.completed || false;
                 const curTime = movieProg?.currentTime || 0;
-                let btnLabel = 'Assistir Filme';
+                let btnLabel = 'Assistir Agora';
                 if (isCompleted) {
-                    btnLabel = '🔄 Assistir Novamente';
+                    btnLabel = 'Assistir Novamente';
                 } else if (curTime > 30) {
                     const timeMin = Math.floor(curTime / 60);
                     btnLabel = `Continuar Filme (${timeMin}m)`;
@@ -12689,23 +12867,34 @@ function initApp() {
                 .filter(i => String(i.id) !== String(item.id) && (primaryGenre ? (i.generos || []).includes(primaryGenre) : true))
                 .slice(0, 8);
 
+            // Elenco / Dubladores (se disponível no objeto ou mock estruturado limpo)
+            const castList = item.elenco || item.cast || item.dubladores || [];
+            const hasCast = Array.isArray(castList) && castList.length > 0;
+
+            const totalSeasons = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1);
+            const totalEps = item.totalEpisodios || (item.temporadas ? item.temporadas.reduce((a,t) => a + (t.episodios?.length || 0), 0) : 1);
+
             container.innerHTML = `
-                <!-- BACKDROP & HERO COM INFORMAÇÕES COMPLETAS -->
+                <!-- BACKDROP & HERO CINEMÁTICO DA MÍDIA -->
                 <div class="media-detail-backdrop">
                     <div class="media-detail-bg-image" style="background-image: ${backdrop ? `url('${backdrop}')` : 'none'};"></div>
                     <div class="backdrop-overlay-gradient"></div>
 
-                    <!-- BARRA SUPERIOR DA PÁGINA (VOLTAR & COMPARTILHAR) -->
+                    <!-- BARRA SUPERIOR DA PÁGINA -->
                     <div class="media-detail-topbar">
                         <button class="btn-back-catalog" onclick="returnToCatalog()" title="Voltar ao Catálogo">
-                            <span class="btn-icon">←</span>
-                            <span class="btn-text">Voltar ao Catálogo</span>
+                            <span>←</span>
+                            <span>Voltar ao Catálogo</span>
                         </button>
 
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <button class="btn-back-catalog" onclick="handleShareCurrentMediaDirect('${item.nome.replace(/'/g, "\\'")}', '${currentDetailType}', '${item.id}')" title="Compartilhar Link">
-                                <span class="btn-icon">🔗</span>
-                                <span class="btn-text">Compartilhar</span>
+                            <button class="btn-back-catalog" onclick="openReviewModalComposer()" title="Avaliar Título">
+                                <span>⭐</span>
+                                <span>Avaliar</span>
+                            </button>
+                            <button class="btn-back-catalog" onclick="handleShareCurrentMediaDirect('${item.nome.replace(/'/g, "\'")}', '${currentDetailType}', '${item.id}')" title="Compartilhar Link">
+                                <span>🔗</span>
+                                <span>Compartilhar</span>
                             </button>
                         </div>
                     </div>
@@ -12718,20 +12907,20 @@ function initApp() {
                         </div>
 
                         <div class="detail-main-info">
-                            <div style="font-size: 13px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px;">
-                                ${isSerie ? (item.isAnime ? 'Anime' : (item.isDorama ? 'Dorama' : 'Série')) : 'Filme'}
+                            <div class="detail-type-tag">
+                                <span>${isSerie ? (item.isAnime ? '🎌 Anime' : (item.isDorama ? '⛩️ Dorama' : '📺 Série')) : '🎬 Filme'}</span>
                             </div>
 
                             <h1 class="detail-title">${item.nome}</h1>
-                            ${item.nomeOriginal && item.nomeOriginal !== item.nome ? `<div style="font-size: 14px; color: #94a3b8; margin-top: -6px;">Título Original: <em>${item.nomeOriginal}</em></div>` : ''}
+                            ${item.nomeOriginal && item.nomeOriginal !== item.nome ? `<div style="font-size: 13px; color: #94a3b8; margin-top: -6px;">Original: <em>${item.nomeOriginal}</em></div>` : ''}
 
                             <div class="detail-meta-row">
-                                <div class="rating-badge-gold">★ ${rating} TMDB</div>
-                                <div id="community-avg-badge" style="display: none; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; font-weight: 800; padding: 4px 10px; border-radius: 8px;">★ <span id="community-avg-val">-</span> Comunidade</div>
+                                <div class="rating-badge-gold">★ ${rating}</div>
+                                <div id="community-avg-badge" style="display: none; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; font-weight: 800; padding: 4px 10px; border-radius: 8px;">★ <span id="community-avg-val">-</span> Comunidade</div>
                                 <span>${item.ano || '2026'}</span>
-                                <span style="color: #60a5fa; font-weight: 700;">${audioText}</span>
-                                <span>${qualText}</span>
-                                ${isSerie ? `<span>${(item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)} Temporada${((item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)) > 1 ? 's' : ''} • ${item.totalEpisodios || (item.temporadas ? item.temporadas.reduce((a,t) => a + (t.episodios?.length || 0), 0) : 1)} Episódios</span>` : ''}
+                                <span style="color: #34d399; font-weight: 700;">${audioText}</span>
+                                <span style="background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 6px;">${qualText}</span>
+                                ${isSerie ? `<span>${totalSeasons} Temporada${totalSeasons > 1 ? 's' : ''} • ${totalEps} eps</span>` : ''}
                             </div>
 
                             ${genresPills ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0;">${genresPills}</div>` : ''}
@@ -12741,145 +12930,207 @@ function initApp() {
                                     ${playBtnHtml}
                                 </div>
 
-                                <button class="btn-detail-action" onclick="startPartyFromDetailMedia('${item.id}', '${currentDetailType}')" title="Assistir em grupo com amigos sincronizados">
-                                    <span class="btn-action-icon">👥</span>
-                                    <span class="btn-action-label">Assistir Junto</span>
-                                </button>
-
                                 <button class="btn-detail-action ${isFav ? 'active' : ''}" id="detail-fav-btn" onclick="toggleUserFavorite('${item.id}', '${currentDetailType}'); updateDetailFavButton(event);" title="Salvar na Minha Lista">
-                                    <span class="btn-action-icon">${isFav ? '❤️' : '🤍'}</span>
-                                    <span id="detail-fav-text" class="btn-action-label">${isFav ? 'Salvo' : 'Minha Lista'}</span>
+                                    <span>${isFav ? '❤️' : '🤍'}</span>
+                                    <span id="detail-fav-text">${isFav ? 'Salvo' : 'Minha Lista'}</span>
                                 </button>
 
-                                <a href="https://t.me/BrasilFlix_bot?start=ver_${item.id}" target="_blank" class="btn-detail-action" style="text-decoration: none;" title="Assistir diretamente no Telegram">
-                                    <span class="btn-action-icon">📱</span>
-                                    <span class="btn-action-label">Telegram</span>
+                                <button class="btn-detail-action" onclick="startPartyFromDetailMedia('${item.id}', '${currentDetailType}')" title="Assistir em grupo com amigos sincronizados">
+                                    <span>👥</span>
+                                    <span>Assistir Junto</span>
+                                </button>
+
+                                <a href="https://t.me/BrasilFlix_bot?start=ver_${item.id}" target="_blank" class="btn-detail-action" style="text-decoration: none;" title="Assistir no Telegram">
+                                    <span>📱</span>
+                                    <span>Telegram</span>
                                 </a>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- SINOPSE & DETALHES -->
-                <div class="detail-synopsis-box">
-                    <div class="detail-synopsis-title">
-                        <span>📖</span>
-                        <span>Sinopse & Enredo</span>
-                    </div>
-                    <div class="detail-synopsis-text">
-                        ${item.sinopse || item.descricao || 'Sinopse oficial em português disponível em breve.'}
-                    </div>
+                <!-- NAVEGAÇÃO DE SEÇÕES DA PÁGINA (EPISÓDIOS, SOBRE, ELENCO, AVALIAÇÕES) -->
+                <div class="detail-section-nav">
+                    ${isSerie ? `<button class="detail-nav-btn active" id="detail-tab-btn-episodes" onclick="switchDetailTab('episodes')">📺 Episódios</button>` : ''}
+                    <button class="detail-nav-btn ${!isSerie ? 'active' : ''}" id="detail-tab-btn-about" onclick="switchDetailTab('about')">ℹ️ Sobre & Sinopse</button>
+                    ${hasCast ? `<button class="detail-nav-btn" id="detail-tab-btn-cast" onclick="switchDetailTab('cast')">🎭 Elenco & Dublagem</button>` : ''}
+                    <button class="detail-nav-btn" id="detail-tab-btn-reviews" onclick="switchDetailTab('reviews')">💬 Avaliações (<span id="detail-tab-reviews-count">0</span>)</button>
+                    ${recs.length > 0 ? `<button class="detail-nav-btn" id="detail-tab-btn-recs" onclick="switchDetailTab('recs')">🔥 Títulos Semelhantes</button>` : ''}
                 </div>
 
-                <!-- SE FOR SÉRIE: SELETOR DE TEMPORADAS & GRID DE EPISÓDIOS -->
+                <!-- PAINEL 1: EPISÓDIOS (SÉRIES / ANIME / DORAMA) -->
                 ${isSerie ? `
-                <div class="seasons-section" id="detail-seasons-section">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
-                                <span>📺</span> Episódios Disponíveis
-                            </h2>
-                            <span id="detail-episodes-count" style="font-size: 12px; color: var(--text-muted); font-weight: 700;"></span>
-                        </div>
-                    </div>
+                <div class="detail-tab-panel active" id="detail-panel-episodes">
+                    <div class="seasons-section" id="detail-seasons-section">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
+                                    <span>📺</span> Episódios Disponíveis
+                                </h2>
+                                <span id="detail-episodes-count" style="font-size: 12px; color: var(--text-muted); font-weight: 700;"></span>
+                            </div>
 
-                    <div class="seasons-tabs-rail" id="detail-seasons-tabs"></div>
-                    <div id="detail-episodes-grid" style="margin-top: 16px;"></div>
+                            <!-- PREFERÊNCIA DE ÁUDIO -->
+                            <div class="series-audio-pref-box">
+                                <span style="font-size: 11px; font-weight: 700; color: #cbd5e1;">Áudio:</span>
+                                <div class="audio-toggle-group">
+                                    <button class="audio-toggle-btn ${getUserPreferredAudio() !== 'legendado' ? 'active' : ''}" onclick="setDetailAudioPreference('${item.id}', 'dublado')">Dublado</button>
+                                    <button class="audio-toggle-btn ${getUserPreferredAudio() === 'legendado' ? 'active' : ''}" onclick="setDetailAudioPreference('${item.id}', 'legendado')">Legendado</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SELETOR DE TEMPORADAS -->
+                        <div class="seasons-tabs-rail" id="detail-seasons-tabs"></div>
+
+                        <!-- BARRA DE PESQUISA / FILTRO DE EPISÓDIOS -->
+                        <div class="episodes-controls-bar">
+                            <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                                🔍 <input type="text" id="episode-search-filter" class="episodes-search-input" placeholder="Buscar episódio por título ou número..." oninput="filterDetailEpisodesList()">
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-muted);" id="episodes-display-stat"></div>
+                        </div>
+
+                        <!-- GRID DE EPISÓDIOS REDESENHADO -->
+                        <div id="detail-episodes-grid" class="episodes-grid-layout" style="margin-top: 16px;"></div>
+                    </div>
                 </div>
                 ` : ''}
 
-                <!-- SEÇÃO DE AVALIAÇÕES E COMENTÁRIOS DA COMUNIDADE -->
-                <div class="reviews-section" id="detail-reviews-section">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                        <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
-                            <span>💬</span> Avaliações da Comunidade (<span id="reviews-total-count">0</span>)
-                        </h2>
-                        <div id="reviews-avg-badge-box" style="font-size: 13px; font-weight: 800; color: #fbbf24;"></div>
-                    </div>
-
-                    <!-- FORMULÁRIO DE NOVA AVALIAÇÃO -->
-                    <div class="review-composer-card">
-                        <div style="font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 6px;">O que você achou deste título?</div>
-                        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Selecione sua nota e deixe sua opinião para ajudar outros membros da comunidade.</p>
-
-                        <div class="star-rating-picker" id="star-picker-container">
-                            <span style="font-size: 12px; font-weight: 700; color: #cbd5e1; margin-right: 6px;">Sua Nota:</span>
-                            ${[1,2,3,4,5,6,7,8,9,10].map(s => `
-                                <button type="button" class="star-rating-btn ${s <= 10 ? 'active' : ''}" data-star="${s}" onclick="setReviewComposerRating(${s})" title="${s} de 10">★</button>
-                            `).join('')}
-                            <span id="star-picker-label" style="font-size: 13px; font-weight: 900; color: #fbbf24; margin-left: 8px;">10 / 10 ⭐</span>
+                <!-- PAINEL 2: SOBRE & SINOPSE -->
+                <div class="detail-tab-panel ${!isSerie ? 'active' : ''}" id="detail-panel-about" style="${isSerie ? 'display: none;' : ''}">
+                    <div class="detail-synopsis-box">
+                        <div class="detail-synopsis-title">
+                            <span>📖</span>
+                            <span>Sinopse & Enredo</span>
+                        </div>
+                        <div class="detail-synopsis-text">
+                            ${item.sinopse || item.descricao || 'Sinopse oficial em português disponível em breve.'}
                         </div>
 
-                        <form onsubmit="handleUserSubmitReview(event, '${currentDetailType}', '${item.id}')">
-                            ${!currentUser ? `
-                            <div style="margin-bottom: 10px;">
-                                <input type="text" id="review-guest-name" class="admin-input" style="margin-bottom: 0;" placeholder="Seu nome (ou faça login para comentar com seu perfil)">
+                        <!-- METADADOS ORGANIZADOS -->
+                        <div class="detail-info-grid">
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Tipo</div>
+                                <div class="detail-info-val">${isSerie ? (item.isAnime ? 'Anime' : (item.isDorama ? 'Dorama' : 'Série TV')) : 'Filme'}</div>
+                            </div>
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Ano de Lançamento</div>
+                                <div class="detail-info-val">${item.ano || '2026'}</div>
+                            </div>
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Idiomas / Áudio</div>
+                                <div class="detail-info-val">${audioText}</div>
+                            </div>
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Qualidade</div>
+                                <div class="detail-info-val">${qualText}</div>
+                            </div>
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Avaliação TMDB</div>
+                                <div class="detail-info-val">★ ${rating} / 10</div>
+                            </div>
+                            ${isSerie ? `
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Temporadas</div>
+                                <div class="detail-info-val">${totalSeasons}</div>
+                            </div>
+                            <div class="detail-info-item">
+                                <div class="detail-info-label">Total de Episódios</div>
+                                <div class="detail-info-val">${totalEps}</div>
                             </div>
                             ` : ''}
-
-                            <textarea id="review-comment-input" class="review-textarea" minlength="3" maxlength="1000" placeholder="Escreva seu comentário sobre este filme ou série..." required></textarea>
-
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; flex-wrap: wrap;">
-                                <label class="spoiler-toggle-label">
-                                    <input type="checkbox" id="review-has-spoiler" class="party-toggle-switch" style="width: 30px; height: 16px;">
-                                    <span>⚠️ Marcar como Spoiler</span>
-                                </label>
-                                <button type="submit" class="btn-modal btn-modal-primary" style="padding: 10px 22px; font-size: 13px; font-weight: 800; border-radius: 10px;">
-                                    🚀 Publicar Avaliação
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- FEED DE COMENTÁRIOS -->
-                    <div id="reviews-feed-container">
-                        <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px;">
-                            Carregando comentários...
                         </div>
                     </div>
                 </div>
 
-                <!-- TÍTULOS RECOMENDADOS (CARROSSEL COM DESLIZAMENTO LATERAL) -->
-                ${recs.length > 0 ? `
-                <div class="netflix-rail-section" id="rail-section-detail-recs" style="margin-top: 24px; margin-bottom: 40px;">
-                    <div class="rail-header">
-                        <h3 class="rail-title" style="font-size: 20px;">Títulos Semelhantes</h3>
+                <!-- PAINEL 3: ELENCO & DUBLAGEM -->
+                ${hasCast ? `
+                <div class="detail-tab-panel" id="detail-panel-cast" style="display: none;">
+                    <div class="detail-synopsis-box">
+                        <div class="detail-synopsis-title">
+                            <span>🎭</span>
+                            <span>Elenco Principal ${item.isAnime ? '& Dubladores' : ''}</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-top: 14px;">
+                            ${castList.slice(0, 10).map(c => `
+                                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; display: flex; align-items: center; gap: 10px;">
+                                    ${c.foto ? `<img src="${c.foto}" style="width: 42px; height: 42px; border-radius: 50%; object-fit: cover;" alt="${c.nome}">` : `<div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(16,185,129,0.2); color: #34d399; font-weight: 800; display: flex; align-items: center; justify-content: center;">${(c.nome || 'A')[0]}</div>`}
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 800; color: #fff;">${c.nome}</div>
+                                        <div style="font-size: 11px; color: #94a3b8;">${c.papel || c.personagem || 'Elenco'}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
-                    <div class="rail-slider-container">
-                        <button class="rail-arrow-btn rail-arrow-left" onclick="slideRail('detail-recs', -1)" aria-label="Anterior">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                        </button>
-                        <div class="rail-slider-track" id="track-detail-recs">
-                            ${recs.map(rec => {
-                                const recPoster = rec.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
-                                const recRating = rec.nota ? Number(rec.nota).toFixed(1) : '8.0';
-                                const recType = rec.itemType || (rec.temporadas ? 'serie' : 'filme');
-                                const isFav = userFavorites.some(f => String(f.id) === String(rec.id));
-                                const isRecSerie = (recType === 'serie' || !!rec.temporadas);
-                                const sub = isRecSerie ? getSerieSubtitleMeta(rec) : (rec.ano || '2026');
+                </div>
+                ` : ''}
 
-                                return `
-                                    <div class="rail-card" onclick="openMediaDetailPage('${rec.id}', '${recType}')">
-                                        <div class="rail-poster-wrapper">
-                                            <img src="${recPoster}" class="rail-poster-img" loading="lazy" alt="${rec.nome}">
-                                            <button class="btn-fav-card ${isFav ? 'active' : ''}" onclick="toggleUserFavorite('${rec.id}', '${recType}', event)" title="${isFav ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}">
-                                                ${isFav ? '❤️' : '🤍'}
-                                            </button>
-                                        </div>
-                                        <div class="rail-content">
-                                            <h4 class="rail-card-title">${rec.nome}</h4>
-                                            <div class="rail-card-sub">
-                                                <span style="color: #fbbf24; font-weight: 800;">★ ${recRating}</span>
-                                                <span>${sub}</span>
+                <!-- PAINEL 4: AVALIAÇÕES DA COMUNIDADE -->
+                <div class="detail-tab-panel" id="detail-panel-reviews" style="display: none;">
+                    <div class="reviews-section" id="detail-reviews-section">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                            <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
+                                <span>💬</span> Avaliações da Comunidade (<span id="reviews-total-count">0</span>)
+                            </h2>
+                            <button class="btn-modal btn-modal-primary" onclick="openReviewModalComposer()" style="padding: 8px 16px; font-size: 12px; font-weight: 800; border-radius: 8px;">
+                                ⭐ Avaliar este título
+                            </button>
+                        </div>
+
+                        <!-- FEED DE COMENTÁRIOS -->
+                        <div id="reviews-feed-container">
+                            <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px;">
+                                Carregando comentários...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAINEL 5: TÍTULOS SEMELHANTES -->
+                ${recs.length > 0 ? `
+                <div class="detail-tab-panel" id="detail-panel-recs" style="display: none;">
+                    <div class="netflix-rail-section" id="rail-section-detail-recs" style="margin-top: 10px; margin-bottom: 40px;">
+                        <div class="rail-header">
+                            <h3 class="rail-title" style="font-size: 18px;">Títulos Semelhantes Recomendados</h3>
+                        </div>
+                        <div class="rail-slider-container">
+                            <button class="rail-arrow-btn rail-arrow-left" onclick="slideRail('detail-recs', -1)" aria-label="Anterior">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                            </button>
+                            <div class="rail-slider-track" id="track-detail-recs">
+                                ${recs.map(rec => {
+                                    const recPoster = rec.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
+                                    const recRating = rec.nota ? Number(rec.nota).toFixed(1) : '8.0';
+                                    const recType = rec.itemType || (rec.temporadas ? 'serie' : 'filme');
+                                    const isFav = userFavorites.some(f => String(f.id) === String(rec.id));
+                                    const isRecSerie = (recType === 'serie' || !!rec.temporadas);
+                                    const sub = isRecSerie ? getSerieSubtitleMeta(rec) : (rec.ano || '2026');
+
+                                    return `
+                                        <div class="rail-card" onclick="openMediaDetailPage('${rec.id}', '${recType}')">
+                                            <div class="rail-poster-wrapper">
+                                                <img src="${recPoster}" class="rail-poster-img" loading="lazy" alt="${rec.nome}">
+                                                <button class="btn-fav-card ${isFav ? 'active' : ''}" onclick="toggleUserFavorite('${rec.id}', '${recType}', event)" title="${isFav ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}">
+                                                    ${isFav ? '❤️' : '🤍'}
+                                                </button>
+                                            </div>
+                                            <div class="rail-content">
+                                                <h4 class="rail-card-title">${rec.nome}</h4>
+                                                <div class="rail-card-sub">
+                                                    <span style="color: #fbbf24; font-weight: 800;">★ ${recRating}</span>
+                                                    <span>${sub}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                `;
-                            }).join('')}
+                                    `;
+                                }).join('')}
+                            </div>
+                            <button class="rail-arrow-btn rail-arrow-right" onclick="slideRail('detail-recs', 1)" aria-label="Próximo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                            </button>
                         </div>
-                        <button class="rail-arrow-btn rail-arrow-right" onclick="slideRail('detail-recs', 1)" aria-label="Próximo">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                        </button>
                     </div>
                 </div>
                 ` : ''}
@@ -12888,9 +13139,7 @@ function initApp() {
             if (isSerie) {
                 renderDetailSeasons(item);
             }
-        }
-
-        function updateDetailFavButton(event) {
+        }function updateDetailFavButton(event) {
             if (event) event.stopPropagation();
             const btn = document.getElementById('detail-fav-btn');
             const text = document.getElementById('detail-fav-text');
@@ -12899,6 +13148,29 @@ function initApp() {
             btn.classList.toggle('active', isFav);
             btn.querySelector('span:first-child').innerText = isFav ? '❤️' : '🤍';
             text.innerText = isFav ? 'Salvo' : 'Minha Lista';
+        }
+
+        function switchDetailTab(tabName) {
+            document.querySelectorAll('.detail-nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.detail-tab-panel').forEach(p => {
+                p.classList.remove('active');
+                p.style.display = 'none';
+            });
+
+            const activeBtn = document.getElementById(`detail-tab-btn-${tabName}`);
+            const activePanel = document.getElementById(`detail-panel-${tabName}`);
+
+            if (activeBtn) activeBtn.classList.add('active');
+            if (activePanel) {
+                activePanel.classList.add('active');
+                activePanel.style.display = 'block';
+            }
+        }
+
+        function openReviewModalComposer() {
+            switchDetailTab('reviews');
+            const reviewsEl = document.getElementById('detail-panel-reviews');
+            if (reviewsEl) reviewsEl.scrollIntoView({ behavior: 'smooth' });
         }
 
         function scrollToReviewsSection() {
@@ -12962,6 +13234,8 @@ function initApp() {
                 if (data && data.success) {
                     const reviews = data.reviews || [];
                     if (countEl) countEl.innerText = data.total || reviews.length;
+                    const tabCount = document.getElementById('detail-tab-reviews-count');
+                    if (tabCount) tabCount.innerText = data.total || reviews.length;
 
                     if (data.avgRating && avgBadge && avgVal) {
                         avgVal.innerText = `${data.avgRating}/10`;
@@ -13155,6 +13429,35 @@ function initApp() {
         }
 
         let currentSelectedSeasonNum = 1;
+        let currentDetailEpisodesFilter = '';
+        let currentDetailEpisodesPage = 1;
+        const EPISODES_PER_PAGE = 36;
+
+        function setDetailAudioPreference(mediaId, audio) {
+            setUserMediaAudioPref('serie', mediaId, audio, true, true);
+            showToast(`Áudio preferencial alterado para ${audio === 'legendado' ? 'Legendado' : 'Dublado'}`, 'info');
+            if (currentDetailMedia) {
+                renderDetailSeasonsHtmlOnly(currentDetailMedia, currentSelectedSeasonNum);
+            }
+        }
+
+        function filterDetailEpisodesList() {
+            const input = document.getElementById('episode-search-filter');
+            currentDetailEpisodesFilter = (input?.value || '').trim().toLowerCase();
+            currentDetailEpisodesPage = 1;
+            if (currentDetailMedia) {
+                renderDetailSeasonsHtmlOnly(currentDetailMedia, currentSelectedSeasonNum);
+            }
+        }
+
+        function changeEpisodesPage(newPage) {
+            currentDetailEpisodesPage = newPage;
+            if (currentDetailMedia) {
+                renderDetailSeasonsHtmlOnly(currentDetailMedia, currentSelectedSeasonNum);
+                const section = document.getElementById('detail-seasons-section');
+                if (section) section.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
 
         function renderDetailSeasons(serie, activeSeasonNum = null) {
             const tabsContainer = document.getElementById('detail-seasons-tabs');
@@ -13169,6 +13472,7 @@ function initApp() {
 
             const currentSeason = activeSeasonNum || temporadas[0].numero;
             currentSelectedSeasonNum = currentSeason;
+            currentDetailEpisodesPage = 1;
 
             tabsContainer.innerHTML = temporadas.map(t => `
                 <button class="season-tab-btn ${t.numero === currentSeason ? 'active' : ''}" onclick="renderDetailSeasons(currentDetailMedia, ${t.numero})">
@@ -13178,7 +13482,6 @@ function initApp() {
 
             renderDetailSeasonsHtmlOnly(serie, currentSeason);
 
-            // Dispara enriquecimento assíncrono com dados reais do TMDB (capa real, nome e sinopse real do ep)
             if (serie.tmdbId) {
                 enrichSeasonEpisodesWithTmdb(serie, currentSeason);
             }
@@ -13187,43 +13490,72 @@ function initApp() {
         function renderDetailSeasonsHtmlOnly(serie, currentSeason) {
             const gridContainer = document.getElementById('detail-episodes-grid');
             const countLabel = document.getElementById('detail-episodes-count');
+            const statLabel = document.getElementById('episodes-display-stat');
             if (!gridContainer || !serie.temporadas) return;
 
             const selectedTemp = (serie.temporadas || []).find(t => t.numero === currentSeason) || serie.temporadas[0];
             if (!selectedTemp) return;
             currentSelectedSeasonNum = selectedTemp.numero;
-            const episodios = selectedTemp.episodios || [];
+            const allEpisodios = selectedTemp.episodios || [];
+
+            // Filtragem por busca
+            let episodios = allEpisodios;
+            if (currentDetailEpisodesFilter) {
+                const query = currentDetailEpisodesFilter;
+                episodios = allEpisodios.filter(ep => {
+                    const numMatch = String(ep.numero) === query || `ep ${ep.numero}`.includes(query) || `episodio ${ep.numero}`.includes(query);
+                    const nameMatch = (ep.nome || '').toLowerCase().includes(query);
+                    const descMatch = (ep.sinopse || ep.overview || ep.descricao || '').toLowerCase().includes(query);
+                    return numMatch || nameMatch || descMatch;
+                });
+            }
 
             if (countLabel) {
-                countLabel.innerText = '';
+                countLabel.innerText = `${allEpisodios.length} episódios na T${selectedTemp.numero}`;
             }
 
             if (episodios.length === 0) {
-                gridContainer.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">Episódios desta temporada estarão disponíveis em breve.</div>';
+                gridContainer.innerHTML = '<div style="color: var(--text-muted); padding: 24px; text-align: center; grid-column: 1/-1;">Nenhum episódio encontrado com este termo de busca.</div>';
+                if (statLabel) statLabel.innerText = '0 resultados';
                 return;
             }
 
-            gridContainer.className = 'episodes-cascade-list';
-            gridContainer.innerHTML = episodios.map(ep => {
+            // Paginação inteligente para lidar com 100+ / 500+ eps sem travar o DOM
+            const totalPages = Math.ceil(episodios.length / EPISODES_PER_PAGE);
+            if (currentDetailEpisodesPage > totalPages) currentDetailEpisodesPage = 1;
+
+            const startIdx = (currentDetailEpisodesPage - 1) * EPISODES_PER_PAGE;
+            const endIdx = startIdx + EPISODES_PER_PAGE;
+            const pagedEpisodios = episodios.slice(startIdx, endIdx);
+
+            if (statLabel) {
+                if (totalPages > 1) {
+                    statLabel.innerText = `Exibindo ${startIdx + 1}–${Math.min(endIdx, episodios.length)} de ${episodios.length} eps (Pág ${currentDetailEpisodesPage}/${totalPages})`;
+                } else {
+                    statLabel.innerText = `${episodios.length} eps exibidos`;
+                }
+            }
+
+            const userAudioPref = getUserMediaAudioPref('serie', serie.id) || getUserPreferredAudio();
+
+            gridContainer.className = 'episodes-grid-layout';
+            gridContainer.innerHTML = pagedEpisodios.map(ep => {
                 let cleanEpTitle = (ep.nome || '').trim();
                 cleanEpTitle = cleanEpTitle.replace(/^(?:(?:Epis[oó]dio|Cap[íi]tulo|Ep\.?|E)\s*\d+[\.\:\-\s]+|\d+[\.\:\-\s]+)/i, '').trim();
                 if (!cleanEpTitle) {
                     cleanEpTitle = `Episódio ${ep.numero}`;
                 }
 
-                // Detecta áudio do episódio (Dublado / Legendado / Ambos)
                 const hasDub = !!(ep.isDublado || ep.versoes?.dublado);
                 const hasLeg = !!(ep.isLegendado || ep.versoes?.legendado);
 
                 let audioBadgeHtml = '';
                 if (hasDub && hasLeg) {
-                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dual"><span style="color:#34d399;">Dublado</span> <span style="opacity:0.6; color:#cbd5e1;">&amp;</span> <span style="color:#60a5fa;">Legendado</span></span>`;
+                    audioBadgeHtml = `<span style="font-size: 10px; font-weight: 800; background: rgba(16,185,129,0.15); color: #34d399; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.3);">DUBL &amp; LEG</span>`;
                 } else if (hasDub) {
-                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dub">Dublado</span>`;
+                    audioBadgeHtml = `<span style="font-size: 10px; font-weight: 800; background: rgba(16,185,129,0.15); color: #34d399; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.3);">DUBLADO</span>`;
                 } else if (hasLeg) {
-                    audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-leg">Legendado</span>`;
-                } else {
-                    audioBadgeHtml = '';
+                    audioBadgeHtml = `<span style="font-size: 10px; font-weight: 800; background: rgba(56,189,248,0.15); color: #38bdf8; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56,189,248,0.3);">LEGENDADO</span>`;
                 }
 
                 const epThumb = ep.stillUrl || ep.thumbUrl || serie.backdropUrl || serie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
@@ -13234,38 +13566,67 @@ function initApp() {
                 const isCompleted = prog?.completed || false;
                 const curTime = prog?.currentTime || 0;
                 const isStarted = !isCompleted && curTime > 10;
-                const isWatchedOrStarted = isCompleted || isStarted;
                 const dur = prog?.duration || (ep.duracao ? ep.duracao * 60 : 0);
+                const pct = (dur > 0 && curTime > 0) ? Math.min(100, Math.round((curTime / dur) * 100)) : 0;
                 const userWantsBlur = (currentUser?.preferencias?.spoilerBlur !== false) && (localStorage.getItem('bf_pref_spoiler_blur') !== 'false');
-                const spoilerBlurClass = (!isWatchedOrStarted && userWantsBlur) ? 'episode-preview-spoiler-blur' : '';
+                const spoilerBlurClass = (!isCompleted && !isStarted && userWantsBlur) ? 'style="filter: blur(10px) brightness(0.7);"' : '';
 
                 return `
-                    <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="openWebPlayerEpisode('${serie.id}', ${selectedTemp.numero}, ${ep.numero})">
-                        <div class="episode-cascade-num">${ep.numero}</div>
-                        <div class="episode-preview-wrapper">
-                            <img src="${epThumb}" class="episode-preview-img ${spoilerBlurClass}" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
-                            <div class="episode-play-overlay-icon">▶</div>
-                            ${isCompleted ? '<div class="episode-watched-badge">✓ Assistido</div>' : ''}
-                            ${isStarted && pct > 0 ? `<div class="episode-progress-bar-bg"><div class="episode-progress-bar-fill" style="width: ${pct}%;"></div></div>` : ''}
-                            ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
+                    <div class="ep-card-item ${isCompleted ? 'is-completed' : ''}" onclick="openWebPlayerEpisode('${serie.id}', ${selectedTemp.numero}, ${ep.numero})">
+                        <div class="ep-card-thumb-wrapper">
+                            <img src="${epThumb}" class="ep-card-thumb-img" loading="lazy" alt="${cleanEpTitle}" ${spoilerBlurClass} onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
+                            <div class="ep-card-play-overlay">
+                                <div class="ep-card-play-icon">▶</div>
+                            </div>
+                            ${isCompleted ? '<div style="position: absolute; top: 6px; right: 6px; background: rgba(16, 185, 129, 0.9); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 4px; backdrop-filter: blur(4px);">✓ Assistido</div>' : ''}
+                            ${isStarted && pct > 0 ? `<div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(255,255,255,0.2);"><div style="width: ${pct}%; height: 100%; background: #10b981;"></div></div>` : ''}
+                            ${epDuration ? `<span style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.75); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; backdrop-filter: blur(4px);">${epDuration}</span>` : ''}
                         </div>
-                        <div class="episode-cascade-info">
-                            <div style="margin-bottom: 2px;">
+                        <div class="ep-card-content">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                                <div class="ep-card-num-badge">EP ${ep.numero}</div>
                                 ${audioBadgeHtml}
                             </div>
-                            <div class="episode-cascade-title-row">
-                                <div class="episode-cascade-title">${cleanEpTitle}</div>
-                            </div>
-                            <div class="episode-cascade-desc">${epDesc}</div>
+                            <div class="ep-card-num-title">${cleanEpTitle}</div>
+                            <div class="ep-card-desc">${epDesc}</div>
                         </div>
                     </div>
                 `;
             }).join('');
+
+            // Adiciona controles de paginação se houver mais de 1 página
+            if (totalPages > 1) {
+                let paginationHtml = '<div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; grid-column: 1/-1; flex-wrap: wrap;">';
+
+                paginationHtml += `
+                    <button class="season-tab-btn" ${currentDetailEpisodesPage === 1 ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="changeEpisodesPage(${currentDetailEpisodesPage - 1})">
+                        ← Anterior
+                    </button>
+                `;
+
+                for (let p = 1; p <= totalPages; p++) {
+                    if (p === 1 || p === totalPages || (p >= currentDetailEpisodesPage - 2 && p <= currentDetailEpisodesPage + 2)) {
+                        paginationHtml += `
+                            <button class="season-tab-btn ${p === currentDetailEpisodesPage ? 'active' : ''}" onclick="changeEpisodesPage(${p})">
+                                ${p}
+                            </button>
+                        `;
+                    } else if (p === currentDetailEpisodesPage - 3 || p === currentDetailEpisodesPage + 3) {
+                        paginationHtml += `<span style="color: #64748b; font-weight: 700;">...</span>`;
+                    }
+                }
+
+                paginationHtml += `
+                    <button class="season-tab-btn" ${currentDetailEpisodesPage === totalPages ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="changeEpisodesPage(${currentDetailEpisodesPage + 1})">
+                        Próximo →
+                    </button>
+                `;
+
+                paginationHtml += '</div>';
+                gridContainer.innerHTML += paginationHtml;
+            }
         }
 
-        let pendingAudioChoiceMedia = null;
-
-        
         /* ═══════════════════════════════════════════════════════════════════════
            🎬 CONTROLADORES DA PÁGINA DEDICADA DE REPRODUÇÃO (PLAYBACK PAGE)
            ═══════════════════════════════════════════════════════════════════════ */
