@@ -117,13 +117,7 @@ class SwarmWatcher {
             // Em modo eco, verifica apenas 1 item por ciclo para economizar requisições e sockets
             const res = await db.query(`
                 SELECT * FROM swarm_watchlist 
-                WHERE last_checked IS NULL OR last_checked < NOW() - CASE
-                    WHEN check_count >= 48 THEN INTERVAL '24 hours'
-                    WHEN check_count >= 24 THEN INTERVAL '12 hours'
-                    WHEN check_count >= 12 THEN INTERVAL '6 hours'
-                    WHEN check_count >= 6 THEN INTERVAL '2 hours'
-                    ELSE INTERVAL '${isEco ? '30 minutes' : '10 minutes'}'
-                END
+                WHERE (last_checked IS NULL OR last_checked < NOW() - INTERVAL '3 minutes')
                 ORDER BY 
                     CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END,
                     last_checked ASC NULLS FIRST 
