@@ -117,7 +117,13 @@ class SwarmWatcher {
             // Em modo eco, verifica apenas 1 item por ciclo para economizar requisições e sockets
             const res = await db.query(`
                 SELECT * FROM swarm_watchlist 
-                WHERE (last_checked IS NULL OR last_checked < NOW() - INTERVAL '${isEco ? '30 minutes' : '3 minutes'}')
+                WHERE last_checked IS NULL OR last_checked < NOW() - CASE
+                    WHEN check_count >= 48 THEN INTERVAL '24 hours'
+                    WHEN check_count >= 24 THEN INTERVAL '12 hours'
+                    WHEN check_count >= 12 THEN INTERVAL '6 hours'
+                    WHEN check_count >= 6 THEN INTERVAL '2 hours'
+                    ELSE INTERVAL '${isEco ? '30 minutes' : '10 minutes'}'
+                END
                 ORDER BY 
                     CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END,
                     last_checked ASC NULLS FIRST 
@@ -202,22 +208,23 @@ class SwarmWatcher {
                         const epTag = type === 'serie' ? ` - T${season || 1}E${episode || 1}` : '';
                         console.log(`🌟 [SWARM WATCHER] Sementes detectadas para "${title}"${epTag}! Fonte: "${best.title}" (${best.seeders} seed(s), ${best.audio || pref}). Enfileirando download imediatamente...`);
 
-                        // Enfileira com prioridade VIP
-                        this.queueManager.addJob(title, type, PRIORITIES.VIP_USER, {
+                        this.queueManager.addJob(title, type, PRIORITIES.FEEDER, {
                             tmdbId: it.tmdb_id,
                             imdbId: it.imdb_id,
                             season: season || (type === 'serie' ? 1 : null),
                             episode: episode || (type === 'serie' ? 1 : null),
                             audioPreference: pref,
                             userId: it.user_id,
-                            username: it.username,
-                            queueOrder: -1
+                            username: it.username
                         });
 
-                        // Remove da watchlist pois já foi enfileirado com sucesso
-                        await db.query(`DELETE FROM swarm_watchlist WHERE id = $1`, [it.id]);
+                        await db.query(
+                            `UPDATE swarm_watchlist
+                             SET last_checked = NOW(), check_count = check_count + 1
+                             WHERE id = $1`,
+                            [it.id]
+                        );
                     } else {
-                        // Atualiza timestamp para retestar no próximo ciclo de 3 min
                         await db.query(`UPDATE swarm_watchlist SET last_checked = NOW(), check_count = check_count + 1 WHERE id = $1`, [it.id]);
                     }
                 } catch (errSearch) {
