@@ -51,7 +51,6 @@ module.exports = {
     QUEUE_FILE: './data/queue.json',
 
     // Configurações de Mídia & Automação
-    ENABLE_DOWNLOADS: process.env.ENABLE_DOWNLOADS === 'true',
     VIDEO_MAX_SIZE_BYTES: Math.floor(3.95 * 1024 * 1024 * 1024),
     TARGET_RESOLUTION: process.env.TARGET_RESOLUTION || '1080p',
     ALLOW_CINEMA_CAM: process.env.ALLOW_CINEMA_CAM !== 'false',

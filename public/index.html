@@ -2458,21 +2458,57 @@
            🎬 NETFLIX & PRIME VIDEO MODERN OTT DESIGN SYSTEM
            ═══════════════════════════════════════════════════════════════════════ */
         
-        /* HERO BILLBOARD BANNER */
-        .hero-billboard {
+        /* HERO CAROUSEL & BILLBOARD BANNER */
+        .hero-carousel-wrapper {
             position: relative;
             width: 100%;
-            min-height: 460px;
-            max-height: 560px;
             border-radius: 24px;
             overflow: hidden;
             margin-bottom: 36px;
-            display: flex;
-            align-items: flex-end;
-            padding: 44px;
             background-color: #07090e;
             box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
             border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .hero-slides-container {
+            position: relative;
+            width: 100%;
+            min-height: 480px;
+            max-height: 580px;
+        }
+
+        .hero-slide {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: flex-end;
+            padding: 48px 56px 64px 48px;
+            box-sizing: border-box;
+            z-index: 1;
+        }
+
+        .hero-slide.active {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            z-index: 2;
+        }
+
+        .hero-slide::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: 
+                linear-gradient(0deg, rgba(7, 9, 14, 0.95) 0%, rgba(7, 9, 14, 0.65) 35%, rgba(7, 9, 14, 0.2) 65%, transparent 100%),
+                linear-gradient(90deg, rgba(7, 9, 14, 0.95) 0%, rgba(7, 9, 14, 0.6) 45%, transparent 80%);
+            z-index: 1;
+            pointer-events: none;
         }
 
         .hero-billboard-bg {
@@ -2486,15 +2522,97 @@
             z-index: 0;
         }
 
-        .hero-billboard::before {
-            content: '';
+        .hero-carousel-arrow {
             position: absolute;
-            inset: 0;
-            background: 
-                linear-gradient(0deg, rgba(7, 9, 14, 0.7) 0%, rgba(7, 9, 14, 0.15) 30%, transparent 60%),
-                linear-gradient(90deg, rgba(7, 9, 14, 0.6) 0%, rgba(7, 9, 14, 0.1) 45%, transparent 75%);
-            z-index: 1;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(7, 9, 14, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .hero-carousel-arrow:hover {
+            background: rgba(16, 185, 129, 0.85);
+            border-color: rgba(16, 185, 129, 1);
+            color: #ffffff;
+            transform: translateY(-50%) scale(1.1);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+        }
+
+        .hero-arrow-left {
+            left: 20px;
+        }
+
+        .hero-arrow-right {
+            right: 20px;
+        }
+
+        .hero-carousel-bottom-bar {
+            position: absolute;
+            bottom: 18px;
+            left: 48px;
+            right: 48px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             pointer-events: none;
+        }
+
+        .hero-carousel-indicators {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .hero-indicator-btn {
+            width: 28px;
+            height: 4px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.3);
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 0;
+        }
+
+        .hero-indicator-btn:hover {
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .hero-indicator-btn.active {
+            width: 48px;
+            background: #10b981;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+        }
+
+        .hero-carousel-timer-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(7, 9, 14, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #94a3b8;
+            padding: 5px 14px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            pointer-events: auto;
+            letter-spacing: 0.3px;
         }
 
         .hero-content {
@@ -2607,29 +2725,48 @@
         }
 
         @media (max-width: 768px) {
-            .hero-billboard {
-                min-height: 420px;
-                padding: 24px 16px;
+            .hero-carousel-wrapper {
                 border-radius: 16px;
                 margin-bottom: 24px;
-                background-position: center top;
+            }
+            .hero-slides-container {
+                min-height: 400px;
+                max-height: 480px;
+            }
+            .hero-slide {
+                padding: 24px 16px 56px 16px;
+            }
+            .hero-carousel-arrow {
+                width: 36px;
+                height: 36px;
+            }
+            .hero-arrow-left {
+                left: 10px;
+            }
+            .hero-arrow-right {
+                right: 10px;
+            }
+            .hero-carousel-bottom-bar {
+                left: 16px;
+                right: 16px;
+                bottom: 12px;
             }
             .hero-title {
-                font-size: 26px;
+                font-size: 24px;
             }
             .hero-synopsis {
-                font-size: 13px;
+                font-size: 12px;
                 -webkit-line-clamp: 2;
                 line-clamp: 2;
-                margin-bottom: 16px;
+                margin-bottom: 14px;
             }
             .hero-actions {
                 gap: 8px;
                 width: 100%;
             }
             .hero-btn-play, .hero-btn-secondary {
-                padding: 10px 14px;
-                font-size: 13px;
+                padding: 9px 12px;
+                font-size: 12px;
                 flex: 1 1 calc(50% - 8px);
                 justify-content: center;
             }

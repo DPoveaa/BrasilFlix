@@ -833,7 +833,7 @@ class QueueManager extends EventEmitter {
             } else if (hasRaw) {
                 if (!capacity.canTranscode) continue;
             } else {
-                if (!config.ENABLE_DOWNLOADS || !capacity.canDownload) continue;
+                if (!capacity.canDownload) continue;
             }
 
             eligibleJobs.push(j);
@@ -1100,7 +1100,7 @@ class QueueManager extends EventEmitter {
             const activeTranscodes = this.getActiveOptimizationsCount();
             const activeUploads = this.getActiveUploadsCount();
 
-            const canDownload = config.ENABLE_DOWNLOADS && !diskCrowded && isNetworkAllowed && activeDownloads < maxDownloads;
+            const canDownload = !diskCrowded && isNetworkAllowed && activeDownloads < maxDownloads;
             const canTranscode = activeTranscodes < maxTranscodes;
             const canUpload = isNetworkAllowed && activeUploads < maxUploads;
 
@@ -1174,16 +1174,8 @@ class QueueManager extends EventEmitter {
     }
 
     async executeJob(job) {
-        // Se o job não tem arquivo local em disco e os downloads estiverem desativados ou fora da janela, pausa imediatamente
+        // Se o job não tem arquivo local em disco e estamos fora da janela de download (01h-05h SP), pausa imediatamente
         const hasLocalFile = (job.rawFilePath && fs.existsSync(job.rawFilePath)) || (job.optimizedPath && fs.existsSync(job.optimizedPath));
-        if (!hasLocalFile && !config.ENABLE_DOWNLOADS) {
-            console.log(`🔒 [Downloads Desativados] Job "${job.title}" aguardando ativação de downloads (ENABLE_DOWNLOADS=false).`);
-            job.status = 'queued';
-            job.progress = 0;
-            job.progressDetails = 'Downloads desativados em ambiente de teste (ENABLE_DOWNLOADS=false)...';
-            await this.saveJob(job);
-            return;
-        }
         if (!hasLocalFile && !SchedulerService.isAllowedToRun()) {
             console.log(`⏰ [Scheduler SP] Job "${job.title}" aguardando abertura da janela de download das 01h às 05h (Horário de SP).`);
             job.status = 'queued';

@@ -398,10 +398,6 @@ class DownloaderManager extends EventEmitter {
     }
 
     async downloadTorrent(magnetOrTorrent, onProgress = null, options = {}) {
-        if (!config.ENABLE_DOWNLOADS) {
-            console.log('🔒 [DownloaderManager] Download via Torrent bloqueado: config.ENABLE_DOWNLOADS=false.');
-            throw new Error('Downloads de rede desativados em ambiente de teste (ENABLE_DOWNLOADS=false).');
-        }
         this.ensureDirectories();
         await this.ensureDiskSpace();
         const WT = await this.getWebTorrentClass();
@@ -1251,10 +1247,6 @@ class DownloaderManager extends EventEmitter {
     }
 
     async downloadHttp(url, fileName, onProgress = null, options = {}) {
-        if (!config.ENABLE_DOWNLOADS) {
-            console.log('🔒 [DownloaderManager] Download HTTP/CDN bloqueado: config.ENABLE_DOWNLOADS=false.');
-            throw new Error('Downloads de rede desativados em ambiente de teste (ENABLE_DOWNLOADS=false).');
-        }
         this.ensureDirectories();
         await this.ensureDiskSpace();
 
