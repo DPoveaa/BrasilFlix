@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../database/db');
 const config = require('../../config');
+const auditService = require('./AuditService');
 
 class AuthService {
     constructor() {
@@ -87,6 +88,16 @@ class AuthService {
                     notificacoes: user.notificacoes || []
                 };
             }
+
+            auditService.logEvent({
+                identityType: 'telegram',
+                telegramId: tgId,
+                userId: user.id,
+                eventType: 'LOGIN',
+                source: 'telegram',
+                title: user.username,
+                metadata: { isVip, userRole }
+            }).catch(() => {});
 
             return {
                 success: true,
@@ -309,6 +320,25 @@ class AuthService {
                 is_vip: user.is_vip
             }, 30 * 24 * 3600); // 30 dias de sessão
 
+            auditService.logEvent({
+                identityType: 'registered',
+                userId: user.id,
+                telegramId: user.telegram_id,
+                eventType: 'ACCOUNT_CREATED',
+                source: 'website',
+                title: user.username,
+                metadata: { email: user.email }
+            }).catch(() => {});
+
+            auditService.logEvent({
+                identityType: 'registered',
+                userId: user.id,
+                telegramId: user.telegram_id,
+                eventType: 'LOGIN',
+                source: 'website',
+                title: user.username
+            }).catch(() => {});
+
             return {
                 success: true,
                 message: 'Conta criada com sucesso! Bem-vindo ao BrasilFlix.',
@@ -398,6 +428,16 @@ class AuthService {
                 email: user.email,
                 role: userRole
             });
+
+            auditService.logEvent({
+                identityType: 'registered',
+                userId: user.id,
+                telegramId: user.telegram_id,
+                eventType: 'LOGIN',
+                source: 'website',
+                title: user.username,
+                metadata: { role: userRole }
+            }).catch(() => {});
 
             return {
                 success: true,

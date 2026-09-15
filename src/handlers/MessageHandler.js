@@ -1,4 +1,5 @@
 const config = require('../../config');
+const auditService = require('../services/AuditService');
 
 class MessageHandler {
     constructor(bot, pedidosManager, catalogoManager, assinaturaManager, commandHandler) {
@@ -28,6 +29,16 @@ class MessageHandler {
 
         // Se for chat privado
         if (chatType === 'private') {
+            if (msg.from) {
+                auditService.logEvent({
+                    identityType: 'telegram',
+                    telegramId: msg.from.id,
+                    eventType: 'TELEGRAM_MESSAGE_RECEIVED',
+                    source: 'telegram',
+                    title: messageText ? messageText.slice(0, 100) : '[Mídia]',
+                    metadata: { username: msg.from.username, textLength: messageText.length }
+                }).catch(() => {});
+            }
             await this.handlePrivateMessage(msg);
             return;
         }

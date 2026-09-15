@@ -7710,6 +7710,10 @@
                                 <span class="admin-btn-icon">🎬</span>
                                 <span class="admin-btn-label">Gerenciar Catálogo</span>
                             </button>
+                            <button class="admin-sub-btn" id="admin-sub-btn-audit" onclick="switchAdminSubTab('audit')">
+                                <span class="admin-btn-icon">🛡️</span>
+                                <span class="admin-btn-label">Auditoria</span>
+                            </button>
                         </nav>
                     </aside>
 
@@ -8411,6 +8415,243 @@
 
                 </div>
 
+                <!-- SUB-TAB 8: AUDITORIA DE CLIENTES & MONITORAMENTO DE IDENTIDADES -->
+                <div id="admin-subtab-audit" class="admin-subtab-content" style="display: none;">
+
+                    <!-- HEADER DA SEÇÃO DE AUDITORIA -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div>
+                            <h2 style="font-size: 20px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px;">
+                                <span>🛡️</span> Auditoria & Monitoramento de Clientes
+                            </h2>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                                Rastreamento completo de interações, histórico de reprodução e atividades em tempo real no Site e Telegram por identidade.
+                            </p>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Intervalo:</label>
+                            <select id="audit-time-range" class="admin-input" style="width: auto; min-width: 140px; padding: 8px 12px; margin-bottom: 0;" onchange="loadAuditDashboard()">
+                                <option value="today">Hoje</option>
+                                <option value="yesterday">Ontem</option>
+                                <option value="7d">Últimos 7 dias</option>
+                                <option value="30d">Últimos 30 dias</option>
+                            </select>
+                            <button class="btn-action" style="padding: 8px 14px;" onclick="loadAuditDashboard()">🔄 Atualizar</button>
+                        </div>
+                    </div>
+
+                    <!-- METRICAS DE TOPO DA AUDITORIA -->
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">👤</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-reg-users">0</h3>
+                                <p>Contas Registradas</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">👻</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-anon-visitors">0</h3>
+                                <p>Visitantes Anônimos</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">✈️</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-tg-users">0</h3>
+                                <p>Usuários Telegram</p>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">🟢</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-active-now" style="color: #34d399;">0</h3>
+                                <p>Ativos Agora</p>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="border: 1px solid rgba(245, 158, 11, 0.3);">
+                            <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">🍿</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-watching-now" style="color: #fbbf24;">0</h3>
+                                <p>Assistindo Agora</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(236, 72, 153, 0.15); color: #f472b6;">▶️</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-plays">0</h3>
+                                <p>Inícios de Play</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(34, 197, 94, 0.15); color: #4ade80;">✅</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-completed">0</h3>
+                                <p>Episódios Concluídos</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">⭐</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-favs">0</h3>
+                                <p>Favoritos Adicionados</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(249, 115, 22, 0.15); color: #fb923c;">🔍</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-searches">0</h3>
+                                <p>Buscas Realizadas</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">⏱️</div>
+                            <div class="stat-info">
+                                <h3 id="adm-audit-watchtime">0m</h3>
+                                <p>Tempo Total Assistido</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUB-NAVEGAÇÃO INTERNA DA AUDITORIA -->
+                    <div style="display: flex; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px;">
+                        <button id="btn-audit-view-people" class="admin-sub-btn active" style="width: auto; padding: 10px 18px;" onclick="switchAuditView('people')">
+                            👥 Clientes / Pessoas
+                        </button>
+                        <button id="btn-audit-view-content" class="admin-sub-btn" style="width: auto; padding: 10px 18px;" onclick="switchAuditView('content')">
+                            📊 Análise de Conteúdo
+                        </button>
+                        <button id="btn-audit-view-searches" class="admin-sub-btn" style="width: auto; padding: 10px 18px;" onclick="switchAuditView('searches')">
+                            🔍 Buscas Sem Resultado
+                        </button>
+                    </div>
+
+                    <!-- VISÃO 1: LISTA DE PESSOAS / IDENTIDADES -->
+                    <div id="audit-view-people" class="audit-inner-view" style="display: block;">
+                        <!-- BARRA DE FILTROS DA LISTA DE PESSOAS -->
+                        <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+                            <div style="flex: 1; min-width: 240px; position: relative;">
+                                <input type="text" id="audit-people-search" class="search-input" placeholder="Buscar por Nome, E-mail, Username, Visitor ID ou Telegram ID..." oninput="debouncedSearchPeople()">
+                            </div>
+                            <select id="audit-people-platform-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 8px 12px; margin-bottom: 0;" onchange="loadAuditPeople(1)">
+                                <option value="all">🌐 Todas Plataformas</option>
+                                <option value="registered">👤 Registrados</option>
+                                <option value="telegram">✈️ Telegram</option>
+                                <option value="anonymous">👻 Anônimos</option>
+                            </select>
+                            <select id="audit-people-status-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 8px 12px; margin-bottom: 0;" onchange="loadAuditPeople(1)">
+                                <option value="all">⚡ Todos os Status</option>
+                                <option value="active_now">🟢 Ativos Agora</option>
+                                <option value="watching_now">🍿 Assistindo Agora</option>
+                                <option value="recent">🕒 Recentes (24h)</option>
+                                <option value="inactive">💤 Inativos</option>
+                            </select>
+                        </div>
+
+                        <!-- TABELA DE IDENTIDADES -->
+                        <div class="admin-table-container">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Identidade / Cliente</th>
+                                        <th>Plataforma</th>
+                                        <th>Status / Atividade Atual</th>
+                                        <th>Sessões</th>
+                                        <th>Tempo Assistido</th>
+                                        <th>Plays</th>
+                                        <th>Favoritos</th>
+                                        <th>Pedidos</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="audit-people-tbody">
+                                    <tr><td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando histórico de clientes...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- PAGINAÇÃO DE PESSOAS -->
+                        <div id="audit-people-pagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 13px; color: var(--text-muted);">
+                        </div>
+                    </div>
+
+                    <!-- VISÃO 2: ANÁLISE DE CONTEÚDO -->
+                    <div id="audit-view-content" class="audit-inner-view" style="display: none;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+                            <!-- MAIS ASSISTIDOS -->
+                            <div class="panel-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h3 style="font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                    <span>🏆</span> Mais Assistidos
+                                </h3>
+                                <div id="audit-content-most-watched" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="color: var(--text-muted); font-size: 12px;">Carregando dados...</div>
+                                </div>
+                            </div>
+
+                            <!-- TERMOS MAIS BUSCADOS -->
+                            <div class="panel-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h3 style="font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                    <span>🔍</span> Termos Mais Pesquisados
+                                </h3>
+                                <div id="audit-content-most-searched" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="color: var(--text-muted); font-size: 12px;">Carregando dados...</div>
+                                </div>
+                            </div>
+
+                            <!-- MAIS FAVORITADOS -->
+                            <div class="panel-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h3 style="font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                    <span>⭐</span> Mais Favoritados
+                                </h3>
+                                <div id="audit-content-most-favorited" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="color: var(--text-muted); font-size: 12px;">Carregando dados...</div>
+                                </div>
+                            </div>
+
+                            <!-- TAXA DE ABANDONO -->
+                            <div class="panel-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h3 style="font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                    <span>⚠️</span> Mídias Iniciadas e Pouco Concluídas (Abandono)
+                                </h3>
+                                <div id="audit-content-abandonment" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="color: var(--text-muted); font-size: 12px;">Carregando dados...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VISÃO 3: BUSCAS SEM RESULTADO (DEMANDA FALTANTE) -->
+                    <div id="audit-view-searches" class="audit-inner-view" style="display: none;">
+                        <div class="panel-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); margin-bottom: 16px;">
+                            <h3 style="font-size: 15px; font-weight: 800; color: #f87171; display: flex; align-items: center; gap: 8px;">
+                                <span>🚨</span> Conteúdos Buscados que Retornaram Zero Resultados
+                            </h3>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                                Esta lista identifica exatamente o que os usuários estão procurando no BrasilFlix mas ainda não encontram no catálogo.
+                            </p>
+                        </div>
+
+                        <div class="admin-table-container">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Termo Buscado</th>
+                                        <th>Total de Buscas</th>
+                                        <th>Última Pesquisa</th>
+                                        <th>Plataforma</th>
+                                        <th style="text-align: right;">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="audit-searches-tbody">
+                                    <tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Carregando análise de buscas...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
 
                     </main>
                 </div>
@@ -8424,6 +8665,143 @@
     <!-- ═══════════════════════════════════════════════════════════════════════
          MODAIS ADMINISTRATIVOS
          ═══════════════════════════════════════════════════════════════════════ -->
+
+    <!-- MODAL DE PERFIL DE AUDITORIA DO CLIENTE -->
+    <div class="modal-backdrop" id="audit-person-modal" onclick="closeAdminModalOnClick(event, 'audit-person-modal')">
+        <div class="modal-card" style="max-width: 850px; width: 95%; max-height: 90vh; overflow-y: auto; padding: 24px;" onclick="event.stopPropagation()">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <h2 id="audit-profile-name" style="font-size: 20px; font-weight: 800; color: #fff;">Perfil do Cliente</h2>
+                        <span id="audit-profile-badge" class="badge-role" style="background: rgba(59,130,246,0.2); color:#60a5fa;">Registrado</span>
+                    </div>
+                    <div id="audit-profile-subinfo" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+                        IDs: <span id="audit-profile-ids">-</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-action" style="padding: 6px 12px;" onclick="closeAuditPersonModal()">✕ Fechar</button>
+            </div>
+
+            <!-- STATUS AO VIVO / ATIVIDADE ATUAL -->
+            <div id="audit-profile-live-banner" style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: #34d399; margin-bottom: 2px;">🟢 Atividade em Tempo Real</div>
+                    <div id="audit-profile-live-text" style="font-size: 13px; font-weight: 700; color: #fff;">Assistindo agora: --</div>
+                </div>
+                <div id="audit-profile-live-time" style="font-size: 11px; color: var(--text-muted);">
+                    Status: Online
+                </div>
+            </div>
+
+            <!-- CARDS DE RESUMO DE ATIVIDADE DO PERFIL -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 20px;">
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-sessions" style="font-size: 16px;">0</h3>
+                        <p style="font-size: 11px;">Sessões</p>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-watchtime" style="font-size: 16px;">0m</h3>
+                        <p style="font-size: 11px;">Tempo Assistido</p>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-plays" style="font-size: 16px;">0</h3>
+                        <p style="font-size: 11px;">Plays</p>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-completed" style="font-size: 16px;">0</h3>
+                        <p style="font-size: 11px;">Concluídos</p>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-favs" style="font-size: 16px;">0</h3>
+                        <p style="font-size: 11px;">Favoritos</p>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding: 12px;">
+                    <div class="stat-info">
+                        <h3 id="audit-prof-searches" style="font-size: 16px;">0</h3>
+                        <p style="font-size: 11px;">Buscas</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ABAS DO PERFIL INDIVIDUAL -->
+            <div style="display: flex; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px;">
+                <button id="btn-audit-prof-tab-timeline" class="admin-sub-btn active" style="width: auto; padding: 8px 14px; font-size: 12px;" onclick="switchAuditProfileTab('timeline')">
+                    🕒 Linha do Tempo
+                </button>
+                <button id="btn-audit-prof-tab-history" class="admin-sub-btn" style="width: auto; padding: 8px 14px; font-size: 12px;" onclick="switchAuditProfileTab('history')">
+                    🎬 Histórico de Reprodução
+                </button>
+                <button id="btn-audit-prof-tab-favs" class="admin-sub-btn" style="width: auto; padding: 8px 14px; font-size: 12px;" onclick="switchAuditProfileTab('favs')">
+                    ⭐ Favoritos
+                </button>
+                <button id="btn-audit-prof-tab-searches" class="admin-sub-btn" style="width: auto; padding: 8px 14px; font-size: 12px;" onclick="switchAuditProfileTab('searches')">
+                    🔍 Buscas
+                </button>
+                <button id="btn-audit-prof-tab-requests" class="admin-sub-btn" style="width: auto; padding: 8px 14px; font-size: 12px;" onclick="switchAuditProfileTab('requests')">
+                    🍿 Pedidos
+                </button>
+            </div>
+
+            <!-- CONTEÚDO DA ABA 1: LINHA DO TEMPO CRONOLÓGICA -->
+            <div id="audit-prof-content-timeline" class="audit-prof-tab-content" style="display: block;">
+                <div id="audit-prof-timeline-container" style="display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto;">
+                    <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">Carregando linha do tempo...</div>
+                </div>
+            </div>
+
+            <!-- CONTEÚDO DA ABA 2: HISTÓRICO DE REPRODUÇÃO -->
+            <div id="audit-prof-content-history" class="audit-prof-tab-content" style="display: none;">
+                <div class="admin-table-container">
+                    <table class="admin-table" style="font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>Título / Episódio</th>
+                                <th>Início</th>
+                                <th>Último Acesso</th>
+                                <th>Progresso</th>
+                                <th>Tempo Assistido</th>
+                                <th>Plataforma</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-prof-history-tbody">
+                            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando histórico...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- CONTEÚDO DA ABA 3: FAVORITOS -->
+            <div id="audit-prof-content-favs" class="audit-prof-tab-content" style="display: none;">
+                <div id="audit-prof-favs-container" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="color: var(--text-muted); font-size: 12px;">Carregando favoritos...</div>
+                </div>
+            </div>
+
+            <!-- CONTEÚDO DA ABA 4: BUSCAS -->
+            <div id="audit-prof-content-searches" class="audit-prof-tab-content" style="display: none;">
+                <div id="audit-prof-searches-container" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="color: var(--text-muted); font-size: 12px;">Carregando buscas...</div>
+                </div>
+            </div>
+
+            <!-- CONTEÚDO DA ABA 5: PEDIDOS -->
+            <div id="audit-prof-content-requests" class="audit-prof-tab-content" style="display: none;">
+                <div id="audit-prof-requests-container" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="color: var(--text-muted); font-size: 12px;">Carregando pedidos...</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- MODAL 1: ADICIONAR FILME / SÉRIE COM TMDB INTELIGENTE -->
     <div class="modal-backdrop" id="admin-modal-add-job" onclick="closeAdminModalOnClick(event, 'admin-modal-add-job')">
@@ -9208,6 +9586,100 @@
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
     <script>
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🛡️ ANONYMOUS VISITOR & AUDIT TRACKING (CLIENT-SIDE)
+        // ═══════════════════════════════════════════════════════════════════════
+        function getOrCreateVisitorId() {
+            let id = localStorage.getItem('bf_visitor_id');
+            if (!id) {
+                id = 'v_' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substring(2)));
+                localStorage.setItem('bf_visitor_id', id);
+            }
+            return id;
+        }
+
+        function getOrCreateSessionId() {
+            let id = sessionStorage.getItem('bf_session_id');
+            if (!id) {
+                id = 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+                sessionStorage.setItem('bf_session_id', id);
+                setTimeout(() => trackAuditEvent('SESSION_STARTED', { userAgent: navigator.userAgent }), 300);
+            }
+            return id;
+        }
+
+        const bfVisitorId = getOrCreateVisitorId();
+        const bfSessionId = getOrCreateSessionId();
+
+        async function trackAuditEvent(eventType, data = {}) {
+            try {
+                const userToken = localStorage.getItem('bf_user_token');
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Visitor-Id': bfVisitorId,
+                    'X-Session-Id': bfSessionId
+                };
+                if (userToken && userToken !== 'public') headers['Authorization'] = 'Bearer ' + userToken;
+
+                await fetch('/api/audit/event', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        eventType,
+                        visitorId: bfVisitorId,
+                        sessionId: bfSessionId,
+                        mediaId: data.mediaId || data.id,
+                        seriesId: data.seriesId,
+                        seasonNum: data.seasonNum || data.season,
+                        episodeNum: data.episodeNum || data.episode,
+                        title: data.title || data.nome,
+                        source: 'website',
+                        metadata: data.metadata || data,
+                        status: data.status || 'success',
+                        error: data.error
+                    })
+                }).catch(() => {});
+            } catch (e) {}
+        }
+
+        let lastHeartbeatTime = 0;
+        async function sendPlaybackHeartbeat(data = {}) {
+            try {
+                const now = Date.now();
+                if (now - lastHeartbeatTime < 10000 && !data.completed) return; // throttle a 10s
+                lastHeartbeatTime = now;
+
+                const userToken = localStorage.getItem('bf_user_token');
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Visitor-Id': bfVisitorId,
+                    'X-Session-Id': bfSessionId
+                };
+                if (userToken && userToken !== 'public') headers['Authorization'] = 'Bearer ' + userToken;
+
+                await fetch('/api/audit/heartbeat', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        sessionId: bfSessionId,
+                        visitorId: bfVisitorId,
+                        mediaId: data.mediaId || data.id,
+                        mediaType: data.mediaType || data.type || 'filme',
+                        title: data.title || data.nome || 'Mídia',
+                        seasonNum: data.seasonNum || data.season || 0,
+                        episodeNum: data.episodeNum || data.episode || 0,
+                        currentPosition: data.currentPosition || data.currentTime || 0,
+                        duration: data.duration || 0,
+                        completed: data.completed || false,
+                        platform: 'website'
+                    })
+                }).catch(() => {});
+            } catch (e) {}
+        }
+
+        // Evento de visita do website ao inicializar
+        setTimeout(() => trackAuditEvent('WEBSITE_VISIT', { hash: window.location.hash, path: window.location.pathname }), 500);
+
         let fullCatalog = { filmes: [], series: [] };
         let adminCatalogData = { filmes: [], series: [] };
         let currentAdminJobs = [];
@@ -14598,6 +15070,16 @@ function initApp() {
                 const key = `bf_prog_${currentPlayingMedia.type || 'midia'}_${currentPlayingMedia.id || 0}_${currentPlayingMedia.season || 0}_${currentPlayingMedia.episode || 0}`;
                 localStorage.setItem(key, Math.floor(video.currentTime));
                 saveVideoProgressToServer(currentPlayingMedia, video.currentTime, video.duration);
+                sendPlaybackHeartbeat({
+                    mediaId: currentPlayingMedia.id,
+                    mediaType: currentPlayingMedia.type,
+                    title: currentPlayingMedia.title || currentPlayingMedia.serieNome || 'Mídia',
+                    seasonNum: currentPlayingMedia.season || 0,
+                    episodeNum: currentPlayingMedia.episode || 0,
+                    currentPosition: video.currentTime,
+                    duration: video.duration,
+                    completed: video.ended || (video.duration > 60 && video.currentTime >= video.duration * 0.9)
+                });
             }
 
             // Auto-Play inteligente estilo Netflix para séries
@@ -16189,6 +16671,11 @@ function initApp() {
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
+        function escapeJsStr(str) {
+            if (!str) return '';
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
         /* ── Fechar Sala (Host) ───────────────────────────────────────────── */
 
         async function hostCloseRoom() {
@@ -16713,7 +17200,499 @@ function initApp() {
             else if (subTabId === 'requests') loadAdminRequests();
             else if (subTabId === 'tickets') loadAdminTickets();
             else if (subTabId === 'catalog') loadAdminCatalog();
+            else if (subTabId === 'audit') loadAuditDashboard();
+        }
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🛡️ ADMIN AUDITORIA & MONITORAMENTO DE CLIENTES
+        // ═══════════════════════════════════════════════════════════════════════
+        let currentAuditPeoplePage = 1;
+        let currentAuditProfileData = null;
+        let auditSearchDebounceTimer = null;
+
+        async function loadAuditDashboard() {
+            try {
+                const rangeSelect = document.getElementById('audit-time-range');
+                const range = rangeSelect ? rangeSelect.value : 'today';
+
+                const res = await fetch(`/api/admin/audit/dashboard?range=${range}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) return;
+
+                const data = await res.json();
+
+                const elReg = document.getElementById('adm-audit-reg-users');
+                const elAnon = document.getElementById('adm-audit-anon-visitors');
+                const elTg = document.getElementById('adm-audit-tg-users');
+                const elAct = document.getElementById('adm-audit-active-now');
+                const elWatch = document.getElementById('adm-audit-watching-now');
+                const elPlays = document.getElementById('adm-audit-plays');
+                const elComp = document.getElementById('adm-audit-completed');
+                const elFavs = document.getElementById('adm-audit-favs');
+                const elSearch = document.getElementById('adm-audit-searches');
+                const elWTime = document.getElementById('adm-audit-watchtime');
+
+                if (elReg) elReg.innerText = data.totalRegisteredUsers || 0;
+                if (elAnon) elAnon.innerText = data.totalAnonymousVisitors || 0;
+                if (elTg) elTg.innerText = data.totalTelegramUsers || 0;
+                if (elAct) elAct.innerText = data.activeUsersNow || 0;
+                if (elWatch) elWatch.innerText = data.usersCurrentlyWatching || 0;
+                if (elPlays) elPlays.innerText = data.playbackStartsInPeriod || 0;
+                if (elComp) elComp.innerText = data.completedEpisodesInPeriod || 0;
+                if (elFavs) elFavs.innerText = data.favoritesInPeriod || 0;
+                if (elSearch) elSearch.innerText = data.searchesInPeriod || 0;
+                if (elWTime) elWTime.innerText = data.totalWatchTimeFormatted || '0m';
+
+                loadAuditPeople(currentAuditPeoplePage);
+                loadAuditContentAnalytics();
+                loadAuditSearches();
+            } catch (e) {
+                console.warn('Erro ao carregar dashboard de auditoria:', e);
+            }
+        }
+
+        function switchAuditView(viewName) {
+            document.querySelectorAll('.audit-inner-view').forEach(v => v.style.display = 'none');
+            const targetView = document.getElementById('audit-view-' + viewName);
+            if (targetView) targetView.style.display = 'block';
+
+            document.getElementById('btn-audit-view-people')?.classList.remove('active');
+            document.getElementById('btn-audit-view-content')?.classList.remove('active');
+            document.getElementById('btn-audit-view-searches')?.classList.remove('active');
+
+            document.getElementById(`btn-audit-view-${viewName}`)?.classList.add('active');
+
+            if (viewName === 'people') loadAuditPeople(1);
+            else if (viewName === 'content') loadAuditContentAnalytics();
+            else if (viewName === 'searches') loadAuditSearches();
+        }
+
+        function debouncedSearchPeople() {
+            clearTimeout(auditSearchDebounceTimer);
+            auditSearchDebounceTimer = setTimeout(() => {
+                loadAuditPeople(1);
+            }, 300);
+        }
+
+        async function loadAuditPeople(page = 1) {
+            currentAuditPeoplePage = page;
+            const tbody = document.getElementById('audit-people-tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px; color: var(--text-muted);">Buscando identidades de clientes...</td></tr>';
+
+            try {
+                const search = document.getElementById('audit-people-search')?.value || '';
+                const platform = document.getElementById('audit-people-platform-filter')?.value || 'all';
+                const status = document.getElementById('audit-people-status-filter')?.value || 'all';
+
+                const url = `/api/admin/audit/people?page=${page}&limit=15&search=${encodeURIComponent(search)}&platform=${platform}&status=${status}`;
+                const res = await fetch(url, { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error('Falha ao buscar clientes.');
+
+                const data = await res.json();
+                const items = data.items || [];
+                const pg = data.pagination || { page: 1, totalPages: 1, totalItems: 0 };
+
+                if (items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum cliente encontrado com os filtros selecionados.</td></tr>';
+                    renderAuditPeoplePagination(pg);
+                    return;
+                }
+
+                tbody.innerHTML = items.map(p => {
+                    let badgeClass = 'rgba(168, 85, 247, 0.2)';
+                    let badgeColor = '#c084fc';
+                    let badgeLabel = '👻 Anônimo';
+
+                    if (p.identityType === 'registered') {
+                        badgeClass = 'rgba(59, 130, 246, 0.2)';
+                        badgeColor = '#60a5fa';
+                        badgeLabel = '👤 Registrado';
+                    } else if (p.identityType === 'telegram') {
+                        badgeClass = 'rgba(14, 165, 233, 0.2)';
+                        badgeColor = '#38bdf8';
+                        badgeLabel = '✈️ Telegram';
+                    }
+
+                    let statusBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; background: rgba(148, 163, 184, 0.15); color: #94a3b8;">💤 Inativo</span>`;
+
+                    if (p.status === 'WATCHING') {
+                        statusBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; background: rgba(245, 158, 11, 0.2); color: #fbbf24;">🍿 WATCHING (${escapeHtml(p.currentActivity?.currentTitle || 'Mídia')})</span>`;
+                    } else if (p.status === 'ACTIVE NOW') {
+                        statusBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; background: rgba(16, 185, 129, 0.2); color: #34d399;">🟢 ACTIVE NOW</span>`;
+                    } else if (p.status === 'RECENT') {
+                        statusBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🕒 Recente</span>`;
+                    }
+
+                    return `
+                        <tr>
+                            <td>
+                                <div style="font-weight: 800; color: #fff; font-size: 13px;">${escapeHtml(p.name)}</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(p.email || p.username || 'Sem e-mail')}</div>
+                            </td>
+                            <td>
+                                <span style="padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; background: ${badgeClass}; color: ${badgeColor};">
+                                    ${badgeLabel}
+                                </span>
+                            </td>
+                            <td>${statusBadge}</td>
+                            <td style="font-weight: 700; color: #fff;">${p.sessionsCount}</td>
+                            <td style="font-weight: 700; color: #38bdf8;">${p.watchTimeFormatted}</td>
+                            <td style="font-weight: 700; color: #fff;">${p.playsCount}</td>
+                            <td>${p.favoritesCount}</td>
+                            <td>${p.requestsCount}</td>
+                            <td style="text-align: right;">
+                                <button class="btn-action" style="padding: 4px 10px; font-size: 11px;" onclick="openAuditPersonProfile('${p.identityKey}', '${p.identityType}')">
+                                    🔍 Ver Perfil
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                renderAuditPeoplePagination(pg);
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #f87171;">Erro ao carregar clientes: ${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderAuditPeoplePagination(pg) {
+            const container = document.getElementById('audit-people-pagination');
+            if (!container) return;
+
+            if (pg.totalPages <= 1) {
+                container.innerHTML = `<span>Total: ${pg.totalItems} identidades</span>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <span>Exibindo página ${pg.page} de ${pg.totalPages} (${pg.totalItems} clientes)</span>
+                <div style="display: flex; gap: 6px;">
+                    <button class="btn-action" style="padding: 4px 10px; font-size: 11px;" ${pg.page <= 1 ? 'disabled' : ''} onclick="loadAuditPeople(${pg.page - 1})">⬅️ Anterior</button>
+                    <button class="btn-action" style="padding: 4px 10px; font-size: 11px;" ${pg.page >= pg.totalPages ? 'disabled' : ''} onclick="loadAuditPeople(${pg.page + 1})">Próxima ➡️</button>
+                </div>
+            `;
+        }
+
+        async function openAuditPersonProfile(identityKey, identityType) {
+            const modal = document.getElementById('audit-person-modal');
+            if (!modal) return;
+
+            modal.classList.add('active');
+
+            try {
+                const res = await fetch(`/api/admin/audit/person/${encodeURIComponent(identityKey)}?type=${identityType}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error('Falha ao obter perfil.');
+
+                const data = await res.json();
+                currentAuditProfileData = data;
+
+                const identity = data.identity || {};
+                const summary = data.activitySummary || {};
+                const live = data.currentActivity || {};
+
+                document.getElementById('audit-profile-name').innerText = identity.name || 'Cliente';
+
+                const badgeEl = document.getElementById('audit-profile-badge');
+                if (badgeEl) {
+                    badgeEl.innerText = identity.identityType === 'registered' ? '👤 Registrado' : (identity.identityType === 'telegram' ? '✈️ Telegram' : '👻 Anônimo');
+                }
+
+                document.getElementById('audit-profile-ids').innerText = `User ID: ${identity.userId || '-'} | Telegram ID: ${identity.telegramId || '-'} | Visitor ID: ${identity.visitorId || '-'}`;
+
+                const liveText = document.getElementById('audit-profile-live-text');
+                const liveBanner = document.getElementById('audit-profile-live-banner');
+                if (live.currentlyWatching) {
+                    if (liveBanner) liveBanner.style.background = 'rgba(245, 158, 11, 0.15)';
+                    if (liveText) liveText.innerText = `🍿 Assistindo agora: ${live.title || 'Mídia'} ${live.seasonNum ? `(T${live.seasonNum}E${live.episodeNum})` : ''}`;
+                } else if (live.onlineStatus === 'ACTIVE') {
+                    if (liveBanner) liveBanner.style.background = 'rgba(16, 185, 129, 0.15)';
+                    if (liveText) liveText.innerText = '🟢 Ativo no site / Telegram neste momento';
+                } else {
+                    if (liveBanner) liveBanner.style.background = 'rgba(148, 163, 184, 0.1)';
+                    if (liveText) liveText.innerText = '💤 Offline / Inativo no momento';
+                }
+
+                document.getElementById('audit-prof-sessions').innerText = summary.totalSessions || 0;
+                document.getElementById('audit-prof-watchtime').innerText = summary.totalWatchTimeFormatted || '0m';
+                document.getElementById('audit-prof-plays').innerText = summary.playbackStarts || 0;
+                document.getElementById('audit-prof-completed').innerText = summary.completedEpisodes || 0;
+                document.getElementById('audit-prof-favs').innerText = summary.favoritesCount || 0;
+                document.getElementById('audit-prof-searches').innerText = summary.searchesCount || 0;
+
+                switchAuditProfileTab('timeline');
+            } catch (e) {
+                showToast('Erro ao carregar perfil do audit: ' + e.message, 'error');
+            }
+        }
+
+        function closeAuditPersonModal() {
+            const modal = document.getElementById('audit-person-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function switchAuditProfileTab(tabName) {
+            document.querySelectorAll('.audit-prof-tab-content').forEach(c => c.style.display = 'none');
+            const target = document.getElementById('audit-prof-content-' + tabName);
+            if (target) target.style.display = 'block';
+
+            document.getElementById('btn-audit-prof-tab-timeline')?.classList.remove('active');
+            document.getElementById('btn-audit-prof-tab-history')?.classList.remove('active');
+            document.getElementById('btn-audit-prof-tab-favs')?.classList.remove('active');
+            document.getElementById('btn-audit-prof-tab-searches')?.classList.remove('active');
+            document.getElementById('btn-audit-prof-tab-requests')?.classList.remove('active');
+
+            document.getElementById(`btn-audit-prof-tab-${tabName}`)?.classList.add('active');
+
+            if (!currentAuditProfileData) return;
+
+            if (tabName === 'timeline') renderProfileTimeline(currentAuditProfileData.identity?.identityKey, currentAuditProfileData.identity?.identityType);
+            else if (tabName === 'history') renderProfileHistory(currentAuditProfileData.watchHistory || []);
+            else if (tabName === 'favs') renderProfileFavorites(currentAuditProfileData.favorites || []);
+            else if (tabName === 'searches') renderProfileSearches(currentAuditProfileData.searchHistory || []);
+            else if (tabName === 'requests') renderProfileRequests(currentAuditProfileData.requests || []);
+        }
+
+        async function renderProfileTimeline(identityKey, identityType) {
+            const container = document.getElementById('audit-prof-timeline-container');
+            if (!container) return;
+
+            container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">Carregando eventos cronológicos...</div>';
+
+            try {
+                const res = await fetch(`/api/admin/audit/person/${encodeURIComponent(identityKey)}/timeline?type=${identityType}&page=1&limit=30`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error('Erro na requisição da linha do tempo.');
+
+                const data = await res.json();
+                const events = data.events || [];
+
+                if (events.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">Nenhum evento registrado nesta linha do tempo.</div>';
+                    return;
+                }
+
+                container.innerHTML = events.map(ev => {
+                    const dt = new Date(ev.timestamp).toLocaleString('pt-BR');
+                    const plat = ev.source === 'telegram' ? '✈️ Telegram' : '🌐 Website';
+
+                    let icon = '📌';
+                    if (ev.eventType.includes('PLAYBACK') || ev.eventType.includes('START')) icon = '▶️';
+                    else if (ev.eventType.includes('SEARCH')) icon = '🔍';
+                    else if (ev.eventType.includes('FAVORITE')) icon = '⭐';
+                    else if (ev.eventType.includes('LOGIN')) icon = '🔐';
+                    else if (ev.eventType.includes('REQUEST')) icon = '🍿';
+                    else if (ev.eventType.includes('COMPLETED')) icon = '✅';
+
+                    return `
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px 14px; display: flex; align-items: flex-start; gap: 12px;">
+                            <div style="font-size: 16px; margin-top: 2px;">${icon}</div>
+                            <div style="flex: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                    <div style="font-size: 12px; font-weight: 800; color: #fff;">${escapeHtml(ev.eventType)}</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">${dt} • ${plat}</div>
+                                </div>
+                                <div style="font-size: 12px; color: #38bdf8; margin-top: 2px; font-weight: 700;">${escapeHtml(ev.title)}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = `<div style="color: #f87171; font-size: 12px; padding: 10px;">Erro: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function renderProfileHistory(history) {
+            const tbody = document.getElementById('audit-prof-history-tbody');
+            if (!tbody) return;
+
+            if (history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum histórico de reprodução.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = history.map(h => {
+                const prog = h.progressPercentage || 0;
+                const dt = h.lastWatchedAt ? new Date(h.lastWatchedAt).toLocaleDateString('pt-BR') : '-';
+                return `
+                    <tr>
+                        <td style="font-weight: 700; color: #fff;">${escapeHtml(h.title)} ${h.seasonNum ? `(T${h.seasonNum}E${h.episodeNum})` : ''}</td>
+                        <td style="color: var(--text-muted);">${new Date(h.startedAt).toLocaleDateString('pt-BR')}</td>
+                        <td style="color: var(--text-muted);">${dt}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                                    <div style="width: ${prog}%; height: 100%; background: #38bdf8;"></div>
+                                </div>
+                                <span>${prog}%</span>
+                            </div>
+                        </td>
+                        <td style="color: #38bdf8; font-weight: 700;">${h.watchTimeFormatted}</td>
+                        <td>${h.platform === 'telegram' ? '✈️ TG' : '🌐 Web'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderProfileFavorites(favs) {
+            const container = document.getElementById('audit-prof-favs-container');
+            if (!container) return;
+
+            if (favs.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; padding: 10px;">Nenhum favorito adicionado.</div>';
+                return;
+            }
+
+            container.innerHTML = favs.map(f => `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 13px; font-weight: 800; color: #fff;">⭐ ${escapeHtml(f.title)}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${new Date(f.addedAt).toLocaleDateString('pt-BR')}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderProfileSearches(searches) {
+            const container = document.getElementById('audit-prof-searches-container');
+            if (!container) return;
+
+            if (searches.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; padding: 10px;">Nenhuma busca recente.</div>';
+                return;
+            }
+
+            container.innerHTML = searches.map(s => `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 13px; font-weight: 700; color: #fff;">🔍 "${escapeHtml(s.query)}"${s.resultsCount === 0 ? ' <span style="color:#f87171;font-size:11px;">(0 resultados)</span>' : ''}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${new Date(s.timestamp).toLocaleString('pt-BR')} • ${s.platform}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderProfileRequests(requests) {
+            const container = document.getElementById('audit-prof-requests-container');
+            if (!container) return;
+
+            if (requests.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; padding: 10px;">Nenhum pedido solicitado.</div>';
+                return;
+            }
+
+            container.innerHTML = requests.map(r => `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 13px; font-weight: 800; color: #fff;">🍿 ${escapeHtml(r.title)}</div>
+                    <div style="font-size: 11px; color: #34d399; font-weight: 700;">${escapeHtml(r.status || 'pendente')}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadAuditContentAnalytics() {
+            try {
+                const range = document.getElementById('audit-time-range')?.value || 'today';
+                const res = await fetch(`/api/admin/audit/content?range=${range}`, { headers: getAuthHeaders() });
+                if (!res.ok) return;
+
+                const data = await res.json();
+
+                const elWatched = document.getElementById('audit-content-most-watched');
+                if (elWatched) {
+                    const list = data.mostWatched || [];
+                    if (list.length === 0) elWatched.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Sem reproduções no período.</div>';
+                    else elWatched.innerHTML = list.map(item => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+                            <span style="font-weight:700;color:#fff;">${escapeHtml(item.title)}</span>
+                            <span style="color:#38bdf8;font-weight:800;">${item.totalWatchTimeFormatted} (${item.playCount}x)</span>
+                        </div>
+                    `).join('');
+                }
+
+                const elSearched = document.getElementById('audit-content-most-searched');
+                if (elSearched) {
+                    const list = data.mostSearched || [];
+                    if (list.length === 0) elSearched.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Sem buscas no período.</div>';
+                    else elSearched.innerHTML = list.map(item => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+                            <span style="font-weight:700;color:#fff;">"${escapeHtml(item.query)}"</span>
+                            <span style="color:#fbbf24;font-weight:800;">${item.searchCount} pesquisas</span>
+                        </div>
+                    `).join('');
+                }
+
+                const elFavs = document.getElementById('audit-content-most-favorited');
+                if (elFavs) {
+                    const list = data.mostFavorited || [];
+                    if (list.length === 0) elFavs.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Sem favoritos no período.</div>';
+                    else elFavs.innerHTML = list.map(item => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+                            <span style="font-weight:700;color:#fff;">${escapeHtml(item.title)}</span>
+                            <span style="color:#f87171;font-weight:800;">${item.favCount}x ⭐</span>
+                        </div>
+                    `).join('');
+                }
+
+                const elAbandon = document.getElementById('audit-content-abandonment');
+                if (elAbandon) {
+                    const list = data.abandonment || [];
+                    if (list.length === 0) elAbandon.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Sem dados de abandono suficientes.</div>';
+                    else elAbandon.innerHTML = list.map(item => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+                            <span style="font-weight:700;color:#fff;">${escapeHtml(item.title)}</span>
+                            <span style="color:#f87171;font-weight:800;">Taxa: ${item.abandonmentRate} (${item.starts} inícios)</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar estatísticas de conteúdo do audit:', e);
+            }
+        }
+
+        async function loadAuditSearches() {
+            const tbody = document.getElementById('audit-searches-tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Analisando buscas sem resultado...</td></tr>';
+
+            try {
+                const range = document.getElementById('audit-time-range')?.value || 'today';
+                const res = await fetch(`/api/admin/audit/content?range=${range}`, { headers: getAuthHeaders() });
+                if (!res.ok) return;
+
+                const data = await res.json();
+                const list = data.noResultSearches || [];
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: #34d399;">✅ Nenhuma busca com zero resultados registrada neste período! Todas as pesquisas encontraram conteúdo.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = list.map(item => `
+                    <tr>
+                        <td style="font-weight: 800; color: #f87171; font-size: 13px;">"${escapeHtml(item.query)}"</td>
+                        <td style="font-weight: 700; color: #fff;">${item.count} buscas</td>
+                        <td style="color: var(--text-muted);">${new Date(item.lastSearched).toLocaleString('pt-BR')}</td>
+                        <td>${escapeHtml(item.platforms || 'website')}</td>
+                        <td style="text-align: right;">
+                            <button class="btn-action btn-action-primary" style="padding: 4px 10px; font-size: 11px;" onclick="quickRequestFromSearch('${escapeJsStr(item.query)}')">
+                                + Adicionar / Enfileirar
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #f87171;">Erro: ${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+
+        function quickRequestFromSearch(query) {
+            switchAdminSubTab('queue');
+            setTimeout(() => {
+                const input = document.getElementById('manual-job-title-input');
+                if (input) input.value = query;
+            }, 300);
         }
 
         async function loadAdminStats() {

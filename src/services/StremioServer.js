@@ -14,6 +14,7 @@ const PriorityService = require('./PriorityService');
 const ProgressManager = require('../managers/ProgressManager');
 const CatalogoManager = require('../managers/CatalogoManager');
 const db = require('../database/db');
+const auditService = require('./AuditService');
 
 class StremioServer {
     constructor(catalogoManager, assinaturaManager, queueManager = null, pedidosManager = null, port = config.STREMIO_PORT || 7000) {
@@ -633,6 +634,118 @@ class StremioServer {
             }
         });
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🛡️ ROTAS DA AUDITORIA DE CLIENTES (ADMIN AUDITORIA)
+        // ═══════════════════════════════════════════════════════════════════════
+        this.app.get('/api/admin/audit/dashboard', auth, async (req, res) => {
+            try {
+                const range = req.query.range || 'today';
+                const metrics = await auditService.getDashboardMetrics(range, req.query.startDate, req.query.endDate);
+                res.json(metrics);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/audit/people', auth, async (req, res) => {
+            try {
+                const result = await auditService.getPersonList(req.query, { page: req.query.page, limit: req.query.limit });
+                res.json(result);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/audit/person/:id', auth, async (req, res) => {
+            try {
+                const profile = await auditService.getPersonProfile(req.params.id, req.query.type);
+                res.json(profile);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/audit/person/:id/timeline', auth, async (req, res) => {
+            try {
+                const timeline = await auditService.getPersonTimeline(req.params.id, req.query.type, req.query, { page: req.query.page, limit: req.query.limit });
+                res.json(timeline);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/admin/audit/content', auth, async (req, res) => {
+            try {
+                const analytics = await auditService.getContentAnalytics(req.query.range, req.query.startDate, req.query.endDate);
+                res.json(analytics);
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 📥 ENDPOINTS DE INGESTÃO DE EVENTOS E HEARTBEAT CLIENT-SIDE
+        // ═══════════════════════════════════════════════════════════════════════
+        this.app.post('/api/audit/event', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const user = req.user;
+                const visitorId = req.headers['x-visitor-id'] || req.body.visitorId || null;
+                const sessionId = req.headers['x-session-id'] || req.body.sessionId || null;
+
+                await auditService.logEvent({
+                    identityType: user ? 'registered' : (req.body.telegramId ? 'telegram' : 'anonymous'),
+                    userId: user?.id,
+                    telegramId: req.body.telegramId || user?.telegram_id,
+                    visitorId,
+                    eventType: req.body.eventType || req.body.event_type || 'PAGE_VIEW',
+                    source: req.body.source || 'website',
+                    sessionId,
+                    mediaId: req.body.mediaId,
+                    seriesId: req.body.seriesId,
+                    seasonNum: req.body.seasonNum,
+                    episodeNum: req.body.episodeNum,
+                    title: req.body.title,
+                    metadata: req.body.metadata || {},
+                    status: req.body.status || 'success',
+                    error: req.body.error
+                });
+
+                res.json({ success: true });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
+        this.app.post('/api/audit/heartbeat', authService.userAuthMiddleware(true), async (req, res) => {
+            try {
+                const user = req.user;
+                const visitorId = req.headers['x-visitor-id'] || req.body.visitorId || null;
+                const sessionId = req.headers['x-session-id'] || req.body.sessionId || null;
+
+                const result = await auditService.recordPlaybackProgress({
+                    sessionId,
+                    identityType: user ? 'registered' : (req.body.telegramId ? 'telegram' : 'anonymous'),
+                    userId: user?.id,
+                    telegramId: req.body.telegramId || user?.telegram_id,
+                    visitorId,
+                    mediaId: req.body.mediaId,
+                    mediaType: req.body.mediaType || 'filme',
+                    title: req.body.title,
+                    seasonNum: req.body.seasonNum,
+                    episodeNum: req.body.episodeNum,
+                    currentPosition: req.body.currentPosition || req.body.currentTime,
+                    duration: req.body.duration,
+                    completed: req.body.completed,
+                    platform: req.body.platform || 'website',
+                    device: req.body.device || req.headers['user-agent']
+                });
+
+                res.json(result);
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
         // 6. Gerenciamento do Catálogo
         this.app.get('/api/admin/catalogo', auth, async (req, res) => {
             try {
@@ -1041,6 +1154,15 @@ class StremioServer {
                     detalhes: (detalhes || '').trim(),
                     isAssinante
                 });
+
+                auditService.logEvent({
+                    identityType: userId ? 'registered' : 'anonymous',
+                    userId: userId || null,
+                    eventType: 'REQUEST_CREATED',
+                    source: 'website',
+                    title: nome.trim(),
+                    metadata: { tipo: tipo || 'filme', ano, idioma, detalhes }
+                }).catch(() => {});
 
                 res.json({
                     success: true,
@@ -2376,6 +2498,18 @@ class StremioServer {
             const { itemId, itemType } = req.body;
             if (!itemId) return res.status(400).json({ error: 'ID do item é obrigatório.' });
             const result = await authService.toggleFavorite(req.user.id, itemId, itemType || 'filme');
+            if (result.success) {
+                auditService.logEvent({
+                    identityType: 'registered',
+                    userId: req.user.id,
+                    telegramId: req.user.telegram_id,
+                    eventType: result.isFavorite ? 'FAVORITE_ADDED' : 'FAVORITE_REMOVED',
+                    source: 'website',
+                    mediaId: String(itemId),
+                    title: title || `Mídia #${itemId}`,
+                    metadata: { itemType: itemType || 'filme' }
+                }).catch(() => {});
+            }
             res.json(result);
         });
 

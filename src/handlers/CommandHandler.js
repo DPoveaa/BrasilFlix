@@ -1,6 +1,7 @@
 const config = require('../../config');
 const TelegramUploader = require('../services/TelegramUploader');
 const authService = require('../services/AuthService');
+const auditService = require('../services/AuditService');
 
 class CommandHandler {
     constructor(bot, pedidosManager, catalogoManager, assinaturaManager, queueManager = null, favoritosManager = null) {
@@ -29,6 +30,15 @@ class CommandHandler {
 
     async handleStart(msg, callbackQuery = null) {
         const userId = msg.from.id;
+
+        auditService.logEvent({
+            identityType: 'telegram',
+            telegramId: userId,
+            eventType: 'CONVERSATION_STARTED',
+            source: 'telegram',
+            title: '/start',
+            metadata: { username: msg.from.username, firstName: msg.from.first_name }
+        }).catch(() => {});
         const chatId = msg.chat.id;
         const text = msg.text || '';
         const parts = text.split(' ');
@@ -736,6 +746,15 @@ class CommandHandler {
         }
 
         const resultados = await this.catalogoManager.buscarItemComTMDB(termo);
+
+        auditService.logEvent({
+            identityType: 'telegram',
+            telegramId: userId,
+            eventType: 'TELEGRAM_SEARCH',
+            source: 'telegram',
+            title: termo,
+            metadata: { resultsCount: resultados.length, query: termo }
+        }).catch(() => {});
 
         if (resultados.length > 0) {
             this.resultadosBuscaTemp.set(userId, resultados);
@@ -1980,6 +1999,15 @@ class CommandHandler {
         const chatId = callbackQuery.message.chat.id;
         const userId = callbackQuery.from.id;
         const data = callbackQuery.data;
+
+        auditService.logEvent({
+            identityType: 'telegram',
+            telegramId: userId,
+            eventType: 'TELEGRAM_BUTTON_CLICK',
+            source: 'telegram',
+            title: data,
+            metadata: { callbackData: data, username: callbackQuery.from.username }
+        }).catch(() => {});
         
         try {
             // Cancelar operação em andamento se não for o botão de cancelar
