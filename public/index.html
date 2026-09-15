@@ -19034,10 +19034,11 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 } else {
                     // SÉRIE com acordeão de temporadas e episódios
                     const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
+                    const totalEpsEsperados = (i.temporadas || []).reduce((acc, t) => acc + (t.expectedEpisodios || t.episodios?.length || 0), 0);
                     const missingCount = (i.temporadas || []).reduce((acc, t) => acc + (t.episodiosFaltantes?.length || 0), 0);
                     const missingBadge = missingCount > 0 
-                        ? `<span style="color: #ef4444; font-weight: 700;">⚠️ Faltam ${missingCount} ep${missingCount > 1 ? 's' : ''}</span>`
-                        : `<span style="color: #10b981; font-weight: 700;">✅ Completo</span>`;
+                        ? `<span style="color: #ef4444; font-weight: 700;">⚠️ Faltam ${missingCount} ep${missingCount > 1 ? 's' : ''} (${totalEps}/${totalEpsEsperados > 0 ? totalEpsEsperados : '?'})</span>`
+                        : `<span style="color: #10b981; font-weight: 700;">✅ Completo (${totalEps} eps)</span>`;
                     const qual = i.qualidade || '1080p Full HD';
 
                     const epsComTelegram = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.hasTelegramLink).length, 0);
@@ -19050,11 +19051,12 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                     const accordionId = `serie-eps-${i.id}`;
 
                     const epsListHtml = (i.temporadas || []).map(t => {
+                        const expectedLabel = t.expectedEpisodios ? `${(t.episodios || []).length}/${t.expectedEpisodios}` : `${(t.episodios || []).length}`;
                         return `
                             <div style="margin-bottom: 10px;">
                                 <div style="font-weight: 800; font-size: 12px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-                                    <span>Temporada ${t.numero} (${(t.episodios || []).length} episódios)</span>
-                                    ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Faltantes: Eps ${t.episodiosFaltantes.join(', ')}</span>` : ''}
+                                    <span>Temporada ${t.numero} (${expectedLabel} episódios${t.episodiosFaltantes?.length > 0 ? ` — <span style="color:#ef4444">${t.episodiosFaltantes.length} faltando</span>` : ''})</span>
+                                    ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Eps faltantes: ${t.episodiosFaltantes.join(', ')}</span>` : ''}
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 4px;">
                                     ${(t.episodios || []).map(e => {

@@ -2331,6 +2331,12 @@ class CatalogoManager {
                 temporadasMap.get(ep.temporada).push(ep);
             }
 
+            // Recupera temporadas_meta para obter o total esperado de eps por temporada via TMDB
+            let tempMetaForCalc = s.temporadas_meta || {};
+            if (typeof tempMetaForCalc === 'string') {
+                try { tempMetaForCalc = JSON.parse(tempMetaForCalc); } catch (_) { tempMetaForCalc = {}; }
+            }
+
             const totalSeasons = Math.max(s.total_temporadas || 1, ...Array.from(temporadasMap.keys()), 1);
             const temporadas = [];
 
@@ -2338,8 +2344,21 @@ class CatalogoManager {
                 const seasonEps = temporadasMap.get(tNum) || [];
                 const epNumsFound = new Set(seasonEps.map(e => e.numero));
                 const maxEpNum = Math.max(0, ...Array.from(epNumsFound));
+
+                // Obtém o total esperado de episódios desta temporada via temporadas_meta
+                const tMetaRaw = tempMetaForCalc[String(tNum)] || tempMetaForCalc[tNum] || null;
+                const expectedEpsTotal = tMetaRaw
+                    ? (typeof tMetaRaw === 'object'
+                        ? (tMetaRaw.totalEps || tMetaRaw.totalEpisodios || tMetaRaw.episodiosContagem || 0)
+                        : (parseInt(tMetaRaw, 10) || 0))
+                    : 0;
+
+                // Calcula episódios faltantes considerando o total real da temporada (não só lacunas internas)
+                // Se temos o total esperado via TMDB, verifica todos os eps de 1 até expectedEpsTotal
+                // Caso contrário, verifica lacunas entre 1 e o máximo encontrado
+                const ceilEp = expectedEpsTotal > 0 ? expectedEpsTotal : maxEpNum;
                 const missingEpNums = [];
-                for (let eIdx = 1; eIdx <= maxEpNum; eIdx++) {
+                for (let eIdx = 1; eIdx <= ceilEp; eIdx++) {
                     if (!epNumsFound.has(eIdx)) {
                         missingEpNums.push(eIdx);
                     }
@@ -2349,6 +2368,7 @@ class CatalogoManager {
                     numero: tNum,
                     totalEpisodios: seasonEps.length,
                     maxEpisodioNumero: maxEpNum,
+                    expectedEpisodios: expectedEpsTotal > 0 ? expectedEpsTotal : null,
                     episodiosFaltantes: missingEpNums,
                     episodios: seasonEps
                 });
