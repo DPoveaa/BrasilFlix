@@ -1203,8 +1203,8 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 // 6. Watchdog de lentidão persistente (com proteção contra oscilação pontual):
-                // Se o download já estiver na reta final (>= 60%), JAMAIS aborta se a previsão for razoável (<= 1h)
-                const isFinishing = fileProg >= 0.60 && remainingSec <= 3600;
+                // Se o download já atingiu 50% ou mais (isNearEnd), JAMAIS aborta por lentidão enquanto houver tráfego ativo
+                const isFinishing = isNearEnd || fileProg >= 0.50;
                 const isSlow = !isFinishing && ((speedMB < 0.15 && remainingSec > 5400) || (speedMB < 0.08));
                 if (isSlow) {
                     if (!slowStartTime) {
