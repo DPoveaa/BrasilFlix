@@ -74,7 +74,7 @@ class QueueManager extends EventEmitter {
             if (allowed) {
                 const modoDesc = mode === 'eco' ? 'ECONÔMICO (QoS Residencial - Sem Impacto na Rede)' : 'DESEMPENHO MÁXIMO (Velocidade Total)';
                 console.log(`⏰ [Scheduler -> Queue] Esteira operando em Modo ${modoDesc} (${reason}).`);
-                
+
                 // Atualiza em tempo real a taxa de banda e limites de downloads em andamento sem interromper o fluxo
                 DownloaderManager.applyModeLimitsToActiveDownloads(mode);
 
@@ -228,7 +228,7 @@ class QueueManager extends EventEmitter {
                         totalEpsNestaTemporada = seasonInfo.episodios.length;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             const nextEp = currentEp + 1;
             if (nextEp <= totalEpsNestaTemporada) {
@@ -382,7 +382,7 @@ class QueueManager extends EventEmitter {
                         toCancel.add(job.id);
                         reasons[job.id] = `Filme já catalogado (${pref})`;
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             // ── 3. JOBS TRAVADOS (crash recovery contínuo) ───────────────────────────
@@ -456,14 +456,14 @@ class QueueManager extends EventEmitter {
                     job.status = 'queued';
                     job.progress = 0;
                     job.progressDetails = 'Aguardando janela de download...';
-                    this.saveJob(job).catch(() => {});
+                    this.saveJob(job).catch(() => { });
                     this.activeJobs.delete(jobId);
                 } else if (job.status === 'uploading') {
                     console.log(`⏸️ [Scheduler Pausa] Segurando upload de "${job.title}".`);
                     job.status = 'queued';
                     job.progress = 100;
                     job.progressDetails = '100% Otimizado. Aguardando janela de upload...';
-                    this.saveJob(job).catch(() => {});
+                    this.saveJob(job).catch(() => { });
                     this.activeJobs.delete(jobId);
                 }
             }
@@ -488,7 +488,7 @@ class QueueManager extends EventEmitter {
                     excessJob.status = 'queued';
                     excessJob.progress = 0;
                     excessJob.progressDetails = 'Aguardando vez na esteira (1 download por vez)...';
-                    this.saveJob(excessJob).catch(() => {});
+                    this.saveJob(excessJob).catch(() => { });
                     this.activeJobs.delete(excessJob.id);
                 }
             }
@@ -501,7 +501,7 @@ class QueueManager extends EventEmitter {
                     excessJob.status = 'queued';
                     excessJob.progress = 100;
                     excessJob.progressDetails = '100% Otimizado. Aguardando vez no upload...';
-                    this.saveJob(excessJob).catch(() => {});
+                    this.saveJob(excessJob).catch(() => { });
                     this.activeJobs.delete(excessJob.id);
                 }
             }
@@ -736,7 +736,7 @@ class QueueManager extends EventEmitter {
                     }
                 }
                 this.sortQueue();
-                this.saveJob(existing).catch(() => {});
+                this.saveJob(existing).catch(() => { });
                 setImmediate(() => this.processNext());
                 return existing;
             }
@@ -747,7 +747,7 @@ class QueueManager extends EventEmitter {
                 existing.userId = job.userId;
                 existing.username = job.username;
                 this.sortQueue();
-                this.saveJob(existing).catch(() => {});
+                this.saveJob(existing).catch(() => { });
             }
 
             console.log(`ℹ️ [Fila] Trabalho para "${job.title}" ${type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já existe na esteira (ID: ${existing.id}, Status: ${existing.status}). Evitando duplicata.`);
@@ -853,10 +853,10 @@ class QueueManager extends EventEmitter {
 
         this.queue.push(job);
         this.sortQueue();
-        this.saveJob(job).catch(() => {});
+        this.saveJob(job).catch(() => { });
 
         console.log(`📌 Novo trabalho na fila: "${job.title}" [Áudio: ${job.audioPreference}, Prioridade: ${job.priority}] (Total na fila: ${this.queue.length})`);
-        
+
         // Inicia processamento se ocioso
         this.processNext();
         return job;
@@ -884,17 +884,17 @@ class QueueManager extends EventEmitter {
                     const sId = itemSalvo?.id || '';
                     const callbackAssistir = (p.tipo === 'serie' || tipo === 'serie') ? `info_serie_${sId}` : `info_filme_${sId}`;
                     const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
-                                     `🎬 *${p.nome}*\n` +
-                                     `✨ *Qualidade:* 1080p Full HD\n` +
-                                     `🔊 *Versão:* Dublado / Legendado\n\n` +
-                                     `O título que você pediu já está disponível no catálogo para assistir! 🍿`;
+                        `🎬 *${p.nome}*\n` +
+                        `✨ *Qualidade:* 1080p Full HD\n` +
+                        `🔊 *Versão:* Dublado / Legendado\n\n` +
+                        `O título que você pediu já está disponível no catálogo para assistir! 🍿`;
 
                     this.bot.sendMessage(p.userId, msgPedido, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [[{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]]
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         } catch (e) {
@@ -922,8 +922,8 @@ class QueueManager extends EventEmitter {
         if (this.queue.length === 0) return null;
 
         // Inclui jobs em queued e também jobs em processing/downloading/uploading que ficaram órfãos (sem worker ativo)
-        const queuedJobs = this.queue.filter(j => 
-            (j.status === 'queued' || j.status === 'processing' || j.status === 'downloading' || j.status === 'uploading') && 
+        const queuedJobs = this.queue.filter(j =>
+            (j.status === 'queued' || j.status === 'processing' || j.status === 'downloading' || j.status === 'uploading') &&
             !this.activeJobs.has(j.id)
         );
         if (queuedJobs.length === 0) return null;
@@ -989,7 +989,7 @@ class QueueManager extends EventEmitter {
                                 j.status = 'completed';
                                 j.progress = 100;
                                 j.progressDetails = 'Já catalogado anteriormente';
-                                this.saveJob(j).catch(() => {});
+                                this.saveJob(j).catch(() => { });
                                 this.queue = this.queue.filter(q => q.id !== j.id);
                                 continue;
                             }
@@ -1015,7 +1015,7 @@ class QueueManager extends EventEmitter {
                                 j.status = 'completed';
                                 j.progress = 100;
                                 j.progressDetails = 'Já catalogado anteriormente';
-                                this.saveJob(j).catch(() => {});
+                                this.saveJob(j).catch(() => { });
                                 this.queue = this.queue.filter(q => q.id !== j.id);
                                 continue;
                             }
@@ -1050,17 +1050,17 @@ class QueueManager extends EventEmitter {
             const isUserOrder = Number(j.priority || 4) <= 2 && (j.userId || j.isManualAdd);
             const isUpgrade = j.isUpgrade || j.extraData?.isUpgrade || j.priority === PRIORITIES.CAM_UPGRADE || j.priority === PRIORITIES.UPGRADE_DUB;
             const isMicrodrama = j.isMicrodrama || j.extraData?.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.subtipo === 'microdrama' || j.category === 'Microdrama' || j.generos?.includes('Microdrama') || (j.runtime && j.runtime < 5);
-            const isAnime = !isMicrodrama && (j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) || 
-                            j.generos?.includes('Animação') || j.generos?.includes('Anime') || 
-                            j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
-                            KNOWN_ANIME_TITLES.test(j.title || '') ||
-                            /anime|shonen|seinen|isekai|kimetsu/i.test(j.title || ''));
-            const isDorama = !isAnime && !isMicrodrama && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' || 
-                             j.originalLanguage === 'ko' || j.originalLanguage === 'zh' || 
-                             j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' || 
-                             j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama') ||
-                             KNOWN_DORAMA_TITLES.test(j.title || ''));
-            
+            const isAnime = !isMicrodrama && (j.isAnime || j.extraData?.isAnime || j.category === 'Anime' || j.genreIds?.includes(16) ||
+                j.generos?.includes('Animação') || j.generos?.includes('Anime') ||
+                j.originalLanguage === 'ja' || j.idiomaOriginal === 'ja' ||
+                KNOWN_ANIME_TITLES.test(j.title || '') ||
+                /anime|shonen|seinen|isekai|kimetsu/i.test(j.title || ''));
+            const isDorama = !isAnime && !isMicrodrama && (j.isDorama || j.extraData?.isDorama || j.category === 'Dorama' ||
+                j.originalLanguage === 'ko' || j.originalLanguage === 'zh' ||
+                j.idiomaOriginal === 'ko' || j.idiomaOriginal === 'zh' ||
+                j.title?.toLowerCase().includes('dorama') || j.generos?.includes('Dorama') ||
+                KNOWN_DORAMA_TITLES.test(j.title || ''));
+
             if (isUserOrder || isUpgrade) return 'upgrade_ou_pedido';
             if (isMicrodrama) return 'microdrama';
             if (isAnime) return 'anime';
@@ -1415,7 +1415,7 @@ class QueueManager extends EventEmitter {
         // Validação de Existência Prévia para Filmes (evita rebaixar filmes que já estão 100% no catálogo ou baixar CAMs duplicados)
         if (job.type === 'filme' && !job.isUpgrade && !job.extraData?.isUpgrade) {
             const filmeExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') ||
-                                  this.catalogoManager.buscarItemExato(job.title, 'filme');
+                this.catalogoManager.buscarItemExato(job.title, 'filme');
             if (filmeExistente) {
                 const pref = job.audioPreference || 'dublado';
                 const temDublado = filmeExistente.isDublado || !!filmeExistente.versoes?.dublado;
@@ -1444,8 +1444,8 @@ class QueueManager extends EventEmitter {
             const pref = job.audioPreference || 'dublado';
 
             const serieExistente = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie', metadata.tmdbId) ||
-                                  this.catalogoManager.buscarItemExato(job.title, 'serie', metadata.tmdbId) ||
-                                  this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId || job.tmdbId);
+                this.catalogoManager.buscarItemExato(job.title, 'serie', metadata.tmdbId) ||
+                this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId || job.tmdbId);
             if (serieExistente) {
                 // Coleta todos os episódios que já estão ativos em outros workers para não colidir
                 const activeEpKeys = new Set();
@@ -1465,7 +1465,7 @@ class QueueManager extends EventEmitter {
                 // Busca de forma estritamente cronológica o PRIMEIRO episódio faltante ou pendente de Dublado por temporada
                 for (let s = 1; s <= totalTemporadas; s++) {
                     const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
-                    
+
                     let totalEpsInS = 10;
                     try {
                         if (metadata.tmdbId) {
@@ -1479,7 +1479,7 @@ class QueueManager extends EventEmitter {
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // Passo A: Encontra o primeiro episódio totalmente faltante na Temporada S que não esteja ativo em outro worker
                     for (let ep = 1; ep <= totalEpsInS; ep++) {
@@ -1577,7 +1577,7 @@ class QueueManager extends EventEmitter {
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         const isMicro = job.isMicrodrama || job.extraData?.isMicrodrama || job.subtipo === 'microdrama' || metadata.isMicrodrama || metadata.subtipo === 'microdrama' || (job.totalEpisodiosEsperados && job.totalEpisodiosEsperados >= 30 && (tmdbExpectedDurationMin || 0) <= 10);
         const defaultExpectedMin = job.type === 'filme' ? 90 : (isMicro ? 3 : (metadata.duracaoMinutos || 45));
@@ -1601,13 +1601,13 @@ class QueueManager extends EventEmitter {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const optInfo = await VideoProcessor.getVideoInfo(optimizedPath);
                     if (optInfo && optInfo.duration >= finalMinSec) {
-                        console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024*1024*1024)).toFixed(2)} GB, ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
+                        console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024 * 1024 * 1024)).toFixed(2)} GB, ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
                         videoInfo = optInfo;
                         bestSource = job.bestSource || { title: job.title, source: 'Cache Local', audio: '1080p Full HD' };
                         langInfo = job.langInfo || langInfo;
                     } else {
-                        console.warn(`🧹 Arquivo otimizado incompleto (${optInfo?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado para reprocessar.`);
+                        console.warn(`🧹 Arquivo otimizado incompleto (${optInfo?.durationFormatted || '0s'} < ${Math.round(finalMinSec / 60)} min esperados) descartado para reprocessar.`);
                         await DownloaderManager.cleanupFile(optimizedPath);
                         optimizedPath = null;
                         job.optimizedPath = null;
@@ -1651,14 +1651,14 @@ class QueueManager extends EventEmitter {
                         const VideoProcessor = require('../services/VideoProcessor');
                         const info = await VideoProcessor.getVideoInfo(rawFilePath);
                         if (info && info.duration >= finalMinSec) {
-                            console.log(`📁 Utilizando arquivo bruto existente (${(rawStat.size / (1024*1024*1024)).toFixed(2)} GB, ${info.durationFormatted}): ${path.basename(rawFilePath)}`);
+                            console.log(`📁 Utilizando arquivo bruto existente (${(rawStat.size / (1024 * 1024 * 1024)).toFixed(2)} GB, ${info.durationFormatted}): ${path.basename(rawFilePath)}`);
                             resumeFromRaw = true;
                             videoInfo = info;
                             downloadedMedia = { filePath: rawFilePath, fileName: path.basename(rawFilePath), sizeBytes: rawStat.size };
                             bestSource = job.bestSource || { title: job.title, source: 'Upload Manual', audio: job.audioPreference === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)' };
                             langInfo = job.langInfo || langInfo;
                         } else {
-                            console.warn(`🧹 Arquivo bruto em disco incompleto (${info?.durationFormatted || '0s'} < ${Math.round(finalMinSec/60)} min esperados) descartado.`);
+                            console.warn(`🧹 Arquivo bruto em disco incompleto (${info?.durationFormatted || '0s'} < ${Math.round(finalMinSec / 60)} min esperados) descartado.`);
                             await DownloaderManager.cleanupFile(rawFilePath);
                             rawFilePath = null;
                             job.rawFilePath = null;
@@ -1695,7 +1695,7 @@ class QueueManager extends EventEmitter {
                                 if (['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext)) {
                                     try {
                                         allTempFiles.push({ path: full, name: entry.name, size: fs.statSync(full).size });
-                                    } catch (err) {}
+                                    } catch (err) { }
                                 }
                             }
                         }
@@ -1732,7 +1732,7 @@ class QueueManager extends EventEmitter {
                     });
 
                     if (matchedFile) {
-                        console.log(`⚡ [REUTILIZAÇÃO DE PACK] Episódio T${job.season || 1}E${job.episode || 1} já disponível no disco (${(matchedFile.size / (1024*1024)).toFixed(1)} MB): ${matchedFile.name}`);
+                        console.log(`⚡ [REUTILIZAÇÃO DE PACK] Episódio T${job.season || 1}E${job.episode || 1} já disponível no disco (${(matchedFile.size / (1024 * 1024)).toFixed(1)} MB): ${matchedFile.name}`);
                         resumeFromRaw = true;
                         rawFilePath = matchedFile.path;
                         job.rawFilePath = rawFilePath;
@@ -1784,7 +1784,7 @@ class QueueManager extends EventEmitter {
                             if (r.is_legendado || !!(v.legendado?.messageId || v.legendado?.fileId)) jaPossuiLegendadoFilme = true;
                             if (r.is_dublado || !!(v.dublado?.messageId || v.dublado?.fileId)) jaPossuiDubladoFilme = true;
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
 
                 const serieExist = job.type === 'serie' ? (this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie', metadata.tmdbId) || this.catalogoManager.buscarItemExato(job.title, 'serie', metadata.tmdbId) || this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId)) : null;
@@ -1836,109 +1836,290 @@ class QueueManager extends EventEmitter {
                     }];
                 } else {
                     let forcarNaoCam = jaTemCam;
-                if (job.type === 'filme' && metadata.tmdbId) {
-                    try {
-                        const relStatus = await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference === 'dublado');
-                        if (!relStatus.isTheatricalOnly) {
-                            forcarNaoCam = true; // Filme já teve estreia digital/streaming/blu-ray: rejeita categoricamente versões CAM de cinema
-                        }
-                    } catch (e) {}
-                }
-
-                const isAnimeFlag = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
-
-                // Para animes com temporadas separadas no TMDB (ex: Bleach T2 = "Guerra Sangrenta de Mil Anos"),
-                // passa o nome da temporada para que o AnimeExtractor possa buscar com o título correto nos sites.
-                const targetSeasonNum = job.season || 1;
-                let tmdbSeasonName = null;
-                if (isAnimeFlag && targetSeasonNum > 1 && metadata.temporadas) {
-                    const seasonInfo = metadata.temporadas.find(t => t.numero === targetSeasonNum);
-                    if (seasonInfo && seasonInfo.nome && !seasonInfo.nome.match(/^temporada\s+\d+$/i)) {
-                        tmdbSeasonName = seasonInfo.nome; // ex: "Guerra Sangrenta de Mil Anos"
-                    }
-                }
-
-                const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
-                sources = await MediaSearchService.search(job.title, job.type, {
-                    nomeOriginal: metadata.nomeOriginal,
-                    ano: metadata.ano,
-                    tmdbId: metadata.tmdbId,
-                    imdbId: metadata.imdbId,
-                    season: targetSeasonNum,
-                    episode: job.episode || 1,
-                    audioPreference: isMicroFlag ? 'legendado' : (job.audioPreference || 'dublado'),
-                    allowOriginalAudio: isMicroFlag ? true : undefined,
-                    forcarNaoCam: forcarNaoCam,
-                    ignorarFallbackLegendado: jaPossuiLegendado,
-                    ignorarFallbackDublado: jaPossuiDublado,
-                    isAnime: isAnimeFlag,
-                    isDorama: !!(job.isDorama || metadata.isDorama),
-                    isMicrodrama: isMicroFlag,
-                    originalLanguage: isMicroFlag ? 'zh' : (job.originalLanguage || metadata.original_language || metadata.originalLanguage || null),
-                    tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
-                });
-
-                if (jaTemCam || forcarNaoCam) {
-                    const nonCamSources = sources.filter(s => !s.isCam);
-                    if (nonCamSources.length > 0) {
-                        sources = nonCamSources;
-                    } else if (jaTemCam) {
-                        console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
-                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
-                        return;
-                    }
-                }
-
-                // Se o item já possui Legendado e o job busca Dublado, descarta estritamente fontes Legendadas
-                if (job.audioPreference === 'dublado' && jaPossuiLegendado) {
-                    sources = sources.filter(s => s.isDublado);
-                    if (sources.length === 0) {
-                        console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.progressDetails = 'Mantida versão Legendada existente (sem fonte Dublada no momento)';
-                        await this.saveJob(job);
-                        this.queue = this.queue.filter(j => j.id !== job.id);
-                        return;
-                    }
-                }
-
-                // Se o item já possui Dublado e o job busca Legendado, descarta estritamente fontes Dubladas
-                if (job.audioPreference === 'legendado' && jaPossuiDublado) {
-                    sources = sources.filter(s => s.isLegendado);
-                    if (sources.length === 0) {
-                        console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Dublada no catálogo e nenhuma fonte Legendada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.progressDetails = 'Mantida versão Dublada existente (sem fonte Legendada no momento)';
-                        await this.saveJob(job);
-                        this.queue = this.queue.filter(j => j.id !== job.id);
-                        return;
-                    }
-                }
-            }
-
-            if (sources.length === 0) {
-                // ── Fallback Automático: Dublado → Legendado ─────────────────────────────
-                // Se o job pediu 'dublado' mas nenhuma fonte dublada existe E ainda não há
-                // versão catalogada (primeiro download), tenta novamente com 'legendado'.
-                // Isso evita falhas para doramas, animes e filmes estrangeiros sem dublagem PT-BR.
-                if (job.audioPreference === 'dublado' && !job.isUpgrade) {
-                    // Reavalia presença no catálogo (pode ter sido computado em escopo diferente)
-                    const _filmeExist2 = job.type === 'filme' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') : null;
-                    const _serieExist2 = job.type === 'serie' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') : null;
-                    const _ep2 = job.type === 'serie' && _serieExist2 ? this.catalogoManager.buscarEpisodio(_serieExist2.id, job.season || 1, job.episode || 1) : null;
-                    const _jaTemDub = job.type === 'serie'
-                        ? !!(_ep2 && (_ep2.isDublado || !!_ep2.versoes?.dublado))
-                        : !!(_filmeExist2 && (_filmeExist2.isDublado || !!_filmeExist2.versoes?.dublado));
-                    const _jaTemLeg = job.type === 'serie'
-                        ? !!(_ep2 && (_ep2.isLegendado || !!_ep2.versoes?.legendado))
-                        : !!(_filmeExist2 && (_filmeExist2.isLegendado || !!_filmeExist2.versoes?.legendado));
-
-                    if (!_jaTemDub && !_jaTemLeg) {
-                        console.log(`ℹ️ [FALLBACK LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} — Nenhuma fonte DUBLADA encontrada. Esta obra provavelmente não possui dublagem PT-BR. Tentando versão LEGENDADA...`);
+                    if (job.type === 'filme' && metadata.tmdbId) {
                         try {
-                            const _isAnime2 = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
+                            const relStatus = await TMDBService.checkDigitalReleaseStatus(metadata.tmdbId, job.audioPreference === 'dublado');
+                            if (!relStatus.isTheatricalOnly) {
+                                forcarNaoCam = true; // Filme já teve estreia digital/streaming/blu-ray: rejeita categoricamente versões CAM de cinema
+                            }
+                        } catch (e) { }
+                    }
+
+                    const isAnimeFlag = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
+
+                    // Para animes com temporadas separadas no TMDB (ex: Bleach T2 = "Guerra Sangrenta de Mil Anos"),
+                    // passa o nome da temporada para que o AnimeExtractor possa buscar com o título correto nos sites.
+                    const targetSeasonNum = job.season || 1;
+                    let tmdbSeasonName = null;
+                    if (isAnimeFlag && targetSeasonNum > 1 && metadata.temporadas) {
+                        const seasonInfo = metadata.temporadas.find(t => t.numero === targetSeasonNum);
+                        if (seasonInfo && seasonInfo.nome && !seasonInfo.nome.match(/^temporada\s+\d+$/i)) {
+                            tmdbSeasonName = seasonInfo.nome; // ex: "Guerra Sangrenta de Mil Anos"
+                        }
+                    }
+
+                    const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
+                    sources = await MediaSearchService.search(job.title, job.type, {
+                        nomeOriginal: metadata.nomeOriginal,
+                        ano: metadata.ano,
+                        tmdbId: metadata.tmdbId,
+                        imdbId: metadata.imdbId,
+                        season: targetSeasonNum,
+                        episode: job.episode || 1,
+                        audioPreference: isMicroFlag ? 'legendado' : (job.audioPreference || 'dublado'),
+                        allowOriginalAudio: isMicroFlag ? true : undefined,
+                        forcarNaoCam: forcarNaoCam,
+                        ignorarFallbackLegendado: jaPossuiLegendado,
+                        ignorarFallbackDublado: jaPossuiDublado,
+                        isAnime: isAnimeFlag,
+                        isDorama: !!(job.isDorama || metadata.isDorama),
+                        isMicrodrama: isMicroFlag,
+                        originalLanguage: isMicroFlag ? 'zh' : (job.originalLanguage || metadata.original_language || metadata.originalLanguage || null),
+                        tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
+                    });
+
+                    if (jaTemCam || forcarNaoCam) {
+                        const nonCamSources = sources.filter(s => !s.isCam);
+                        if (nonCamSources.length > 0) {
+                            sources = nonCamSources;
+                        } else if (jaTemCam) {
+                            console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
+                            await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                            return;
+                        }
+                    }
+
+                    // Se o item já possui Legendado e o job busca Dublado, descarta estritamente fontes Legendadas
+                    if (job.audioPreference === 'dublado' && jaPossuiLegendado) {
+                        sources = sources.filter(s => s.isDublado);
+                        if (sources.length === 0) {
+                            console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                            job.status = 'completed';
+                            job.progress = 100;
+                            job.progressDetails = 'Mantida versão Legendada existente (sem fonte Dublada no momento)';
+                            await this.saveJob(job);
+                            this.queue = this.queue.filter(j => j.id !== job.id);
+                            return;
+                        }
+                    }
+
+                    // Se o item já possui Dublado e o job busca Legendado, descarta estritamente fontes Dubladas
+                    if (job.audioPreference === 'legendado' && jaPossuiDublado) {
+                        sources = sources.filter(s => s.isLegendado);
+                        if (sources.length === 0) {
+                            console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Dublada no catálogo e nenhuma fonte Legendada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                            job.status = 'completed';
+                            job.progress = 100;
+                            job.progressDetails = 'Mantida versão Dublada existente (sem fonte Legendada no momento)';
+                            await this.saveJob(job);
+                            this.queue = this.queue.filter(j => j.id !== job.id);
+                            return;
+                        }
+                    }
+                }
+
+                if (sources.length === 0) {
+                    // ── Fallback Automático: Dublado → Legendado ─────────────────────────────
+                    // Se o job pediu 'dublado' mas nenhuma fonte dublada existe E ainda não há
+                    // versão catalogada (primeiro download), tenta novamente com 'legendado'.
+                    // Isso evita falhas para doramas, animes e filmes estrangeiros sem dublagem PT-BR.
+                    if (job.audioPreference === 'dublado' && !job.isUpgrade) {
+                        // Reavalia presença no catálogo (pode ter sido computado em escopo diferente)
+                        const _filmeExist2 = job.type === 'filme' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'filme') : null;
+                        const _serieExist2 = job.type === 'serie' ? this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie') : null;
+                        const _ep2 = job.type === 'serie' && _serieExist2 ? this.catalogoManager.buscarEpisodio(_serieExist2.id, job.season || 1, job.episode || 1) : null;
+                        const _jaTemDub = job.type === 'serie'
+                            ? !!(_ep2 && (_ep2.isDublado || !!_ep2.versoes?.dublado))
+                            : !!(_filmeExist2 && (_filmeExist2.isDublado || !!_filmeExist2.versoes?.dublado));
+                        const _jaTemLeg = job.type === 'serie'
+                            ? !!(_ep2 && (_ep2.isLegendado || !!_ep2.versoes?.legendado))
+                            : !!(_filmeExist2 && (_filmeExist2.isLegendado || !!_filmeExist2.versoes?.legendado));
+
+                        if (!_jaTemDub && !_jaTemLeg) {
+                            console.log(`ℹ️ [FALLBACK LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} — Nenhuma fonte DUBLADA encontrada. Esta obra provavelmente não possui dublagem PT-BR. Tentando versão LEGENDADA...`);
+                            try {
+                                const _isAnime2 = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
+                                const legSources = await MediaSearchService.search(job.title, job.type, {
+                                    nomeOriginal: metadata.nomeOriginal,
+                                    ano: metadata.ano,
+                                    tmdbId: metadata.tmdbId,
+                                    imdbId: metadata.imdbId,
+                                    season: job.season || 1,
+                                    episode: job.episode || 1,
+                                    audioPreference: 'legendado',
+                                    allowOriginalAudio: true,
+                                    isAnime: _isAnime2,
+                                    isDorama: !!(job.isDorama || metadata.isDorama),
+                                });
+                                if (legSources.length > 0) {
+                                    console.log(`✅ [FALLBACK LEGENDADO] Encontradas ${legSources.length} fonte(s) legendada(s) para "${job.title}". Alterando preferência para Legendado.`);
+                                    sources = legSources;
+                                    job.audioPreference = 'legendado';
+                                    job._fallbackToLegendado = true; // Sinaliza para o pós-processamento
+                                }
+                            } catch (fbErr) {
+                                console.warn(`⚠️ [FALLBACK LEGENDADO] Erro ao buscar fontes legendadas para "${job.title}":`, fbErr.message);
+                            }
+                        }
+                    }
+
+                    if (sources.length === 0) {
+                        if (job.type === 'serie') {
+                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        }
+                        throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
+                    }
+                }
+
+
+                // Se a preferência for estritamente Legendado, filtra apenas fontes legendadas
+                if (job.audioPreference === 'legendado') {
+                    const legSources = sources.filter(s => s.isLegendado);
+                    if (legSources.length > 0) {
+                        sources = legSources;
+                    }
+                }
+
+                // 3. Download com Fallback Automático entre as melhores opções (tenta até 8 fontes com timeout global de 25 min)
+                job.status = 'downloading';
+                await this.saveJob(job);
+
+                // Factory que cria a função de verificação de episódio faltante considerando o áudio real da fonte.
+                // sourceIsDublado=true  → fonte tem faixa PT-BR dublada → verifica se falta dublado no catálogo
+                // sourceIsDublado=false → fonte é legendada/original → verifica se falta legendado no catálogo
+                //   (evita re-baixar episódios já catalogados como legendado quando o release não tem dublagem)
+                const makeIsEpisodeMissing = (sourceIsDublado) => (epNumber) => {
+                    if (job.type !== 'serie') return false;
+                    const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
+                        || (metadata.tmdbId ? this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId) : null);
+                    if (!serieExist) return true;
+
+                    const sNum = parseInt(job.season || 1, 10);
+                    const temp = (serieExist.temporadas || []).find(t => t.numero === sNum);
+                    if (!temp) return true;
+
+                    const ep = (temp.episodios || []).find(e => Number(e.numero) === Number(epNumber));
+                    if (!ep) return true;
+
+                    // Checa presença de cada versão diretamente nos campos do episódio
+                    const epHasLeg = !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId || ep.is_legendado);
+                    const epHasDub = !!(ep.versoes?.dublado?.messageId || ep.versoes?.dublado?.fileId || ep.is_dublado);
+
+                    if (sourceIsDublado === false) {
+                        // Fonte só tem legenda/original → só baixar se ainda NÃO temos a versão legendada
+                        return !epHasLeg;
+                    }
+
+                    // Fonte tem dublagem → verificar o que o job pediu
+                    const reqPref = job.audioPreference || 'dublado';
+                    if (reqPref === 'dublado') {
+                        return !epHasDub;
+                    } else if (reqPref === 'legendado') {
+                        return !epHasLeg;
+                    }
+                    return !epHasDub && !epHasLeg;
+                };
+
+                let lastError = null;
+                const maxAttempts = Math.min(8, sources.length);
+                for (let i = 0; i < maxAttempts; i++) {
+                    const currentSource = sources[i];
+                    console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio || 'PT-BR'})`);
+
+                    try {
+                        if (currentSource.magnet) {
+                            downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
+                                job.progress = progress.percent;
+                                job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
+                            }, {
+                                jobId: job.id,
+                                title: job.title,
+                                season: job.season,
+                                episode: job.episode,
+                                type: job.type,
+                                audio: currentSource.audio,
+                                isDublado: currentSource.isDublado,
+                                audioPreference: job.audioPreference || 'geral',
+                                attemptIndex: i,
+                                totalAttempts: maxAttempts,
+                                mode: SchedulerService.getActiveMode(),
+                                isEpisodeMissing: makeIsEpisodeMissing(currentSource.isDublado ?? true),
+                                isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
+                                isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
+                                runtime: metadata.runtime || metadata.duracao,
+                                totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
+                            });
+
+                        } else if (currentSource.url) {
+                            const cleanUrlPath = currentSource.url.split('?')[0];
+                            const baseName = path.basename(cleanUrlPath) || 'video.mp4';
+                            const fileName = `${Date.now()}_${baseName.endsWith('.mp4') || baseName.endsWith('.mkv') ? baseName : `${baseName}.mp4`}`;
+
+                            downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
+                                job.progress = progress.percent;
+                                job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed || 'Web CDN'})`;
+                            }, {
+                                jobId: job.id,
+                                title: job.title,
+                                season: job.season,
+                                episode: job.episode,
+                                type: job.type,
+                                provider: currentSource.provider || 'Web CDN',
+                                referer: currentSource.referer || 'https://animesdigital.org/',
+                                audio: currentSource.audio,
+                                isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
+                                audioPreference: job.audioPreference || 'dublado',
+                                mode: SchedulerService.getActiveMode(),
+                                isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
+                                isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
+                                runtime: metadata.runtime || metadata.duracao
+                            });
+                        }
+
+                        if (downloadedMedia && downloadedMedia.redundant) {
+                            console.log(`ℹ️ [Queue Worker] "${job.title}" já está 100% atualizado no catálogo com a versão solicitada.`);
+                            job.status = 'completed';
+                            job.progress = 100;
+                            job.progressDetails = 'Conteúdo já existente no catálogo';
+                            await this.saveJob(job);
+                            this.queue = this.queue.filter(j => j.id !== job.id);
+                            return;
+                        }
+
+                        if (downloadedMedia && downloadedMedia.filePath) {
+                            bestSource = currentSource;
+                            break;
+                        }
+                    } catch (err) {
+                        if (err.message === 'DOWNLOAD_CANCELLED') {
+                            console.log(`⏹️ [Queue Worker] Download de "${job.title}" cancelado ordenadamente devido a mudança de modo/pausa.`);
+                            return;
+                        }
+                        console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
+                        lastError = err;
+                    }
+                }
+
+                if (!downloadedMedia || !bestSource) {
+                    // Se a busca inicial era Dublado e todas as fontes falharam:
+                    // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
+                    if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
+                        console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada com seeders foi encontrada no momento. Mantendo versão atual.`);
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Mantida versão Legendada existente (fontes Dubladas sem seeders)';
+                        if (job.type === 'serie') {
+                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        }
+                        await this.saveJob(job);
+                        this.queue = this.queue.filter(j => j.id !== job.id);
+                        return;
+                    }
+
+                    // Se a busca inicial era Dublado e todas as fontes falharam (e NÃO temos legendado ainda): tenta fallback para 1080p Legendado (OpenSubtitles PT-BR)
+                    if (job.audioPreference === 'dublado' && !jaPossuiLegendado && !job.isUpgrade) {
+                        console.log(`⚠️ Todas as fontes dubladas para "${job.title}" estavam sem seeders. Buscando fallback 1080p Legendado com OpenSubtitles PT-BR...`);
+                        try {
                             const legSources = await MediaSearchService.search(job.title, job.type, {
                                 nomeOriginal: metadata.nomeOriginal,
                                 ano: metadata.ano,
@@ -1947,371 +2128,190 @@ class QueueManager extends EventEmitter {
                                 season: job.season || 1,
                                 episode: job.episode || 1,
                                 audioPreference: 'legendado',
-                                allowOriginalAudio: true,
-                                isAnime: _isAnime2,
-                                isDorama: !!(job.isDorama || metadata.isDorama),
+                                allowOriginalAudio: true
                             });
-                            if (legSources.length > 0) {
-                                console.log(`✅ [FALLBACK LEGENDADO] Encontradas ${legSources.length} fonte(s) legendada(s) para "${job.title}". Alterando preferência para Legendado.`);
-                                sources = legSources;
-                                job.audioPreference = 'legendado';
-                                job._fallbackToLegendado = true; // Sinaliza para o pós-processamento
+
+                            const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub || s.isOriginal);
+                            const totalLegAttempts = Math.min(6, candidatesLeg.length);
+                            for (let j = 0; j < totalLegAttempts; j++) {
+                                const currentLeg = candidatesLeg[j];
+                                console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}/${totalLegAttempts}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
+                                try {
+                                    if (currentLeg.magnet) {
+                                        downloadedMedia = await DownloaderManager.downloadTorrent(currentLeg.magnet, (progress) => {
+                                            job.progress = progress.percent;
+                                            job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
+                                        }, {
+                                            jobId: job.id,
+                                            title: job.title,
+                                            season: job.season,
+                                            episode: job.episode,
+                                            type: job.type,
+                                            audio: currentLeg.audio || 'Legendado (PT-BR)',
+                                            isDublado: false,
+                                            audioPreference: 'legendado',
+                                            attemptIndex: j,
+                                            totalAttempts: totalLegAttempts,
+                                            mode: SchedulerService.getActiveMode(),
+                                            isEpisodeMissing: makeIsEpisodeMissing(false),
+                                            totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
+                                        });
+                                    }
+                                    if (downloadedMedia && downloadedMedia.redundant) {
+                                        console.log(`ℹ️ [Queue Worker] Fallback de "${job.title}" ignorado pois o conteúdo já existe no catálogo.`);
+                                        job.status = 'completed';
+                                        job.progress = 100;
+                                        job.progressDetails = 'Conteúdo já existente no catálogo';
+                                        await this.saveJob(job);
+                                        this.queue = this.queue.filter(j => j.id !== job.id);
+                                        return;
+                                    }
+                                    if (downloadedMedia && downloadedMedia.filePath) {
+                                        bestSource = currentLeg;
+                                        break;
+                                    }
+                                } catch (errLeg) {
+                                    if (errLeg.message === 'DOWNLOAD_CANCELLED') {
+                                        console.log(`⏹️ [Queue Worker] Fallback de "${job.title}" cancelado ordenadamente.`);
+                                        return;
+                                    }
+                                    console.warn(`⚠️ [Fallback Legendado] Fonte [${j + 1}] falhou: ${errLeg.message}`);
+                                    lastError = errLeg;
+                                }
                             }
-                        } catch (fbErr) {
-                            console.warn(`⚠️ [FALLBACK LEGENDADO] Erro ao buscar fontes legendadas para "${job.title}":`, fbErr.message);
+                        } catch (eLeg) {
+                            console.warn('⚠️ Falha ao buscar fallback legendado:', eLeg.message);
                         }
                     }
                 }
 
-                if (sources.length === 0) {
+
+                if (!downloadedMedia || !bestSource) {
                     if (job.type === 'serie') {
                         this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Adicionando ao Swarm Watcher...`);
                     }
-                    throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
-                }
-            }
+                    // Registra na watchlist persistente para baixar assim que houver sementes ativas
+                    SwarmWatcher.addToWatchlist({
+                        title: metadata.nome || job.title,
+                        type: job.type,
+                        tmdbId: metadata.tmdbId,
+                        imdbId: metadata.imdbId,
+                        season: job.season,
+                        episode: job.episode,
+                        audioPreference: job.audioPreference || 'dublado',
+                        userId: job.userId,
+                        username: job.username,
+                        reason: 'no_seeders'
+                    }).catch(() => { });
 
-
-            // Se a preferência for estritamente Legendado, filtra apenas fontes legendadas
-            if (job.audioPreference === 'legendado') {
-                const legSources = sources.filter(s => s.isLegendado);
-                if (legSources.length > 0) {
-                    sources = legSources;
-                }
-            }
-
-            // 3. Download com Fallback Automático entre as melhores opções (tenta até 8 fontes com timeout global de 25 min)
-            job.status = 'downloading';
-            await this.saveJob(job);
-
-            // Factory que cria a função de verificação de episódio faltante considerando o áudio real da fonte.
-            // sourceIsDublado=true  → fonte tem faixa PT-BR dublada → verifica se falta dublado no catálogo
-            // sourceIsDublado=false → fonte é legendada/original → verifica se falta legendado no catálogo
-            //   (evita re-baixar episódios já catalogados como legendado quando o release não tem dublagem)
-            const makeIsEpisodeMissing = (sourceIsDublado) => (epNumber) => {
-                if (job.type !== 'serie') return false;
-                const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
-                    || (metadata.tmdbId ? this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId) : null);
-                if (!serieExist) return true;
-
-                const sNum = parseInt(job.season || 1, 10);
-                const temp = (serieExist.temporadas || []).find(t => t.numero === sNum);
-                if (!temp) return true;
-
-                const ep = (temp.episodios || []).find(e => Number(e.numero) === Number(epNumber));
-                if (!ep) return true;
-
-                // Checa presença de cada versão diretamente nos campos do episódio
-                const epHasLeg = !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId || ep.is_legendado);
-                const epHasDub = !!(ep.versoes?.dublado?.messageId  || ep.versoes?.dublado?.fileId  || ep.is_dublado);
-
-                if (sourceIsDublado === false) {
-                    // Fonte só tem legenda/original → só baixar se ainda NÃO temos a versão legendada
-                    return !epHasLeg;
+                    throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
                 }
 
-                // Fonte tem dublagem → verificar o que o job pediu
-                const reqPref = job.audioPreference || 'dublado';
-                if (reqPref === 'dublado') {
-                    return !epHasDub;
-                } else if (reqPref === 'legendado') {
-                    return !epHasLeg;
-                }
-                return !epHasDub && !epHasLeg;
-            };
+                rawFilePath = downloadedMedia.filePath;
+                job.rawFilePath = rawFilePath;
+                job.expectedSize = downloadedMedia.sizeBytes;
+                job.bestSource = bestSource;
+                await this.saveJob(job);
 
-            let lastError = null;
-            const maxAttempts = Math.min(8, sources.length);
-            for (let i = 0; i < maxAttempts; i++) {
-                const currentSource = sources[i];
-                console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio || 'PT-BR'})`);
+                // Se for um Season Pack com múltiplos episódios indexados, enfileira e vincula os outros episódios ao SSD local
+                if (job.type === 'serie' && downloadedMedia?.isPack && downloadedMedia?.episodeMap) {
+                    const epMap = downloadedMedia.episodeMap;
+                    const totalPackEps = Object.keys(epMap).length;
+                    console.log(`📦 [PACK DE TEMPORADA] ${totalPackEps} episódios baixados e indexados localmente no SSD para "${job.title}" (T${job.season || 1})!`);
 
-                try {
-                    if (currentSource.magnet) {
-                        downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
-                            job.progress = progress.percent;
-                            job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                        }, {
-                            jobId: job.id,
-                            title: job.title,
-                            season: job.season,
-                            episode: job.episode,
-                            type: job.type,
-                            audio: currentSource.audio,
-                            isDublado: currentSource.isDublado,
-                            audioPreference: job.audioPreference || 'geral',
-                            attemptIndex: i,
-                            totalAttempts: maxAttempts,
-                            mode: SchedulerService.getActiveMode(),
-                            isEpisodeMissing: makeIsEpisodeMissing(currentSource.isDublado ?? true),
-                            isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
-                            isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
-                            runtime: metadata.runtime || metadata.duracao,
-                            totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
-                        });
+                    for (const [epNumStr, epInfo] of Object.entries(epMap)) {
+                        const epNum = parseInt(epNumStr, 10);
+                        if (epNum !== (job.episode || 1) && fs.existsSync(epInfo.filePath)) {
+                            const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
+                                || this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId);
+                            const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
+                            const reqPref = job.audioPreference || 'dublado';
+                            const CatalogoManager = require('./CatalogoManager');
+                            let isAlreadySatisfied = jaCatalogado && (
+                                (reqPref === 'dublado' && CatalogoManager.hasValidDubbedMedia(jaCatalogado)) ||
+                                (reqPref === 'legendado' && CatalogoManager.hasValidSubtitledMedia(jaCatalogado)) ||
+                                (reqPref === 'geral' && (CatalogoManager.hasValidDubbedMedia(jaCatalogado) || CatalogoManager.hasValidSubtitledMedia(jaCatalogado)))
+                            );
 
-                    } else if (currentSource.url) {
-                        const cleanUrlPath = currentSource.url.split('?')[0];
-                        const baseName = path.basename(cleanUrlPath) || 'video.mp4';
-                        const fileName = `${Date.now()}_${baseName.endsWith('.mp4') || baseName.endsWith('.mkv') ? baseName : `${baseName}.mp4`}`;
-
-                        downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
-                            job.progress = progress.percent;
-                            job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed || 'Web CDN'})`;
-                        }, {
-                            jobId: job.id,
-                            title: job.title,
-                            season: job.season,
-                            episode: job.episode,
-                            type: job.type,
-                            provider: currentSource.provider || 'Web CDN',
-                            referer: currentSource.referer || 'https://animesdigital.org/',
-                            audio: currentSource.audio,
-                            isDublado: currentSource.isDublado ?? (currentSource.audio ? currentSource.audio.includes('Dublado') : true),
-                            audioPreference: job.audioPreference || 'dublado',
-                            mode: SchedulerService.getActiveMode(),
-                            isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
-                            isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
-                            runtime: metadata.runtime || metadata.duracao
-                        });
-                    }
-
-                    if (downloadedMedia && downloadedMedia.redundant) {
-                        console.log(`ℹ️ [Queue Worker] "${job.title}" já está 100% atualizado no catálogo com a versão solicitada.`);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.progressDetails = 'Conteúdo já existente no catálogo';
-                        await this.saveJob(job);
-                        this.queue = this.queue.filter(j => j.id !== job.id);
-                        return;
-                    }
-
-                    if (downloadedMedia && downloadedMedia.filePath) {
-                        bestSource = currentSource;
-                        break;
-                    }
-                } catch (err) {
-                    if (err.message === 'DOWNLOAD_CANCELLED') {
-                        console.log(`⏹️ [Queue Worker] Download de "${job.title}" cancelado ordenadamente devido a mudança de modo/pausa.`);
-                        return;
-                    }
-                    console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
-                    lastError = err;
-                }
-            }
-
-            if (!downloadedMedia || !bestSource) {
-                // Se a busca inicial era Dublado e todas as fontes falharam:
-                // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
-                if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
-                    console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada com seeders foi encontrada no momento. Mantendo versão atual.`);
-                    job.status = 'completed';
-                    job.progress = 100;
-                    job.progressDetails = 'Mantida versão Legendada existente (fontes Dubladas sem seeders)';
-                    if (job.type === 'serie') {
-                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                    }
-                    await this.saveJob(job);
-                    this.queue = this.queue.filter(j => j.id !== job.id);
-                    return;
-                }
-
-                // Se a busca inicial era Dublado e todas as fontes falharam (e NÃO temos legendado ainda): tenta fallback para 1080p Legendado (OpenSubtitles PT-BR)
-                if (job.audioPreference === 'dublado' && !jaPossuiLegendado && !job.isUpgrade) {
-                    console.log(`⚠️ Todas as fontes dubladas para "${job.title}" estavam sem seeders. Buscando fallback 1080p Legendado com OpenSubtitles PT-BR...`);
-                    try {
-                        const legSources = await MediaSearchService.search(job.title, job.type, {
-                            nomeOriginal: metadata.nomeOriginal,
-                            ano: metadata.ano,
-                            tmdbId: metadata.tmdbId,
-                            imdbId: metadata.imdbId,
-                            season: job.season || 1,
-                            episode: job.episode || 1,
-                            audioPreference: 'legendado',
-                            allowOriginalAudio: true
-                        });
-
-                        const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub || s.isOriginal);
-                        const totalLegAttempts = Math.min(6, candidatesLeg.length);
-                        for (let j = 0; j < totalLegAttempts; j++) {
-                            const currentLeg = candidatesLeg[j];
-                            console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}/${totalLegAttempts}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
-                            try {
-                                if (currentLeg.magnet) {
-                                    downloadedMedia = await DownloaderManager.downloadTorrent(currentLeg.magnet, (progress) => {
-                                        job.progress = progress.percent;
-                                        job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                                    }, {
-                                        jobId: job.id,
-                                        title: job.title,
-                                        season: job.season,
-                                        episode: job.episode,
-                                        type: job.type,
-                                        audio: currentLeg.audio || 'Legendado (PT-BR)',
-                                        isDublado: false,
-                                        audioPreference: 'legendado',
-                                        attemptIndex: j,
-                                        totalAttempts: totalLegAttempts,
-                                        mode: SchedulerService.getActiveMode(),
-                                        isEpisodeMissing: makeIsEpisodeMissing(false),
-                                        totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
-                                    });
-                                }
-                                if (downloadedMedia && downloadedMedia.redundant) {
-                                    console.log(`ℹ️ [Queue Worker] Fallback de "${job.title}" ignorado pois o conteúdo já existe no catálogo.`);
-                                    job.status = 'completed';
-                                    job.progress = 100;
-                                    job.progressDetails = 'Conteúdo já existente no catálogo';
-                                    await this.saveJob(job);
-                                    this.queue = this.queue.filter(j => j.id !== job.id);
-                                    return;
-                                }
-                                if (downloadedMedia && downloadedMedia.filePath) {
-                                    bestSource = currentLeg;
-                                    break;
-                                }
-                            } catch (errLeg) {
-                                if (errLeg.message === 'DOWNLOAD_CANCELLED') {
-                                    console.log(`⏹️ [Queue Worker] Fallback de "${job.title}" cancelado ordenadamente.`);
-                                    return;
-                                }
-                                console.warn(`⚠️ [Fallback Legendado] Fonte [${j + 1}] falhou: ${errLeg.message}`);
-                                lastError = errLeg;
-                            }
-                        }
-                    } catch (eLeg) {
-                        console.warn('⚠️ Falha ao buscar fallback legendado:', eLeg.message);
-                    }
-                }
-            }
-
-
-            if (!downloadedMedia || !bestSource) {
-                if (job.type === 'serie') {
-                    this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
-                    console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Adicionando ao Swarm Watcher...`);
-                }
-                // Registra na watchlist persistente para baixar assim que houver sementes ativas
-                SwarmWatcher.addToWatchlist({
-                    title: metadata.nome || job.title,
-                    type: job.type,
-                    tmdbId: metadata.tmdbId,
-                    imdbId: metadata.imdbId,
-                    season: job.season,
-                    episode: job.episode,
-                    audioPreference: job.audioPreference || 'dublado',
-                    userId: job.userId,
-                    username: job.username,
-                    reason: 'no_seeders'
-                }).catch(() => {});
-
-                throw new Error(`Todas as fontes testadas falharam ou estavam sem seeders: ${lastError?.message || 'Sem conexão'}`);
-            }
-
-            rawFilePath = downloadedMedia.filePath;
-            job.rawFilePath = rawFilePath;
-            job.expectedSize = downloadedMedia.sizeBytes;
-            job.bestSource = bestSource;
-            await this.saveJob(job);
-
-            // Se for um Season Pack com múltiplos episódios indexados, enfileira e vincula os outros episódios ao SSD local
-            if (job.type === 'serie' && downloadedMedia?.isPack && downloadedMedia?.episodeMap) {
-                const epMap = downloadedMedia.episodeMap;
-                const totalPackEps = Object.keys(epMap).length;
-                console.log(`📦 [PACK DE TEMPORADA] ${totalPackEps} episódios baixados e indexados localmente no SSD para "${job.title}" (T${job.season || 1})!`);
-
-                for (const [epNumStr, epInfo] of Object.entries(epMap)) {
-                    const epNum = parseInt(epNumStr, 10);
-                    if (epNum !== (job.episode || 1) && fs.existsSync(epInfo.filePath)) {
-                        const serieExist = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie')
-                            || this.catalogoManager.buscarSeriePorTmdb(metadata.tmdbId);
-                        const jaCatalogado = serieExist ? this.catalogoManager.buscarEpisodio(serieExist.id, job.season || 1, epNum) : null;
-                        const reqPref = job.audioPreference || 'dublado';
-                        const CatalogoManager = require('./CatalogoManager');
-                        let isAlreadySatisfied = jaCatalogado && (
-                            (reqPref === 'dublado' && CatalogoManager.hasValidDubbedMedia(jaCatalogado)) ||
-                            (reqPref === 'legendado' && CatalogoManager.hasValidSubtitledMedia(jaCatalogado)) ||
-                            (reqPref === 'geral' && (CatalogoManager.hasValidDubbedMedia(jaCatalogado) || CatalogoManager.hasValidSubtitledMedia(jaCatalogado)))
-                        );
-
-                        // Fallback: verifica no banco de dados diretamente para cobrir episódios que existem mas não aparecem em memória
-                        if (!isAlreadySatisfied) {
-                            try {
-                                const sRes = await db.query(
-                                    `SELECT e.id, e.is_dublado, e.is_legendado, e.versoes FROM episodios e 
+                            // Fallback: verifica no banco de dados diretamente para cobrir episódios que existem mas não aparecem em memória
+                            if (!isAlreadySatisfied) {
+                                try {
+                                    const sRes = await db.query(
+                                        `SELECT e.id, e.is_dublado, e.is_legendado, e.versoes FROM episodios e 
                                      INNER JOIN series s ON s.id = e.serie_id 
                                      WHERE (LOWER(s.nome) = LOWER($1) OR s.tmdb_id = $2) 
                                        AND e.temporada_numero = $3 AND e.numero = $4 LIMIT 1`,
-                                    [metadata.nome || job.title, metadata.tmdbId || 0, job.season || 1, epNum]
-                                );
-                                if (sRes.rows.length > 0) {
-                                    const ep = sRes.rows[0];
-                                    const versoes = typeof ep.versoes === 'string' ? JSON.parse(ep.versoes || '{}') : (ep.versoes || {});
-                                    const epDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
-                                    const epLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
-                                    const isPackOnlyLegendado = (bestSource?.isLegendado || job.audioPreference === 'legendado') && !bestSource?.isDublado;
-                                    const jaTemLeg = (jaCatalogado && (jaCatalogado.isLegendado || !!jaCatalogado.versoes?.legendado)) || epLeg;
-                                    if (isPackOnlyLegendado && jaTemLeg) {
-                                        console.log(`🛡️ [Pack Skip] "${job.title}" T${job.season || 1}E${epNum} já possui versão Legendada e este pacote não contém áudio Dublado. Não será reenfileirado.`);
-                                        isAlreadySatisfied = true;
-                                    } else if ((reqPref === 'dublado' && epDub) || (reqPref === 'legendado' && epLeg) || (reqPref === 'geral' && (epDub || epLeg))) {
-                                        console.log(`🛡️ [DB Pack Skip] "${job.title}" T${job.season || 1}E${epNum} [${reqPref}] já existe no banco. Não será reenfileirado.`);
-                                        isAlreadySatisfied = true;
+                                        [metadata.nome || job.title, metadata.tmdbId || 0, job.season || 1, epNum]
+                                    );
+                                    if (sRes.rows.length > 0) {
+                                        const ep = sRes.rows[0];
+                                        const versoes = typeof ep.versoes === 'string' ? JSON.parse(ep.versoes || '{}') : (ep.versoes || {});
+                                        const epDub = ep.is_dublado || !!(versoes.dublado?.messageId || versoes.dublado?.fileId);
+                                        const epLeg = ep.is_legendado || !!(versoes.legendado?.messageId || versoes.legendado?.fileId);
+                                        const isPackOnlyLegendado = (bestSource?.isLegendado || job.audioPreference === 'legendado') && !bestSource?.isDublado;
+                                        const jaTemLeg = (jaCatalogado && (jaCatalogado.isLegendado || !!jaCatalogado.versoes?.legendado)) || epLeg;
+                                        if (isPackOnlyLegendado && jaTemLeg) {
+                                            console.log(`🛡️ [Pack Skip] "${job.title}" T${job.season || 1}E${epNum} já possui versão Legendada e este pacote não contém áudio Dublado. Não será reenfileirado.`);
+                                            isAlreadySatisfied = true;
+                                        } else if ((reqPref === 'dublado' && epDub) || (reqPref === 'legendado' && epLeg) || (reqPref === 'geral' && (epDub || epLeg))) {
+                                            console.log(`🛡️ [DB Pack Skip] "${job.title}" T${job.season || 1}E${epNum} [${reqPref}] já existe no banco. Não será reenfileirado.`);
+                                            isAlreadySatisfied = true;
+                                        }
                                     }
+                                } catch (dbErr) {
+                                    console.warn(`⚠️ [Pack DB check] Erro ao verificar episódio E${epNum} no banco:`, dbErr.message);
                                 }
-                            } catch (dbErr) {
-                                console.warn(`⚠️ [Pack DB check] Erro ao verificar episódio E${epNum} no banco:`, dbErr.message);
                             }
-                        }
 
-                        if (!isAlreadySatisfied) {
-                            try {
-                                // Verifica se já existe job para este episódio com o MESMO audioPreference (evita duplicata de pack)
-                                const existingJob = this.queue.find(q =>
-                                    (q.title || '').toLowerCase() === (job.title || '').toLowerCase() &&
-                                    q.season === (job.season || 1) &&
-                                    q.episode === epNum &&
-                                    (q.audioPreference || 'dublado') === (job.audioPreference || 'dublado')
-                                );
-                                if (existingJob) {
-                                    existingJob.rawFilePath = epInfo.filePath;
-                                    existingJob.expectedSize = epInfo.sizeBytes;
-                                    existingJob.bestSource = bestSource;
-                                    existingJob.status = 'queued';
-                                    await this.saveJob(existingJob);
-                                } else {
-                                    await this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
-                                        tmdbId: metadata.tmdbId,
-                                        season: job.season || 1,
-                                        episode: epNum,
-                                        userId: job.userId,
-                                        username: job.username,
-                                        audioPreference: job.audioPreference || 'dublado',
-                                        rawFilePath: epInfo.filePath,
-                                        expectedSize: epInfo.sizeBytes,
-                                        bestSource: bestSource,
-                                        queueOrder: epNum
-                                    });
+                            if (!isAlreadySatisfied) {
+                                try {
+                                    // Verifica se já existe job para este episódio com o MESMO audioPreference (evita duplicata de pack)
+                                    const existingJob = this.queue.find(q =>
+                                        (q.title || '').toLowerCase() === (job.title || '').toLowerCase() &&
+                                        q.season === (job.season || 1) &&
+                                        q.episode === epNum &&
+                                        (q.audioPreference || 'dublado') === (job.audioPreference || 'dublado')
+                                    );
+                                    if (existingJob) {
+                                        existingJob.rawFilePath = epInfo.filePath;
+                                        existingJob.expectedSize = epInfo.sizeBytes;
+                                        existingJob.bestSource = bestSource;
+                                        existingJob.status = 'queued';
+                                        await this.saveJob(existingJob);
+                                    } else {
+                                        await this.addJob(metadata.nome || job.title, 'serie', PRIORITIES.VIP_USER, {
+                                            tmdbId: metadata.tmdbId,
+                                            season: job.season || 1,
+                                            episode: epNum,
+                                            userId: job.userId,
+                                            username: job.username,
+                                            audioPreference: job.audioPreference || 'dublado',
+                                            rawFilePath: epInfo.filePath,
+                                            expectedSize: epInfo.sizeBytes,
+                                            bestSource: bestSource,
+                                            queueOrder: epNum
+                                        });
+                                    }
+                                } catch (ePack) {
+                                    console.warn(`⚠️ Erro ao registrar episódio T${job.season || 1}E${epNum} do pack na fila:`, ePack.message);
                                 }
-                            } catch (ePack) {
-                                console.warn(`⚠️ Erro ao registrar episódio T${job.season || 1}E${epNum} do pack na fila:`, ePack.message);
                             }
                         }
                     }
+                    // Imediatamente aciona a esteira para iniciar a otimização em paralelo dos episódios já no SSD
+                    setImmediate(() => this.processNext());
                 }
-                // Imediatamente aciona a esteira para iniciar a otimização em paralelo dos episódios já no SSD
-                setImmediate(() => this.processNext());
-            }
 
-            // Validação de tamanho físico do arquivo
-            if (fs.existsSync(rawFilePath)) {
-                const stat = fs.statSync(rawFilePath);
-                if (downloadedMedia.sizeBytes > 0 && stat.size < downloadedMedia.sizeBytes * 0.85) {
-                    console.log(`❌ Arquivo bruto descartado: tamanho físico (${stat.size} B) menor que o esperado (${downloadedMedia.sizeBytes} B).`);
-                    await DownloaderManager.cleanupFile(rawFilePath);
-                    throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
+                // Validação de tamanho físico do arquivo
+                if (fs.existsSync(rawFilePath)) {
+                    const stat = fs.statSync(rawFilePath);
+                    if (downloadedMedia.sizeBytes > 0 && stat.size < downloadedMedia.sizeBytes * 0.85) {
+                        console.log(`❌ Arquivo bruto descartado: tamanho físico (${stat.size} B) menor que o esperado (${downloadedMedia.sizeBytes} B).`);
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                        throw new Error(`Download incompleto: arquivo recebido com tamanho menor que o esperado (${stat.size} de ${downloadedMedia.sizeBytes} bytes).`);
+                    }
                 }
-            }
             } finally {
                 this.releaseDownloadSlot(job.id);
             }
@@ -2339,7 +2339,7 @@ class QueueManager extends EventEmitter {
                                 break;
                             }
                         }
-                    } catch (_) {}
+                    } catch (_) { }
 
                     if (corrected && fs.existsSync(corrected)) {
                         console.log(`✅ [EP MISMATCH] Corrigido para arquivo certo: ${path.basename(corrected)}`);
@@ -2348,7 +2348,7 @@ class QueueManager extends EventEmitter {
                         await this.saveJob(job);
                     } else {
                         const wrongName = path.basename(rawFilePath);
-                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => {});
+                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => { });
                         rawFilePath = null;
                         job.rawFilePath = null;
                         await this.saveJob(job);
@@ -2432,7 +2432,7 @@ class QueueManager extends EventEmitter {
                             try {
                                 const extIds = await TMDBService.getTVExternalIds(metadata.tmdbId);
                                 if (extIds && extIds.imdb_id) imdbId = extIds.imdb_id;
-                            } catch(e) {}
+                            } catch (e) { }
                         }
                         const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
                         if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado && !jaPossuiLegendado && !job.isUpgrade) {
@@ -2493,42 +2493,42 @@ class QueueManager extends EventEmitter {
             setImmediate(() => this.processNext());
 
             try {
-            await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
-                job.progress = percent;
-                job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
-                this.activeTask = job;
-            }, {
-                nome: job.title,
-                tipo: job.type,
-                season: job.season,
-                episode: job.episode,
-                totalTemporadas: metadata.totalTemporadas,
-                totalEpisodios: metadata.totalEpisodios,
-                imdbId: metadata.imdbId,
-                tmdbId: metadata.tmdbId,
-                subtitleUrl: bestSource?.subtitleUrl,
-                isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
-                hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
-                isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
-                // Preferência do job manda: Dual com PT+subs em pedido dublado => dublado limpo (sem legenda)
-                isDublado: (job.audioPreference === 'legendado') ? false : (langInfo?.isDublado ?? true),
-                isLegendado: (job.audioPreference === 'legendado') ? true : !!(langInfo?.isLegendado && !langInfo?.isDublado),
-                idiomaOriginal: job.idiomaOriginal || job.originalLanguage || metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language || null,
-                originalLanguage: job.originalLanguage || job.idiomaOriginal || metadata.originalLanguage || metadata.idiomaOriginal || metadata.original_language || null,
-                isAnime: !!(job.isAnime || metadata.isAnime || metadata.is_anime || job.extraData?.isAnime),
-                isDorama: !!(job.isDorama || metadata.isDorama || metadata.is_dorama || job.extraData?.isDorama),
-                category: job.category || metadata.category || null
-            });
+                await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
+                    job.progress = percent;
+                    job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
+                    this.activeTask = job;
+                }, {
+                    nome: job.title,
+                    tipo: job.type,
+                    season: job.season,
+                    episode: job.episode,
+                    totalTemporadas: metadata.totalTemporadas,
+                    totalEpisodios: metadata.totalEpisodios,
+                    imdbId: metadata.imdbId,
+                    tmdbId: metadata.tmdbId,
+                    subtitleUrl: bestSource?.subtitleUrl,
+                    isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
+                    hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
+                    isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
+                    // Preferência do job manda: Dual com PT+subs em pedido dublado => dublado limpo (sem legenda)
+                    isDublado: (job.audioPreference === 'legendado') ? false : (langInfo?.isDublado ?? true),
+                    isLegendado: (job.audioPreference === 'legendado') ? true : !!(langInfo?.isLegendado && !langInfo?.isDublado),
+                    idiomaOriginal: job.idiomaOriginal || job.originalLanguage || metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language || null,
+                    originalLanguage: job.originalLanguage || job.idiomaOriginal || metadata.originalLanguage || metadata.idiomaOriginal || metadata.original_language || null,
+                    isAnime: !!(job.isAnime || metadata.isAnime || metadata.is_anime || job.extraData?.isAnime),
+                    isDorama: !!(job.isDorama || metadata.isDorama || metadata.is_dorama || job.extraData?.isDorama),
+                    category: job.category || metadata.category || null
+                });
 
-            // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
-            // para não manter cópias duplicadas ocupando espaço durante a fase de upload
-            if (rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
-                console.log(`🧹 [Otimização Concluída] Liberando espaço em disco: removendo arquivo bruto original (${path.basename(rawFilePath)})...`);
-                await DownloaderManager.cleanupFile(rawFilePath);
-                rawFilePath = null;
-                job.rawFilePath = null;
-                await this.saveJob(job);
-            }
+                // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
+                // para não manter cópias duplicadas ocupando espaço durante a fase de upload
+                if (rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
+                    console.log(`🧹 [Otimização Concluída] Liberando espaço em disco: removendo arquivo bruto original (${path.basename(rawFilePath)})...`);
+                    await DownloaderManager.cleanupFile(rawFilePath);
+                    rawFilePath = null;
+                    job.rawFilePath = null;
+                    await this.saveJob(job);
+                }
             } finally {
                 // Libera o lock de transcode independente de sucesso ou falha
                 this.transcodeLocks.delete(transcodeKey);
@@ -2598,7 +2598,7 @@ class QueueManager extends EventEmitter {
         let isCamFinal = false;
         if (hasCamKeyword || isCamArtifacts || (effectiveSource.quality && effectiveSource.quality.toUpperCase().includes('CAM'))) {
             isCamFinal = true;
-        } else if (relStatus.isTheatricalOnly && (!hasDigitalKeyword || !isBrazilianGroup)) {
+        } else if (relStatus.isTheatricalOnly && !hasDigitalKeyword && !isBrazilianGroup) {
             // Se o filme só existe em cinema no mundo, qualquer release de tracker genérico com WEBRip é fake/CAM/Bet disfarçado
             isCamFinal = true;
         }
@@ -2615,7 +2615,7 @@ class QueueManager extends EventEmitter {
             console.log(`🎬 [CAM DETECTADO] "${job.title}" identificado como gravação de Cinema. Motivo: ${hasCamKeyword ? 'título/grupo de release CAM' : (isCamArtifacts ? 'áudio/container mono ou de microfone de cinema' : 'lançamento digital oficial não ocorreu no TMDB')}`);
         }
         metadata.qualidade = isCamFinal ? 'Versão Cinema (CAM)' : (effectiveSource.quality || '1080p Full HD');
-        
+
         // Classificação rigorosa: Ou é 100% Dublado (áudio PT-BR sem legendas na tela) ou 100% Legendado (áudio original + legendas PT-BR)
         // Se o VideoProcessor processou o arquivo como legendado (queimou legendas por ausência de áudio PT-BR),
         // respeita a realidade do arquivo e não sobrescreve falsamente como Dublado!
@@ -2642,8 +2642,8 @@ class QueueManager extends EventEmitter {
                 const sourceIsDubladoOnly = (effectiveSource.isDublado || bestSource?.isDublado) && !(effectiveSource.isLegendado || bestSource?.isLegendado);
 
                 isJobDublado = (job.audioPreference === 'legendado' || sourceIsLegendadoOnly) ? false :
-                               sourceIsDubladoOnly ? true :
-                               (effectiveLang ? effectiveLang.isDublado : true);
+                    sourceIsDubladoOnly ? true :
+                        (effectiveLang ? effectiveLang.isDublado : true);
             }
         }
 
@@ -2696,12 +2696,12 @@ class QueueManager extends EventEmitter {
                         }
                     }
                 }
-            } catch (errCheck) {}
+            } catch (errCheck) { }
 
             if (jaTemEssaVersao) {
                 console.log(`🛡️ [Upload Pre-Check] "${metadata.nome || job.title}" T${seasonNumCheck}E${epNumCheck} já possui versão ${metadata.isDublado ? 'Dublada' : 'Legendada'} cadastrada com mídia válida. Upload descartado para evitar duplicata.`);
-                try { if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath); } catch (e) {}
-                try { if (rawFilePath && fs.existsSync(rawFilePath) && !rawFilePath.includes('downloaded_media')) fs.unlinkSync(rawFilePath); } catch (e) {}
+                try { if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath); } catch (e) { }
+                try { if (rawFilePath && fs.existsSync(rawFilePath) && !rawFilePath.includes('downloaded_media')) fs.unlinkSync(rawFilePath); } catch (e) { }
                 job.status = 'completed';
                 job.progress = 100;
                 job.progressDetails = 'Versão já catalogada no banco (upload duplicado evitado)';
@@ -2830,7 +2830,7 @@ class QueueManager extends EventEmitter {
                         [job.title, job.season || 1, job.episode || 1, job.id]
                     );
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         // 7. Notificação formal EXCLUSIVAMENTE no Grupo de Armazém
@@ -2838,8 +2838,8 @@ class QueueManager extends EventEmitter {
             const storageGroupId = config.STORAGE_GROUP_ID;
 
             if (this.bot && storageGroupId) {
-                const tipoTexto = job.type === 'serie' 
-                    ? `📺 <b>Série/Dorama:</b> ${metadata.nome} (T${job.season || 1}E${job.episode || 1})` 
+                const tipoTexto = job.type === 'serie'
+                    ? `📺 <b>Série/Dorama:</b> ${metadata.nome} (T${job.season || 1}E${job.episode || 1})`
                     : `🎬 <b>Filme:</b> ${metadata.nome}${metadata.ano ? ` (${metadata.ano})` : ''}`;
                 const fonteInfo = job.bestSource?.title || job.bestSource?.source || (job.rawFilePath ? path.basename(job.rawFilePath) : null) || metadata.release || metadata.nome || 'Automática (Torrentio/Stremio)';
 
@@ -2854,12 +2854,12 @@ class QueueManager extends EventEmitter {
                 const qualTexto = isCamFinal ? 'Versão Cinema (CAM)' : (metadata.qualidade || '1080p Full HD');
 
                 const notifMsg = `✅ <b>Conteúdo Armazenado & Catalogado com Sucesso!</b>\n\n` +
-                                 `${tipoTexto}\n` +
-                                 `✨ <b>Qualidade:</b> ${qualTexto}\n` +
-                                 `${audioBloco}\n` +
-                                 `📦 <b>Fonte/Release:</b> <code>${fonteInfo}</code>\n` +
-                                 `🆔 <b>Message ID:</b> <code>${uploadResult.messageId}</code>\n\n` +
-                                 `🍿 <b>Disponível imediatamente para todos os usuários!</b>`;
+                    `${tipoTexto}\n` +
+                    `✨ <b>Qualidade:</b> ${qualTexto}\n` +
+                    `${audioBloco}\n` +
+                    `📦 <b>Fonte/Release:</b> <code>${fonteInfo}</code>\n` +
+                    `🆔 <b>Message ID:</b> <code>${uploadResult.messageId}</code>\n\n` +
+                    `🍿 <b>Disponível imediatamente para todos os usuários!</b>`;
 
                 let sentNotif = await this.bot.sendMessage(storageGroupId, notifMsg, { parse_mode: 'HTML' }).catch(async (err) => {
                     console.warn('⚠️ Falha ao enviar com HTML no armazém, tentando texto puro:', err.message);
@@ -2870,7 +2870,7 @@ class QueueManager extends EventEmitter {
                     });
                 });
                 if (sentNotif && sentNotif.message_id) {
-                    await this.catalogoManager.vincularNotificacaoArmazem(uploadResult.messageId, sentNotif.message_id).catch(() => {});
+                    await this.catalogoManager.vincularNotificacaoArmazem(uploadResult.messageId, sentNotif.message_id).catch(() => { });
                 }
                 console.log(`📢 [ARMAZÉM] Notificação de confirmação enviada com sucesso no grupo ${storageGroupId}!`);
             }
@@ -2891,10 +2891,10 @@ class QueueManager extends EventEmitter {
             // Notifica usuário solicitante (somente se não for a conta de admin para evitar spam)
             if (job.type === 'filme' && job.userId && job.userId !== config.ADMIN_ID && this.bot) {
                 const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
-                                `🎬 *${metadata.nome}*\n` +
-                                `✨ *Qualidade:* 1080p Full HD\n` +
-                                `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
-                                `Já está no catálogo e pronto para você assistir! 🍿`;
+                    `🎬 *${metadata.nome}*\n` +
+                    `✨ *Qualidade:* 1080p Full HD\n` +
+                    `🔊 *Versão:* ${metadata.audio || 'Dublado (Áudio PT-BR)'}\n\n` +
+                    `Já está no catálogo e pronto para você assistir! 🍿`;
 
                 const keyboard = {
                     inline_keyboard: [
@@ -2905,7 +2905,7 @@ class QueueManager extends EventEmitter {
                 this.bot.sendMessage(job.userId, mensagem, {
                     parse_mode: 'Markdown',
                     reply_markup: keyboard
-                }).catch(() => {});
+                }).catch(() => { });
             }
 
             // Para filmes: marca o pedido como atendido no catálogo (para séries, marca apenas ao completar a temporada)
@@ -2922,16 +2922,16 @@ class QueueManager extends EventEmitter {
                 for (const uid of usuariosFav) {
                     if (uid.toString() === job.userId?.toString()) continue;
                     const msgFav = `🔔 *Novo Episódio Disponível!*\n\n` +
-                                  `📺 *${metadata.nome}* — Temporada ${epSeason}, Episódio ${epNum}\n` +
-                                  `🔊 *Áudio:* ${metadata.audio || 'Dublado (PT-BR)'}\n\n` +
-                                  `Novo episódio da sua série favorita acabou de chegar no catálogo!`;
+                        `📺 *${metadata.nome}* — Temporada ${epSeason}, Episódio ${epNum}\n` +
+                        `🔊 *Áudio:* ${metadata.audio || 'Dublado (PT-BR)'}\n\n` +
+                        `Novo episódio da sua série favorita acabou de chegar no catálogo!`;
 
                     this.bot.sendMessage(uid, msgFav, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [[{ text: '📺 Assistir Episódio', callback_data: `serie_ep_${itemId}_${epSeason}_${epNum}` }]]
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         } catch (errNotif) {
@@ -2999,15 +2999,15 @@ class QueueManager extends EventEmitter {
                     const itemSalvo = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie');
                     const sId = itemSalvo?.id || '';
                     const msgTemporada = `🎉 *Temporada ${currentSeasonNum} Completa Disponível!*\n\n` +
-                                         `📺 *${metadata.nome || job.title}*\n` +
-                                         `✨ Todos os episódios da Temporada ${currentSeasonNum} já estão catalogados em 1080p Full HD!\n\n` +
-                                         `🍿 Aproveite e assista agora!`;
+                        `📺 *${metadata.nome || job.title}*\n` +
+                        `✨ Todos os episódios da Temporada ${currentSeasonNum} já estão catalogados em 1080p Full HD!\n\n` +
+                        `🍿 Aproveite e assista agora!`;
                     this.bot.sendMessage(job.userId, msgTemporada, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [[{ text: '▶️ Assistir Série', callback_data: `info_serie_${sId}` }]]
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
 
                     if (this.pedidosManager) {
                         await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
@@ -3040,10 +3040,10 @@ class QueueManager extends EventEmitter {
             job.season,
             job.episode,
             metadata.isDublado ? 'dublado' : 'legendado'
-        ).catch(() => {});
+        ).catch(() => { });
 
         // Executa limpeza de disco assíncrona após finalizar processamento
-        DiskCleaner.scanAndClean(this.getActiveFiles()).catch(() => {});
+        DiskCleaner.scanAndClean(this.getActiveFiles()).catch(() => { });
     }
 
     getStatus() {
@@ -3084,7 +3084,7 @@ class QueueManager extends EventEmitter {
         const pending = this.queue
             .filter(j => j.status === 'queued')
             .map(formatJob);
-        
+
         // Itens recentes baseados estritamente no catálogo ativo real
         const cat = catalogoManager || this.catalogoManager;
         let recentCompleted = [];
