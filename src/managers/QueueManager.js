@@ -1600,14 +1600,33 @@ class QueueManager extends EventEmitter {
                 try {
                     const VideoProcessor = require('../services/VideoProcessor');
                     const optInfo = await VideoProcessor.getVideoInfo(optimizedPath);
-                    if (optInfo && optInfo.duration >= finalMinSec) {
+
+                    // Validação rigorosa de integridade da duração:
+                    // Se o arquivo original raw existir no SSD, o otimizado DEVE ter >= 95% da duração do raw.
+                    let requiredOptDurationSec = 0;
+                    let sourceDurationSec = 0;
+                    if (rawFilePath && fs.existsSync(rawFilePath)) {
+                        try {
+                            const rawProbe = await VideoProcessor.getVideoInfo(rawFilePath);
+                            if (rawProbe && rawProbe.duration > 0) {
+                                sourceDurationSec = rawProbe.duration;
+                                requiredOptDurationSec = sourceDurationSec * 0.95;
+                            }
+                        } catch (_) {}
+                    }
+                    if (!requiredOptDurationSec) {
+                        const baseExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : (metadata.duracaoMinutos || (job.type === 'filme' ? 90 : 45));
+                        requiredOptDurationSec = isMicro ? 40 : (baseExpectedMin * 60 * 0.85);
+                    }
+
+                    if (optInfo && optInfo.duration >= requiredOptDurationSec) {
                         console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024 * 1024 * 1024)).toFixed(2)} GB, ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
                         videoInfo = optInfo;
                         bestSource = job.bestSource || { title: job.title, source: 'Cache Local', audio: '1080p Full HD' };
                         langInfo = job.langInfo || langInfo;
                     } else {
-                        console.warn(`🧹 Arquivo otimizado incompleto (${optInfo?.durationFormatted || '0s'} < ${Math.round(finalMinSec / 60)} min esperados) descartado para reprocessar.`);
+                        console.warn(`🧹 [Crash Recovery] Arquivo otimizado truncado/incompleto (${optInfo?.durationFormatted || '0s'} < ${VideoProcessor.formatDuration(requiredOptDurationSec)} exigidos${sourceDurationSec > 0 ? ` vs ${VideoProcessor.formatDuration(sourceDurationSec)} do vídeo original` : ''}). Descartando para recodificar.`);
                         await DownloaderManager.cleanupFile(optimizedPath);
                         optimizedPath = null;
                         job.optimizedPath = null;
@@ -2475,6 +2494,11 @@ class QueueManager extends EventEmitter {
 
             optimizedPath = path.join(path.dirname(rawFilePath), `opt_${path.basename(rawFilePath, path.extname(rawFilePath))}.mp4`);
             job.optimizedPath = optimizedPath;
+            // Limpa qualquer arquivo temporário remanescente (.tmp.mp4) de encodes interrompidos anteriormente
+            const tempOptPath = `${optimizedPath}.tmp.mp4`;
+            if (fs.existsSync(tempOptPath)) {
+                try { fs.unlinkSync(tempOptPath); } catch (_) {}
+            }
             await this.saveJob(job);
 
             // Adquire lock de transcode para este episódio/filme antes de chamar FFmpeg

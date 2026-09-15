@@ -1422,7 +1422,12 @@ ${events.join('\n')}
                     remuxArgs.push('-c:a', 'aac', '-b:a', '256k', '-ac', '2', '-ar', '48000', '-af', 'aresample=async=1000:first_pts=0');
                 }
 
-                remuxArgs.push('-max_muxing_queue_size', '1024', '-movflags', '+faststart', '-y', outputPath);
+                const tempOutputPath = `${outputPath}.tmp.mp4`;
+                if (fs.existsSync(tempOutputPath)) {
+                    try { fs.unlinkSync(tempOutputPath); } catch (_) {}
+                }
+
+                remuxArgs.push('-max_muxing_queue_size', '1024', '-movflags', '+faststart', '-y', tempOutputPath);
 
                 const ffmpeg = spawn('ffmpeg', remuxArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 const totalDuration = info.duration || 1;
@@ -1460,11 +1465,13 @@ ${events.join('\n')}
                 ffmpeg.stdout.on('data', () => {});
 
                 ffmpeg.on('close', async (code) => {
-                    if (code === 0 && fs.existsSync(outputPath)) {
+                    if (code === 0 && fs.existsSync(tempOutputPath)) {
                         try {
-                            const remuxInfo = await this.getVideoInfo(outputPath).catch(() => null);
-                            const minDuration = Math.max(300, totalDuration * 0.50);
+                            const remuxInfo = await this.getVideoInfo(tempOutputPath).catch(() => null);
+                            const isMicro = metadata.isMicrodrama || metadata.subtipo === 'microdrama';
+                            const minDuration = Math.max(isMicro ? 40 : 180, totalDuration * 0.95);
                             if (remuxInfo && remuxInfo.duration >= minDuration) {
+                                await fs.promises.rename(tempOutputPath, outputPath);
                                 process.stdout.write('\n');
                                 console.log(`\x1b[32m✅ [${optTitle}] Remux concluído com sucesso e áudio AAC estéreo 100% garantido!\x1b[0m`);
                                 if (onProgress) onProgress(100, 'Remux Concluído');
@@ -1472,19 +1479,22 @@ ${events.join('\n')}
                             } else {
                                 process.stdout.write('\n');
                                 console.warn(`⚠️ [Remux Incompleto] Remux gerou apenas ${remuxInfo?.durationFormatted || 'incompleto'} (< ${this.formatDuration(totalDuration)}). Fazendo fallback automático para codificação completa 1080p...`);
-                                await fs.remove(outputPath).catch(() => {});
+                                await fs.remove(tempOutputPath).catch(() => {});
                                 return this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                             }
                         } catch (e) {
+                            if (fs.existsSync(tempOutputPath)) await fs.remove(tempOutputPath).catch(() => {});
                             return this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                         }
                     } else {
+                        if (fs.existsSync(tempOutputPath)) await fs.remove(tempOutputPath).catch(() => {});
                         process.stdout.write('\n');
                         console.warn(`⚠️ Aviso no remux rápido (código ${code}), prosseguindo para codificação padrão...`);
                         this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                     }
                 });
                 ffmpeg.on('error', () => {
+                    if (fs.existsSync(tempOutputPath)) fs.remove(tempOutputPath).catch(() => {});
                     process.stdout.write('\n');
                     this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
@@ -1505,7 +1515,8 @@ ${events.join('\n')}
         // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
         const outInfo = await this.getVideoInfo(finalPath);
         if (info.duration > 0 && outInfo.duration > 0) {
-            const minAcceptableSec = Math.max(300, info.duration * 0.50);
+            const isMicro = metadata.isMicrodrama || metadata.subtipo === 'microdrama';
+            const minAcceptableSec = Math.max(isMicro ? 40 : 180, info.duration * 0.95);
             if (outInfo.duration < minAcceptableSec) {
                 await fs.remove(finalPath).catch(() => {});
                 throw new Error(`Inconsistência severa de duração pós-processamento: original tinha ${info.durationFormatted} (${Math.round(info.duration)}s) e arquivo gerado tem apenas ${outInfo.durationFormatted} (${Math.round(outInfo.duration)}s). Conversão descartada.`);
@@ -1655,7 +1666,12 @@ ${events.join('\n')}
                     '-max_muxing_queue_size', '1024'
                 ];
 
-                args.push('-movflags', '+faststart', '-y', outputPath);
+                const tempOutputPath = `${outputPath}.tmp.mp4`;
+                if (fs.existsSync(tempOutputPath)) {
+                    try { fs.unlinkSync(tempOutputPath); } catch (_) {}
+                }
+
+                args.push('-movflags', '+faststart', '-y', tempOutputPath);
 
                 const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -1697,7 +1713,7 @@ ${events.join('\n')}
                     }
                 });
 
-                ffmpeg.on('close', (code) => {
+                ffmpeg.on('close', async (code) => {
                     if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
                         fs.remove(metadata._hardsubAssPath).catch(() => {});
                     }
@@ -1705,12 +1721,21 @@ ${events.join('\n')}
                         fs.remove(metadata.srtPath).catch(() => {});
                     }
 
-                    if (code === 0 && fs.existsSync(outputPath)) {
-                        process.stdout.write('\n');
-                        console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
-                        if (onProgress) onProgress(100, 'Otimização Concluída');
-                        resolve(outputPath);
+                    if (code === 0 && fs.existsSync(tempOutputPath)) {
+                        try {
+                            await fs.promises.rename(tempOutputPath, outputPath);
+                            process.stdout.write('\n');
+                            console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
+                            if (onProgress) onProgress(100, 'Otimização Concluída');
+                            resolve(outputPath);
+                        } catch (renameErr) {
+                            console.error(`❌ [FFmpeg Erro] Falha ao renomear arquivo temporário para ${outputPath}:`, renameErr.message);
+                            reject(renameErr);
+                        }
                     } else {
+                        if (fs.existsSync(tempOutputPath)) {
+                            await fs.remove(tempOutputPath).catch(() => {});
+                        }
                         process.stdout.write('\n');
                         const errSnippet = ffmpegStderrBuffer.slice(-5).join('\n').trim();
                         if (errSnippet) {
@@ -1721,6 +1746,9 @@ ${events.join('\n')}
                 });
 
                 ffmpeg.on('error', (err) => {
+                    if (fs.existsSync(tempOutputPath)) {
+                        fs.remove(tempOutputPath).catch(() => {});
+                    }
                     if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                         fs.remove(metadata.srtPath).catch(() => {});
                     }
