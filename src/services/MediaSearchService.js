@@ -325,7 +325,9 @@ class MediaSearchService {
                     const sNum = parseInt(season, 10);
                     const titleLower = r.title.toLowerCase();
                     const rangeMatch = titleLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/);
-                    const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})\b/) || titleLower.match(/(?:season|temporada)[._ -]*0*(\d{1,2})/);
+                    const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})(?=[eEx._\s-]|$)/i) || 
+                                              titleLower.match(/(?:season|temporada)[._\s-]*0*(\d{1,2})\b/i) || 
+                                              titleLower.match(/\b0*(\d{1,2})x\d{1,4}\b/i);
 
                     if (rangeMatch) {
                         const startS = parseInt(rangeMatch[1], 10);
@@ -359,7 +361,7 @@ class MediaSearchService {
                 if (episode) {
                     const epNum = parseInt(episode, 10);
                     const titleLower = r.title.toLowerCase();
-                    const epSingleMatch = titleLower.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i);
+                    const epSingleMatch = titleLower.match(/(?:s0*\d{1,2}[._\s-]*)?(?:e|ep|episodio|episódio|x)[._\s-]*0*(\d{1,4})\b/i);
                     const isPackTitle = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(titleLower) ||
                                         /(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/i.test(titleLower) ||
                                         /\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i.test(titleLower);
@@ -1199,16 +1201,16 @@ class MediaSearchService {
             if (a.isDirect) scoreA += 15000;
             if (b.isDirect) scoreB += 15000;
 
-            // 1. Preferência de Áudio (DUBLADO É PRIORIDADE MÁXIMA ABSOLUTA)
+            // 1. Preferência de Áudio (DUBLADO É PRIORIDADE MÁXIMA ABSOLUTA QUANDO SOLICITADO)
             if (pref === 'legendado') {
-                if (a.isLegendado) scoreA += 5000;
-                if (b.isLegendado) scoreB += 5000;
+                if (a.isLegendado) scoreA += 15000;
+                if (b.isLegendado) scoreB += 15000;
                 if (a.isDublado) scoreA += 400;
                 if (b.isDublado) scoreB += 400;
             } else {
-                // Modo padrão: DUBLADO (PT-BR) ganha +5000 pontos para NUNCA perder para releases legendados em inglês
-                if (a.isDublado) scoreA += 5000;
-                if (b.isDublado) scoreB += 5000;
+                // Modo padrão: DUBLADO (PT-BR) ganha +15000 pontos para NUNCA perder para releases legendados
+                if (a.isDublado) scoreA += 15000;
+                if (b.isDublado) scoreB += 15000;
                 if (a.isLegendado) scoreA += 300;
                 if (b.isLegendado) scoreB += 300;
             }

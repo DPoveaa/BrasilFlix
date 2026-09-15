@@ -8016,6 +8016,7 @@
                         <select id="admin-catalog-status-filter" class="admin-input" style="width: auto; min-width: 160px; padding: 10px 12px; margin-bottom: 0;" onchange="renderAdminCatalog()">
                             <option value="all">🔍 Todos os Status</option>
                             <option value="missing_eps">⚠️ Com Episódios Faltantes</option>
+                            <option value="missing_dub">🎙️ Faltando Dublagem (PT-BR)</option>
                             <option value="no_telegram">📱 Sem Vínculo Telegram</option>
                             <option value="complete">✅ Completos & OK</option>
                         </select>
@@ -18943,10 +18944,21 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             if (statusFilter !== 'all') {
                 if (statusFilter === 'missing_eps') {
                     items = items.filter(i => i.itemType === 'serie' && (i.temporadas || []).some(t => t.episodiosFaltantes && t.episodiosFaltantes.length > 0));
+                } else if (statusFilter === 'missing_dub') {
+                    items = items.filter(i => {
+                        if (i.itemType === 'filme') return !i.isDublado && !i.versoes?.dublado;
+                        return (i.temporadas || []).some(t => (t.episodios || []).some(e => !e.isDublado && !e.versoes?.dublado));
+                    });
                 } else if (statusFilter === 'no_telegram') {
-                    items = items.filter(i => !i.hasTelegramLink && !i.messageId);
+                    items = items.filter(i => {
+                        if (i.itemType === 'filme') return !i.hasTelegramLink && !i.messageId;
+                        return (i.temporadas || []).some(t => (t.episodios || []).some(e => !e.hasTelegramLink));
+                    });
                 } else if (statusFilter === 'complete') {
-                    items = items.filter(i => i.hasTelegramLink || (i.temporadas || []).every(t => !t.episodiosFaltantes || t.episodiosFaltantes.length === 0));
+                    items = items.filter(i => {
+                        if (i.itemType === 'filme') return i.hasTelegramLink || i.messageId;
+                        return (i.temporadas || []).every(t => !t.episodiosFaltantes || t.episodiosFaltantes.length === 0);
+                    });
                 }
             }
 
@@ -18971,7 +18983,31 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             items.forEach(i => {
                 const poster = i.posterUrl || '/logo.jpg';
                 const catBadge = i.isAnime ? '⛩️ Anime' : (i.isDorama ? '🌸 Dorama' : (i.isMicrodrama ? '⚡ Mini Série' : (i.itemType === 'filme' ? '🎬 Filme' : '📺 Série')));
-                const audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : (i.isLegendado ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>'));
+                
+                let audPill = '';
+                if (i.itemType === 'serie') {
+                    const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
+                    const epsComDub = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length, 0);
+                    const epsComLeg = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length, 0);
+
+                    if (totalEps > 0 && epsComDub === totalEps && epsComLeg === totalEps) {
+                        audPill = '<span class="badge-completed">Dual (Dub+Leg 100%)</span>';
+                    } else if (totalEps > 0 && epsComDub === totalEps) {
+                        audPill = '<span class="badge-completed">🔊 Dublado (100%)</span>';
+                    } else if (totalEps > 0 && epsComLeg === totalEps && epsComDub === 0) {
+                        audPill = '<span class="badge-processing">💬 Legendado (100%)</span>';
+                    } else if (epsComDub > 0 && epsComLeg > 0) {
+                        audPill = `<span style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Dual Misto (Dub ${epsComDub}/${totalEps} • Leg ${epsComLeg}/${totalEps})</span>`;
+                    } else if (epsComDub > 0) {
+                        audPill = `<span style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Dub Parcial (${epsComDub}/${totalEps})</span>`;
+                    } else if (epsComLeg > 0) {
+                        audPill = `<span style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Leg Parcial (${epsComLeg}/${totalEps})</span>`;
+                    } else {
+                        audPill = '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>';
+                    }
+                } else {
+                    audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : (i.isLegendado ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>'));
+                }
 
                 if (i.itemType === 'filme') {
                     const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem TG</span>`;
