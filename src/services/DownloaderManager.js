@@ -1061,6 +1061,7 @@ class DownloaderManager extends EventEmitter {
             let lastBytes = 0;
             let lastBytesChangeTime = Date.now();
             let slowStartTime = null;
+            let lastHardTimeoutLogTime = 0;
 
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
@@ -1147,15 +1148,28 @@ class DownloaderManager extends EventEmitter {
                     }
                 }
 
-                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO (15 min por GB, piso de 15m, teto de 60 min):
-                // Impede que qualquer download fique preso indefinidamente (ex: 1 GB -> máx 15 min, 3 GB -> máx 45 min, packs -> máx 60 min)
-                const maxHardTimeoutSec = Math.min(60 * 60, Math.max(15 * 60, Math.ceil(totalSizeGB * 15 * 60)));
+                // 4. HARD TIMEOUT PROPORCIONAL AO TAMANHO:
+                // Impede que downloads estagnados no início/primeira metade prendam a esteira.
+                // REGRA CRÍTICA: Se o download já avançou significativamente (>= 50%) ou está perto do final (>= 60%),
+                // JAMAIS aborta por hard timeout enquanto houver transferência ativa (não estagnada há > 10m)!
+                const isNearEnd = fileProg >= 0.50 || (curTotal > 0 && curDownloaded >= curTotal * 0.50);
+                // Concede tempo proporcional generoso: 30 min por GB, piso de 25 min, sem teto artificial rígido que mate season packs
+                const maxHardTimeoutSec = Math.max(25 * 60, Math.ceil(totalSizeGB * 30 * 60));
+
                 if (elapsedSec >= maxHardTimeoutSec) {
-                    process.stdout.write('\n');
-                    console.log(`⏰ [HARD TIMEOUT] Download excedeu o tempo máximo proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)} baixados). ${hasMoreSources ? 'Pulando para próxima fonte...' : 'Movendo para Swarm Watcher...'}`);
-                    finished = true;
-                    safeCleanup();
-                    return reject(new Error(`Download excedeu o tempo limite proporcional de ${Math.round(maxHardTimeoutSec / 60)} min (${totalSizeGB.toFixed(2)} GB).`));
+                    if (isNearEnd && stalledMs < stalledTimeoutMs) {
+                        // Concede extensão dinâmica: o download já passou da metade e continua recebendo dados!
+                        if (now - lastHardTimeoutLogTime >= 60000) {
+                            lastHardTimeoutLogTime = now;
+                            console.log(`🛡️ [PROGRESSO PROTEGIDO] Download decorreu ${Math.round(elapsedSec / 60)} min, mas já atingiu ${(fileProg * 100).toFixed(1)}% (${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)} baixados). Mantendo ativo até a conclusão!`);
+                        }
+                    } else {
+                        process.stdout.write('\n');
+                        console.log(`⏰ [HARD TIMEOUT] Download não atingiu 50% no tempo proporcional limite de ${Math.round(maxHardTimeoutSec / 60)} min (${(fileProg * 100).toFixed(1)}%, ${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)} baixados). ${hasMoreSources ? 'Pulando para próxima fonte...' : 'Movendo para Swarm Watcher...'}`);
+                        finished = true;
+                        safeCleanup();
+                        return reject(new Error(`Download excedeu o tempo limite proporcional (${Math.round(maxHardTimeoutSec / 60)} min) com apenas ${(fileProg * 100).toFixed(1)}% concluído.`));
+                    }
                 }
 
                 // 4.1 TRAVA DE ARRANQUE MÍNIMO (Após 8 minutos, deve ter baixado ao menos 25 MB do conteúdo selecionado):
@@ -1169,8 +1183,8 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 // 5. CORTE RÁPIDO POR VELOCIDADE MÉDIA ZUMBI (Early Abort após 6 a 8 minutos):
-                // Se após 6 minutos a velocidade média acumulada for ridícula (< 0.20 MB/s com previsão > 2h ou < 0.10 MB/s)
-                if (elapsedSec >= 360) {
+                // Só aplica se o download ainda estiver no começo (< 40%). Se já passou de 40%, deixa concluir!
+                if (elapsedSec >= 360 && fileProg < 0.40) {
                     const isZombieSpeed = (avgSpeedMB < 0.20 && remainingSec > 7200) || (avgSpeedMB < 0.10);
                     if (isZombieSpeed) {
                         process.stdout.write('\n');
@@ -1189,7 +1203,9 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 // 6. Watchdog de lentidão persistente (com proteção contra oscilação pontual):
-                const isSlow = (speedMB < 0.15 && remainingSec > 5400) || (speedMB < 0.08);
+                // Se o download já estiver na reta final (>= 60%), JAMAIS aborta se a previsão for razoável (<= 1h)
+                const isFinishing = fileProg >= 0.60 && remainingSec <= 3600;
+                const isSlow = !isFinishing && ((speedMB < 0.15 && remainingSec > 5400) || (speedMB < 0.08));
                 if (isSlow) {
                     if (!slowStartTime) {
                         slowStartTime = now;
@@ -1211,9 +1227,8 @@ class DownloaderManager extends EventEmitter {
                             return reject(new Error(`Torrent com velocidade insuficiente mantida por > 8m (${speedMB.toFixed(2)} MB/s).`));
                         }
                     }
-                } else if (speedMB >= 0.35) {
-                    // SÓ reseta o cronômetro de lentidão se a velocidade REALMENTE se restabelecer (>= 0.35 MB/s)
-                    // Pequenas oscilações ou picos momentâneos de 0.03 -> 0.11 MB/s NÃO resetam mais o watchdog!
+                } else if (speedMB >= 0.35 || isFinishing) {
+                    // SÓ reseta o cronômetro de lentidão se a velocidade REALMENTE se restabelecer (>= 0.35 MB/s) ou estiver na reta final
                     slowStartTime = null;
                 }
             }, 4000);
