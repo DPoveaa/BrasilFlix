@@ -13,7 +13,7 @@ const cron = require('node-cron');
 
 class BrasilFlixBot {
     constructor() {
-        this.bot = new TelegramBot(config.BOT_TOKEN, { polling: true });
+        this.bot = config.LOCAL_DEMO_MODE ? null : new TelegramBot(config.BOT_TOKEN, { polling: true });
         this.pedidosManager = new PedidosManager();
         this.catalogoManager = new CatalogoManager();
         this.catalogoManager.setBot(this.bot);
@@ -26,8 +26,10 @@ class BrasilFlixBot {
         this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager, this.favoritosManager);
         this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
-        this.setupEventHandlers();
-        this.setupCronJobs();
+        if (!config.LOCAL_DEMO_MODE) {
+            this.setupEventHandlers();
+            this.setupCronJobs();
+        }
     }
 
     async init() {
@@ -43,6 +45,7 @@ class BrasilFlixBot {
     }
 
     start() {
+        if (config.LOCAL_DEMO_MODE) return;
         // Inicialização dos comandos do bot no menu oficial do Telegram
         this.setupBotCommands();
     }

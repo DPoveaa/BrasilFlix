@@ -46,7 +46,7 @@ class MediaVerificationCache {
 
 class CatalogoManager {
     static mediaVerificationCache = new MediaVerificationCache();
-    static allowUnverifiedPlayback = false;
+    static allowUnverifiedPlayback = config.ALLOW_UNVERIFIED_PLAYBACK;
 
     constructor() {
         this.catalogo = {
@@ -159,7 +159,9 @@ class CatalogoManager {
         if (!mediaObj) return false;
         const msgId = mediaObj.messageId ?? mediaObj.message_id;
         if (msgId === null || msgId === undefined || msgId === '') {
-            return false;
+            return CatalogoManager.allowUnverifiedPlayback &&
+                typeof (mediaObj.fileId || mediaObj.file_id) === 'string' &&
+                (mediaObj.fileId || mediaObj.file_id).trim().length > 0;
         }
         const num = Number(msgId);
         if (isNaN(num) || num <= 0) return false;

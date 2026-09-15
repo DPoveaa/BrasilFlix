@@ -55,7 +55,9 @@ module.exports = {
     TARGET_RESOLUTION: process.env.TARGET_RESOLUTION || '1080p',
     ALLOW_CINEMA_CAM: process.env.ALLOW_CINEMA_CAM !== 'false',
     AUTO_UPGRADE_CAM: process.env.AUTO_UPGRADE_CAM !== 'false',
-    AUTO_FEEDER_ENABLED: process.env.AUTO_FEEDER_ENABLED !== 'false',
+    LOCAL_DEMO_MODE: process.env.LOCAL_DEMO_MODE === 'true',
+    ALLOW_UNVERIFIED_PLAYBACK: process.env.ALLOW_UNVERIFIED_PLAYBACK === 'true' || process.env.LOCAL_DEMO_MODE === 'true',
+    AUTO_FEEDER_ENABLED: process.env.AUTO_FEEDER_ENABLED !== 'false' && process.env.LOCAL_DEMO_MODE !== 'true',
     AUTO_FEEDER_INTERVAL_HOURS: parseInt(process.env.AUTO_FEEDER_INTERVAL_HOURS || '4', 10),
     ENABLE_ANIME_DIRECT: process.env.ENABLE_ANIME_DIRECT === 'true', // Desativado por padrão para evitar streams com marca d'água (ex: animesonline)
 

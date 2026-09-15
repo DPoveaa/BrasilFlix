@@ -1273,6 +1273,7 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
+        if (config.LOCAL_DEMO_MODE) return;
         const isNetworkAllowed = SchedulerService.isAllowedToRun();
         const mode = SchedulerService.getActiveMode(); // 'performance', 'eco', 'paused'
 
