@@ -454,9 +454,23 @@ class TelegramUploader {
         const qualidadeBadge = isCam ? '📹 Cinema (CAM/Provisório)' : (metadata.qualidade || '1080p Full HD');
 
         let headerTitulo = '';
+        let sNum = metadata.season || 1;
+        let eNum = metadata.episode || 1;
+
         if (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode) {
-            const sNum = metadata.season || 1;
-            const eNum = metadata.episode || 1;
+            // Validação de segurança: se o arquivo físico possui SxxExx e divergir de metadata, adota o arquivo físico
+            const filenameOnly = path.basename(filePath);
+            const matchSxxExx = filenameOnly.match(/\bS0*(\d{1,2})E0*(\d{1,3})\b/i);
+            if (matchSxxExx) {
+                const fileS = parseInt(matchSxxExx[1], 10);
+                const fileE = parseInt(matchSxxExx[2], 10);
+                if (fileE !== eNum || fileS !== sNum) {
+                    console.warn(`🛡️ [TelegramUploader] Descompasso detectado e prevenido: metadata indicava T${sNum}E${eNum}, mas o arquivo físico é "${filenameOnly}" (T${fileS}E${fileE}). Corrigindo legenda para o arquivo real!`);
+                    sNum = fileS;
+                    eNum = fileE;
+                }
+            }
+
             const epNome = metadata.episodioNome && !metadata.episodioNome.startsWith('Episódio') ? ` - ${metadata.episodioNome}` : '';
             headerTitulo = `📺 *${nome}* (T${sNum}E${eNum})${epNome}${ano}`;
         } else {
@@ -513,7 +527,7 @@ class TelegramUploader {
                 const empty = Math.max(0, barLength - filled);
                 const bar = '█'.repeat(filled) + '░'.repeat(empty);
                 const uploadTitle = (metadata.tipo === 'serie' || metadata.type === 'serie' || metadata.season || metadata.episode)
-                    ? `${nome} (T${metadata.season || 1}E${metadata.episode || 1})`
+                    ? `${nome} (T${sNum}E${eNum})`
                     : nome;
 
                 const logLine = `\x1b[35m📤 [UPLOAD TELEGRAM: "${uploadTitle}"] [${bar}] ${percent}% | ${uploadedStr} / ${totalStr} | ${speedMBs} MB/s | ⏱️ Decorrido: ${elapsedFormatted} (⏳ Restante: ~${remainingFormatted}) | ${audioEtiqueta}\x1b[0m`;

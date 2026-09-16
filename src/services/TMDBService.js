@@ -18,7 +18,11 @@ class TMDBService {
     _getFromCache(key) {
         const item = this.cache.get(key);
         if (item && item.expiresAt > Date.now()) {
-            return item.data;
+            try {
+                return structuredClone(item.data);
+            } catch (e) {
+                return JSON.parse(JSON.stringify(item.data));
+            }
         }
         if (item) this.cache.delete(key);
         return null;
@@ -30,7 +34,13 @@ class TMDBService {
             const firstKeys = Array.from(this.cache.keys()).slice(0, 300);
             firstKeys.forEach(k => this.cache.delete(k));
         }
-        this.cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+        let cloneData;
+        try {
+            cloneData = structuredClone(data);
+        } catch (e) {
+            cloneData = JSON.parse(JSON.stringify(data));
+        }
+        this.cache.set(key, { data: cloneData, expiresAt: Date.now() + ttlMs });
     }
 
     async _getWithRetry(endpoint, params = {}, timeout = 8000, maxRetries = 2) {

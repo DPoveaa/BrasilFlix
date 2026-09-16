@@ -1390,22 +1390,22 @@ class QueueManager extends EventEmitter {
                 // Se o job já possui tmdbId explícito, consulta DIRETO por ele para não confundir Live Action vs Anime!
                 if (job.type === 'filme') {
                     const details = await TMDBService.getMovieDetails(job.tmdbId);
-                    if (details) metadata = details;
+                    if (details) metadata = { ...metadata, ...details };
                 } else {
                     const details = await TMDBService.getTVDetails(job.tmdbId);
-                    if (details) metadata = details;
+                    if (details) metadata = { ...metadata, ...details };
                 }
             } else if (job.type === 'filme') {
                 const results = await TMDBService.searchMovie(job.title, job.ano || job.extraData?.ano || null);
                 if (results.length > 0) {
                     const details = await TMDBService.getMovieDetails(results[0].tmdbId);
-                    metadata = details || results[0];
+                    metadata = { ...metadata, ...(details || results[0]) };
                 }
             } else {
                 const results = await TMDBService.searchTV(job.title, job.ano || job.extraData?.ano || null);
                 if (results.length > 0) {
                     const details = await TMDBService.getTVDetails(results[0].tmdbId);
-                    metadata = details || results[0];
+                    metadata = { ...metadata, ...(details || results[0]) };
                 }
             }
         } catch (e) {
@@ -2600,10 +2600,13 @@ class QueueManager extends EventEmitter {
         // Dispara o próximo item enquanto este faz upload para o Telegram
         setImmediate(() => this.processNext());
 
-        metadata.tipo = job.type;
-        metadata.season = job.season;
-        metadata.episode = job.episode;
-        metadata.episodioNome = job.type === 'serie' ? `Episódio ${job.episode || 1}` : '';
+        metadata = {
+            ...metadata,
+            tipo: job.type,
+            season: job.season,
+            episode: job.episode,
+            episodioNome: job.type === 'serie' ? `Episódio ${job.episode || 1}` : ''
+        };
 
         // Detecção ultra robusta e infalível de Cinema/CAM vs Master Digital (WEB-DL / Blu-ray)
         const CAM_REGEX = /\b(cam|camrip|hdcam|hdts|telesync|ts|cinema|gravado\s*no\s*cinema|audio\s*cinema|som\s*cinema|audio\s*de\s*cinema|som\s*de\s*cinema|line\s*audio|mic\s*audio|hq-cam|new-cam|cam-1080p|cam-720p|tc|telecine|workprint|wp|clean\s*audio)\b/i;
@@ -2736,7 +2739,14 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        const uploadResult = await this.uploader.uploadVideo(optimizedPath, metadata, (p) => {
+        const uploadMetadata = {
+            ...metadata,
+            tipo: job.type,
+            season: job.season,
+            episode: job.episode,
+            episodioNome: job.type === 'serie' ? (metadata.episodioNome || `Episódio ${job.episode || 1}`) : ''
+        };
+        const uploadResult = await this.uploader.uploadVideo(optimizedPath, uploadMetadata, (p) => {
             job.progress = p.percent;
             job.progressDetails = `Enviando Telegram: ${p.percent}% (${p.speed})`;
             this.activeTask = job;
