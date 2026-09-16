@@ -7514,23 +7514,64 @@
                             </div>
                         </div>
 
-                        <!-- Card Dados da Conta -->
+                        <!-- Card Dados da Conta & Segurança -->
                         <div class="settings-card">
-                            <h3 class="settings-card-title"><span>👤</span> Dados da Conta</h3>
+                            <h3 class="settings-card-title"><span>👤</span> Dados da Conta & Segurança</h3>
+
+                            <!-- Aviso se for e-mail temporário do Telegram -->
+                            <div id="settings-telegram-email-notice" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; padding: 12px 16px; margin-bottom: 18px;">
+                                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                    <span style="font-size: 20px; line-height: 1;">💡</span>
+                                    <div style="font-size: 12px; color: #fef08a; line-height: 1.5;">
+                                        <strong style="color: #fbbf24;">Conta criada via Telegram:</strong><br>
+                                        Seu e-mail atual é temporário (<span id="settings-current-temp-email" style="font-family: monospace; color: #fff; font-weight: bold;"></span>). Para poder fazer login em qualquer navegador ou celular usando e-mail e senha (sem precisar do Telegram), <strong>informe seu e-mail real e cadastre sua senha abaixo</strong>.
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="settings-form-group">
                                 <label class="settings-label">Nome de Usuário: <span style="font-size:11px; color: var(--text-muted); font-weight:400;" id="username-char-counter">0/15</span></label>
                                 <input type="text" id="settings-input-username" class="settings-input" maxlength="15" placeholder="Seu nome de usuário" oninput="updateUsernameCounter(this)">
                                 <div class="settings-hint">Qualquer caractere. Máximo 15. Termos ofensivos serão rejeitados.</div>
                             </div>
 
-                            <div class="settings-form-group">
+                            <div class="settings-form-group" style="margin-top: 14px;">
                                 <label class="settings-label">Endereço de E-mail:</label>
                                 <input type="email" id="settings-input-email" class="settings-input" placeholder="seuemail@exemplo.com">
-                                <div class="settings-hint">Usado para login e recuperação de conta.</div>
+                                <div class="settings-hint" id="settings-email-hint">Usado para login no site e recuperação de conta.</div>
                             </div>
 
-                            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-                                <button type="button" class="btn-modal btn-modal-primary" onclick="saveProfileChanges()" id="btn-save-profile" style="padding: 10px 22px; font-size: 14px; width: auto;">
+                            <!-- Seção de Senha & Acesso -->
+                            <div id="settings-password-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <h4 style="margin: 0; font-size: 14px; font-weight: 800; color: #e2e8f0; display: flex; align-items: center; gap: 6px;">
+                                        <span id="settings-password-icon">🔐</span>
+                                        <span id="settings-password-heading">Cadastrar Senha de Acesso</span>
+                                    </h4>
+                                    <span id="settings-password-badge" style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(245, 158, 11, 0.2); color: #fbbf24;">Obrigatório p/ Login</span>
+                                </div>
+                                <div id="settings-password-desc" class="settings-hint" style="margin-bottom: 12px;">
+                                    Defina uma senha para fazer login direto com seu e-mail no BrasilFlix sem precisar autenticar via Telegram.
+                                </div>
+
+                                <div id="settings-group-current-pass" class="settings-form-group" style="display: none; margin-bottom: 12px;">
+                                    <label class="settings-label">Senha Atual:</label>
+                                    <input type="password" id="settings-input-current-pass" class="settings-input" placeholder="Digite sua senha atual" autocomplete="current-password">
+                                </div>
+
+                                <div class="settings-form-group" style="margin-bottom: 12px;">
+                                    <label class="settings-label" id="settings-label-new-pass">Nova Senha:</label>
+                                    <input type="password" id="settings-input-new-pass" class="settings-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+                                </div>
+
+                                <div class="settings-form-group">
+                                    <label class="settings-label">Confirmar Nova Senha:</label>
+                                    <input type="password" id="settings-input-confirm-pass" class="settings-input" placeholder="Digite a nova senha novamente" autocomplete="new-password">
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+                                <button type="button" class="btn-modal btn-modal-primary" onclick="saveProfileChanges()" id="btn-save-profile" style="padding: 11px 24px; font-size: 14px; width: auto; font-weight: 800;">
                                     💾 Salvar Alterações
                                 </button>
                             </div>
@@ -11888,6 +11929,35 @@ function initApp() {
         
         let telegramLinkCheckInterval = null;
 
+        function updateUsernameCounter(input) {
+            const counter = document.getElementById('username-char-counter');
+            if (counter && input) {
+                counter.innerText = `${(input.value || '').length}/15`;
+            }
+        }
+
+        function previewAvatarUrl(url) {
+            const trimmed = (url || '').trim();
+            const username = document.getElementById('settings-input-username')?.value || currentUser?.username || 'U';
+            renderAvatarPreview(trimmed, username);
+        }
+
+        function renderAvatarPreview(avatarUrl, username) {
+            const previewEl = document.getElementById('settings-avatar-preview');
+            const removeBtn = document.getElementById('btn-remove-avatar');
+            if (!previewEl) return;
+
+            const initial = ((username || currentUser?.username || 'U')[0] || 'U').toUpperCase();
+
+            if (avatarUrl && avatarUrl.trim()) {
+                previewEl.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.onerror=null;this.parentElement.innerText='${initial}';">`;
+                if (removeBtn) removeBtn.style.display = 'block';
+            } else {
+                previewEl.innerHTML = initial;
+                if (removeBtn) removeBtn.style.display = 'none';
+            }
+        }
+
         function removeCustomAvatar() {
             const input = document.getElementById('settings-input-avatar-url');
             if (input) input.value = '';
@@ -11912,7 +11982,6 @@ function initApp() {
             const reader = new FileReader();
             reader.onload = (e) => {
                 renderAvatarPreview(e.target.result, document.getElementById('settings-input-username')?.value);
-                // Clear URL field since we're using a file
                 const urlInput = document.getElementById('settings-input-avatar-url');
                 if (urlInput) urlInput.value = '';
             };
@@ -11942,6 +12011,192 @@ function initApp() {
             }
         }
 
+        function openSettingsTab(section = 'profile') {
+            if (!userAuthToken) {
+                openAuthUserModal('login');
+                showToast('Faça login para acessar as configurações da sua conta.', 'info');
+                return;
+            }
+            switchTab('tab-settings');
+            switchSettingsSection(section);
+        }
+
+        function switchSettingsSection(section = 'profile') {
+            const sections = ['profile', 'preferences', 'requests', 'reviews'];
+            const activeSec = sections.includes(section) ? section : 'profile';
+
+            localStorage.setItem('bf_settings_section', activeSec);
+
+            sections.forEach(sec => {
+                const btn = document.getElementById(`btn-set-tab-${sec}`);
+                const panel = document.getElementById(`settings-section-${sec}`);
+                if (btn) {
+                    if (sec === activeSec) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                }
+                if (panel) {
+                    if (sec === activeSec) {
+                        panel.style.display = 'block';
+                        panel.classList.add('active');
+                    } else {
+                        panel.style.display = 'none';
+                        panel.classList.remove('active');
+                    }
+                }
+            });
+
+            if (window.location.hash !== `#settings/${activeSec}`) {
+                history.replaceState(null, '', `#settings/${activeSec}`);
+            }
+
+            if (activeSec === 'profile') {
+                populateProfileFields();
+            } else if (activeSec === 'preferences') {
+                loadPreferencesFields();
+            } else if (activeSec === 'requests') {
+                loadUserRequests();
+            } else if (activeSec === 'reviews') {
+                loadUserReviews();
+            }
+        }
+
+        function loadPreferencesFields() {
+            const audioSelect = document.getElementById('settings-pref-audio');
+            const spoilerCheck = document.getElementById('settings-pref-spoiler');
+            const savedAudio = localStorage.getItem('bf_pref_default_audio') || currentUser?.preferencias?.defaultAudio || 'ask';
+            const savedSpoiler = localStorage.getItem('bf_pref_spoiler_blur') !== null 
+                ? localStorage.getItem('bf_pref_spoiler_blur') === 'true' 
+                : (currentUser?.preferencias?.spoilerBlur !== false);
+
+            if (audioSelect) audioSelect.value = savedAudio;
+            if (spoilerCheck) spoilerCheck.checked = savedSpoiler;
+        }
+
+        async function loadSettingsView() {
+            if (!userAuthToken) {
+                switchNavCategory('inicio');
+                openAuthUserModal('login');
+                showToast('Faça login para acessar suas configurações.', 'info');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/user/me', {
+                    headers: { 'Authorization': `Bearer ${userAuthToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.success && data.user) {
+                        currentUser = { ...currentUser, ...data.user };
+                        updateUserHeaderUI(currentUser);
+                    }
+                }
+            } catch (e) {
+                console.warn('Erro ao atualizar dados do usuário:', e);
+            }
+
+            const badgeEl = document.getElementById('settings-header-badge');
+            if (badgeEl && currentUser) {
+                const isUserAdmin = currentUser.role === 'admin' || (adminToken && !!adminToken);
+                const isVip = currentUser.is_vip;
+                badgeEl.innerHTML = `
+                    <div style="font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 99px; background: ${isUserAdmin ? 'rgba(59, 130, 246, 0.2)' : (isVip ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.15)')}; color: ${isUserAdmin ? '#60a5fa' : (isVip ? '#fbbf24' : '#60a5fa')}; border: 1px solid ${isUserAdmin ? 'rgba(59, 130, 246, 0.4)' : (isVip ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.3)')};">
+                        ${isUserAdmin ? '🛡️ Administrador' : (isVip ? '👑 Assinante VIP' : '🎁 Conta Gratuita')}
+                    </div>
+                `;
+            }
+
+            populateProfileFields();
+            loadPreferencesFields();
+            updateTelegramStatusUI();
+            loadUserRequestsCount();
+            loadUserReviewsCount();
+
+            const currentSec = localStorage.getItem('bf_settings_section') || 'profile';
+            switchSettingsSection(currentSec);
+        }
+
+        function populateProfileFields() {
+            if (!currentUser) return;
+
+            const uInput = document.getElementById('settings-input-username');
+            const eInput = document.getElementById('settings-input-email');
+            const avatarUrlInput = document.getElementById('settings-input-avatar-url');
+
+            if (uInput) {
+                uInput.value = currentUser.username || '';
+                updateUsernameCounter(uInput);
+            }
+
+            const isTempEmail = !!(currentUser.is_temp_email || (currentUser.email && (currentUser.email.includes('@telegram.') || currentUser.email.endsWith('.user'))));
+
+            if (eInput) {
+                eInput.value = isTempEmail ? '' : (currentUser.email || '');
+                eInput.placeholder = isTempEmail ? 'Digite seu e-mail real (ex: seuemail@gmail.com)' : 'seuemail@exemplo.com';
+            }
+
+            const noticeBox = document.getElementById('settings-telegram-email-notice');
+            const tempEmailSpan = document.getElementById('settings-current-temp-email');
+            if (noticeBox) {
+                if (isTempEmail) {
+                    noticeBox.style.display = 'block';
+                    if (tempEmailSpan) tempEmailSpan.innerText = currentUser.email || 'telegram_temp';
+                } else {
+                    noticeBox.style.display = 'none';
+                }
+            }
+
+            const passHeading = document.getElementById('settings-password-heading');
+            const passDesc = document.getElementById('settings-password-desc');
+            const passBadge = document.getElementById('settings-password-badge');
+            const currPassGroup = document.getElementById('settings-group-current-pass');
+            const newPassLabel = document.getElementById('settings-label-new-pass');
+
+            const hasPassword = !!currentUser.has_custom_password && !isTempEmail;
+
+            if (isTempEmail) {
+                if (passHeading) passHeading.innerText = 'Cadastrar Senha de Acesso';
+                if (passDesc) passDesc.innerHTML = '<strong style="color: #fbbf24;">Obrigatório:</strong> Escolha uma senha para poder fazer login diretamente com seu e-mail no BrasilFlix em qualquer aparelho, sem depender do Telegram.';
+                if (passBadge) {
+                    passBadge.innerText = 'Obrigatório p/ Login Direto';
+                    passBadge.style.background = 'rgba(245, 158, 11, 0.2)';
+                    passBadge.style.color = '#fbbf24';
+                }
+                if (currPassGroup) currPassGroup.style.display = 'none';
+                if (newPassLabel) newPassLabel.innerText = 'Cadastrar Nova Senha:';
+            } else if (hasPassword) {
+                if (passHeading) passHeading.innerText = 'Alterar Senha de Acesso (Opcional)';
+                if (passDesc) passDesc.innerText = 'Se desejar mudar sua senha de acesso, informe sua senha atual e a nova senha desejada abaixo.';
+                if (passBadge) {
+                    passBadge.innerText = 'Opcional';
+                    passBadge.style.background = 'rgba(148, 163, 184, 0.2)';
+                    passBadge.style.color = '#94a3b8';
+                }
+                if (currPassGroup) currPassGroup.style.display = 'block';
+                if (newPassLabel) newPassLabel.innerText = 'Nova Senha:';
+            } else {
+                if (passHeading) passHeading.innerText = 'Cadastrar Senha de Acesso';
+                if (passDesc) passDesc.innerText = 'Defina uma senha para acessar sua conta diretamente no site usando seu e-mail.';
+                if (passBadge) {
+                    passBadge.innerText = 'Recomendado';
+                    passBadge.style.background = 'rgba(52, 211, 153, 0.2)';
+                    passBadge.style.color = '#34d399';
+                }
+                if (currPassGroup) currPassGroup.style.display = 'none';
+                if (newPassLabel) newPassLabel.innerText = 'Cadastrar Nova Senha:';
+            }
+
+            const currPassInput = document.getElementById('settings-input-current-pass');
+            const newPassInput = document.getElementById('settings-input-new-pass');
+            const confPassInput = document.getElementById('settings-input-confirm-pass');
+            if (currPassInput) currPassInput.value = '';
+            if (newPassInput) newPassInput.value = '';
+            if (confPassInput) confPassInput.value = '';
+
+            if (avatarUrlInput) avatarUrlInput.value = currentUser.avatar_url || '';
+            renderAvatarPreview(currentUser.avatar_url, currentUser.username);
+        }
+
         async function saveProfileChanges() {
             if (!userAuthToken) return;
 
@@ -11949,9 +12204,42 @@ function initApp() {
             const email = document.getElementById('settings-input-email')?.value?.trim();
             const avatar_url = document.getElementById('settings-input-avatar-url')?.value?.trim() || null;
 
+            const currentPass = document.getElementById('settings-input-current-pass')?.value || '';
+            const newPass = document.getElementById('settings-input-new-pass')?.value || '';
+            const confPass = document.getElementById('settings-input-confirm-pass')?.value || '';
+
             if (!username) {
                 showToast('Informe um nome de usuário válido.', 'error');
                 return;
+            }
+
+            const isTempEmail = !!(currentUser.is_temp_email || (currentUser.email && (currentUser.email.includes('@telegram.') || currentUser.email.endsWith('.user'))));
+            const hasPassword = !!currentUser.has_custom_password && !isTempEmail;
+
+            if (isTempEmail) {
+                if (!email) {
+                    showToast('Por favor, informe seu endereço de e-mail real.', 'error');
+                    return;
+                }
+                if (!newPass) {
+                    showToast('Cadastre uma senha de acesso para poder fazer login diretamente com seu e-mail.', 'error');
+                    return;
+                }
+            }
+
+            if (newPass || confPass) {
+                if (newPass.length < 6) {
+                    showToast('A senha deve conter pelo menos 6 caracteres.', 'error');
+                    return;
+                }
+                if (newPass !== confPass) {
+                    showToast('As senhas digitadas não coincidem. Verifique a confirmação.', 'error');
+                    return;
+                }
+                if (hasPassword && !currentPass) {
+                    showToast('Informe sua senha atual para autorizar a troca de senha.', 'error');
+                    return;
+                }
             }
 
             const btn = document.getElementById('btn-save-profile');
@@ -11961,23 +12249,38 @@ function initApp() {
             }
 
             try {
+                const payload = {
+                    username,
+                    avatar_url
+                };
+
+                if (email) payload.email = email;
+                if (newPass) {
+                    payload.new_password = newPass;
+                    if (hasPassword) payload.current_password = currentPass;
+                }
+
                 const res = await fetch('/api/user/profile', {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${userAuthToken}`
                     },
-                    body: JSON.stringify({ username, email, avatar_url })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await res.json();
                 if (data && data.success) {
+                    if (data.token) {
+                        localStorage.setItem('bf_user_jwt', data.token);
+                        userAuthToken = data.token;
+                    }
                     currentUser = { ...currentUser, ...data.user };
                     updateUserHeaderUI(currentUser);
-                    renderAvatarPreview(currentUser.avatar_url, currentUser.username);
-                    showToast('Perfil e dados salvos com sucesso!', 'success');
+                    populateProfileFields();
+                    showToast(data.message || '✨ Dados da conta atualizados com sucesso!', 'success');
                 } else {
-                    showToast(data.message || 'Erro ao atualizar perfil.', 'error');
+                    showToast(data.message || 'Erro ao atualizar dados.', 'error');
                 }
             } catch (e) {
                 showToast('Erro de conexão ao atualizar perfil.', 'error');

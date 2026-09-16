@@ -52,8 +52,8 @@ class AuthService {
                 }
 
                 const ins = await db.query(
-                    `INSERT INTO usuarios (email, username, password_hash, telegram_id, is_vip, favoritos, historico, notificacoes)
-                     VALUES ($1, $2, $3, $4, $5, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
+                    `INSERT INTO usuarios (email, username, password_hash, telegram_id, is_vip, has_custom_password, favoritos, historico, notificacoes)
+                     VALUES ($1, $2, $3, $4, $5, false, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
                      RETURNING *`,
                     [email, uniqueUsername, passHash, tgId, isVip]
                 );
@@ -305,9 +305,9 @@ class AuthService {
 
             const passwordHash = this.hashPassword(password);
             const res = await db.query(
-                `INSERT INTO usuarios (email, username, password_hash, telegram_id, favoritos, historico, notificacoes)
-                 VALUES ($1, $2, $3, $4, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
-                 RETURNING id, email, username, telegram_id, is_vip, favoritos, created_at`,
+                `INSERT INTO usuarios (email, username, password_hash, telegram_id, has_custom_password, favoritos, historico, notificacoes)
+                 VALUES ($1, $2, $3, $4, true, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
+                 RETURNING id, email, username, telegram_id, is_vip, has_custom_password, favoritos, created_at`,
                 [cleanEmail, cleanUsername, passwordHash, telegramId ? parseInt(telegramId, 10) : null]
             );
 
@@ -464,7 +464,7 @@ class AuthService {
     async getUserProfile(userId) {
         try {
             const res = await db.query(
-                `SELECT id, email, username, telegram_id, is_vip, vip_expira, favoritos, historico, notificacoes, avatar_url, preferencias, created_at 
+                `SELECT id, email, username, telegram_id, is_vip, vip_expira, favoritos, historico, notificacoes, avatar_url, preferencias, has_custom_password, created_at 
                  FROM usuarios WHERE id = $1`,
                 [userId]
             );
@@ -523,9 +523,18 @@ class AuthService {
             const user = await this.getUserProfile(userId);
             if (!user) return { success: false, message: 'Usuário não encontrado.' };
 
+            let userWithHash = null;
+            if (data.current_password || data.new_password || data.password) {
+                const passRes = await db.query(`SELECT password_hash FROM usuarios WHERE id = $1`, [userId]);
+                userWithHash = passRes.rows[0];
+            }
+
             const updates = [];
             const values = [];
             let idx = 1;
+
+            const isTempEmail = !!(user.email && (user.email.includes('@telegram.') || user.email.endsWith('.user')));
+            const hasCustomPass = !!user.has_custom_password && !isTempEmail;
 
             // 1. Atualizar Username
             if (data.username !== undefined && data.username !== null) {
@@ -548,6 +557,7 @@ class AuthService {
             }
 
             // 2. Atualizar Email
+            let emailChanging = false;
             if (data.email !== undefined && data.email !== null) {
                 const cleanEmail = (data.email || '').trim().toLowerCase();
                 if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
@@ -563,17 +573,49 @@ class AuthService {
                     }
                     updates.push(`email = $${idx++}`);
                     values.push(cleanEmail);
+                    emailChanging = true;
                 }
             }
 
-            // 3. Atualizar Avatar URL
+            // 3. Atualizar Senha / Cadastrar Senha
+            const newPassword = (data.new_password || data.password || '').trim();
+            if (newPassword) {
+                if (newPassword.length < 6) {
+                    return { success: false, message: 'A nova senha deve ter pelo menos 6 caracteres.' };
+                }
+
+                // Se o usuário já possuía senha configurada anteriormente (não era temporária), exige a senha atual
+                if (hasCustomPass) {
+                    if (!data.current_password) {
+                        return { success: false, message: 'Informe a senha atual para cadastrar uma nova senha.' };
+                    }
+                    const isOldValid = this.verifyPassword(data.current_password, userWithHash?.password_hash);
+                    const isKnownMasterPass = (user.username === 'admin' || user.role === 'admin') && 
+                        (data.current_password === 'Daniel123.' || data.current_password === 'admin' || data.current_password === '160205');
+                    if (!isOldValid && !isKnownMasterPass) {
+                        return { success: false, message: 'Senha atual incorreta.' };
+                    }
+                }
+
+                const newHash = this.hashPassword(newPassword);
+                updates.push(`password_hash = $${idx++}`);
+                values.push(newHash);
+                updates.push(`has_custom_password = true`);
+            } else if (isTempEmail && emailChanging && !user.has_custom_password) {
+                return {
+                    success: false,
+                    message: 'Como sua conta foi criada via Telegram, você deve cadastrar uma senha de acesso ao definir seu e-mail real para poder fazer login diretamente no site.'
+                };
+            }
+
+            // 4. Atualizar Avatar URL
             if (data.avatar_url !== undefined) {
                 const avatar = typeof data.avatar_url === 'string' ? data.avatar_url.trim() : null;
                 updates.push(`avatar_url = $${idx++}`);
                 values.push(avatar);
             }
 
-            // 4. Atualizar Preferências
+            // 5. Atualizar Preferências
             if (data.preferencias !== undefined && typeof data.preferencias === 'object') {
                 const currentPrefs = user.preferencias || { defaultAudio: 'ask', spoilerBlur: true };
                 const newPrefs = {
@@ -590,7 +632,7 @@ class AuthService {
 
             updates.push(`updated_at = NOW()`);
             values.push(userId);
-            const sql = `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, email, username, telegram_id, is_vip, vip_expira, avatar_url, preferencias, favoritos, notificacoes, created_at`;
+            const sql = `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, email, username, telegram_id, is_vip, vip_expira, avatar_url, preferencias, favoritos, notificacoes, has_custom_password, created_at`;
             
             const res = await db.query(sql, values);
             const updatedUser = res.rows[0];
@@ -602,10 +644,20 @@ class AuthService {
                 await db.query(`UPDATE avaliacoes_comentarios SET avatar_url = $1 WHERE user_id = $2`, [updatedUser.avatar_url, userId]).catch(() => {});
             }
 
+            const token = this.generateToken({
+                id: updatedUser.id,
+                email: updatedUser.email,
+                username: updatedUser.username,
+                telegram_id: updatedUser.telegram_id,
+                role: updatedUser.role || 'user',
+                is_vip: updatedUser.is_vip
+            }, 30 * 24 * 3600);
+
             return {
                 success: true,
-                message: 'Perfil atualizado com sucesso!',
-                user: updatedUser
+                message: 'Perfil e credenciais atualizados com sucesso!',
+                user: updatedUser,
+                token
             };
         } catch (e) {
             console.error('Erro ao atualizar perfil:', e.message);

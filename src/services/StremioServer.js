@@ -2424,6 +2424,8 @@ class StremioServer {
                     preferencias: user.preferencias || { defaultAudio: 'ask', spoilerBlur: true },
                     favoritos: user.favoritos || [],
                     notificacoes: notifs,
+                    has_custom_password: !!user.has_custom_password,
+                    is_temp_email: !!(user.email && (user.email.includes('@telegram.') || user.email.endsWith('.user'))),
                     created_at: user.created_at
                 }
             });
