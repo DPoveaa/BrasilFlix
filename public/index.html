@@ -18,6 +18,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
 
+        :root {
+            --sidebar-w: 216px;
+        }
+
+        body.sidebar-is-collapsed {
+            --sidebar-w: 64px;
+        }
+
+        @media (max-width: 900px) {
+            :root, body, body.sidebar-is-collapsed {
+                --sidebar-w: 0px;
+            }
+        }
+
         /* ═══════════ APP SHELL (SIDEBAR + CONTENT) ═══════════ */
         .app-shell {
             display: flex;
@@ -30,8 +44,8 @@
 
         /* ═══════════ LEFT SIDEBAR NAV ═══════════ */
         .sidebar-nav {
-            width: 216px;
-            min-width: 216px;
+            width: var(--sidebar-w);
+            min-width: var(--sidebar-w);
             background: #080b11;
             border-right: 1px solid rgba(255,255,255,0.06);
             display: flex;
@@ -248,6 +262,7 @@
         }
 
         .header-container {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -261,13 +276,53 @@
             align-items: center;
             gap: 6px;
             flex-shrink: 0;
+            z-index: 20;
         }
 
-        /* Search bar in header */
+        /* Search bar in header - Centered with content area (series banner) */
         .header-search-wrap {
-            flex: 1;
-            max-width: 480px;
-            position: relative;
+            position: absolute;
+            left: calc(50% + (var(--sidebar-w) / 2));
+            transform: translateX(-50%);
+            width: min(480px, calc(100% - var(--sidebar-w) - 240px));
+            transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 10;
+        }
+
+        @media (max-width: 900px) {
+            .header-search-wrap {
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(400px, calc(100% - 220px));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .header-search-wrap {
+                position: static;
+                transform: none;
+                flex: 1;
+                min-width: 0;
+                max-width: 240px;
+                margin: 0 6px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header-search-wrap {
+                max-width: 175px;
+                margin: 0 4px;
+            }
+            .header-search-input {
+                font-size: 11px !important;
+                padding: 6px 24px 6px 26px !important;
+            }
+            .header-search-icon {
+                left: 7px !important;
+            }
+            .header-search-shortcut {
+                display: none !important;
+            }
         }
 
         .header-search-input {
@@ -7052,13 +7107,15 @@
                 </div>
             </div>
 
-            <!-- SEARCH BAR (CENTER) -->
+            <!-- SEARCH BAR (CENTERED WITH CONTENT BANNER) -->
             <div class="header-search-wrap">
-                <span class="header-search-icon">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                </span>
-                <input type="search" id="header-search-input" name="search_query" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="onHeaderSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
-                <span class="header-search-shortcut">Ctrl K</span>
+                <form role="search" id="header-search-form" action="javascript:void(0);" autocomplete="off" onsubmit="event.preventDefault();" style="margin:0;width:100%;position:relative;">
+                    <span class="header-search-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    </span>
+                    <input type="search" id="header-search-input" name="bf_query_search" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" value="" oninput="onHeaderSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
+                    <span class="header-search-shortcut">Ctrl K</span>
+                </form>
             </div>
 
             <!-- RIGHT ACTIONS -->
@@ -7569,7 +7626,7 @@
                 <!-- CONTEÚDO PRINCIPAL (STATUS + GRID) -->
                 <main class="catalog-main" style="width: 100%;">
                     <!-- Input oculto para compatibilidade com JS -->
-                    <input type="text" id="catalog-search" style="display: none;">
+                    <input type="search" id="catalog-search" autocomplete="off" value="" style="display: none;">
 
                     <!-- BARRA DE STATUS / CHIPS ATIVOS -->
                     <div class="catalog-status-bar" id="catalog-status-bar">
@@ -12071,6 +12128,13 @@ function initApp() {
             clearTimeout(_headerSearchTimer);
             const q = (query || '').trim();
 
+            // Bloqueia autofill do navegador que tenta preencher 'admin' sem foco do usuário
+            if (q.toLowerCase() === 'admin' && document.activeElement !== document.getElementById('header-search-input')) {
+                const searchEl = document.getElementById('header-search-input');
+                if (searchEl) searchEl.value = '';
+                return;
+            }
+
             if (!q) {
                 // Campo vazio — volta para o estado anterior
                 if (currentNavMode === 'inicio') {
@@ -12267,6 +12331,7 @@ function initApp() {
             } else {
                 nav.classList.toggle('collapsed');
                 const isCollapsed = nav.classList.contains('collapsed');
+                document.body.classList.toggle('sidebar-is-collapsed', isCollapsed);
                 try {
                     localStorage.setItem('brasilflix_sidebar_collapsed', isCollapsed ? '1' : '0');
                 } catch(e) {}
@@ -12282,6 +12347,7 @@ function initApp() {
             if (window.innerWidth > 900 && localStorage.getItem('brasilflix_sidebar_collapsed') === '1') {
                 document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('sidebar-nav')?.classList.add('collapsed');
+                    document.body.classList.add('sidebar-is-collapsed');
                 });
             }
         } catch(e) {}
@@ -12365,14 +12431,31 @@ function initApp() {
 
         function clearSearchAutofill() {
             const h = document.getElementById('header-search-input');
-            if (h && h.value.trim().toLowerCase() === 'admin') {
+            if (h && (h.value || '').trim().toLowerCase() === 'admin' && document.activeElement !== h) {
                 h.value = '';
             }
+            const c = document.getElementById('catalog-search');
+            if (c && (c.value || '').trim().toLowerCase() === 'admin') {
+                c.value = '';
+            }
             const a = document.getElementById('admin-catalog-search');
-            if (a && a.value.trim().toLowerCase() === 'admin') {
+            if (a && (a.value || '').trim().toLowerCase() === 'admin' && document.activeElement !== a) {
                 a.value = '';
             }
         }
+
+        window.addEventListener('beforeunload', () => {
+            const h = document.getElementById('header-search-input');
+            if (h && (h.value || '').trim().toLowerCase() === 'admin') h.value = '';
+            const c = document.getElementById('catalog-search');
+            if (c) c.value = '';
+        });
+        window.addEventListener('pageshow', clearSearchAutofill);
+        window.addEventListener('load', clearSearchAutofill);
+
+        // Vigia ativamente nos primeiros 2.5 segundos contra autofill ou restauração tardia do navegador
+        const _autofillGuard = setInterval(clearSearchAutofill, 80);
+        setTimeout(() => clearInterval(_autofillGuard), 2500);
 
 /* ═══════════════════════════════════════════════════════════════════════
            👤 AUTENTICAÇÃO DE USUÁRIOS & FAVORITOS & NOTIFICAÇÕES
