@@ -386,7 +386,7 @@ class QueueManager extends EventEmitter {
             }
 
             // ── 3. JOBS TRAVADOS (crash recovery contínuo) ───────────────────────────
-            const stuckThresholdMs = 3 * 60 * 60 * 1000; // 3 horas
+            const stuckThresholdMs = 40 * 60 * 1000; // 40 min (anteriormente 3h)
             const stuckStatuses = ['processing', 'downloading', 'uploading', 'searching'];
             const toReset = [];
             for (const job of jobs) {
@@ -1224,14 +1224,8 @@ class QueueManager extends EventEmitter {
     getActiveDownloadsCount() {
         let count = 0;
         for (const job of this.activeJobs.values()) {
-            if (job.status === 'downloading' || job.status === 'searching') {
+            if (job.status === 'downloading') {
                 count++;
-            } else if (job.status === 'processing') {
-                const isOptimizing = job.progressDetails && job.progressDetails.includes('Otimizando');
-                const hasLocal = (job.rawFilePath && fs.existsSync(job.rawFilePath)) || (job.optimizedPath && fs.existsSync(job.optimizedPath));
-                if (!isOptimizing && !hasLocal) {
-                    count++;
-                }
             }
         }
         const activeInDownloader = (DownloaderManager && DownloaderManager.activeDownloads) ? DownloaderManager.activeDownloads.size : 0;
@@ -1307,7 +1301,12 @@ class QueueManager extends EventEmitter {
             }
 
             const nextJob = this.findNextJobToProcess({ canDownload, canTranscode, canUpload });
-            if (!nextJob) break;
+            if (!nextJob) {
+                if (this.queue.length === 0 && this.activeJobs.size < 4) {
+                    this.emit('queueDepleted');
+                }
+                break;
+            }
 
             this.runJobWorker(nextJob);
         }

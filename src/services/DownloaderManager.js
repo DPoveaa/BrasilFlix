@@ -837,21 +837,12 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // Se for Season Pack, só finaliza quando todos os episódios selecionados do pack estiverem no disco
+                    // Se for Season Pack, só finaliza quando todos os episódios selecionados do pack estiverem 100% concluídos no WebTorrent
                     if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
-                        if (!torrent.done && torrent.progress < 0.999) {
-                            let allEpsDownloaded = true;
-                            for (const vf of Object.values(detectedEpisodeMap)) {
-                                const epPath = path.join(this.downloadDir, vf.path);
-                                if (!fs.existsSync(epPath) || fs.statSync(epPath).size < Math.floor(vf.length * 0.90)) {
-                                    allEpsDownloaded = false;
-                                    break;
-                                }
-                            }
-                            if (!allEpsDownloaded) {
-                                isCompleting = false;
-                                return; // Aguarda os outros episódios da temporada terminarem de baixar!
-                            }
+                        const allSelectedDone = Object.values(detectedEpisodeMap).every(vf => vf.done || (vf.progress || 0) >= 0.999);
+                        if (!allSelectedDone && !torrent.done && torrent.progress < 0.999) {
+                            isCompleting = false;
+                            return; // Aguarda os outros episódios da temporada terminarem de baixar!
                         }
                     }
 
@@ -912,10 +903,12 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // 4. Se for Season Pack, monta o mapa completo dos arquivos físicos válidos baixados no SSD
+                    // 4. Se for Season Pack, monta o mapa completo dos arquivos físicos válidos e 100% baixados no SSD
                     const fullEpisodeMap = {};
                     if (isSeasonPack && detectedEpisodeMap) {
                         for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
+                            // Apenas inclui arquivos cujo download foi 100% finalizado e validado pelo WebTorrent
+                            if (!f.done && (f.progress || 0) < 0.999 && !torrent.done) continue;
                             const epFullPath = path.join(this.downloadDir, f.path);
                             if (fs.existsSync(epFullPath)) {
                                 const epStat = fs.statSync(epFullPath);

@@ -65,8 +65,12 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
     if (reason?.message === 'TIMEOUT' || 
+        reason?.code === 'ERR_DATA_CHANNEL' ||
+        reason?.message?.includes('User-Initiated Abort') ||
+        reason?.message?.includes('Close called') ||
         reason?.stack?.includes('updates.js') || 
-        reason?.stack?.includes('telegram/client')) {
+        reason?.stack?.includes('telegram/client') ||
+        reason?.stack?.includes('webrtc-polyfill')) {
         return;
     }
     console.error('⚠️ Aviso - Rejeição assíncrona capturada:', reason?.message || reason);

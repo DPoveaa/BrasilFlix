@@ -17,6 +17,386 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
+
+        /* ═══════════ APP SHELL (SIDEBAR + CONTENT) ═══════════ */
+        .app-shell {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            height: calc(100vh - 58px);
+        }
+
+        /* ═══════════ LEFT SIDEBAR NAV ═══════════ */
+        .sidebar-nav {
+            width: 216px;
+            min-width: 216px;
+            background: #080b11;
+            border-right: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.08) transparent;
+            flex-shrink: 0;
+            padding: 12px 0 24px 0;
+            z-index: 50;
+            transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar-nav::-webkit-scrollbar { width: 3px; }
+        .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+        /* COLLAPSED STATE (DESKTOP) */
+        .sidebar-nav.collapsed {
+            width: 64px !important;
+            min-width: 64px !important;
+        }
+
+        .sidebar-nav.collapsed .sidebar-section-label,
+        .sidebar-nav.collapsed .nav-label,
+        .sidebar-nav.collapsed .sidebar-divider,
+        .sidebar-nav.collapsed .sidebar-genre-item {
+            display: none !important;
+        }
+
+        .sidebar-nav.collapsed .sidebar-nav-item {
+            justify-content: center;
+            padding: 10px 0;
+            margin: 4px auto;
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+        }
+
+        .sidebar-nav.collapsed .sidebar-nav-item .nav-icon {
+            width: auto;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-section-label {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: #475569;
+            padding: 12px 18px 6px 18px;
+        }
+
+        .sidebar-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            margin: 2px 10px;
+            cursor: pointer;
+            border-radius: 9px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #94a3b8;
+            transition: all 0.15s cubic-bezier(0.4,0,0.2,1);
+            position: relative;
+            border: 1px solid transparent;
+            background: transparent;
+            width: calc(100% - 20px);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .sidebar-nav-item:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .sidebar-nav-item.active {
+            color: #10b981;
+            background: rgba(16,185,129,0.15);
+            border: 1px solid rgba(16,185,129,0.35);
+            font-weight: 800;
+        }
+
+        .sidebar-nav-item .nav-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar-nav-item.active .nav-label {
+            color: #10b981;
+        }
+
+        .sidebar-genre-item {
+            font-size: 12.5px;
+            padding: 6px 12px;
+            color: #818fa8;
+            margin: 1px 10px;
+        }
+
+        .sidebar-genre-item:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .sidebar-genre-item.active {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.14);
+            font-weight: 700;
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px 14px;
+        }
+
+        /* Main scrollable area */
+        .app-main-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+            height: 100%;
+        }
+
+        .app-main-area::-webkit-scrollbar { width: 4px; }
+        .app-main-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+        /* Toggle mobile sidebar */
+        .sidebar-mobile-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 290;
+            backdrop-filter: blur(4px);
+        }
+
+        .sidebar-mobile-overlay.active { display: block; }
+
+        .sidebar-toggle-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 5px 6px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: all 0.15s ease;
+            flex-shrink: 0;
+            margin: 0;
+        }
+
+        .sidebar-toggle-btn:hover {
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+        }
+
+        @media (max-width: 900px) {
+            .sidebar-nav {
+                position: fixed;
+                left: -230px;
+                top: 0;
+                bottom: 0;
+                height: 100vh;
+                z-index: 300;
+                transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+                box-shadow: 6px 0 40px rgba(0,0,0,0.9);
+                padding-top: 16px;
+                background: #080b11;
+            }
+            .sidebar-nav.mobile-open {
+                transform: translateX(230px);
+            }
+            .app-shell { height: calc(100vh - 54px); }
+        }
+
+
+        /* ═══════════ TOP HEADER ═══════════ */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(7, 9, 14, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 14px;
+            flex-shrink: 0;
+        }
+
+        .header-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+            flex-wrap: nowrap;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        /* Search bar in header */
+        .header-search-wrap {
+            flex: 1;
+            max-width: 480px;
+            position: relative;
+        }
+
+        .header-search-input {
+            width: 100%;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 8px 40px 8px 38px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            font-family: inherit;
+        }
+
+        .header-search-input::placeholder { color: #64748b; }
+
+        .header-search-input:focus {
+            background: rgba(255,255,255,0.11);
+            border-color: rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+        }
+
+        .header-search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #64748b;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+        }
+
+        .header-search-shortcut {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #475569;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 5px;
+            padding: 2px 5px;
+            pointer-events: none;
+            line-height: 1.2;
+        }
+
+        /* Bell button & badge */
+        .header-bell-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #94a3b8;
+            padding: 7px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .header-bell-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .header-bell-badge {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            min-width: 16px;
+            height: 16px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 9.5px;
+            font-weight: 900;
+            border-radius: 99px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
+
+        /* Minimalist user profile button (NO UGLY RED) */
+        .user-profile-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 5px 12px 5px 8px;
+            border-radius: 999px;
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .user-profile-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            transform: translateY(-1px);
+        }
+
+        .user-avatar-circle {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .user-profile-btn:hover .user-avatar-circle {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #10b981;
+        }
+
+
         :root {
             --bg-primary: #07090e;
             --bg-secondary: #0c111a;
@@ -87,13 +467,12 @@
         }
 
         .header-container {
-            max-width: 1440px;
-            margin: 0 auto;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 16px;
             flex-wrap: nowrap;
+            width: 100%;
         }
 
         .brand {
@@ -2596,6 +2975,106 @@
             transform: translateY(-1px);
         }
 
+        .hero-arrow-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            opacity: 0;
+        }
+
+        .hero-billboard:hover .hero-arrow-btn {
+            opacity: 1;
+        }
+
+        .hero-arrow-btn:hover {
+            background: rgba(16, 185, 129, 0.85);
+            border-color: #10b981;
+            transform: translateY(-50%) scale(1.08);
+        }
+
+        .hero-arrow-left {
+            left: 18px;
+        }
+
+        .hero-arrow-right {
+            right: 18px;
+        }
+
+        /* HERO CAROUSEL PROGRESS BARS */
+        .hero-bottom-controls {
+            position: absolute;
+            bottom: 16px;
+            left: 44px;
+            right: 44px;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+        }
+
+        .hero-progress-bar-row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            max-width: 360px;
+        }
+
+        .hero-progress-seg {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 99px;
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .hero-progress-seg:hover {
+            opacity: 0.9;
+            transform: scaleY(1.4);
+        }
+
+        .hero-progress-seg.done .hero-progress-fill {
+            width: 100% !important;
+        }
+
+        .hero-progress-fill {
+            height: 100%;
+            background: #ffffff;
+            border-radius: 99px;
+            width: 0%;
+            transition: width 0.06s linear;
+        }
+
+        .hero-progress-seg.active .hero-progress-fill {
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+        }
+
+        @media (max-width: 768px) {
+            .hero-arrow-btn {
+                opacity: 0.85;
+                width: 36px;
+                height: 36px;
+            }
+            .hero-arrow-left { left: 10px; }
+            .hero-arrow-right { right: 10px; }
+            .hero-bottom-controls { left: 16px; right: 16px; bottom: 12px; }
+        }
+
         @media (max-width: 768px) {
             .hero-billboard {
                 min-height: 420px;
@@ -2987,15 +3466,15 @@
             width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: var(--green-gradient);
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 11px;
             font-weight: 900;
-            color: #fff;
+            color: #cbd5e1;
             flex-shrink: 0;
-            box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
         }
 
         .profile-dropdown-menu {
@@ -4063,17 +4542,23 @@
         }
 
         .user-avatar-circle {
-            width: 26px;
-            height: 26px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #e50914, #b91c1c);
-            color: #fff;
-            font-weight: 900;
-            font-size: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #cbd5e1;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .user-profile-btn:hover .user-avatar-circle {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #10b981;
         }
 
         .profile-dropdown-menu {
@@ -6527,56 +7012,72 @@
 
     <div class="toast-container" id="toast-container"></div>
 
-    <!-- HEADER -->
+        <!-- HEADER (MOCKUP STYLE) -->
     <header id="main-header">
         <div class="header-container">
-            <div class="brand" onclick="switchNavCategory('inicio')" title="BrasilFlix • Início">
-                <img src="/icon.png" alt="BrasilFlix" class="brand-symbol-img">
-                <span class="brand-title-text">
-                    <span class="brand-text-brasil">Brasil</span><span class="brand-text-flix">Fl<span class="brand-text-i">ı<span class="brand-i-dot"></span></span>x</span>
+            <!-- HEADER LEFT: TOGGLE + LOGO BEM À ESQUERDA -->
+            <div class="header-left">
+                <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Recolher / Expandir Menu" aria-label="Menu">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+
+                <!-- BRAND LOGO -->
+                <div class="brand" onclick="switchNavCategory('inicio')" title="BrasilFlix • Início">
+                    <img src="/icon.png" alt="BrasilFlix" class="brand-symbol-img">
+                    <span class="brand-title-text">
+                        <span class="brand-text-brasil">Brasil</span><span class="brand-text-flix">Fl<span class="brand-text-i">ı<span class="brand-i-dot"></span></span>x</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- SEARCH BAR (CENTER) -->
+            <div class="header-search-wrap">
+                <span class="header-search-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                 </span>
+                <input type="text" id="header-search-input" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" oninput="onHeaderSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
+                <span class="header-search-shortcut">Ctrl K</span>
             </div>
 
-            <div class="nav-tabs">
-                <button class="nav-tab active" id="tab-nav-inicio" onclick="switchNavCategory('inicio')">
-                    🍿 Início
-                </button>
-                <button class="nav-tab" id="tab-nav-filmes" onclick="switchNavCategory('filme')">
-                    🎬 Filmes
-                </button>
-                <button class="nav-tab" id="tab-nav-series" onclick="switchNavCategory('serie')">
-                    📺 Séries
-                </button>
-                <button class="nav-tab" id="tab-nav-doramas" onclick="switchNavCategory('dorama')">
-                    🌸 Doramas
-                </button>
-                <button class="nav-tab" id="tab-nav-animes" onclick="switchNavCategory('anime')">
-                    ⛩️ Animes
-                </button>
-                <button class="nav-tab" id="tab-nav-favoritos" onclick="switchNavCategory('favoritos')">
-                    📌 Minha Lista
-                </button>
-                <button class="nav-tab" id="tab-btn-status" onclick="switchTab('tab-status')">
-                    ⚡ Fila & Status
-                </button>
-            </div>
-
+            <!-- RIGHT ACTIONS -->
             <div class="header-actions">
-                <!-- BOTÃO DE SALA (WATCH PARTY) -->
-                <button id="party-header-btn" onclick="onPartyHeaderBtnClick()" title="Assistir Junto">
-                    👥
+                <!-- BOTÃO DE SALA (WATCH PARTY) - Hidden by default -->
+                <button id="party-header-btn" onclick="onPartyHeaderBtnClick()" title="Assistir Junto" style="display:none;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     <span id="party-header-btn-label">Sala</span>
                     <span id="party-member-badge">0</span>
                 </button>
 
-                <!-- ÁREA UNIFICADA DE USUÁRIO / VIP / NOTIFICAÇÕES -->
+                <!-- BELL NOTIFICATION BUTTON & DROPDOWN -->
+                <div class="header-bell-wrapper" style="position: relative;">
+                    <button class="header-bell-btn" id="header-bell-btn" onclick="toggleHeaderBell(event)" title="Avisos & Notificações" aria-label="Notificações">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <span class="header-bell-badge" id="header-bell-badge" style="display: none;"></span>
+                    </button>
+
+                    <div class="profile-dropdown-menu" id="header-notif-dropdown" onclick="event.stopPropagation()" style="width: 320px; right: 0; top: calc(100% + 10px);">
+                        <div class="profile-menu-header" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div style="font-size: 13px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 6px;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                Avisos & Notificações
+                            </div>
+                            <button id="header-notif-clear-btn" onclick="markAllNotifsRead()" style="display: none; background: none; border: none; font-size: 11px; color: #38bdf8; font-weight: 700; cursor: pointer; padding: 2px 4px;">Marcar lidas</button>
+                        </div>
+                        <div id="header-notif-items-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding: 6px 0;">
+                            <div style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 24px 12px;">
+                                Nenhuma notificação no momento.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ÁREA UNIFICADA DE USUÁRIO (MINIMALISTA) -->
                 <div id="user-header-profile-box" style="position: relative;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <a href="/assinar" target="_blank" class="btn-vip-header" title="Assinar VIP">
-                            👑 VIP
-                        </a>
-                        <button class="user-profile-btn" onclick="openAuthUserModal('login')">
-                            <div class="user-avatar-circle">👤</div>
+                        <button class="user-profile-btn" onclick="openAuthUserModal('login')" title="Entrar na conta">
+                            <div class="user-avatar-circle">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </div>
                             <span>Entrar</span>
                         </button>
                     </div>
@@ -6812,8 +7313,144 @@
         </div>
     </div>
 
-    <!-- MAIN CONTENT -->
-    <div class="main-container">
+        <!-- MOBILE SIDEBAR OVERLAY -->
+    <div class="sidebar-mobile-overlay" id="sidebar-mobile-overlay" onclick="toggleSidebar()"></div>
+
+    <!-- APP SHELL: SIDEBAR + MAIN AREA -->
+    <div class="app-shell">
+        <!-- LEFT SIDEBAR NAV -->
+        <nav class="sidebar-nav" id="sidebar-nav">
+            <!-- SEÇÃO PRINCIPAL -->
+            <div class="sidebar-section">
+                <button class="sidebar-nav-item active" id="sidebar-item-inicio" onclick="switchNavCategory('inicio')" title="Início">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    </span>
+                    <span class="nav-label">Início</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-filme" onclick="switchNavCategory('filme')" title="Filmes">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+                    </span>
+                    <span class="nav-label">Filmes</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-serie" onclick="switchNavCategory('serie')" title="Séries">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                    </span>
+                    <span class="nav-label">Séries</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-dorama" onclick="switchNavCategory('dorama')" title="Doramas">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    </span>
+                    <span class="nav-label">Doramas</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-anime" onclick="switchNavCategory('anime')" title="Animes">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    </span>
+                    <span class="nav-label">Animes</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-favoritos" onclick="switchNavCategory('favoritos')" title="Minha Lista">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                    </span>
+                    <span class="nav-label">Minha Lista</span>
+                </button>
+                <button class="sidebar-nav-item" id="sidebar-item-status" onclick="switchTab('tab-status')" title="Fila &amp; Status" style="display:none!important">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </span>
+                    <span class="nav-label">Fila &amp; Status</span>
+                </button>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <!-- CATEGORIAS -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">CATEGORIAS</div>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-todos" onclick="filterBySidebarGenre('todos')" title="Todos">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </span>
+                    <span class="nav-label">Todos</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-acao" onclick="filterBySidebarGenre('Ação')" title="Ação">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+                    </span>
+                    <span class="nav-label">Ação</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-aventura" onclick="filterBySidebarGenre('Aventura')" title="Aventura">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                    </span>
+                    <span class="nav-label">Aventura</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-comedia" onclick="filterBySidebarGenre('Comédia')" title="Comédia">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                    </span>
+                    <span class="nav-label">Comédia</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-drama" onclick="filterBySidebarGenre('Drama')" title="Drama">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10c0-5.52-4.48-10-10-10zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
+                    </span>
+                    <span class="nav-label">Drama</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-fantasia" onclick="filterBySidebarGenre('Fantasia')" title="Fantasia">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2L21 12l-6.6 2.8L12 22l-2.4-7.2L3 12l6.6-2.8L12 2z"/></svg>
+                    </span>
+                    <span class="nav-label">Fantasia</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-terror" onclick="filterBySidebarGenre('Terror')" title="Terror">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </span>
+                    <span class="nav-label">Terror</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-doc" onclick="filterBySidebarGenre('Documentário')" title="Documentário">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                    </span>
+                    <span class="nav-label">Documentário</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-crime" onclick="filterBySidebarGenre('Crime')" title="Crime">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </span>
+                    <span class="nav-label">Crime</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-ficcao" onclick="filterBySidebarGenre('Ficção')" title="Ficção Científica">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)"/></svg>
+                    </span>
+                    <span class="nav-label">Ficção Científica</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-romance" onclick="filterBySidebarGenre('Romance')" title="Romance">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    </span>
+                    <span class="nav-label">Romance</span>
+                </button>
+                <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-suspense" onclick="filterBySidebarGenre('Suspense')" title="Suspense">
+                    <span class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    </span>
+                    <span class="nav-label">Suspense</span>
+                </button>
+
+            </div>
+        </nav>
+
+        <!-- MAIN SCROLLABLE CONTENT AREA -->
+        <div class="app-main-area" id="app-main-area">
+            <!-- MAIN CONTENT -->
+            <div class="main-container">
 
         <!-- TAB 1: MONITOR & FILA (PÚBLICO) -->
         <div id="tab-status" class="tab-content">
@@ -6907,191 +7544,10 @@
             <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar()"></div>
 
             <div class="catalog-layout" id="catalog-layout-grid" style="display: none;">
-                <!-- MENU LATERAL DE FILTROS (MERCADO LIVRE STYLE) -->
-                <aside class="catalog-sidebar" id="catalog-sidebar">
-                    <div class="sidebar-header">
-                        <span style="font-weight: 800; font-size: 14px; color: #fff; display: flex; align-items: center; gap: 6px;">
-                            <span>🎛️</span> Filtros do Catálogo
-                        </span>
-                        <button class="btn-clear-filters" onclick="resetAllCatalogFilters()">Limpar Filtros</button>
-                    </div>
-
-                    <!-- 1. TIPO DE MÍDIA -->
-                    <div class="filter-section" id="sidebar-filter-section-type">
-                        <h4 class="filter-title">🎬 Tipo de Mídia</h4>
-                        <ul class="filter-list">
-                            <li>
-                                <button class="filter-link active" data-filter="type" data-val="todos" onclick="setCatalogFilter('type', 'todos', this)">
-                                    <span class="filter-name">🌟 Todos os Tipos</span>
-                                    <span class="filter-count" id="count-type-all">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="type" data-val="filme" onclick="setCatalogFilter('type', 'filme', this)">
-                                    <span class="filter-name">🎥 Filmes</span>
-                                    <span class="filter-count" id="count-type-filme">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="type" data-val="serie" onclick="setCatalogFilter('type', 'serie', this)">
-                                    <span class="filter-name">📺 Séries</span>
-                                    <span class="filter-count" id="count-type-serie">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="type" data-val="anime" onclick="setCatalogFilter('type', 'anime', this)">
-                                    <span class="filter-name">⛩️ Animes</span>
-                                    <span class="filter-count" id="count-type-anime">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="type" data-val="dorama" onclick="setCatalogFilter('type', 'dorama', this)">
-                                    <span class="filter-name">🌸 Doramas & J-Drama</span>
-                                    <span class="filter-count" id="count-type-dorama">0</span>
-                                </button>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- SUB-FILTRO DEDICADO: ORIGEM / SUBTIPO DE DORAMAS (visível estritamente na aba Doramas) -->
-                    <div class="filter-section" id="sidebar-filter-section-dorama" style="display: none;">
-                        <h4 class="filter-title">🌸 Tipo de Dorama</h4>
-                        <ul class="filter-list">
-                            <li>
-                                <button class="filter-link active" data-dorama-subtype="todos" onclick="filterDoramasSubtype('todos', this)">
-                                    <span class="filter-name">🌸 Todos os Doramas</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-dorama-subtype="kdrama" onclick="filterDoramasSubtype('kdrama', this)">
-                                    <span class="filter-name">🇰🇷 K-Drama (Coreano)</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-dorama-subtype="cdrama" onclick="filterDoramasSubtype('cdrama', this)">
-                                    <span class="filter-name">🇨🇳 C-Drama (Chinês)</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-dorama-subtype="jdrama" onclick="filterDoramasSubtype('jdrama', this)">
-                                    <span class="filter-name">🇯🇵 J-Drama (Japonês)</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-dorama-subtype="microdrama" onclick="filterDoramasSubtype('microdrama', this)">
-                                    <span class="filter-name">📱 Micro-Séries</span>
-                                </button>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- 2. ÁUDIO & IDIOMA -->
-                    <div class="filter-section">
-                        <h4 class="filter-title">🔊 Áudio & Idioma</h4>
-                        <ul class="filter-list">
-                            <li>
-                                <button class="filter-link active" data-filter="audio" data-val="todos" onclick="setCatalogFilter('audio', 'todos', this)">
-                                    <span class="filter-name">🌐 Todos os Áudios</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="audio" data-val="dublado" onclick="setCatalogFilter('audio', 'dublado', this)">
-                                    <span class="filter-name">🇧🇷 Dublado (PT-BR)</span>
-                                    <span class="filter-count" id="count-audio-dub">0</span>
-                                </button>
-                            </li>
-                            <li>
-                                <button class="filter-link" data-filter="audio" data-val="legendado" onclick="setCatalogFilter('audio', 'legendado', this)">
-                                    <span class="filter-name">💬 Legendado (PT-BR)</span>
-                                    <span class="filter-count" id="count-audio-leg">0</span>
-                                </button>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- 3. QUALIDADE DE IMAGEM -->
-                    <div class="filter-section">
-                        <h4 class="filter-title">Qualidade</h4>
-                        <ul class="filter-list">
-                            <li>
-                                 <button class="filter-link active" data-filter="quality" data-val="todos" onclick="setCatalogFilter('quality', 'todos', this)">
-                                     <span class="filter-name">Todas as Versões</span>
-                                 </button>
-                            </li>
-                            <li>
-                                 <button class="filter-link" data-filter="quality" data-val="1080p" onclick="setCatalogFilter('quality', '1080p', this)">
-                                     <span class="filter-name">Alta Definição (HD)</span>
-                                     <span class="filter-count" id="count-qual-1080">0</span>
-                                 </button>
-                            </li>
-                            <li>
-                                 <button class="filter-link" data-filter="quality" data-val="cam" onclick="setCatalogFilter('quality', 'cam', this)">
-                                     <span class="filter-name">Versão Cinema (CAM)</span>
-                                     <span class="filter-count" id="count-qual-cam">0</span>
-                                 </button>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- 4. CATEGORIAS & GÊNEROS -->
-                    <div class="filter-section">
-                        <h4 class="filter-title">Gêneros</h4>
-                        <div class="genre-tags-grid" id="sidebar-genre-list">
-                            <button class="genre-tag-btn active" data-filter="genre" data-val="todos" onclick="setCatalogFilter('genre', 'todos', this)">
-                                Todos
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Ação" onclick="setCatalogFilter('genre', 'Ação', this)">
-                                Ação <span class="genre-tag-count" id="count-genre-acao">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Comédia" onclick="setCatalogFilter('genre', 'Comédia', this)">
-                                Comédia <span class="genre-tag-count" id="count-genre-comedia">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Drama" onclick="setCatalogFilter('genre', 'Drama', this)">
-                                Drama <span class="genre-tag-count" id="count-genre-drama">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Ficção" onclick="setCatalogFilter('genre', 'Ficção', this)">
-                                Ficção Científica <span class="genre-tag-count" id="count-genre-ficcao">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Terror" onclick="setCatalogFilter('genre', 'Terror', this)">
-                                Terror <span class="genre-tag-count" id="count-genre-terror">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Romance" onclick="setCatalogFilter('genre', 'Romance', this)">
-                                Romance <span class="genre-tag-count" id="count-genre-romance">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Suspense" onclick="setCatalogFilter('genre', 'Suspense', this)">
-                                Suspense <span class="genre-tag-count" id="count-genre-suspense">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Animação" onclick="setCatalogFilter('genre', 'Animação', this)">
-                                Animação <span class="genre-tag-count" id="count-genre-animacao">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Aventura" onclick="setCatalogFilter('genre', 'Aventura', this)">
-                                Aventura <span class="genre-tag-count" id="count-genre-aventura">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Crime" onclick="setCatalogFilter('genre', 'Crime', this)">
-                                Crime <span class="genre-tag-count" id="count-genre-crime">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Fantasia" onclick="setCatalogFilter('genre', 'Fantasia', this)">
-                                Fantasia <span class="genre-tag-count" id="count-genre-fantasia">0</span>
-                            </button>
-                            <button class="genre-tag-btn" data-filter="genre" data-val="Documentário" onclick="setCatalogFilter('genre', 'Documentário', this)">
-                                Documentário <span class="genre-tag-count" id="count-genre-doc">0</span>
-                            </button>
-                        </div>
-                    </div>
-                </aside>
-
-                <!-- CONTEÚDO PRINCIPAL (BUSCA + STATUS + GRID) -->
-                <main class="catalog-main">
-                    <div class="catalog-header-bar">
-                        <div class="search-box" style="flex: 1; margin-bottom: 0;">
-                            <span class="search-icon">🔍</span>
-                            <input type="text" id="catalog-search" class="search-input" placeholder="Buscar por título, categoria, sinopse..." oninput="filterCatalog()">
-                        </div>
-
-                        <button class="btn-mobile-filters" onclick="toggleMobileSidebar()">
-                            🎛️ Filtros (<span id="mobile-filter-badge">0</span>)
-                        </button>
-                    </div>
+                <!-- CONTEÚDO PRINCIPAL (STATUS + GRID) -->
+                <main class="catalog-main" style="width: 100%;">
+                    <!-- Input oculto para compatibilidade com JS -->
+                    <input type="text" id="catalog-search" style="display: none;">
 
                     <!-- BARRA DE STATUS / CHIPS ATIVOS -->
                     <div class="catalog-status-bar" id="catalog-status-bar">
@@ -7099,6 +7555,17 @@
                             Carregando catálogo...
                         </span>
                         <div class="active-chips-box" id="active-chips-box"></div>
+                    </div>
+
+                    <!-- SUB-FILTRO DEDICADO: ORIGEM / SUBTIPO DE DORAMAS (visível na categoria doramas) -->
+                    <div id="sidebar-filter-section-dorama" style="display: none; padding: 0 0 16px;">
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="genre-tag-btn active" data-dorama-subtype="todos" onclick="filterDoramasSubtype('todos', this)">Todos</button>
+                            <button class="genre-tag-btn" data-dorama-subtype="kdrama" onclick="filterDoramasSubtype('kdrama', this)">K-Drama</button>
+                            <button class="genre-tag-btn" data-dorama-subtype="cdrama" onclick="filterDoramasSubtype('cdrama', this)">C-Drama</button>
+                            <button class="genre-tag-btn" data-dorama-subtype="jdrama" onclick="filterDoramasSubtype('jdrama', this)">J-Drama</button>
+                            <button class="genre-tag-btn" data-dorama-subtype="microdrama" onclick="filterDoramasSubtype('microdrama', this)">Micro-Séries</button>
+                        </div>
                     </div>
 
                     <div class="catalog-grid" id="catalog-grid-container">
@@ -8702,9 +9169,12 @@
 
         </div>
 
-    </div>
+    
+            </div><!-- /main-container -->
+        </div><!-- /app-main-area -->
+    </div><!-- /app-shell -->
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════════════════════════
          MODAIS ADMINISTRATIVOS
          ═══════════════════════════════════════════════════════════════════════ -->
 
@@ -9995,6 +10465,13 @@ function initApp() {
             const btn = document.getElementById('tab-btn-' + baseId);
             if (btn) btn.classList.add('active');
 
+            // Sincroniza sidebar para tabs especiais
+            if (tabId === 'tab-status') {
+                document.querySelectorAll('.sidebar-nav-item').forEach(b => b.classList.remove('active'));
+                const sbStatus = document.getElementById('sidebar-item-status');
+                if (sbStatus) sbStatus.classList.add('active');
+            }
+
             const targetContent = document.getElementById(tabId);
             if (targetContent) {
                 targetContent.style.display = 'block';
@@ -10663,11 +11140,11 @@ function initApp() {
 
         function filterDoramasSubtype(subtype, btn) {
             activeDoramaSubtype = subtype;
-            document.querySelectorAll('#sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('#sidebar-filter-section-dorama .genre-tag-btn, #sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
             if (btn) {
                 btn.classList.add('active');
             } else {
-                const target = document.querySelector(`#sidebar-filter-section-dorama .filter-link[data-dorama-subtype="${subtype}"]`);
+                const target = document.querySelector(`#sidebar-filter-section-dorama [data-dorama-subtype="${subtype}"]`);
                 if (target) target.classList.add('active');
             }
 
@@ -10839,16 +11316,19 @@ function initApp() {
                 const badgeText = item.isCam ? 'CAM' : (isDub && isLeg ? 'DUB/LEG' : (isDub ? 'DUB' : 'LEG'));
                 const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
 
-                // Badge de categoria (Anime / Dorama / Série / Filme)
+                // Badge de categoria (só exibido na página Início, não em vistas filtradas)
                 let catBadge = '';
-                if (isItemAnime(item)) {
-                    catBadge = `<div class="cat-badge cat-badge-anime">Anime</div>`;
-                } else if (isItemDorama(item)) {
-                    catBadge = `<div class="cat-badge cat-badge-dorama">Dorama</div>`;
-                } else if (item.itemType === 'serie') {
-                    catBadge = `<div class="cat-badge cat-badge-serie">Série</div>`;
-                } else {
-                    catBadge = `<div class="cat-badge cat-badge-filme">Filme</div>`;
+                const _showCatBadge = (currentNavMode === 'inicio' || catalogFilters.type === 'todos');
+                if (_showCatBadge) {
+                    if (isItemAnime(item)) {
+                        catBadge = `<div class="cat-badge cat-badge-anime">Anime</div>`;
+                    } else if (isItemDorama(item)) {
+                        catBadge = `<div class="cat-badge cat-badge-dorama">Dorama</div>`;
+                    } else if (item.itemType === 'serie') {
+                        catBadge = `<div class="cat-badge cat-badge-serie">Série</div>`;
+                    } else {
+                        catBadge = `<div class="cat-badge cat-badge-filme">Filme</div>`;
+                    }
                 }
 
                 const isFav = userFavorites.some(f => String(f.id) === String(item.id));
@@ -10909,6 +11389,17 @@ function initApp() {
             const targetBtn = document.getElementById(tabMap[cat]);
             if (targetBtn) targetBtn.classList.add('active');
 
+            // Sincroniza sidebar esquerda do Mockup
+            document.querySelectorAll('.sidebar-nav-item').forEach(b => b.classList.remove('active'));
+            const sidebarBtn = document.getElementById('sidebar-item-' + cat);
+            if (sidebarBtn) sidebarBtn.classList.add('active');
+
+            // Fecha menu mobile ao navegar
+            const mNav = document.getElementById('sidebar-nav');
+            const mOverlay = document.getElementById('sidebar-mobile-overlay');
+            if (mNav) mNav.classList.remove('mobile-open');
+            if (mOverlay) mOverlay.classList.remove('active');
+
             localStorage.setItem('bf_active_nav', cat);
             localStorage.setItem('bf_active_tab', 'tab-catalogo');
 
@@ -10946,6 +11437,8 @@ function initApp() {
                 if (railsBox) railsBox.style.display = 'none';
                 if (gridLayout) gridLayout.style.display = 'flex';
                 if (typeFilterSection) typeFilterSection.style.display = (cat === 'em-alta' || cat === 'todos') ? 'block' : 'none';
+                const doramaSection = document.getElementById('sidebar-filter-section-dorama');
+                if (doramaSection) doramaSection.style.display = (cat === 'dorama') ? 'block' : 'none';
 
                 // Reseta filtros residuais para a nova categoria
                 if (cat === 'em-alta') {
@@ -10961,8 +11454,8 @@ function initApp() {
 
                 // Reseta sub-filtro de doramas
                 activeDoramaSubtype = 'todos';
-                document.querySelectorAll('#sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
-                const todoDoramaLink = document.querySelector('#sidebar-filter-section-dorama .filter-link[data-dorama-subtype="todos"]');
+                document.querySelectorAll('#sidebar-filter-section-dorama .genre-tag-btn, #sidebar-filter-section-dorama .filter-link').forEach(p => p.classList.remove('active'));
+                const todoDoramaLink = document.querySelector('#sidebar-filter-section-dorama [data-dorama-subtype="todos"]');
                 if (todoDoramaLink) todoDoramaLink.classList.add('active');
                 
                 const searchInput = document.getElementById('catalog-search');
@@ -11004,6 +11497,18 @@ function initApp() {
             }
         }
 
+                // ═══════════════════════════════════════════════════════════════════════
+        // 🎬 HERO BILLBOARD CAROUSEL & MODERN NETFLIX RAILS (MOCKUP ACCURATE)
+        // ═══════════════════════════════════════════════════════════════════════
+
+        let heroBillboardPool = [];
+        let currentHeroIndex = 0;
+        let heroAutoProgress = 0;      // 0..100 — preenchimento da barra
+        let heroTimerInterval = null;
+        let heroIsPaused = false;
+        const HERO_DURATION_MS = 12000; // 12s por slide
+        const HERO_TICK_MS = 60;        // ~60fps suave
+
         function renderHeroBillboard(customItem = null) {
             const container = document.getElementById('hero-billboard-container');
             if (!container) return;
@@ -11011,54 +11516,155 @@ function initApp() {
             const allSeries = (fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }));
             const allFilmes = (fullCatalog.filmes || []).map(f => ({ ...f, itemType: 'filme' }));
             const pool = [...allSeries, ...allFilmes];
-            if (pool.length === 0) {
-                container.innerHTML = '';
-                return;
+            if (pool.length === 0) { container.innerHTML = ''; return; }
+
+            const poolWithBackdrops = pool.filter(i => i.backdropUrl);
+            heroBillboardPool = poolWithBackdrops.sort((a, b) => (Number(b.nota) || 0) - (Number(a.nota) || 0)).slice(0, 8);
+            if (heroBillboardPool.length === 0) heroBillboardPool = pool.slice(0, 5);
+
+            if (customItem) {
+                const fIdx = heroBillboardPool.findIndex(i => String(i.id) === String(customItem.id));
+                if (fIdx >= 0) currentHeroIndex = fIdx;
+                else { heroBillboardPool.unshift(customItem); currentHeroIndex = 0; }
             }
 
-            const item = customItem || pool.find(i => i.backdropUrl && i.nota >= 7.5) || pool[0];
+            if (currentHeroIndex >= heroBillboardPool.length) currentHeroIndex = 0;
+            _renderHeroSlide();
+        }
+
+        function _renderHeroSlide() {
+            const container = document.getElementById('hero-billboard-container');
+            if (!container || !heroBillboardPool.length) return;
+
+            const item = heroBillboardPool[currentHeroIndex];
             const backdrop = item.backdropUrl || item.posterUrl || '';
-            const rating = item.nota ? Number(item.nota).toFixed(1) : '8.5';
-            const ano = item.ano || '2026';
+            const rating = item.nota ? Number(item.nota).toFixed(1) : '8.6';
+            const ano = item.ano || '2024';
+            const isAnime = isItemAnime(item);
+            const isDorama = isItemDorama(item);
             const isSerie = item.itemType === 'serie' || !!item.temporadas;
-            const audioBadge = item.isDublado ? 'Dublado (PT-BR)' : 'Legendado';
-            
-            let totalEps = 'Filme';
+
+            let typeBadgeLabel = 'FILME'; let typeBadgeClass = 'badge-type-filme';
+            if (isAnime)       { typeBadgeLabel = 'ANIME';  typeBadgeClass = 'badge-type-anime'; }
+            else if (isDorama) { typeBadgeLabel = 'DORAMA'; typeBadgeClass = 'badge-type-dorama'; }
+            else if (isSerie)  { typeBadgeLabel = 'SÉRIE';  typeBadgeClass = 'badge-type-serie'; }
+
+            let tempBadge = 'Filme';
+            let epBadge = item.isDublado ? 'Dublado (PT-BR)' : 'Legendado';
             if (isSerie) {
                 const tempCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1);
                 const epCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.reduce((a, t) => a + (t.episodios ? t.episodios.length : 0), 0) : (item.totalEpisodios || 1);
-                totalEps = `${tempCount} Temporada${tempCount > 1 ? 's' : ''} • ${epCount} Eps`;
+                tempBadge = `${tempCount} Temporada${tempCount > 1 ? 's' : ''}`;
+                epBadge = epCount > 1 ? `+ ${epCount} Eps` : 'Episódio Único';
             }
 
             const isFav = userFavorites.some(f => String(f.id) === String(item.id));
+            const synopsis = item.sinopse || item.descricao || 'Assista agora com a melhor qualidade e áudio em português no BrasilFlix.';
+
+            // Progress bars por slide (segmentos)
+            const barsHtml = heroBillboardPool.map((_, idx) => `
+                <div class="hero-progress-seg ${idx < currentHeroIndex ? 'done' : (idx === currentHeroIndex ? 'active' : '')}"
+                     onclick="goToHeroSlide(${idx}, event)" title="${heroBillboardPool[idx].nome}">
+                    <div class="hero-progress-fill" id="hero-prog-fill-${idx}"
+                         style="width: ${idx < currentHeroIndex ? '100%' : (idx === currentHeroIndex ? heroAutoProgress + '%' : '0%')}"></div>
+                </div>
+            `).join('');
 
             container.innerHTML = `
-                <div class="hero-billboard">
+                <div class="hero-billboard" id="hero-billboard"
+                     onmouseenter="heroIsPaused=true"
+                     onmouseleave="heroIsPaused=false"
+                     ontouchstart="heroIsPaused=true"
+                     ontouchend="heroIsPaused=false">
                     <div class="hero-billboard-bg" style="background-image: url('${backdrop}');"></div>
+
+                    <!-- BOTÕES DE NAVEGAÇÃO LATERAL -->
+                    <button class="hero-arrow-btn hero-arrow-left" onclick="prevHeroSlide(event)" title="Anterior" aria-label="Anterior">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <button class="hero-arrow-btn hero-arrow-right" onclick="nextHeroSlide(event)" title="Próximo" aria-label="Próximo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+
+                    <!-- CONTEÚDO PRINCIPAL DO HERO -->
                     <div class="hero-content">
-                        <div class="hero-badge-tag">Destaque</div>
+                        <span class="hero-badge-tag ${typeBadgeClass}">${typeBadgeLabel}</span>
                         <h1 class="hero-title">${item.nome}</h1>
                         <div class="hero-meta-row">
-                            <span class="modal-pill modal-pill-rating">★ ${rating}</span>
-                            <span class="modal-pill">${ano}</span>
-                            <span class="modal-pill">${audioBadge}</span>
-                            <span class="modal-pill">${totalEps}</span>
+                            <span class="hero-pill hero-pill-rating">★ ${rating}</span>
+                            <span class="hero-pill">${ano}</span>
+                            <span class="hero-pill">${tempBadge}</span>
+                            <span class="hero-pill">${epBadge}</span>
                         </div>
-                        <p class="hero-synopsis">${item.sinopse || item.descricao || 'Assista agora no BrasilFlix com áudio em português.'}</p>
+                        <p class="hero-synopsis">${synopsis}</p>
                         <div class="hero-actions">
                             <button class="hero-btn-play" onclick="openModalById('${item.id}', '${item.itemType}')">
-                                ▶ Assistir Agora
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Assistir Agora
                             </button>
                             <button class="hero-btn-secondary" onclick="toggleUserFavorite('${item.id}', '${item.itemType}', event)">
-                                ${isFav ? '❤️ Na Minha Lista' : '🤍 Minha Lista'}
+                                ${isFav ? '— Minha Lista' : '+ Minha Lista'}
                             </button>
                             <button class="hero-btn-secondary" onclick="openModalById('${item.id}', '${item.itemType}')">
                                 Mais Detalhes
                             </button>
                         </div>
                     </div>
+
+                    <!-- BARRAS DE PROGRESSO DO CARROSSEL -->
+                    <div class="hero-bottom-controls">
+                        <div class="hero-progress-bar-row" id="hero-progress-bar-row">
+                            ${barsHtml}
+                        </div>
+                    </div>
                 </div>
             `;
+
+            startHeroCarouselTimer();
+        }
+
+        function startHeroCarouselTimer() {
+            if (heroTimerInterval) clearInterval(heroTimerInterval);
+            heroAutoProgress = 0;
+
+            heroTimerInterval = setInterval(() => {
+                if (heroIsPaused) return;
+                heroAutoProgress += (HERO_TICK_MS / HERO_DURATION_MS) * 100;
+                if (heroAutoProgress >= 100) {
+                    heroAutoProgress = 0;
+                    currentHeroIndex = (currentHeroIndex + 1) % heroBillboardPool.length;
+                    _renderHeroSlide();
+                    return;
+                }
+                // Atualiza apenas a barra do slide ativo (sem re-renderizar o DOM inteiro)
+                const fillEl = document.getElementById(`hero-prog-fill-${currentHeroIndex}`);
+                if (fillEl) fillEl.style.width = heroAutoProgress + '%';
+            }, HERO_TICK_MS);
+        }
+
+        function nextHeroSlide(e) {
+            if (e) e.stopPropagation();
+            if (heroBillboardPool.length <= 1) return;
+            heroAutoProgress = 0;
+            currentHeroIndex = (currentHeroIndex + 1) % heroBillboardPool.length;
+            _renderHeroSlide();
+        }
+
+        function prevHeroSlide(e) {
+            if (e) e.stopPropagation();
+            if (heroBillboardPool.length <= 1) return;
+            heroAutoProgress = 0;
+            currentHeroIndex = (currentHeroIndex - 1 + heroBillboardPool.length) % heroBillboardPool.length;
+            _renderHeroSlide();
+        }
+
+        function goToHeroSlide(index, e) {
+            if (e) e.stopPropagation();
+            if (index >= 0 && index < heroBillboardPool.length) {
+                heroAutoProgress = 0;
+                currentHeroIndex = index;
+                _renderHeroSlide();
+            }
         }
 
         function createRailHtml(railId, title, items, badgeType = null) {
@@ -11066,13 +11672,29 @@ function initApp() {
 
             const cardsHtml = items.map(item => {
                 const poster = item.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
-                const rating = item.nota ? Number(item.nota).toFixed(1) : '8.0';
+                const rating = item.nota ? Number(item.nota).toFixed(1) : '8.5';
                 const isFav = userFavorites.some(f => String(f.id) === String(item.id));
                 const isDub = item.isDublado;
+                const isAnime = isItemAnime(item);
+                const isDorama = isItemDorama(item);
                 const isSerie = (item.itemType === 'serie' || !!item.temporadas);
-                const sub = isSerie ? getSerieSubtitleMeta(item) : (item.ano || '2026');
+                const sub = isSerie ? getSerieSubtitleMeta(item) : (item.ano || '2024');
 
-                let badgeHtml = '';
+                // Badge de tipo no poster conforme mockup
+                let typeBadgeText = 'FILME';
+                let typeBadgeClass = 'badge-type-filme';
+                if (isAnime) {
+                    typeBadgeText = 'ANIME';
+                    typeBadgeClass = 'badge-type-anime';
+                } else if (isDorama) {
+                    typeBadgeText = 'DORAMA';
+                    typeBadgeClass = 'badge-type-dorama';
+                } else if (isSerie) {
+                    typeBadgeText = 'SÉRIE';
+                    typeBadgeClass = 'badge-type-serie';
+                }
+
+                let badgeHtml = `<span class="rail-type-badge ${typeBadgeClass}">${typeBadgeText}</span>`;
                 if (badgeType === 'new_ep') {
                     badgeHtml = '<div class="badge-new-ep">Novo Ep</div>';
                 } else if (item.isCam) {
@@ -11103,7 +11725,7 @@ function initApp() {
                 <div class="netflix-rail-section" id="rail-section-${railId}">
                     <div class="rail-header">
                         <h3 class="rail-title">${title}</h3>
-                        <span class="rail-see-all" onclick="openRailSeeAll('${railId}')">Ver Tudo ›</span>
+                        <span class="rail-see-all" onclick="openRailSeeAll('${railId}')">Ver tudo →</span>
                     </div>
                     <div class="rail-slider-container">
                         <button class="rail-arrow-btn rail-arrow-left" onclick="slideRail('${railId}', -1)" aria-label="Anterior">
@@ -11157,7 +11779,6 @@ function initApp() {
                     for (const ep of allEps) {
                         const epP = mProg.episodes ? mProg.episodes[`${ep.season}_${ep.episode}`] : null;
                         if (epP && !epP.completed && epP.currentTime >= 30) {
-                            // Se faltam menos de 90s ou assistiu mais de 90%, considera créditos / fim
                             if (epP.duration > 60 && (epP.currentTime >= (epP.duration * 0.90) || (epP.duration - epP.currentTime <= 90))) {
                                 continue;
                             }
@@ -11171,7 +11792,7 @@ function initApp() {
                         const pct = dur > 0 ? Math.min(99, Math.max(5, Math.round((inProg.currentTime / dur) * 100))) : 50;
                         const remainSec = Math.max(0, dur - inProg.currentTime);
                         const remainMin = Math.max(1, Math.round(remainSec / 60));
-                        const sub = `T${inProg.season}:E${inProg.episode} • ${remainMin} min restantes`;
+                        const sub = `T${inProg.season} • Ep. ${inProg.episode}`;
 
                         continueList.push({
                             ...item,
@@ -11204,7 +11825,7 @@ function initApp() {
                                 targetSeason: nextEp.season,
                                 targetEp: nextEp.episode,
                                 pct: 0,
-                                subText: `T${nextEp.season}:E${nextEp.episode} • Próximo Episódio`,
+                                subText: `T${nextEp.season} • Ep. ${nextEp.episode}`,
                                 badgeTime: `T${nextEp.season}:E${nextEp.episode}`,
                                 lastWatchedAt: lastWatchedTime || new Date().toISOString()
                             });
@@ -11216,7 +11837,7 @@ function initApp() {
                     if (fProg && !fProg.completed && fProg.currentTime >= 30) {
                         const dur = fProg.duration || 100 * 60;
                         if (dur > 60 && (fProg.currentTime >= (dur * 0.90) || (dur - fProg.currentTime <= 90))) {
-                            continue; // Fim/Créditos, não mostra como em andamento
+                            continue;
                         }
                         const pct = dur > 0 ? Math.min(99, Math.max(5, Math.round((fProg.currentTime / dur) * 100))) : 50;
                         const remainSec = Math.max(0, dur - fProg.currentTime);
@@ -11244,7 +11865,7 @@ function initApp() {
             if (!items || items.length === 0) return '';
 
             const cardsHtml = items.map(item => {
-                const poster = item.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
+                const thumb = item.backdropUrl || item.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
                 const isSerie = item.isContinueSerie;
                 const clickAction = isSerie
                     ? `openWebPlayerEpisode('${item.id}', ${item.targetSeason}, ${item.targetEp})`
@@ -11252,24 +11873,19 @@ function initApp() {
 
                 return `
                     <div class="rail-card rail-card-continue" onclick="${clickAction}">
-                        <div class="rail-poster-wrapper">
-                            <img src="${poster}" class="rail-poster-img" loading="lazy" alt="${item.nome}">
-                            ${item.badgeTime ? `<span class="badge-continue-time">▶ ${item.badgeTime}</span>` : ''}
-                            
-                            <button class="btn-dismiss-continue" onclick="dismissContinueWatchingItem('${item.id}', event)" title="Remover de Continuar Assistindo">
-                                ✕
-                            </button>
-
-                            <div class="episode-play-overlay-icon" style="pointer-events: none;">▶</div>
-
-                            <div class="rail-progress-bar-bg">
-                                <div class="rail-progress-bar-fill" style="width: ${item.pct}%;"></div>
-                            </div>
+                        <div class="rail-continue-thumb-box">
+                            <img src="${thumb}" class="rail-continue-img" loading="lazy" alt="${item.nome}">
+                            <div class="rail-continue-play-circle">▶</div>
+                            <button class="btn-dismiss-continue" onclick="dismissContinueWatchingItem('${item.id}', event)" title="Remover de Continuar Assistindo">✕</button>
                         </div>
-                        <div class="rail-content">
-                            <h4 class="rail-card-title">${item.nome}</h4>
-                            <div class="rail-card-sub">
-                                <span style="color: #34d399; font-weight: 800;">${item.subText}</span>
+                        <div class="rail-continue-body">
+                            <h4 class="rail-continue-title" title="${item.nome}">${item.nome}</h4>
+                            <div class="rail-continue-ep">${item.subText}</div>
+                            <div class="rail-continue-progress-row">
+                                <div class="rail-continue-bar-bg">
+                                    <div class="rail-continue-bar-fill" style="width: ${item.pct}%;"></div>
+                                </div>
+                                <span class="rail-continue-pct-text">${item.pct}%</span>
                             </div>
                         </div>
                     </div>
@@ -11277,11 +11893,12 @@ function initApp() {
             }).join('');
 
             return `
-                <div class="netflix-rail-section" id="rail-section-continue-watching" style="margin-bottom: 26px;">
+                <div class="netflix-rail-section" id="rail-section-continue-watching" style="margin-bottom: 30px;">
                     <div class="rail-header">
-                        <h3 class="rail-title" style="display: flex; align-items: center; gap: 8px;">
-                            <span style="color: #10b981;">▶</span> Continue de onde parou
+                        <h3 class="rail-title">
+                            <span style="color: #10b981;">▶</span> Continuar Assistindo
                         </h3>
+                        <span class="rail-see-all" onclick="openRailSeeAll('continue-watching')">Ver tudo →</span>
                     </div>
                     <div class="rail-slider-container">
                         <button class="rail-arrow-btn rail-arrow-left" onclick="slideRail('continue-watching', -1)" aria-label="Anterior">
@@ -11308,7 +11925,7 @@ function initApp() {
             delete userWatchProgress[mId];
 
             renderNetflixRails();
-            showToast('Item removido de "Continue de onde parou".', 'info');
+            showToast('Item removido de "Continuar Assistindo".', 'info');
 
             try {
                 const headers = { 'Content-Type': 'application/json', 'x-guest-token': getGuestToken() };
@@ -11329,53 +11946,411 @@ function initApp() {
             const allSeries = (fullCatalog.series || []).map(s => ({ ...s, itemType: 'serie' }));
             const allCombined = [...allSeries, ...allFilmes];
 
-            // 0. Continue de onde parou (Filmes e Séries em andamento)
-            const continueItems = getContinueWatchingItems();
-
-            // 1. Em Alta (Mais Populares / Maiores Notas)
+            // 1. Em Alta (Mais Populares / Maiores Notas) - Topo do carrossel no mockup!
             const emAlta = [...allCombined].sort((a, b) => (Number(b.nota) || 0) - (Number(a.nota) || 0)).slice(0, 16);
 
-            // 2. Séries em Destaque (exclui animes e doramas)
+            // 2. Continue de onde parou (Filmes e Séries em andamento)
+            const continueItems = getContinueWatchingItems();
+
+            // 3. Novos Lançamentos
+            const novosLancamentos = [...allCombined].sort((a, b) => (Number(b.ano) || 0) - (Number(a.ano) || 0)).slice(0, 16);
+
+            // 4. Séries em Destaque (exclui animes e doramas)
             const seriesRecentes = allSeries.filter(s => !isItemAnime(s) && !isItemDorama(s)).slice(0, 16);
 
-            // 3. Filmes em Destaque
+            // 5. Filmes em Destaque
             const filmesDestaque = allFilmes.filter(f => !f.isCam && !isItemAnime(f)).slice(0, 16);
 
-            // 4. Doramas & Séries Asiáticas (K-Drama, C-Drama, J-Drama)
+            // 6. Doramas & Séries Asiáticas (K-Drama, C-Drama, J-Drama)
             const doramas = allSeries.filter(s => isItemDorama(s) && !isItemAnime(s)).slice(0, 16);
 
-            // 5. Animes (somente animações japonesas)
+            // 7. Animes (somente animações japonesas)
             const animes = allSeries.filter(s => isItemAnime(s)).slice(0, 16);
 
-            // 6. Minha Lista
+            // 8. Minha Lista
             const meusFavoritos = allCombined.filter(i => userFavorites.some(f => String(f.id) === String(i.id)));
 
             let railsHtml = '';
 
-            // Continue de onde parou fica no topo absoluto da página inicial!
+            // 1. Em Alta no topo absoluto (conforme Mockup)
+            railsHtml += createRailHtml('em-alta', '🔥 Em Alta', emAlta);
+
+            // 2. Continuar Assistindo (logo após Em Alta, conforme Mockup)
             if (continueItems.length > 0) {
                 railsHtml += createContinueWatchingRailHtml(continueItems);
             }
 
-            if (meusFavoritos.length > 0) {
-                railsHtml += createRailHtml('minha-lista', 'Minha Lista', meusFavoritos);
+            // 3. Novos Lançamentos (conforme Mockup)
+            railsHtml += createRailHtml('novos-lancamentos', 'Novos Lançamentos', novosLancamentos);
+
+            // 4. Séries em Destaque
+            if (seriesRecentes.length > 0) {
+                railsHtml += createRailHtml('series-novas', 'Séries Populares', seriesRecentes, 'new_ep');
             }
 
-            railsHtml += createRailHtml('em-alta', 'Em Alta', emAlta);
-            railsHtml += createRailHtml('series-novas', 'Séries em Destaque', seriesRecentes, 'new_ep');
-            railsHtml += createRailHtml('filmes-destaque', 'Filmes Populares', filmesDestaque);
+            // 5. Filmes Populares
+            if (filmesDestaque.length > 0) {
+                railsHtml += createRailHtml('filmes-destaque', 'Filmes Populares', filmesDestaque);
+            }
 
+            // 6. Doramas
             if (doramas.length > 0) {
                 railsHtml += createRailHtml('doramas', 'Doramas & Séries Asiáticas', doramas);
             }
+
+            // 7. Animes
             if (animes.length > 0) {
-                railsHtml += createRailHtml('animes', 'Animes', animes);
+                railsHtml += createRailHtml('animes', 'Animes em Destaque', animes);
+            }
+
+            // 8. Minha Lista (se tiver)
+            if (meusFavoritos.length > 0) {
+                railsHtml += createRailHtml('minha-lista', 'Minha Lista', meusFavoritos);
             }
 
             container.innerHTML = railsHtml;
         }
 
-        /* ═══════════════════════════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🔍 HEADER SEARCH & SIDEBAR FILTERS (MOCKUP ACCURATE)
+        // ═══════════════════════════════════════════════════════════════════════
+
+        // ─── PALAVRAS-CHAVE DE CATEGORIA que a busca do header reconhece ───
+        const _searchCategoryKeywords = {
+            'anime': 'anime', 'animes': 'anime',
+            'dorama': 'dorama', 'doramas': 'dorama', 'kdrama': 'dorama', 'k-drama': 'dorama',
+            'serie': 'serie', 'series': 'serie', 'séries': 'serie', 'série': 'serie',
+            'filme': 'filme', 'filmes': 'filme',
+            'favoritos': 'favoritos', 'minha lista': 'favoritos',
+            'em alta': 'em-alta', 'alta': 'em-alta', 'populares': 'em-alta'
+        };
+
+        // Gêneros reconhecidos na busca do header (sem acento e com acento)
+        const _searchGenreKeywords = [
+            { terms: ['acao', 'ação', 'action'], genre: 'Ação' },
+            { terms: ['comedia', 'comédia', 'comedy'], genre: 'Comédia' },
+            { terms: ['drama'], genre: 'Drama' },
+            { terms: ['terror', 'horror'], genre: 'Terror' },
+            { terms: ['romance'], genre: 'Romance' },
+            { terms: ['suspense', 'thriller'], genre: 'Suspense' },
+            { terms: ['aventura', 'adventure'], genre: 'Aventura' },
+            { terms: ['fantasia', 'fantasy'], genre: 'Fantasia' },
+            { terms: ['crime', 'policial'], genre: 'Crime' },
+            { terms: ['ficcao', 'ficção', 'sci-fi', 'scifi', 'ficcão'], genre: 'Ficção' },
+            { terms: ['documentario', 'documentário', 'doc'], genre: 'Documentário' },
+            { terms: ['animacao', 'animação', 'cartoon'], genre: 'Animação' },
+        ];
+
+        let _headerSearchTimer = null;
+        function onHeaderSearchInput(query) {
+            clearTimeout(_headerSearchTimer);
+            const q = (query || '').trim();
+
+            if (!q) {
+                // Campo vazio — volta para o estado anterior
+                if (currentNavMode === 'inicio') {
+                    switchNavCategory('inicio');
+                } else {
+                    catalogFilters.searchQuery = '';
+                    const searchInput = document.getElementById('catalog-search');
+                    if (searchInput) searchInput.value = '';
+                    renderCatalog();
+                }
+                return;
+            }
+
+            _headerSearchTimer = setTimeout(() => {
+                const lq = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+                // 1. Verifica palavra-chave de CATEGORIA (navega direto)
+                const catMatch = _searchCategoryKeywords[lq] || _searchCategoryKeywords[q.toLowerCase()];
+                if (catMatch) {
+                    switchNavCategory(catMatch);
+                    return;
+                }
+
+                // 2. Verifica palavra-chave de GÊNERO
+                let genreMatch = null;
+                for (const g of _searchGenreKeywords) {
+                    if (g.terms.some(t => lq === t || lq.startsWith(t))) {
+                        genreMatch = g.genre;
+                        break;
+                    }
+                }
+                if (genreMatch) {
+                    filterBySidebarGenre(genreMatch);
+                    return;
+                }
+
+                // 3. Busca de texto livre em tempo real
+                const heroBox = document.getElementById('hero-billboard-container');
+                const railsBox = document.getElementById('netflix-rails-container');
+                const gridLayout = document.getElementById('catalog-layout-grid');
+                if (heroBox) heroBox.style.display = 'none';
+                if (railsBox) railsBox.style.display = 'none';
+                if (gridLayout) gridLayout.style.display = 'flex';
+
+                // Mantém o tipo do currentNavMode se não for início
+                if (currentNavMode !== 'inicio') {
+                    const typeFromNav = { filme: 'filme', serie: 'serie', anime: 'anime', dorama: 'dorama', favoritos: 'favoritos' };
+                    if (typeFromNav[currentNavMode]) catalogFilters.type = typeFromNav[currentNavMode];
+                }
+
+                switchTab('tab-catalogo', false);
+                const searchInput = document.getElementById('catalog-search');
+                if (searchInput) searchInput.value = q;
+                filterCatalog();
+            }, 250);
+        }
+
+        function filterBySidebarGenre(genre) {
+            // Fecha sidebar em mobile
+            const sNav = document.getElementById('sidebar-nav');
+            const sOv = document.getElementById('sidebar-mobile-overlay');
+            if (sNav) sNav.classList.remove('mobile-open');
+            if (sOv) sOv.classList.remove('active');
+
+            if (genre === 'todos') {
+                // Limpa o filtro de gênero mas permanece na categoria/tipo atual
+                catalogFilters.genre = 'todos';
+
+                if (currentNavMode === 'inicio' || currentNavMode === 'todos') {
+                    // Se estiver em início, vai para início normalmente
+                    switchNavCategory('inicio');
+                } else {
+                    // Fica na categoria atual, só remove o filtro de gênero
+                    switchTab('tab-catalogo', false);
+                    const heroBox = document.getElementById('hero-billboard-container');
+                    const railsBox = document.getElementById('netflix-rails-container');
+                    const gridLayout = document.getElementById('catalog-layout-grid');
+                    if (heroBox) heroBox.style.display = 'none';
+                    if (railsBox) railsBox.style.display = 'none';
+                    if (gridLayout) gridLayout.style.display = 'flex';
+
+                    // Mantém o tipo de acordo com a navegação atual
+                    const typeFromNav = { filme: 'filme', serie: 'serie', anime: 'anime', dorama: 'dorama', favoritos: 'favoritos' };
+                    catalogFilters.type = typeFromNav[currentNavMode] || 'todos';
+                    catalogFilters.sort = 'default';
+
+                    // Marca visualmente o item do sidebar e o botão Todos como ativo
+                    document.querySelectorAll('.sidebar-nav-item:not(.sidebar-genre-item)').forEach(b => b.classList.remove('active'));
+                    const sidebarNavBtn = document.getElementById('sidebar-item-' + currentNavMode);
+                    if (sidebarNavBtn) sidebarNavBtn.classList.add('active');
+
+                    renderCatalog();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+
+                document.querySelectorAll('.sidebar-genre-item').forEach(b => b.classList.remove('active'));
+                const allBtn = document.getElementById('sidebar-genre-todos');
+                if (allBtn) allBtn.classList.add('active');
+                return;
+            }
+
+            // Preserva o tipo do currentNavMode (anime, dorama, etc.) ao filtrar por gênero
+            const typeFromNav = { filme: 'filme', serie: 'serie', anime: 'anime', dorama: 'dorama', favoritos: 'favoritos' };
+            const scopedType = typeFromNav[currentNavMode] || 'todos';
+
+            switchTab('tab-catalogo', false);
+
+            const heroBox = document.getElementById('hero-billboard-container');
+            const railsBox = document.getElementById('netflix-rails-container');
+            const gridLayout = document.getElementById('catalog-layout-grid');
+            if (heroBox) heroBox.style.display = 'none';
+            if (railsBox) railsBox.style.display = 'none';
+            if (gridLayout) gridLayout.style.display = 'flex';
+
+            catalogFilters.type = scopedType;
+            catalogFilters.genre = genre;
+            catalogFilters.sort = 'default';
+
+            document.querySelectorAll('.sidebar-nav-item:not(.sidebar-genre-item)').forEach(b => b.classList.remove('active'));
+            const sidebarNavBtn = document.getElementById('sidebar-item-' + currentNavMode);
+            if (sidebarNavBtn) sidebarNavBtn.classList.add('active');
+
+            const genreIdMap = {
+                'Ação': 'sidebar-genre-acao',
+                'Aventura': 'sidebar-genre-aventura',
+                'Comédia': 'sidebar-genre-comedia',
+                'Drama': 'sidebar-genre-drama',
+                'Fantasia': 'sidebar-genre-fantasia',
+                'Terror': 'sidebar-genre-terror',
+                'Documentário': 'sidebar-genre-doc',
+                'Crime': 'sidebar-genre-crime',
+                'Ficção': 'sidebar-genre-ficcao',
+                'Romance': 'sidebar-genre-romance',
+                'Suspense': 'sidebar-genre-suspense'
+            };
+            document.querySelectorAll('.sidebar-genre-item').forEach(b => b.classList.remove('active'));
+            const btnId = genreIdMap[genre];
+            if (btnId) {
+                const btn = document.getElementById(btnId);
+                if (btn) btn.classList.add('active');
+            }
+
+            // Sincroniza botões na barra de filtros lateral do catálogo
+            document.querySelectorAll('#sidebar-genre-list .genre-tag-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-val') === genre);
+            });
+
+            renderCatalog();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function toggleMobileSidebar() {
+            const nav = document.getElementById('sidebar-nav');
+            const overlay = document.getElementById('sidebar-mobile-overlay');
+            if (nav) nav.classList.toggle('mobile-open');
+            if (overlay) overlay.classList.toggle('active');
+        }
+
+        function toggleHeaderBell(event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            if (typeof toggleNotifDropdown === 'function') {
+                toggleNotifDropdown(event);
+            }
+        }
+
+        // Atalho de teclado global Ctrl+K para focar busca do header
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                const searchInput = document.getElementById('header-search-input');
+                if (searchInput) {
+                    searchInput.focus();
+                    searchInput.select();
+                }
+            }
+        });
+
+        // (Funções onHeaderSearchInput e filterBySidebarGenre definidas acima — sem duplicatas)
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 📱 SIDEBAR TOGGLE (DESKTOP COLLAPSE + MOBILE DRAWER)
+        // ═══════════════════════════════════════════════════════════════════════
+
+        function toggleSidebar() {
+            const nav = document.getElementById('sidebar-nav');
+            const overlay = document.getElementById('sidebar-mobile-overlay');
+            if (!nav) return;
+            if (window.innerWidth <= 900) {
+                nav.classList.toggle('mobile-open');
+                if (overlay) overlay.classList.toggle('active');
+            } else {
+                nav.classList.toggle('collapsed');
+                const isCollapsed = nav.classList.contains('collapsed');
+                try {
+                    localStorage.setItem('brasilflix_sidebar_collapsed', isCollapsed ? '1' : '0');
+                } catch(e) {}
+            }
+        }
+
+        function toggleMobileSidebar() {
+            toggleSidebar();
+        }
+
+        // Restaura estado colapsado no desktop
+        try {
+            if (window.innerWidth > 900 && localStorage.getItem('brasilflix_sidebar_collapsed') === '1') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    document.getElementById('sidebar-nav')?.classList.add('collapsed');
+                });
+            }
+        } catch(e) {}
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 🔔 NOTIFICATION BELL DROPDOWN
+        // ═══════════════════════════════════════════════════════════════════════
+
+        function toggleHeaderBell(event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            closeProfileDropdown();
+            const drop = document.getElementById('header-notif-dropdown');
+            if (!drop) return;
+            const isVisible = drop.classList.contains('visible');
+            if (isVisible) {
+                drop.classList.remove('visible');
+            } else {
+                drop.classList.add('visible');
+                renderHeaderNotifications();
+            }
+        }
+
+        function renderHeaderNotifications() {
+            const list = document.getElementById('header-notif-items-list');
+            const clearBtn = document.getElementById('header-notif-clear-btn');
+            const badge = document.getElementById('header-bell-badge');
+            if (!list) return;
+
+            const notifs = (typeof userNotifs !== 'undefined' && Array.isArray(userNotifs)) ? userNotifs : [];
+            const unreadCount = notifs.filter(n => !n.read).length;
+
+            if (clearBtn) clearBtn.style.display = unreadCount > 0 ? 'inline-block' : 'none';
+            if (badge) {
+                if (unreadCount > 0) {
+                    badge.style.display = 'flex';
+                    badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+
+            if (notifs.length === 0) {
+                list.innerHTML = `
+                    <div style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 24px 12px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 8px auto; opacity: 0.5; display: block;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        Nenhuma notificação no momento.
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = notifs.map(n => `
+                <div class="notif-item ${!n.read ? 'unread' : ''}" onclick="if (n.serieId) { openModalById('${n.serieId}', '${n.media_type || 'filme'}'); } else if (n.link) { window.location.href = n.link; } closeHeaderNotifDropdown();">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="font-size: 12px; font-weight: 800; color: #fff;">${n.title}</div>
+                        ${!n.read ? '<span style="font-size: 9px; font-weight: 900; color: #38bdf8; background: rgba(56, 189, 248, 0.2); padding: 1px 5px; border-radius: 4px;">NOVO</span>' : ''}
+                    </div>
+                    <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">${n.text}</div>
+                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${n.createdAt ? new Date(n.createdAt).toLocaleDateString('pt-BR') : 'Hoje'}</div>
+                </div>
+            `).join('');
+        }
+
+        function closeHeaderNotifDropdown() {
+            const drop = document.getElementById('header-notif-dropdown');
+            if (drop) drop.classList.remove('visible');
+        }
+
+        document.addEventListener('click', (e) => {
+            const drop = document.getElementById('header-notif-dropdown');
+            const btn = document.getElementById('header-bell-btn');
+            if (drop && drop.classList.contains('visible')) {
+                if (!drop.contains(e.target) && (!btn || !btn.contains(e.target))) {
+                    drop.classList.remove('visible');
+                }
+            }
+        });
+
+        // Atalho de teclado global Ctrl+K para focar busca do header
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                const searchInput = document.getElementById('header-search-input');
+                if (searchInput) {
+                    searchInput.focus();
+                    searchInput.select();
+                }
+            }
+        });
+
+/* ═══════════════════════════════════════════════════════════════════════
            👤 AUTENTICAÇÃO DE USUÁRIOS & FAVORITOS & NOTIFICAÇÕES
            ═══════════════════════════════════════════════════════════════════════ */
 
@@ -11446,102 +12421,68 @@ function initApp() {
 
             const isUserAdmin = user && (user.role === 'admin' || user.username === 'admin' || !!adminToken);
             const unreadNotifs = (userNotifs || []).filter(n => !n.read).length;
-            const notifBadge = unreadNotifs > 0 ? `<span class="notif-count-badge" style="position: absolute; top: -4px; right: -4px;">${unreadNotifs}</span>` : '';
+
+            const headerBadge = document.getElementById('header-bell-badge');
+            if (headerBadge) {
+                if (unreadNotifs > 0) {
+                    headerBadge.style.display = 'flex';
+                    headerBadge.textContent = unreadNotifs > 9 ? '9+' : unreadNotifs;
+                } else {
+                    headerBadge.style.display = 'none';
+                }
+            }
 
             if (user) {
                 const isVip = user.is_vip || isUserAdmin;
 
                 box.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <!-- 🔔 BOTÃO DE AVISOS & NOTIFICAÇÕES -->
-                        <div style="position: relative;">
-                            <button class="user-profile-btn" onclick="toggleNotifDropdown(event)" style="position: relative; padding: 6px 11px;" title="Avisos & Notificações">
-                                <span style="font-size: 15px;">🔔</span>
-                                ${notifBadge}
-                            </button>
-
-                            <div class="profile-dropdown-menu" id="user-notif-dropdown" onclick="event.stopPropagation()" style="width: 320px; right: 0;">
-                                <div class="profile-menu-header" style="display: flex; align-items: center; justify-content: space-between;">
-                                    <div style="font-size: 14px; font-weight: 900; color: #fff;">🔔 Avisos & Notificações</div>
-                                    ${unreadNotifs > 0 ? `<button onclick="markAllNotifsRead()" style="background: none; border: none; font-size: 11px; color: #38bdf8; font-weight: 800; cursor: pointer; padding: 2px 6px;">Marcar lidas</button>` : ''}
-                                </div>
-
-                                <div id="notif-items-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; padding: 4px 0;">
-                                    ${(userNotifs || []).length === 0 ? `
-                                        <div style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 18px 8px;">
-                                            Nenhum aviso ou notificação no momento.
-                                        </div>` : 
-                                      userNotifs.map(n => `
-                                        <div class="notif-item ${!n.read ? 'unread' : ''}" onclick="if (n.serieId) { openModalById('${n.serieId}', '${n.media_type || 'filme'}'); } else if (n.link) { window.location.href = n.link; } closeNotifDropdown();">
-                                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                                <div style="font-size: 12px; font-weight: 800; color: #fff;">${n.title}</div>
-                                                ${!n.read ? '<span style="font-size: 9px; font-weight: 900; color: #38bdf8; background: rgba(56, 189, 248, 0.2); padding: 1px 5px; border-radius: 4px;">NOVO</span>' : ''}
-                                            </div>
-                                            <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">${n.text}</div>
-                                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${n.createdAt ? new Date(n.createdAt).toLocaleDateString('pt-BR') : 'Hoje'}</div>
-                                        </div>
-                                      `).join('')
-                                    }
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 👤 BOTÃO DE PERFIL DO USUÁRIO -->
+                        <!-- BOTÃO DE PERFIL DO USUÁRIO -->
                         <div style="position: relative;">
                             <button class="user-profile-btn" onclick="toggleProfileDropdown(event)" style="position: relative;">
-                                ${user.avatar_url ? `<img src="${user.avatar_url}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2);" alt="${user.username}">` : `<div class="user-avatar-circle" style="${isUserAdmin ? 'background: linear-gradient(135deg, #3b82f6, #8b5cf6);' : (isVip ? 'background: linear-gradient(135deg, #f59e0b, #d97706);' : '')}">${(user.username || 'U')[0].toUpperCase()}</div>`}
+                                ${user.avatar_url ? `<img src="${user.avatar_url}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2);" alt="${user.username}">` : `<div class="user-avatar-circle" style="${isUserAdmin ? 'background: linear-gradient(135deg, #3b82f6, #8b5cf6);' : (isVip ? 'background: linear-gradient(135deg, #f59e0b, #d97706);' : '')}"><span>${(user.username || 'U')[0].toUpperCase()}</span></div>`}
                                 <span style="max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.username}</span>
-                                ${isUserAdmin ? '<span style="color: #60a5fa; font-size: 11px; font-weight: 900;">🛡️ Admin</span>' : (isVip ? '<span style="color: #fbbf24; font-size: 11px; font-weight: 900;">👑 VIP</span>' : '<span style="color: #60a5fa; font-size: 11px;">Grátis</span>')}
-                                <span style="font-size: 10px; opacity: 0.7;">▼</span>
+                                ${isUserAdmin ? '<span style="color: #60a5fa; font-size: 11px; font-weight: 900;">Admin</span>' : (isVip ? '<span style="color: #fbbf24; font-size: 11px; font-weight: 900;">VIP</span>' : '')}
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.7;"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
 
                             <div class="profile-dropdown-menu" id="user-profile-dropdown" onclick="event.stopPropagation()">
                                 <div class="profile-menu-header">
                                     <div style="display: flex; align-items: center; justify-content: space-between;">
                                         <div style="font-size: 15px; font-weight: 900; color: #fff;">${user.username}</div>
-                                        <div style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: ${isUserAdmin ? 'rgba(59, 130, 246, 0.2)' : (isVip ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.15)')}; color: ${isUserAdmin ? '#60a5fa' : (isVip ? '#fbbf24' : '#60a5fa')};">
-                                            ${isUserAdmin ? '🛡️ Administrador' : (isVip ? '👑 Assinante VIP' : '🎁 Conta Gratuita')}
-                                        </div>
+                                        ${isUserAdmin ? '<div style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(59,130,246,0.2); color: #60a5fa;">Administrador</div>' : (isVip ? '<div style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(245,158,11,0.2); color: #fbbf24;">Assinante VIP</div>' : '')}
                                     </div>
-                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">${user.email}</div>
+                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${user.email || 'Conta vinculada'}</div>
                                 </div>
 
-                                <div class="profile-menu-item" onclick="openSettingsTab(); closeProfileDropdown();" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.25); color: #34d399; font-weight: 800;">
-                                    <span>⚙️</span>
+                                <div class="profile-menu-item" onclick="switchTab('tab-settings'); closeProfileDropdown();">
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
                                     <span>Configurações</span>
                                 </div>
 
                                 ${isUserAdmin ? `
-                                <div class="profile-menu-item" onclick="switchTab('tab-admin'); closeProfileDropdown();" style="background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.4); color: #60a5fa; font-weight: 900;">
-                                    <span>🛡️</span>
-                                    <span>Painel de Administração</span>
-                                </div>` : ''}
-
-                                ${(!isVip && !isUserAdmin) ? `
-                                <a href="/assinar" target="_blank" class="profile-menu-item" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.2)); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24;">
-                                    <span>💎</span>
-                                    <span>Assinar VIP (Sua Conta, Suas Regras)</span>
+                                <a href="/admin" target="_blank" class="profile-menu-item" style="color: #60a5fa; font-weight: 800; text-decoration: none;">
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                                    <span>Painel Admin</span>
                                 </a>` : ''}
 
                                 <div class="profile-menu-item" onclick="switchNavCategory('favoritos'); closeProfileDropdown();">
-                                    <span>📌</span>
-                                    <span>Minha Lista (${(userFavorites || []).length} salvos)</span>
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>
+                                    <span>Minha Lista (${(userFavorites || []).length})</span>
                                 </div>
 
-                                
                                 <div class="profile-menu-item" onclick="openRequestMediaModal(); closeProfileDropdown();" style="background: rgba(229, 9, 20, 0.08); border-color: rgba(229, 9, 20, 0.25); color: #fca5a5; font-weight: 800;">
-                                    <span>🍿</span>
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>
                                     <span>Pedir Filme ou Série</span>
                                 </div>
 
                                 <div class="profile-menu-item" onclick="openSupportTicketModal(); closeProfileDropdown();">
-                                    <span>💬</span>
-                                    <span>Central de Ajuda & Suporte</span>
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                                    <span>Ajuda &amp; Suporte</span>
                                 </div>
 
-
                                 <div class="profile-menu-item logout-item" onclick="handleUserLogout(); closeProfileDropdown();" style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
-                                    <span>🚪</span>
+                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
                                     <span>Sair da Conta</span>
                                 </div>
                             </div>
@@ -11549,16 +12490,13 @@ function initApp() {
                     </div>
                 `;
             } else {
+                // DESLOGADO: Minimalista, sem VIP, sem Sugestões
                 box.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <button class="user-profile-btn" style="background: rgba(255,255,255,0.06);" onclick="openFeedbackModal()" title="Fazer pedido ou sugestão">
-                            <span>💬 Sugestões</span>
-                        </button>
-                        <a href="/assinar" target="_blank" class="btn-vip-header" title="Assinar VIP">
-                            👑 VIP
-                        </a>
-                        <button class="user-profile-btn" onclick="openAuthUserModal('login')">
-                            <div class="user-avatar-circle">👤</div>
+                        <button class="user-profile-btn" onclick="openAuthUserModal('login')" title="Entrar na conta">
+                            <div class="user-avatar-circle">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </div>
                             <span>Entrar</span>
                         </button>
                     </div>

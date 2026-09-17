@@ -74,6 +74,19 @@ class AutoFeeder {
             }
         });
 
+        // Reabastece a fila imediatamente se a esteira ficar sem jobs durante a janela ativa
+        let lastReplenish = 0;
+        if (this.queueManager && typeof this.queueManager.on === 'function') {
+            this.queueManager.on('queueDepleted', () => {
+                const now = Date.now();
+                if (SchedulerService.isAllowedToRun() && !this.isRunningCheck && (now - lastReplenish > 20000)) {
+                    lastReplenish = now;
+                    console.log('⚡ [AutoFeeder] Fila de downloads vazia com vagas livres. Reabastecendo esteira imediatamente...');
+                    setTimeout(() => this.runCheck().catch(() => {}), 2000);
+                }
+            });
+        }
+
         // Inicia o primeiro ciclo de agendamento dinâmico
         scheduleNextCycle();
     }

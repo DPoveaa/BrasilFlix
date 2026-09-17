@@ -372,11 +372,13 @@ async function createTables() {
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
         ALTER TABLE usuarios ALTER COLUMN email DROP NOT NULL;
         ALTER TABLE usuarios ALTER COLUMN password_hash DROP NOT NULL;
         ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_url TEXT;
         ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias JSONB DEFAULT '{"defaultAudio": "ask", "spoilerBlur": true}'::jsonb;
         ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS has_custom_password BOOLEAN DEFAULT false;
+        ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user';
         UPDATE usuarios SET has_custom_password = true WHERE has_custom_password IS FALSE AND email IS NOT NULL AND email NOT LIKE '%@telegram.%';
         CREATE INDEX IF NOT EXISTS idx_usuarios_telegram_id ON usuarios(telegram_id);
         CREATE INDEX IF NOT EXISTS idx_usuarios_username ON usuarios(username);
