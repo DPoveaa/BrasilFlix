@@ -22,8 +22,10 @@
         .app-shell {
             display: flex;
             flex: 1;
+            min-height: 0;
             overflow: hidden;
             height: calc(100vh - 58px);
+            max-height: calc(100vh - 58px);
         }
 
         /* ═══════════ LEFT SIDEBAR NAV ═══════════ */
@@ -225,7 +227,10 @@
             .sidebar-nav.mobile-open {
                 transform: translateX(230px);
             }
-            .app-shell { height: calc(100vh - 54px); }
+            .app-shell {
+                height: calc(100vh - 54px);
+                max-height: calc(100vh - 54px);
+            }
         }
 
 
@@ -419,16 +424,33 @@
 
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
         
+        html, body {
+            height: 100%;
+            max-height: 100%;
+            overflow: hidden;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        html::-webkit-scrollbar, body::-webkit-scrollbar {
+            display: none;
+            width: 0 !important;
+            height: 0 !important;
+        }
+
         body {
             background-color: var(--bg-primary);
             color: var(--text-main);
-            min-height: 100vh;
+            height: 100vh;
+            max-height: 100vh;
+            display: flex;
+            flex-direction: column;
             background-image: 
                 radial-gradient(circle at 12% 0%, rgba(16, 185, 129, 0.13) 0%, transparent 45%),
                 radial-gradient(circle at 88% 8%, rgba(251, 191, 36, 0.07) 0%, transparent 40%),
                 radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
             background-attachment: fixed;
-            overflow-x: hidden;
+            overflow: hidden;
             -webkit-tap-highlight-color: transparent;
         }
 
@@ -7035,7 +7057,7 @@
                 <span class="header-search-icon">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                 </span>
-                <input type="text" id="header-search-input" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" oninput="onHeaderSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
+                <input type="search" id="header-search-input" name="search_query" class="header-search-input" placeholder="Buscar por título, gênero, ator, diretor..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="onHeaderSearchInput(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
                 <span class="header-search-shortcut">Ctrl K</span>
             </div>
 
@@ -8139,7 +8161,7 @@
 
                     <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
                         <label class="admin-label">Usuário</label>
-                        <input type="text" id="login-username" class="admin-input" placeholder="admin" required autocomplete="username">
+                        <input type="text" id="login-username" class="admin-input" placeholder="Usuário do painel" required autocomplete="username">
                         
                         <label class="admin-label">Senha</label>
                         <input type="password" id="login-password" class="admin-input" placeholder="••••••••••••" required autocomplete="current-password">
@@ -8509,7 +8531,7 @@
                     <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
                         <div class="search-box" style="flex: 1; min-width: 240px; margin-bottom: 0;">
                             <span class="search-icon">🔍</span>
-                            <input type="text" id="admin-catalog-search" class="search-input" placeholder="Buscar filmes, séries, episódios..." oninput="renderAdminCatalog()">
+                            <input type="search" id="admin-catalog-search" name="admin_catalog_search" class="search-input" placeholder="Buscar filmes, séries, episódios..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="renderAdminCatalog()">
                         </div>
 
                         <select id="admin-catalog-type-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 10px 12px; margin-bottom: 0;" onchange="renderAdminCatalog()">
@@ -9041,7 +9063,7 @@
                         <!-- BARRA DE FILTROS DA LISTA DE PESSOAS -->
                         <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
                             <div style="flex: 1; min-width: 240px; position: relative;">
-                                <input type="text" id="audit-people-search" class="search-input" placeholder="Buscar por Nome, E-mail, Username, Visitor ID ou Telegram ID..." oninput="debouncedSearchPeople()">
+                                <input type="search" id="audit-people-search" name="audit_people_search" class="search-input" placeholder="Buscar por Nome, E-mail, Username, Visitor ID ou Telegram ID..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="debouncedSearchPeople()">
                             </div>
                             <select id="audit-people-platform-filter" class="admin-input" style="width: auto; min-width: 140px; padding: 8px 12px; margin-bottom: 0;" onchange="loadAuditPeople(1)">
                                 <option value="all">🌐 Todas Plataformas</option>
@@ -10367,6 +10389,9 @@ function initApp() {
                 localStorage.setItem('bf_user_token', tokenFromUrl);
             }
 
+            clearSearchAutofill();
+            setTimeout(clearSearchAutofill, 200);
+            setTimeout(clearSearchAutofill, 600);
             fetchStatus();
             fetchUserProfileAndFavorites();
             loadCatalog();
@@ -12338,17 +12363,16 @@ function initApp() {
             }
         });
 
-        // Atalho de teclado global Ctrl+K para focar busca do header
-        window.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
-                e.preventDefault();
-                const searchInput = document.getElementById('header-search-input');
-                if (searchInput) {
-                    searchInput.focus();
-                    searchInput.select();
-                }
+        function clearSearchAutofill() {
+            const h = document.getElementById('header-search-input');
+            if (h && h.value.trim().toLowerCase() === 'admin') {
+                h.value = '';
             }
-        });
+            const a = document.getElementById('admin-catalog-search');
+            if (a && a.value.trim().toLowerCase() === 'admin') {
+                a.value = '';
+            }
+        }
 
 /* ═══════════════════════════════════════════════════════════════════════
            👤 AUTENTICAÇÃO DE USUÁRIOS & FAVORITOS & NOTIFICAÇÕES
@@ -20150,7 +20174,11 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             const tbody = document.getElementById('admin-catalog-tbody');
             if (!tbody) return;
 
-            const q = (document.getElementById('admin-catalog-search')?.value || '').toLowerCase().trim();
+            const searchEl = document.getElementById('admin-catalog-search');
+            if (searchEl && searchEl.value.trim().toLowerCase() === 'admin') {
+                searchEl.value = '';
+            }
+            const q = (searchEl?.value || '').toLowerCase().trim();
             const typeFilter = document.getElementById('admin-catalog-type-filter')?.value || 'all';
             const statusFilter = document.getElementById('admin-catalog-status-filter')?.value || 'all';
             const audioFilter = document.getElementById('admin-catalog-audio-filter')?.value || 'all';
