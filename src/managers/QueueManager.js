@@ -2337,8 +2337,10 @@ class QueueManager extends EventEmitter {
 
         if (!resumeFromOptimized) {
             // 3.4 Validação: arquivo físico deve corresponder ao episódio do job (evita S01E01 virar T1E2)
+            // IMPORTANTE: usa APENAS o basename para evitar que o nome da pasta-pai (ex: S04E01-02-03)
+            // seja capturado pelo regex antes do nome do arquivo real (ex: S04E02).
             if (job.type === 'serie' && rawFilePath && fs.existsSync(rawFilePath)) {
-                const parsed = parseSeasonEpisodeFromPath(rawFilePath);
+                const parsed = parseSeasonEpisodeFromPath(path.basename(rawFilePath));
                 const jobSeason = job.season || 1;
                 const jobEpisode = job.episode || 1;
                 if (parsed && (parsed.season !== jobSeason || parsed.episode !== jobEpisode)) {
@@ -2784,10 +2786,14 @@ class QueueManager extends EventEmitter {
 
             // Se o arquivo possui marcação explícita SxxExx, ela DEVE bater com o job.
             // (A correção de mismatch ocorre antes do encode; aqui só bloqueamos catalogação errada.)
+            // IMPORTANTE: usa APENAS o basename do arquivo (não o path completo) para evitar que o
+            // nome da pasta-pai de um pack multi-episódio (ex: S04E01-02-03) seja capturado pelo regex
+            // antes do filename real (ex: S04E02), causando aborts falsos e reenvios repetidos.
             const filePathToCheck = rawFilePath || optimizedPath || job.rawFilePath || job.optimizedPath || metadata.rawFilePath || metadata.optimizedPath || '';
-            const parsedEp = parseSeasonEpisodeFromPath(filePathToCheck) || parseSeasonEpisodeFromPath(sourceTitle);
+            const fileBasenameToCheck = filePathToCheck ? path.basename(filePathToCheck) : '';
+            const parsedEp = parseSeasonEpisodeFromPath(fileBasenameToCheck) || parseSeasonEpisodeFromPath(sourceTitle);
             if (parsedEp && (parsedEp.season !== seasonNum || parsedEp.episode !== epNum)) {
-                throw new Error(`Catalogação abortada: job T${seasonNum}E${epNum} mas arquivo é S${parsedEp.season}E${parsedEp.episode} (${path.basename(filePathToCheck || sourceTitle)}).`);
+                throw new Error(`Catalogação abortada: job T${seasonNum}E${epNum} mas arquivo é S${parsedEp.season}E${parsedEp.episode} (${fileBasenameToCheck || sourceTitle}).`);
             }
 
             // ─────────────────────────────────────────────────────────────────────────────
