@@ -787,9 +787,10 @@ class StremioServer {
         });
 
         // Edição de séries
+        // Edição de séries
         this.app.post('/api/admin/catalogo/serie/update', auth, async (req, res) => {
             try {
-                const { id, nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl } = req.body;
+                const { id, nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl, exigirTemporadaCompleta } = req.body;
                 if (!id) return res.status(400).json({ error: 'ID da série não informado.' });
 
                 await db.query(`
@@ -800,12 +801,38 @@ class StremioServer {
                         total_temporadas = COALESCE($4, total_temporadas),
                         total_episodios = COALESCE($5, total_episodios),
                         poster_url = COALESCE($6, poster_url),
+                        exigir_temporada_completa = COALESCE($7, exigir_temporada_completa),
                         updated_at = NOW()
-                    WHERE id = $7
-                `, [nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl, id]);
+                    WHERE id = $8
+                `, [nome, tmdbId, imdbId, totalTemporadas, totalEpisodios, posterUrl, exigirTemporadaCompleta, id]);
 
                 if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
                 res.json({ success: true, message: 'Série atualizada com sucesso.' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Alternar regra de exigir temporada completa por idioma (ocultar incompletas no site)
+        this.app.post('/api/admin/catalogo/serie/toggle-regra-temporada', auth, async (req, res) => {
+            try {
+                const { id, exigirTemporadaCompleta } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID da série não informado.' });
+
+                const novoEstado = exigirTemporadaCompleta !== false;
+                await db.query(`
+                    UPDATE series SET
+                        exigir_temporada_completa = $1,
+                        updated_at = NOW()
+                    WHERE id = $2
+                `, [novoEstado, id]);
+
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+                res.json({ 
+                    success: true, 
+                    message: `Regra de temporadas completas ${novoEstado ? 'ativada' : 'desativada'} com sucesso!`,
+                    exigirTemporadaCompleta: novoEstado 
+                });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
