@@ -338,7 +338,7 @@ class CatalogoManager {
      * @param {number|string} tNum Número da temporada
      * @returns {Object|null} Temporada validada ou null se oculta/sem Ep 1/sem mídia real
      */
-    static normalizeSeasonEpisodes(rawEps, tNum, tMeta = null, isEmLancamento = false) {
+    static normalizeSeasonEpisodes(rawEps, tNum, tMeta = null, isEmLancamento = false, exigirTemporadaCompleta = true) {
         if (!Array.isArray(rawEps) || rawEps.length === 0) return null;
         const sortedEps = [...rawEps].sort((a, b) => Number(a.numero) - Number(b.numero));
 
@@ -381,6 +381,24 @@ class CatalogoManager {
             : 0;
         const isCompleto = (expectedEps > 0) ? (maxAnySeq >= expectedEps) : (maxAnySeq > 0 && maxAnySeq >= sortedEps.length);
 
+        const isDubCompleto = (expectedEps > 0) ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0 && maxDubSeq >= sortedEps.length);
+        const isLegCompleto = (expectedEps > 0) ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0 && maxLegSeq >= sortedEps.length);
+
+        // Se a regra exigirTemporadaCompleta estiver ativa:
+        // Apenas libera o áudio se a temporada inteira estiver completa naquele idioma.
+        // Se nem dublado nem legendado estiverem completos, oculta a temporada para evitar frustração do usuário.
+        let liberarDublado = true;
+        let liberarLegendado = true;
+
+        if (exigirTemporadaCompleta) {
+            liberarDublado = isDubCompleto;
+            liberarLegendado = isLegCompleto;
+
+            if (!liberarDublado && !liberarLegendado) {
+                return null;
+            }
+        }
+
         // 2. Filtra apenas episódios pertencentes à sequência contínua utilizável
         const episodiosValidos = sortedEps.map(ep => {
             const epNum = Number(ep.numero);
@@ -388,10 +406,10 @@ class CatalogoManager {
             if (expectedEps > 0 && epNum > expectedEps) return null; // Clampa ao total real de episódios da temporada no TMDB
 
             // O áudio Dublado só é liberado para o episódio se a sequência dublada contínua alcançar este episódio a partir do Ep 1
-            const hasDub = (epNum <= maxDubSeq) && CatalogoManager.hasValidDubbedMedia(ep);
+            const hasDub = liberarDublado && (epNum <= maxDubSeq) && CatalogoManager.hasValidDubbedMedia(ep);
 
             // O áudio Legendado só é liberado para o episódio se a sequência legendada contínua alcançar este episódio a partir do Ep 1
-            const hasLeg = (epNum <= maxLegSeq) && CatalogoManager.hasValidSubtitledMedia(ep);
+            const hasLeg = liberarLegendado && (epNum <= maxLegSeq) && CatalogoManager.hasValidSubtitledMedia(ep);
 
             if (!hasDub && !hasLeg) return null; // Episódio sem mídia contínua válida
 
@@ -445,10 +463,10 @@ class CatalogoManager {
             numero: num,
             nome: `Temporada ${num}`,
             totalEpisodios: episodiosValidos.length,
-            isDublado: maxDubSeq > 0,
-            isLegendado: maxLegSeq > 0,
-            isDubladoCompleto: (expectedEps > 0) ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0 && maxDubSeq >= sortedEps.length),
-            isLegendadoCompleto: (expectedEps > 0) ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0 && maxLegSeq >= sortedEps.length),
+            isDublado: liberarDublado && (maxDubSeq > 0),
+            isLegendado: liberarLegendado && (maxLegSeq > 0),
+            isDubladoCompleto: isDubCompleto,
+            isLegendadoCompleto: isLegCompleto,
             isCompleto: isCompleto,
             episodios: episodiosValidos
         };
@@ -464,6 +482,7 @@ class CatalogoManager {
             try { temporadasMeta = JSON.parse(temporadasMeta); } catch (e) { temporadasMeta = {}; }
         }
         const isEmLancamento = !!(s.em_lancamento || s.emLancamento);
+        const exigirTemporadaCompleta = s.exigir_temporada_completa !== false && s.exigirTemporadaCompleta !== false;
 
         // 1. Coleta os números de temporada disponíveis e ordena de forma estritamente crescente
         const rawSeasonNumbers = Object.keys(temporadasObj || {})
@@ -483,7 +502,7 @@ class CatalogoManager {
             }
 
             const tMeta = temporadasMeta[seasonNum] || temporadasMeta[String(seasonNum)] || null;
-            const normSeason = CatalogoManager.normalizeSeasonEpisodes(temporadasObj[seasonNum], seasonNum, tMeta, isEmLancamento);
+            const normSeason = CatalogoManager.normalizeSeasonEpisodes(temporadasObj[seasonNum], seasonNum, tMeta, isEmLancamento, exigirTemporadaCompleta);
             if (!normSeason) {
                 // Temporada inválida, incompleta ou sem Ep 1 -> interrompe a cadeia de temporadas seguintes
                 break;
@@ -551,6 +570,7 @@ class CatalogoManager {
             tipo: isAnime ? 'anime' : (isDorama ? 'dorama' : 'serie'),
             temporadas: temporadas,
             todasTemporadas: temporadasObj,
+            exigirTemporadaCompleta: exigirTemporadaCompleta,
             dataAdicionado: s.created_at || s.dataAdicionado || new Date().toISOString(),
             audioBadge: (hasDub && hasLeg) ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : ''))
         };
@@ -2364,12 +2384,21 @@ class CatalogoManager {
                     }
                 }
 
+                const totalDub = seasonEps.filter(e => e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length;
+                const totalLeg = seasonEps.filter(e => e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length;
+                const dubCompleto = expectedEpsTotal > 0 ? (totalDub >= expectedEpsTotal) : (totalDub > 0 && totalDub >= seasonEps.length);
+                const legCompleto = expectedEpsTotal > 0 ? (totalLeg >= expectedEpsTotal) : (totalLeg > 0 && totalLeg >= seasonEps.length);
+
                 temporadas.push({
                     numero: tNum,
                     totalEpisodios: seasonEps.length,
                     maxEpisodioNumero: maxEpNum,
                     expectedEpisodios: expectedEpsTotal > 0 ? expectedEpsTotal : null,
                     episodiosFaltantes: missingEpNums,
+                    totalDublados: totalDub,
+                    totalLegendados: totalLeg,
+                    isDubladoCompleto: dubCompleto,
+                    isLegendadoCompleto: legCompleto,
                     episodios: seasonEps
                 });
             }
@@ -2400,6 +2429,7 @@ class CatalogoManager {
                 isLegendado: s.is_legendado,
                 statusSerie: s.status_serie,
                 emLancamento: s.em_lancamento,
+                exigirTemporadaCompleta: s.exigir_temporada_completa !== false,
                 createdAt: s.created_at,
                 updatedAt: s.updated_at,
                 temporadasMeta: tempMeta,
@@ -2540,6 +2570,7 @@ class CatalogoManager {
                 emLancamento: s.emLancamento || false,
                 totalTemporadas: (s.temporadas || []).length,
                 totalEpisodios: s.totalEpisodios || 0,
+                exigirTemporadaCompleta: s.exigirTemporadaCompleta !== false,
                 audioBadge: s.audioBadge || ((s.isDublado && s.isLegendado) ? 'D/L' : (s.isDublado ? 'D' : (s.isLegendado ? 'L' : ''))),
                 temporadas: (s.temporadas || []).map(t => ({
                     numero: t.numero,
@@ -2558,6 +2589,7 @@ class CatalogoManager {
                         qualidade: ep.qualidade || '1080p Full HD',
                         isDublado: ep.isDublado,
                         isLegendado: ep.isLegendado,
+                        versoes: ep.versoes || {},
                         audio: ep.audio,
                         audioBadge: ep.audioBadge
                     }))

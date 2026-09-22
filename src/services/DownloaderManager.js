@@ -757,7 +757,7 @@ class DownloaderManager extends EventEmitter {
             let completionRetries = 0;
             const maxCompletionRetries = 10;
 
-            const checkAndComplete = async (isStallPartial = false) => {
+            const checkAndComplete = async () => {
                 if (finished || isCompleting) return;
                 isCompleting = true;
 
@@ -765,18 +765,6 @@ class DownloaderManager extends EventEmitter {
                     let selectedFile = targetEpisodeFile;
                     if (!selectedFile && isSerie) {
                         selectedFile = this.findEpisodeFileInTorrent(torrent.files, options.season, options.episode);
-                    }
-
-                    // Se for resgate parcial de Stall em Season Pack, localiza qualquer episódio 100% pronto no disco
-                    if (isStallPartial && isSeasonPack && detectedEpisodeMap) {
-                        const readyCandidate = Object.values(detectedEpisodeMap).find(f => {
-                            if (!f.done && (f.progress || 0) < 0.999) return false;
-                            const fp = path.join(this.downloadDir, f.path);
-                            return fs.existsSync(fp) && fs.statSync(fp).size >= minAllowedBytes;
-                        });
-                        if (readyCandidate) {
-                            selectedFile = readyCandidate;
-                        }
                     }
 
                     if (!selectedFile && isSerie) {
@@ -849,8 +837,8 @@ class DownloaderManager extends EventEmitter {
                         return;
                     }
 
-                    // Se for Season Pack, só bloqueia se não for resgate parcial de Stall
-                    if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1 && !isStallPartial) {
+                    // Se for Season Pack, só finaliza quando todos os episódios selecionados do pack estiverem 100% concluídos no WebTorrent
+                    if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
                         const allSelectedDone = Object.values(detectedEpisodeMap).every(vf => vf.done || (vf.progress || 0) >= 0.999);
                         if (!allSelectedDone && !torrent.done && torrent.progress < 0.999) {
                             isCompleting = false;
@@ -1147,38 +1135,11 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Torrent sem peers ativos após ${Math.round(noPeerTimeoutMs / 1000)}s.`));
                 }
 
-                // 2. STALL DETECTION — resgate inteligente de dados já baixados antes de abortar
-                // Se os bytes pararam de chegar pelo tempo configurado acima, verifica se podemos resgatar o trabalho feito:
+                // 2. STALL DETECTION — única forma de cancelar download em andamento.
+                // Se os bytes pararam de chegar pelo tempo configurado acima, a fonte morreu.
                 if (stalledMs >= stalledTimeoutMs) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)).`);
-
-                    // A. Se for Season Pack e houver episódios 100% concluídos no disco, resgata-os!
-                    if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
-                        const completedFiles = Object.values(detectedEpisodeMap).filter(f => {
-                            if (!f.done && (f.progress || 0) < 0.999) return false;
-                            const fp = path.join(this.downloadDir, f.path);
-                            return fs.existsSync(fp) && fs.statSync(fp).size >= minAllowedBytes;
-                        });
-
-                        if (completedFiles.length > 0) {
-                            console.log(`✨ [STALL RESGATE] Season pack estagnou nos arquivos finais, mas ${completedFiles.length} episódio(s) já foram 100% concluídos no SSD! Concluindo resgate para processar os episódios prontos...`);
-                            checkAndComplete(true);
-                            return;
-                        }
-                    }
-
-                    // B. Se for arquivo único com mais de 98% concluído e tamanho físico consistente
-                    if (targetEpisodeFile && fileProg >= 0.98) {
-                        const fp = path.join(this.downloadDir, targetEpisodeFile.path);
-                        if (fs.existsSync(fp) && fs.statSync(fp).size >= minAllowedBytes) {
-                            console.log(`✨ [STALL RESGATE] Download de "${displayTitle}" atingiu ${(fileProg * 100).toFixed(1)}% e estagnou na borda final. Tentando validação e aproveitamento do arquivo em disco...`);
-                            checkAndComplete(true);
-                            return;
-                        }
-                    }
-
-                    console.log(`⚠️ [STALL] Abortando fonte estagnada. ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
+                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)). ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error(`Download parado sem dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído).`));

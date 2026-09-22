@@ -173,6 +173,7 @@ async function createTables() {
         ALTER TABLE series ADD COLUMN IF NOT EXISTS em_lancamento BOOLEAN DEFAULT false;
         ALTER TABLE series ADD COLUMN IF NOT EXISTS status_serie VARCHAR(50) DEFAULT 'Ended';
         ALTER TABLE series ADD COLUMN IF NOT EXISTS temporadas_meta JSONB DEFAULT '{}';
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS exigir_temporada_completa BOOLEAN DEFAULT true;
 
         CREATE TABLE IF NOT EXISTS episodios (
             id BIGSERIAL PRIMARY KEY,
