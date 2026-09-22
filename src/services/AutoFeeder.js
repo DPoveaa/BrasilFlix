@@ -47,17 +47,21 @@ class AutoFeeder {
                 this.feederTimer = null;
             }
 
-            const mode = SchedulerService.getActiveMode();
-            const intervalMs = mode === 'performance' ? (15 * 60 * 1000) : (4 * 60 * 60 * 1000);
-            const modeDesc = mode === 'performance' ? '⚡ DESEMPENHO (Ciclo: 15 min)' : '🍃 ECONÔMICO (Ciclo: 4 horas)';
-            console.log(`⏱️ [AutoFeeder Agendador] Próxima varredura configurada para modo ${modeDesc}.`);
+            // Lê o modo atual para definir o intervalo de espera
+            const modeSched = SchedulerService.getActiveMode();
+            const intervalMs = modeSched === 'performance' ? (15 * 60 * 1000) : (4 * 60 * 60 * 1000);
+            const modeDescSched = modeSched === 'performance' ? '⚡ DESEMPENHO (Ciclo: 15 min)' : '🍃 ECONÔMICO (Ciclo: 4 horas)';
+            console.log(`⏱️ [AutoFeeder Agendador] Próxima varredura configurada para modo ${modeDescSched}.`);
 
             this.feederTimer = setTimeout(async () => {
+                // Recalcula o modo no momento da execução (pode ter mudado durante a espera)
+                const modeNow = SchedulerService.getActiveMode();
+                const modeDescNow = modeNow === 'performance' ? '⚡ DESEMPENHO (Ciclo: 15 min)' : '🍃 ECONÔMICO (Ciclo: 4 horas)';
                 if (SchedulerService.isAllowedToRun()) {
-                    console.log(`⏰ [AutoFeeder] Iniciando varredura periódica (${modeDesc})...`);
+                    console.log(`⏰ [AutoFeeder] Iniciando varredura periódica (${modeDescNow})...`);
                     await this.runCheck().catch(() => {});
                 } else {
-                    console.log('🔍 [AutoFeeder Off-Hours] Varredura leve de metadados em segundo plano...');
+                    console.log(`🔍 [AutoFeeder Off-Hours] Varredura leve de metadados em segundo plano (Modo: ${modeDescNow})...`);
                     await this.runLightweightBackgroundCheck().catch(() => {});
                 }
                 scheduleNextCycle();
@@ -98,15 +102,59 @@ class AutoFeeder {
             // 1. Reprocessar Pedidos Pendentes de Clientes (coloca na fila para quando abrir a janela)
             await this.checkPendingPedidos();
 
-            // 2. Verificar se filmes de cinema (CAM) ganharam versão oficial WEB-DL no TMDB
+            // 2. Verificar episódios faltantes e novas temporadas de séries já no catálogo
+            //    (apenas consulta TMDB e enfileira — downloads ficam pendentes até a janela performance)
+            console.log('📺 [AutoFeeder Eco] Verificando episódios pendentes de séries do catálogo...');
+            await this.checkSeriesUpdates();
+
+            // 3. Verificar se filmes de cinema (CAM) ganharam versão oficial WEB-DL no TMDB
             if (config.AUTO_UPGRADE_CAM) {
                 await this.checkCamUpgrades();
             }
 
-            // 3. Checar upgrades de dublagens e legendas para deixar na fila
+            // 4. Checar upgrades de dublagens e legendas para deixar na fila
             await this.checkLegendadoUpgrades();
             await this.checkSeriesDubladoUpgrades();
             await this.checkSeriesLegendadoUpgrades();
+            await this.checkFilmesDubladosSemLegenda();
+
+            // 5. Pré-carregar conteúdo em alta no TMDB (até 3 itens/categoria) para a fila estar
+            //    pronta quando a janela de desempenho abrir — limita para não sobrecarregar a rede
+            console.log('🌙 [AutoFeeder Eco] Pré-carregando conteúdo em alta para a fila (limite reduzido)...');
+
+            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
+            const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.isAnime && !j.isMicrodrama && !j.extraData?.isDorama && !j.extraData?.isAnime && !j.extraData?.isMicrodrama && j.status === 'queued');
+            const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
+            const animesInQueue = (this.queueManager.queue || []).filter(j => (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
+
+            if (moviesInQueue.length < 3) {
+                const trendingMovies = await TMDBService.getTrendingMovies('week');
+                for (const movie of trendingMovies.slice(0, 3)) {
+                    await this.considerItem(movie, 'filme');
+                }
+            }
+
+            if (doramasInQueue.length < 3) {
+                const popularDoramas = await TMDBService.getPopularKDramas();
+                for (const dorama of popularDoramas.slice(0, 3)) {
+                    await this.considerItem(dorama, 'serie', true, false);
+                }
+            }
+
+            if (animesInQueue.length < 3) {
+                const popularAnimes = await TMDBService.getPopularAnime();
+                for (const anime of popularAnimes.slice(0, 3)) {
+                    await this.considerItem(anime, 'serie', false, true);
+                }
+            }
+
+            if (seriesInQueue.length < 3) {
+                const trendingTV = await TMDBService.getTrendingTV('week');
+                for (const tv of trendingTV.slice(0, 3)) {
+                    await this.considerItem(tv, 'serie');
+                }
+            }
+
         } catch (e) {
             console.warn('⚠️ Erro na checagem leve de metadados:', e.message);
         } finally {
@@ -511,6 +559,50 @@ class AutoFeeder {
                 epsList.sort((a, b) => a.episode - b.episode);
                 const primeiroPendente = epsList[0];
 
+                // ── Verificação prévia no banco de dados: evita buscar fontes para episódios
+                // que já estão dublados no banco mas não foram sincronizados na memória ──
+                // Isso previne o loop infinito onde o feeder reenfileira episódios já dublados
+                try {
+                    const db = require('../database/db');
+                    const dbCheck = await db.query(
+                        `SELECT e.is_dublado, e.versoes FROM episodios e
+                         LEFT JOIN series s ON s.id = e.serie_id
+                         WHERE (LOWER(s.nome) = LOWER($1) OR (s.tmdb_id IS NOT NULL AND s.tmdb_id = $2))
+                           AND e.temporada_numero = $3 AND e.numero = $4 LIMIT 1`,
+                        [(primeiroPendente.serieNome || '').trim(), primeiroPendente.tmdbId || 0, primeiroPendente.season, primeiroPendente.episode]
+                    );
+                    if (dbCheck.rows.length > 0) {
+                        const row = dbCheck.rows[0];
+                        const v = typeof row.versoes === 'string' ? JSON.parse(row.versoes || '{}') : (row.versoes || {});
+                        const temDubladoNoBanco = row.is_dublado || !!(v.dublado?.messageId || v.dublado?.fileId);
+                        if (temDubladoNoBanco) {
+                            // Sincroniza o catálogo em memória para evitar nova detecção no próximo ciclo
+                            const serie = this.catalogoManager.catalogo.series.find(s =>
+                                s.nome.toLowerCase() === primeiroPendente.serieNome.toLowerCase() ||
+                                (s.tmdbId && primeiroPendente.tmdbId && s.tmdbId === primeiroPendente.tmdbId)
+                            );
+                            if (serie) {
+                                const temp = (serie.temporadas || []).find(t => t.numero === primeiroPendente.season);
+                                if (temp) {
+                                    const ep = (temp.episodios || []).find(e => e.numero === primeiroPendente.episode);
+                                    if (ep) {
+                                        ep.isDublado = true;
+                                        if (!ep.versoes) ep.versoes = {};
+                                        if (!ep.versoes.dublado && v.dublado) ep.versoes.dublado = v.dublado;
+                                        const hasLeg = ep.isLegendado && !!(ep.versoes?.legendado?.messageId || ep.versoes?.legendado?.fileId);
+                                        ep.audio = hasLeg ? 'Dub/Leg (Dublado + Legendado)' : 'Dublado (Áudio PT-BR)';
+                                        console.log(`🔄 [AutoFeeder Sync] Catálogo em memória atualizado: "${primeiroPendente.serieNome}" T${primeiroPendente.season}E${primeiroPendente.episode} marcado como Dublado (banco estava à frente da memória).`);
+                                    }
+                                }
+                            }
+                            await new Promise(r => setTimeout(r, 100));
+                            continue; // Episódio já está dublado, pular
+                        }
+                    }
+                } catch (dbCheckErr) {
+                    // Não bloqueia o fluxo se a verificação falhar — apenas continua normalmente
+                }
+
                 // ── Verifica ANTES se existe realmente uma fonte dublada PT-BR com seeders ativos ──
                 // Evita enfileiramentos cegos que geram loops infinitos de busca ou downloads redundantes de legendados
                 try {
@@ -585,6 +677,47 @@ class AutoFeeder {
             for (const [key, epsList] of Object.entries(seriesMap)) {
                 epsList.sort((a, b) => a.episode - b.episode);
                 const primeiroPendente = epsList[0];
+
+                // ── Verificação prévia no banco: evita reenfileirar episódios que já têm legendado no banco ──
+                try {
+                    const db = require('../database/db');
+                    const dbCheck = await db.query(
+                        `SELECT e.is_legendado, e.versoes FROM episodios e
+                         LEFT JOIN series s ON s.id = e.serie_id
+                         WHERE (LOWER(s.nome) = LOWER($1) OR (s.tmdb_id IS NOT NULL AND s.tmdb_id = $2))
+                           AND e.temporada_numero = $3 AND e.numero = $4 LIMIT 1`,
+                        [(primeiroPendente.serieNome || '').trim(), primeiroPendente.tmdbId || 0, primeiroPendente.season, primeiroPendente.episode]
+                    );
+                    if (dbCheck.rows.length > 0) {
+                        const row = dbCheck.rows[0];
+                        const v = typeof row.versoes === 'string' ? JSON.parse(row.versoes || '{}') : (row.versoes || {});
+                        const temLegNoBanco = row.is_legendado || !!(v.legendado?.messageId || v.legendado?.fileId);
+                        if (temLegNoBanco) {
+                            // Sincroniza memória
+                            const serie = this.catalogoManager.catalogo.series.find(s =>
+                                s.nome.toLowerCase() === primeiroPendente.serieNome.toLowerCase() ||
+                                (s.tmdbId && primeiroPendente.tmdbId && s.tmdbId === primeiroPendente.tmdbId)
+                            );
+                            if (serie) {
+                                const temp = (serie.temporadas || []).find(t => t.numero === primeiroPendente.season);
+                                if (temp) {
+                                    const ep = (temp.episodios || []).find(e => e.numero === primeiroPendente.episode);
+                                    if (ep) {
+                                        ep.isLegendado = true;
+                                        if (!ep.versoes) ep.versoes = {};
+                                        if (!ep.versoes.legendado && v.legendado) ep.versoes.legendado = v.legendado;
+                                        const hasDub = ep.isDublado && !!(ep.versoes?.dublado?.messageId || ep.versoes?.dublado?.fileId);
+                                        ep.audio = hasDub ? 'Dub/Leg (Dublado + Legendado)' : 'Legendado (PT-BR)';
+                                    }
+                                }
+                            }
+                            await new Promise(r => setTimeout(r, 100));
+                            continue; // Episódio já tem legendado, pular
+                        }
+                    }
+                } catch (dbCheckErr) {
+                    // Não bloqueia o fluxo se a verificação falhar
+                }
 
                 const jaNaFila = (this.queueManager.queue || []).some(j =>
                     j.type === 'serie' &&

@@ -1145,11 +1145,21 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Download parado sem dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído).`));
                 }
 
-                // 3. Fast-Fail INICIAL (apenas nos primeiros 35s - 55s de arranque, sem nenhum progresso e havendo outras fontes):
-                if (elapsedSec >= 35 && elapsedSec <= 55 && hasMoreSources && !hasProgress) {
-                    if (speedMB < 0.25 || remainingSec > 5400) {
+                // 3. Fast-Fail INICIAL (apenas nos primeiros 35s - 70s de arranque, sem nenhum progresso e havendo outras fontes):
+                // IMPORTANTE: Para season packs grandes (>2 GB), o `remainingSec` NÃO é critério de abort aqui —
+                // é matematicamente impossível que um pack de 12 GB tenha ETA < 90min nos primeiros segundos.
+                // O único critério seguro para packs grandes é a velocidade instantânea COMBINADA com número de peers:
+                // se há peers conectados (swarm ativo) e velocidade > 0.15 MB/s, o download está funcionando.
+                if (elapsedSec >= 35 && elapsedSec <= 70 && hasMoreSources && !hasProgress) {
+                    const isLargePack = totalSizeGB >= 2.0;
+                    const hasPeers = torrent.numPeers >= 3;
+
+                    if (isLargePack && hasPeers && speedMB >= 0.15) {
+                        // Pack grande com peers ativos e velocidade aceitável — deixa o stall detection cuidar.
+                        // Não mata a fonte só porque o ETA é grande (inevitável em packs de vários GB).
+                    } else if (speedMB < 0.25 || (!isLargePack && remainingSec > 5400)) {
                         process.stdout.write('\n');
-                        console.log(`⏩ [WATCHDOG VELOCIDADE] Fonte não engrenou no início (${speedMB.toFixed(2)} MB/s, baixados: ${this.formatBytes(curDownloaded)} após ${elapsedSec}s). Pulando para próxima fonte da lista (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                        console.log(`⏩ [WATCHDOG VELOCIDADE] Fonte não engrenou no início (${speedMB.toFixed(2)} MB/s, ${torrent.numPeers} peers, baixados: ${this.formatBytes(curDownloaded)} após ${elapsedSec}s). Pulando para próxima fonte da lista (${options.attemptIndex + 2}/${options.totalAttempts})...`);
                         finished = true;
                         safeCleanup();
                         return reject(new Error(`Velocidade de arranque lenta (${speedMB.toFixed(2)} MB/s). Pulando para próxima fonte.`));

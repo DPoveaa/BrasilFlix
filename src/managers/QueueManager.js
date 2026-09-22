@@ -1198,6 +1198,18 @@ class QueueManager extends EventEmitter {
         const mode = SchedulerService.getActiveMode();
         if (mode !== 'eco') return true;
 
+        // Auto-limpeza de segurança: se o job que reservou o slot não existe mais
+        // em activeJobs nem no DownloaderManager, libera automaticamente.
+        // Isso evita deadlock permanente quando um job falha antes de liberar o slot.
+        if (this.reservedDownloadJobId !== null && this.reservedDownloadJobId !== jobId) {
+            const reservedStillActive = this.activeJobs.has(this.reservedDownloadJobId);
+            const reservedInDownloader = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(this.reservedDownloadJobId);
+            if (!reservedStillActive && !reservedInDownloader) {
+                console.log(`🔓 [Slot Auto-Liberado] Job reservado "${this.reservedDownloadJobId}" não está mais ativo. Slot liberado automaticamente.`);
+                this.reservedDownloadJobId = null;
+            }
+        }
+
         const isDownloaderActive = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1;
         const isDownloaderOwnsIt = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(jobId);
 
@@ -1363,6 +1375,8 @@ class QueueManager extends EventEmitter {
             await this.saveJob(nextJob);
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
         } finally {
+            // Garante liberação do slot de download mesmo se o job falhou antes do finally interno
+            this.releaseDownloadSlot(nextJob.id);
             this.activeJobs.delete(nextJob.id);
 
             // Continua imediatamente para processar o próximo item disponível
@@ -1764,12 +1778,28 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized && !resumeFromRaw) {
-            // No Modo Econômico, garante reserva atômica de slot único sem race condition
+            // No Modo Econômico, garante reserva atômica de slot único sem race condition.
+            // Só tenta o slot se isAllowedToRun() for verdadeiro — caso contrário, retorna
+            // imediatamente para que o processNext possa recolocar o job como 'queued'.
             if (SchedulerService.getActiveMode() === 'eco') {
+                if (!SchedulerService.isAllowedToRun()) {
+                    job.status = 'queued';
+                    job.progress = 0;
+                    job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                    await this.saveJob(job);
+                    return;
+                }
                 while (!this.acquireDownloadSlot(job.id)) {
                     console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
-                    await new Promise(r => setTimeout(r, 3000));
-                    if (!SchedulerService.isAllowedToRun()) return;
+                    await new Promise(r => setTimeout(r, 5000));
+                    // Se a janela fechou ou o modo mudou enquanto esperava, sai do loop
+                    if (!SchedulerService.isAllowedToRun()) {
+                        job.status = 'queued';
+                        job.progress = 0;
+                        job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                        await this.saveJob(job);
+                        return;
+                    }
                 }
             }
 
@@ -2123,12 +2153,13 @@ class QueueManager extends EventEmitter {
                     // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
                     if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
                         console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada com seeders foi encontrada no momento. Mantendo versão atual.`);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.progressDetails = 'Mantida versão Legendada existente (fontes Dubladas sem seeders)';
+                        // Registra o episódio no skippedEpisodes para evitar redetecção pelo feeder por 24h
                         if (job.type === 'serie') {
                             this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
                         }
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Mantida versão Legendada existente (fontes Dubladas sem seeders)';
                         await this.saveJob(job);
                         this.queue = this.queue.filter(j => j.id !== job.id);
                         return;
@@ -2721,6 +2752,38 @@ class QueueManager extends EventEmitter {
                         }
                         if (metadata.isLegendado && (row.is_legendado || !!v.legendado?.messageId || !!v.legendado?.fileId)) {
                             jaTemEssaVersao = true;
+                        }
+
+                        // ── Sincroniza catálogo em memória com o que já existe no banco ──
+                        // Evita que o feeder redetecte o episódio como "pendente" na próxima rodada
+                        // (acontece quando o banco está atualizado mas o objeto em memória ainda não reflete)
+                        if (jaTemEssaVersao) {
+                            try {
+                                const serieEmMem = this.catalogoManager.buscarItemExato(metadata.nome || job.title, 'serie', metadata.tmdbId);
+                                if (serieEmMem) {
+                                    const tempEmMem = (serieEmMem.temporadas || []).find(t => t.numero === seasonNumCheck);
+                                    if (tempEmMem) {
+                                        const epEmMem = (tempEmMem.episodios || []).find(e => e.numero === epNumCheck);
+                                        if (epEmMem) {
+                                            if (row.is_dublado || !!v.dublado?.messageId || !!v.dublado?.fileId) {
+                                                epEmMem.isDublado = true;
+                                                if (!epEmMem.versoes) epEmMem.versoes = {};
+                                                if (!epEmMem.versoes.dublado && v.dublado) epEmMem.versoes.dublado = v.dublado;
+                                            }
+                                            if (row.is_legendado || !!v.legendado?.messageId || !!v.legendado?.fileId) {
+                                                epEmMem.isLegendado = true;
+                                                if (!epEmMem.versoes) epEmMem.versoes = {};
+                                                if (!epEmMem.versoes.legendado && v.legendado) epEmMem.versoes.legendado = v.legendado;
+                                            }
+                                            const hasDub = epEmMem.isDublado && !!(epEmMem.versoes?.dublado?.messageId || epEmMem.versoes?.dublado?.fileId);
+                                            const hasLeg = epEmMem.isLegendado && !!(epEmMem.versoes?.legendado?.messageId || epEmMem.versoes?.legendado?.fileId);
+                                            epEmMem.audio = (hasDub && hasLeg) ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+                                        }
+                                    }
+                                }
+                            } catch (syncErr) {
+                                console.warn('⚠️ [Sync Mem] Erro ao sincronizar catálogo em memória:', syncErr.message);
+                            }
                         }
                     }
                 }
