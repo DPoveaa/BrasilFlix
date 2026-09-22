@@ -90,28 +90,7 @@ class DiskCleaner {
         let totalFreedBytes = 0;
         let totalCleanedCount = 0;
         const now = Date.now();
-        const minAgeMs = 24 * 60 * 60 * 1000; // 24 horas de inatividade mínima para arquivos gerais
-        const minVideoAgeMs = 48 * 60 * 60 * 1000; // 48 horas para vídeos (>30MB)
-        const recentFolderWindowMs = 12 * 60 * 60 * 1000; // 12 horas de proteção para pastas com atividade
-
-        // Função auxiliar para verificar se uma pasta tem qualquer arquivo modificado recentemente
-        const hasRecentActivity = (folder) => {
-            try {
-                const subItems = fs.readdirSync(folder);
-                for (const sub of subItems) {
-                    const subP = path.join(folder, sub);
-                    const st = fs.statSync(subP);
-                    const recentTime = Math.max(st.ctimeMs || 0, st.mtimeMs || 0, st.birthtimeMs || 0);
-                    if (now - recentTime < recentFolderWindowMs) {
-                        return true;
-                    }
-                    if (st.isDirectory() && hasRecentActivity(subP)) {
-                        return true;
-                    }
-                }
-            } catch (e) {}
-            return false;
-        };
+        const minAgeMs = 2 * 60 * 60 * 1000; // 2 horas de inatividade mínima comprovada
 
         const cleanFolder = async (folderPath) => {
             if (!folderPath || !fs.existsSync(folderPath)) return;
@@ -137,26 +116,17 @@ class DiskCleaner {
                     const ageMs = now - mostRecentTime;
 
                     if (stat.isDirectory()) {
-                        // Se a pasta teve qualquer atividade nas últimas 12 horas, não limpa seu conteúdo
-                        if (hasRecentActivity(fullPath)) {
-                            continue;
-                        }
                         // Varre subdiretório recursivamente
                         await cleanFolder(fullPath);
-                        // Se a pasta ficou vazia e tem mais de 24 horas, remove a pasta
+                        // Se a pasta ficou vazia e tem mais de 2 horas, remove a pasta
                         const subEntries = await fs.readdir(fullPath);
                         if (subEntries.length === 0 && ageMs >= minAgeMs) {
                             await fs.remove(fullPath);
                             console.log(`🧹 [Auto-Cleaner] Pasta residual vazia removida: "${entry}"`);
                         }
                     } else if (stat.isFile()) {
-                        // Determina tempo mínimo baseado no tipo de arquivo
-                        const ext = path.extname(entry).toLowerCase();
-                        const isVideo = ['.mp4', '.mkv', '.avi', '.mov', '.ts', '.webm'].includes(ext);
-                        const requiredAgeMs = (isVideo && stat.size > 30 * 1024 * 1024) ? minVideoAgeMs : minAgeMs;
-
-                        // Se o arquivo tiver inatividade comprovada acima do limite
-                        if (ageMs >= requiredAgeMs) {
+                        // Se o arquivo tiver mais de 2 horas sem modificação e não for ativo
+                        if (ageMs >= minAgeMs) {
                             const fileSize = stat.size;
                             await fs.unlink(fullPath);
                             totalFreedBytes += fileSize;
