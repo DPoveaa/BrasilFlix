@@ -1136,10 +1136,50 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 // 2. STALL DETECTION — única forma de cancelar download em andamento.
-                // Se os bytes pararam de chegar pelo tempo configurado acima, a fonte morreu.
+                // Se os bytes pararam de chegar pelo tempo configurado acima, a fonte estagnou.
                 if (stalledMs >= stalledTimeoutMs) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)). ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
+                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)).`);
+
+                    // 🌾 RESGATE PARCIAL SEGURO DE SEASON PACK (Harvesting Anti-Desperdício)
+                    // Se o pack estagnou mas já possui episódios 100% íntegros e baixados no SSD, resgata todos eles!
+                    if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
+                        const harvestedMap = {};
+                        for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
+                            const epFullPath = path.join(this.downloadDir, f.path);
+                            if (fs.existsSync(epFullPath)) {
+                                const epStat = fs.statSync(epFullPath);
+                                const expectedSize = f.length || 0;
+                                const isSizeOk = expectedSize > 0 ? epStat.size >= expectedSize * 0.95 : epStat.size > minRequiredBytes;
+                                if (isSizeOk && epStat.size > 20 * 1024 * 1024) {
+                                    harvestedMap[parseInt(epStr, 10)] = {
+                                        filePath: epFullPath,
+                                        fileName: f.name,
+                                        sizeBytes: epStat.size
+                                    };
+                                }
+                            }
+                        }
+
+                        const harvestedCount = Object.keys(harvestedMap).length;
+                        if (harvestedCount > 0) {
+                            console.log(`🌾 [SEASON PACK HARVEST] Resgatando ${harvestedCount} episódio(s) 100% íntegro(s) no SSD antes de encerrar fonte estagnada!`);
+                            const primaryEp = (options.episode && harvestedMap[options.episode]) ? harvestedMap[options.episode] : Object.values(harvestedMap)[0];
+                            finished = true;
+                            safeCleanup();
+                            return resolve({
+                                filePath: primaryEp.filePath,
+                                fileName: primaryEp.fileName,
+                                sizeBytes: primaryEp.sizeBytes,
+                                totalTorrentFiles: torrent.files.length,
+                                episodeMap: harvestedMap,
+                                isPack: harvestedCount > 1,
+                                isPartialHarvest: true
+                            });
+                        }
+                    }
+
+                    console.log(`⚠️ [STALL] ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error(`Download parado sem dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído).`));
