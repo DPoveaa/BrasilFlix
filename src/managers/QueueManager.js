@@ -22,15 +22,7 @@ const PRIORITIES = new Proxy({}, {
 });
 
 
-function normalizeTitle(title) {
-    if (!title) return '';
-    return String(title)
-        .toLowerCase()
-        .replace(/\s*\(\d{4}\)|\b\d{4}\b/g, '') // remove anos como (2018), 2023
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
-        .replace(/[^a-z0-9]/g, '') // remove pontuacao e espacos
-        .trim();
-}
+const { normalizeTitle, isSameMedia } = require('../utils/titleUtils');
 
 /** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
 function parseSeasonEpisodeFromPath(filePath) {
@@ -699,8 +691,9 @@ class QueueManager extends EventEmitter {
             if (j.type !== type) return false;
             if (j.status === 'completed' || j.status === 'failed') return false;
 
-            const normExistingTitle = normalizeTitle(j.title);
-            const isSameTitle = normExistingTitle === normNewTitle || (newTmdbId && j.tmdbId && j.tmdbId === newTmdbId);
+            // isSameMedia detecta alias de título (ex: "Demon Slayer" = "Demon Slayer: Kimetsu no Yaiba")
+            // tmdbId é o árbitro supremo quando disponível em ambos
+            const isSameTitle = isSameMedia(j.title, title) || (newTmdbId && j.tmdbId && j.tmdbId === newTmdbId);
             if (!isSameTitle) return false;
 
             if (type === 'serie') {
@@ -1341,7 +1334,7 @@ class QueueManager extends EventEmitter {
         // Agora verifica se outro worker com ID diferente está processando o mesmo título/episódio
         for (const active of this.activeJobs.values()) {
             if (active.id !== nextJob.id && active.type === nextJob.type) {
-                const sameTitle = normalizeTitle(active.title) === normTitle || (active.tmdbId && nextJob.tmdbId && active.tmdbId === nextJob.tmdbId);
+                const sameTitle = isSameMedia(active.title, nextJob.title) || (active.tmdbId && nextJob.tmdbId && active.tmdbId === nextJob.tmdbId);
                 if (sameTitle) {
                     if (nextJob.type === 'serie' && (active.season ?? 1) === s && (active.episode ?? 1) === e) {
                         console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para "${nextJob.title}" T${s}E${e} (já em execução pelo worker do job ${active.id}).`);
@@ -1464,7 +1457,7 @@ class QueueManager extends EventEmitter {
                 const activeEpKeys = new Set();
                 for (const active of this.activeJobs.values()) {
                     if (active.id !== job.id && active.type === 'serie') {
-                        const sameT = normalizeTitle(active.title) === normalizeTitle(job.title) || (active.tmdbId && job.tmdbId && active.tmdbId === job.tmdbId);
+                        const sameT = isSameMedia(active.title, job.title) || (active.tmdbId && job.tmdbId && active.tmdbId === job.tmdbId);
                         if (sameT) {
                             activeEpKeys.add(`s${active.season || 1}_e${active.episode || 1}`);
                         }

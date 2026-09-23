@@ -28,6 +28,7 @@ const filesToSync = [
     'src/services/DiskCleaner.js',
     'src/services/MediaSearchService.js',
     'src/services/TelegramUploader.js',
+    'src/utils/titleUtils.js',
     'public/index.html',
     'public/assinar.html',
     'public/configure.html',
@@ -64,7 +65,7 @@ async function sync() {
 
     // Garante que os diretórios remotos existam
     await new Promise((resolve, reject) => {
-        conn.exec('mkdir -p /mnt/ssd500/projetos/BrasilFlix/public/assets/logos /mnt/ssd500/projetos/BrasilFlix/public/assets/telegram', (err, stream) => {
+        conn.exec('mkdir -p /mnt/ssd500/projetos/BrasilFlix/src/utils /mnt/ssd500/projetos/BrasilFlix/public/assets/logos /mnt/ssd500/projetos/BrasilFlix/public/assets/telegram', (err, stream) => {
             if (err) return reject(err);
             stream.on('data', () => {});
             stream.stderr.on('data', () => {});
@@ -94,19 +95,23 @@ async function sync() {
         });
     }
 
-    // Restart pm2 process to reload new configuration & QoS code
-    await new Promise((resolve, reject) => {
-        conn.exec(`pm2 restart brasilflix`, (err, stream) => {
-            if (err) return reject(err);
-            let out = '';
-            stream.on('data', d => { out += d.toString(); process.stdout.write(d.toString()); });
-            stream.stderr.on('data', d => { out += d.toString(); process.stderr.write(d.toString()); });
-            stream.on('close', () => {
-                console.log('🔄 PM2 BrasilFlix restarted successfully!');
-                resolve();
+    // Restart pm2 process to reload new configuration & QoS code (unless --no-restart is passed)
+    if (process.argv.includes('--no-restart')) {
+        console.log('⏩ Skipping PM2 restart (--no-restart flag specified). Files synced on disk.');
+    } else {
+        await new Promise((resolve, reject) => {
+            conn.exec(`pm2 restart brasilflix`, (err, stream) => {
+                if (err) return reject(err);
+                let out = '';
+                stream.on('data', d => { out += d.toString(); process.stdout.write(d.toString()); });
+                stream.stderr.on('data', d => { out += d.toString(); process.stderr.write(d.toString()); });
+                stream.on('close', () => {
+                    console.log('🔄 PM2 BrasilFlix restarted successfully!');
+                    resolve();
+                });
             });
         });
-    });
+    }
 
     conn.end();
 }

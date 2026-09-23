@@ -6,6 +6,7 @@ const SwarmWatcher = require('./SwarmWatcher');
 const DiskCleaner = require('./DiskCleaner');
 const SchedulerService = require('./SchedulerService');
 const { PRIORITIES } = require('../managers/QueueManager');
+const { isSameMedia } = require('../utils/titleUtils');
 
 class AutoFeeder {
     constructor(queueManager, catalogoManager, pedidosManager = null) {
@@ -268,7 +269,7 @@ class AutoFeeder {
                 if (existente) continue;
 
                 const inQueue = this.queueManager.queue.some(j => 
-                    j.title.toLowerCase() === md.nome.toLowerCase() && j.status !== 'failed'
+                    isSameMedia(j.title, md.nome) && j.status !== 'failed'
                 );
                 if (inQueue) continue;
 
@@ -352,8 +353,8 @@ class AutoFeeder {
 
                 const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
 
-                const inQueue = this.queueManager.queue.some(j => 
-                    j.title.toLowerCase() === title.toLowerCase() && j.status !== 'failed'
+                const inQueue = this.queueManager.queue.some(j =>
+                    isSameMedia(j.title, title) && j.status !== 'failed'
                 );
 
                 if (!inQueue) {
@@ -424,7 +425,7 @@ class AutoFeeder {
                     if (proximoEpFaltante) {
                         const jaNaFila = this.queueManager.queue.some(j => 
                             j.type === 'serie' && 
-                            j.title.toLowerCase() === serie.nome.toLowerCase() && 
+                            isSameMedia(j.title, serie.nome) && 
                             j.season === sNum && 
                             j.episode === proximoEpFaltante.numero &&
                             ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
@@ -721,7 +722,7 @@ class AutoFeeder {
 
                 const jaNaFila = (this.queueManager.queue || []).some(j =>
                     j.type === 'serie' &&
-                    j.title.toLowerCase() === primeiroPendente.serieNome.toLowerCase() &&
+                    isSameMedia(j.title, primeiroPendente.serieNome) &&
                     j.season === primeiroPendente.season &&
                     j.episode === primeiroPendente.episode &&
                     ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
@@ -837,7 +838,7 @@ class AutoFeeder {
             // Enfileira o anime original separadamente se não estiver no catálogo/fila
             const animeExistente = this.catalogoManager.buscarItemExato(animeOriginalTitle, 'serie');
             const animeInQueue = this.queueManager.queue.some(j =>
-                j.title.toLowerCase() === animeOriginalTitle.toLowerCase() && j.status !== 'failed'
+                isSameMedia(j.title, animeOriginalTitle) && j.status !== 'failed'
             );
             if (!animeExistente && !animeInQueue) {
                 console.log(`⛩️ [AutoFeeder] Detectado Live Action de anime! Enfileirando também o anime original: "${animeOriginalTitle}"`);
@@ -867,7 +868,7 @@ class AutoFeeder {
         }
 
         const inQueue = this.queueManager.queue.some(j => 
-            j.title.toLowerCase() === title.toLowerCase() && j.status !== 'failed'
+            isSameMedia(j.title, title) && j.status !== 'failed'
         );
 
         if (inQueue) {

@@ -1,6 +1,7 @@
 const db = require('../database/db');
 const MediaSearchService = require('./MediaSearchService');
 const SchedulerService = require('./SchedulerService');
+const { isSameMedia } = require('../utils/titleUtils');
 const PRIORITIES = {
     VIP_USER: 1,
     USER: 2,
@@ -164,7 +165,7 @@ class SwarmWatcher {
 
                 // Verifica se já está na fila de downloads ativa
                 const alreadyInQueue = this.queueManager.queue.some(j => 
-                    j.title.toLowerCase() === title.toLowerCase() && 
+                    (isSameMedia(j.title, title) || (it.tmdb_id && j.tmdbId && String(j.tmdbId) === String(it.tmdb_id))) && 
                     j.type === type &&
                     j.season === season &&
                     j.episode === episode &&
