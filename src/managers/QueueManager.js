@@ -2345,6 +2345,18 @@ class QueueManager extends EventEmitter {
                     setImmediate(() => this.processNext());
                 }
 
+                // Remove imediatamente da swarm_watchlist ao concluir o download com sucesso (incluindo harvest parcial),
+                // evitando que o SwarmWatcher re-enfileire o mesmo episódio enquanto o job ainda está sendo transcoded/uploading
+                if (job.type === 'serie') {
+                    SwarmWatcher.removeFromWatchlist(
+                        job.title,
+                        job.type,
+                        job.season,
+                        job.episode,
+                        job.audioPreference || 'dublado'
+                    ).catch(() => {});
+                }
+
                 // Validação de tamanho físico do arquivo
                 if (fs.existsSync(rawFilePath)) {
                     const stat = fs.statSync(rawFilePath);
