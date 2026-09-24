@@ -14,6 +14,7 @@ const filesToSync = [
     'src/services/SettingsService.js',
     'src/services/SchedulerService.js',
     'src/services/PriorityService.js',
+    'src/services/TMDBService.js',
     'src/services/DownloaderManager.js',
     'src/services/VideoProcessor.js',
     'src/services/SubtitleSync.js',

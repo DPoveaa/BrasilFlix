@@ -617,6 +617,16 @@ class DownloaderManager extends EventEmitter {
                     }
                 }
 
+                // Se o torrent é de filme, verifica se a versão já está presente ou em processamento
+                if (!options.episode && typeof options.isMediaMissing === 'function') {
+                    if (!options.isMediaMissing()) {
+                        console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Conteúdo já consta no catálogo com a versão solicitada ou em processamento. Abortando download redundante.`);
+                        finished = true;
+                        safeCleanup();
+                        return resolve({ redundant: true, filePath: null });
+                    }
+                }
+
                 if (options.episode && torrent.files && torrent.files.length > 1) {
                     // Mapeia todos os episódios disponíveis no torrent
                     detectedEpisodeMap = this.mapAllEpisodeFilesInTorrent(torrent.files, seasonNum);
