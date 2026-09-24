@@ -22,7 +22,7 @@ const PRIORITIES = new Proxy({}, {
 });
 
 
-const { normalizeTitle, isSameMedia } = require('../utils/titleUtils');
+const { normalizeTitle, isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 
 /** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
 function parseSeasonEpisodeFromPath(filePath) {
@@ -252,6 +252,9 @@ class QueueManager extends EventEmitter {
                     const stat = fs.statSync(fullEntryPath);
                     if (stat.size < minBytes) continue;
 
+                    const isCompatible = isReleaseCompatibleWithTarget(entry.name, title);
+                    if (!isCompatible) continue;
+
                     if (type === 'serie') {
                         const parsed = parseSeasonEpisodeFromPath(entry.name);
                         if (parsed && parsed.season === season && parsed.episode === episode) {
@@ -265,6 +268,9 @@ class QueueManager extends EventEmitter {
                         }
                     }
                 } else if (entry.isDirectory()) {
+                    const isFolderCompatible = isReleaseCompatibleWithTarget(entry.name, title);
+                    if (!isFolderCompatible) continue;
+
                     const folderClean = entry.name.toLowerCase().replace(/[^a-z0-9]/g, '');
                     const matchesFolder = folderClean.includes(titleClean) || isSameMedia(entry.name, title);
                     if (!matchesFolder) continue;
@@ -2100,6 +2106,11 @@ class QueueManager extends EventEmitter {
                         const pathClean = f.path.toLowerCase().replace(/[^a-z0-9]/g, '');
                         const matchesTitle = nameClean.includes(titleClean) || folderClean.includes(titleClean) || pathClean.includes(titleClean) || isSameMedia(path.basename(path.dirname(f.path)), job.title) || isSameMedia(f.name, job.title);
                         if (!matchesTitle) return false;
+
+                        // Proteção estrita contra mistura de versões/spin-offs (ex: Pokémon Horizons vs Pokémon 1997)
+                        if (!isReleaseCompatibleWithTarget(f.path, job.title, metadata.nomeOriginal, { ano: metadata.ano, isAnime: isAnimeWork })) {
+                            return false;
+                        }
 
                         // Proteção de Ano e Anime vs Live Action:
                         // Se o arquivo ou pasta contiver ano explícito (ex: 2023) e os metadados da obra tiverem ano (ex: 1999):

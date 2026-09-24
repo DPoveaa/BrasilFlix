@@ -4,6 +4,7 @@ const config = require('../../config');
 const db = require('../database/db');
 const TelegramUploader = require('../services/TelegramUploader');
 const TMDBService = require('../services/TMDBService');
+const { isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 
 class MediaVerificationCache {
     constructor() {
@@ -379,20 +380,46 @@ class CatalogoManager {
         const expectedEps = tMeta 
             ? (typeof tMeta === 'object' ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : (parseInt(tMeta, 10) || 0)) 
             : 0;
-        const isCompleto = (expectedEps > 0) ? (maxAnySeq >= expectedEps) : (maxAnySeq > 0 && maxAnySeq >= sortedEps.length);
 
-        const isDubCompleto = (expectedEps > 0) ? (maxDubSeq >= expectedEps) : (maxDubSeq > 0 && maxDubSeq >= sortedEps.length);
-        const isLegCompleto = (expectedEps > 0) ? (maxLegSeq >= expectedEps) : (maxLegSeq > 0 && maxLegSeq >= sortedEps.length);
+        // --- Teto efetivo de completude ---
+        // Para séries finalizadas/desconhecidas: usa o total TMDB quando disponível,
+        // ou maxAnySeq como fallback quando TMDB não tiver metadados da temporada.
+        const effectiveCeiling = (expectedEps > 0) ? expectedEps : maxAnySeq;
 
-        // Se a regra exigirTemporadaCompleta estiver ativa:
-        // Apenas libera o áudio se a temporada inteira estiver completa naquele idioma.
-        // Se nem dublado nem legendado estiverem completos, oculta a temporada para evitar frustração do usuário.
+        // Para séries em lançamento: áudio é completo se tiver qualquer sequência contínua a partir do Ep 1,
+        // ou se já atingiu o total de episódios previstos.
+        const isCompleto = isEmLancamento ? (maxAnySeq > 0) : (maxAnySeq >= effectiveCeiling);
+        const isDubCompleto = isEmLancamento ? (maxDubSeq > 0) : (maxDubSeq >= effectiveCeiling);
+        const isLegCompleto = isEmLancamento ? (maxLegSeq > 0) : (maxLegSeq >= effectiveCeiling);
+
+        // --- Liberação progressiva para temporadas longas (Bug 3 - Pokémon/One Piece) ---
+        // Séries muito longas não precisam estar completas para aparecer no catálogo.
+        // Limiar: temporada com >= 20 eps esperados + >= 10 eps contínuos disponíveis = versão liberada.
+        const LONG_RUNNING_MIN_EXPECTED = 20; // eps esperados para ser considerada série longa
+        const LONG_RUNNING_THRESHOLD = 10;    // eps contínuos mínimos para liberar a versão
+        const isLongRunningSeason = expectedEps >= LONG_RUNNING_MIN_EXPECTED;
+        const isLongRunningDubbed = isLongRunningSeason && maxDubSeq >= LONG_RUNNING_THRESHOLD;
+        const isLongRunningSubtitled = isLongRunningSeason && maxLegSeq >= LONG_RUNNING_THRESHOLD;
+
+        // Regra de Liberação:
+        // Se a série está em lançamento (Bug 2 - Lanterns):
+        //   Não se exige temporada completa (eps futuros ainda não foram ao ar).
+        //   Cada faixa de áudio é liberada se tiver sequência contínua a partir do Ep 1.
+        // Se a série é finalizada e exigirTemporadaCompleta está ativa:
+        //   Libera se a faixa estiver completa OU se atingiu o limiar de série longa (Bug 3).
         let liberarDublado = true;
         let liberarLegendado = true;
 
-        if (exigirTemporadaCompleta) {
-            liberarDublado = isDubCompleto;
-            liberarLegendado = isLegCompleto;
+        if (isEmLancamento) {
+            liberarDublado = maxDubSeq > 0;
+            liberarLegendado = maxLegSeq > 0;
+
+            if (!liberarDublado && !liberarLegendado) {
+                return null;
+            }
+        } else if (exigirTemporadaCompleta) {
+            liberarDublado = isDubCompleto || isLongRunningDubbed;
+            liberarLegendado = isLegCompleto || isLongRunningSubtitled;
 
             if (!liberarDublado && !liberarLegendado) {
                 return null;
@@ -468,6 +495,8 @@ class CatalogoManager {
             isDubladoCompleto: isDubCompleto,
             isLegendadoCompleto: isLegCompleto,
             isCompleto: isCompleto,
+            isLongRunningDubbed: isLongRunningDubbed,
+            isLongRunningSubtitled: isLongRunningSubtitled,
             episodios: episodiosValidos
         };
     }
@@ -501,7 +530,21 @@ class CatalogoManager {
                 break;
             }
 
-            const tMeta = temporadasMeta[seasonNum] || temporadasMeta[String(seasonNum)] || null;
+            let tMeta = temporadasMeta[seasonNum] || temporadasMeta[String(seasonNum)] || null;
+
+            // Multi-temporadas (ex: Solo Leveling S1 com 12 eps e S2 com 13 eps):
+            // Se a próxima temporada já possui episódios no banco, esta temporada já foi concluída
+            // em seu total disponível. Se tMeta contiver o total acumulado de múltiplas temporadas (ex: 25),
+            // clampa aos episódios reais desta temporada para evitar que seja tratada como incompleta.
+            const hasNextSeasonInDb = rawSeasonNumbers.includes(seasonNum + 1) && (temporadasObj[seasonNum + 1]?.length > 0);
+            if (hasNextSeasonInDb && tMeta) {
+                const rawCount = typeof tMeta === 'object' ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : (parseInt(tMeta, 10) || 0);
+                const currentSeasonCount = (temporadasObj[seasonNum] || []).length;
+                if (rawCount > currentSeasonCount && currentSeasonCount > 0) {
+                    tMeta = typeof tMeta === 'object' ? { ...tMeta, totalEps: currentSeasonCount } : currentSeasonCount;
+                }
+            }
+
             const normSeason = CatalogoManager.normalizeSeasonEpisodes(temporadasObj[seasonNum], seasonNum, tMeta, isEmLancamento, exigirTemporadaCompleta);
             if (!normSeason) {
                 // Temporada inválida, incompleta ou sem Ep 1 -> interrompe a cadeia de temporadas seguintes
@@ -511,8 +554,12 @@ class CatalogoManager {
             temporadas.push(normSeason);
 
             // Se esta temporada NÃO estiver completa, ela NÃO desbloqueia a exibição de temporadas superiores (ex: T3)
-            // a não ser que a próxima temporada já possua episódios cadastrados no banco
-            const isComplete = (normSeason.isDubladoCompleto || normSeason.isLegendadoCompleto || normSeason.isCompleto);
+            // a não ser que:
+            //   a) a próxima temporada já possua episódios cadastrados no banco, OU
+            //   b) a série esteja em lançamento (comparamos contra eps lançados, não futuros), OU
+            //   c) a temporada é longa e atingiu o limiar mínimo de exibição progressiva
+            const isComplete = (normSeason.isDubladoCompleto || normSeason.isLegendadoCompleto || normSeason.isCompleto
+                || normSeason.isLongRunningDubbed || normSeason.isLongRunningSubtitled);
             if (!isComplete && !isEmLancamento) {
                 const nextSeasonNum = seasonNum + 1;
                 const hasNextSeasonInDb = rawSeasonNumbers.includes(nextSeasonNum) && (temporadasObj[nextSeasonNum]?.length > 0);
@@ -828,6 +875,8 @@ class CatalogoManager {
                             s.ano = s.ano || details.ano || '';
                             s.generos = details.generos && details.generos.length > 0 ? details.generos : s.generos;
                             s.nomeOriginal = s.nomeOriginal || details.nomeOriginal || s.nome;
+                            if (details.statusSerie) s.statusSerie = details.statusSerie;
+                            if (details.emLancamento !== undefined) s.emLancamento = details.emLancamento;
 
                             await db.query(`
                                 UPDATE series SET
@@ -838,11 +887,16 @@ class CatalogoManager {
                                     ano = $5,
                                     generos = $6,
                                     nome_original = $7,
+                                    status_serie = COALESCE($8, status_serie),
+                                    em_lancamento = COALESCE($9, em_lancamento),
                                     updated_at = NOW()
-                                WHERE id = $8
+                                WHERE id = $10
                             `, [
                                 s.tmdbId, s.posterUrl, s.backdropUrl, s.sinopse,
-                                s.ano, JSON.stringify(s.generos || []), s.nomeOriginal, s.id
+                                s.ano, JSON.stringify(s.generos || []), s.nomeOriginal,
+                                details.statusSerie || null,
+                                details.emLancamento !== undefined ? details.emLancamento : null,
+                                s.id
                             ]);
                             console.log(`🎨 [AUTO-ENRICH] Capa recuperada com sucesso para série: "${s.nome}"`);
                         }
@@ -1186,17 +1240,24 @@ class CatalogoManager {
     }
 
     async adicionarEpisodioSerie(serieNome, temporadaNum, episodioNum, messageId, fileId = null, metadados = {}) {
-        let serie = this.catalogo.series.find(s => 
-            s.nome.toLowerCase() === serieNome.toLowerCase() || 
-            (s.tmdbId && metadados.tmdbId && s.tmdbId === metadados.tmdbId)
-        );
+        let serie = null;
+        if (metadados.tmdbId) {
+            serie = this.catalogo.series.find(s => s.tmdbId && Number(s.tmdbId) === Number(metadados.tmdbId));
+        }
+        if (!serie) {
+            serie = this.catalogo.series.find(s => {
+                if (s.tmdbId && metadados.tmdbId && Number(s.tmdbId) !== Number(metadados.tmdbId)) return false;
+                return s.nome.toLowerCase() === serieNome.toLowerCase() || isSameMedia(s.nome, serieNome);
+            });
+        }
 
         // Se metadados de poster ou TMDB estiverem ausentes, busca no TMDB proativamente
         if (!metadados.posterUrl || !metadados.tmdbId) {
             try {
                 const tmdbRes = await TMDBService.searchTV(serieNome);
                 if (tmdbRes && tmdbRes.length > 0) {
-                    const det = (await TMDBService.getTVDetails(tmdbRes[0].tmdbId)) || tmdbRes[0];
+                    const matchTmdb = tmdbRes.find(r => isSameMedia(r.nome, serieNome) || isSameMedia(r.nomeOriginal, serieNome)) || tmdbRes[0];
+                    const det = (await TMDBService.getTVDetails(matchTmdb.tmdbId)) || matchTmdb;
                     metadados.tmdbId = metadados.tmdbId || det.tmdbId;
                     metadados.posterUrl = metadados.posterUrl || det.posterUrl;
                     metadados.backdropUrl = metadados.backdropUrl || det.backdropUrl;
@@ -1221,7 +1282,7 @@ class CatalogoManager {
                 if (metadados.tmdbId) {
                     dbCheck = await db.query(`SELECT * FROM series WHERE tmdb_id = $1 LIMIT 1`, [metadados.tmdbId]);
                 }
-                if (!dbCheck || dbCheck.rows.length === 0) {
+                if ((!dbCheck || dbCheck.rows.length === 0) && !metadados.tmdbId) {
                     dbCheck = await db.query(`SELECT * FROM series WHERE LOWER(nome) = LOWER($1) LIMIT 1`, [serieNome.trim()]);
                 }
                 if (dbCheck && dbCheck.rows.length > 0) {
@@ -2357,6 +2418,7 @@ class CatalogoManager {
                 try { tempMetaForCalc = JSON.parse(tempMetaForCalc); } catch (_) { tempMetaForCalc = {}; }
             }
 
+            const isEmLancamento = !!(s.em_lancamento || s.emLancamento);
             const totalSeasons = Math.max(s.total_temporadas || 1, ...Array.from(temporadasMap.keys()), 1);
             const temporadas = [];
 
@@ -2367,16 +2429,36 @@ class CatalogoManager {
 
                 // Obtém o total esperado de episódios desta temporada via temporadas_meta
                 const tMetaRaw = tempMetaForCalc[String(tNum)] || tempMetaForCalc[tNum] || null;
-                const expectedEpsTotal = tMetaRaw
+                let expectedEpsTotal = tMetaRaw
                     ? (typeof tMetaRaw === 'object'
                         ? (tMetaRaw.totalEps || tMetaRaw.totalEpisodios || tMetaRaw.episodiosContagem || 0)
                         : (parseInt(tMetaRaw, 10) || 0))
                     : 0;
 
-                // Calcula episódios faltantes considerando o total real da temporada (não só lacunas internas)
-                // Se temos o total esperado via TMDB, verifica todos os eps de 1 até expectedEpsTotal
-                // Caso contrário, verifica lacunas entre 1 e o máximo encontrado
-                const ceilEp = expectedEpsTotal > 0 ? expectedEpsTotal : maxEpNum;
+                // Multi-temporadas (ex: Solo Leveling): Se existem temporadas subsequentes cadastradas no banco (ex: T1 com 12 eps e T2 com 13 eps),
+                // e o expectedEpsTotal da T1 for maior que os eps da T1 (ex: 25, que é o total acumulado das temporadas),
+                // a T1 já está finalizada em maxEpNum e os episódios excedentes pertencem às temporadas seguintes.
+                const hasNextSeasonInDb = Array.from(temporadasMap.keys()).some(k => k > tNum && (temporadasMap.get(k) || []).length > 0);
+                if (hasNextSeasonInDb && expectedEpsTotal > maxEpNum && maxEpNum > 0) {
+                    expectedEpsTotal = maxEpNum;
+                }
+
+                const totalDub = seasonEps.filter(e => e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length;
+                const totalLeg = seasonEps.filter(e => e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length;
+
+                // Threshold de séries longas (Bug 3 - Pokémon/One Piece): temporadas com >= 20 eps esperados e >= 10 eps contínuos disponíveis
+                const isLongRunningSeason = expectedEpsTotal >= 20;
+                const isLongRunningDub = isLongRunningSeason && totalDub >= 10;
+                const isLongRunningLeg = isLongRunningSeason && totalLeg >= 10;
+
+                // Calcula episódios faltantes:
+                // - Séries em lançamento (Bug 2): futuros eps ainda não lançados NÃO contam como faltantes (apenas lacunas internas até maxEpNum)
+                // - Séries longas liberadas progressivamente (Bug 3): apenas lacunas internas até maxEpNum
+                // - Séries finalizadas normais: compara lacunas até expectedEpsTotal
+                const ceilEp = (isEmLancamento || isLongRunningDub || isLongRunningLeg) 
+                    ? maxEpNum 
+                    : (expectedEpsTotal > 0 ? expectedEpsTotal : maxEpNum);
+
                 const missingEpNums = [];
                 for (let eIdx = 1; eIdx <= ceilEp; eIdx++) {
                     if (!epNumsFound.has(eIdx)) {
@@ -2384,10 +2466,16 @@ class CatalogoManager {
                     }
                 }
 
-                const totalDub = seasonEps.filter(e => e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length;
-                const totalLeg = seasonEps.filter(e => e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length;
-                const dubCompleto = expectedEpsTotal > 0 ? (totalDub >= expectedEpsTotal) : (totalDub > 0 && totalDub >= seasonEps.length);
-                const legCompleto = expectedEpsTotal > 0 ? (totalLeg >= expectedEpsTotal) : (totalLeg > 0 && totalLeg >= seasonEps.length);
+                // Completude:
+                // - Em lançamento: qualquer áudio a partir do Ep 1 já é considerado completo/disponível
+                // - Série longa: atingir 10 eps libera a exibição progressiva
+                // - Série finalizada: atinge o total esperado ou o total de eps da temporada
+                const dubCompleto = isEmLancamento 
+                    ? (totalDub > 0) 
+                    : (isLongRunningDub || (expectedEpsTotal > 0 ? (totalDub >= expectedEpsTotal) : (totalDub > 0 && totalDub >= seasonEps.length)));
+                const legCompleto = isEmLancamento 
+                    ? (totalLeg > 0) 
+                    : (isLongRunningLeg || (expectedEpsTotal > 0 ? (totalLeg >= expectedEpsTotal) : (totalLeg > 0 && totalLeg >= seasonEps.length)));
 
                 temporadas.push({
                     numero: tNum,
@@ -2399,6 +2487,8 @@ class CatalogoManager {
                     totalLegendados: totalLeg,
                     isDubladoCompleto: dubCompleto,
                     isLegendadoCompleto: legCompleto,
+                    isLongRunningDubbed: isLongRunningDub,
+                    isLongRunningSubtitled: isLongRunningLeg,
                     episodios: seasonEps
                 });
             }

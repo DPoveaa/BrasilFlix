@@ -3,6 +3,7 @@ const config = require('../../config');
 const TMDBService = require('./TMDBService');
 const NyaaSearchService = require('./NyaaSearchService');
 const AnimeExtractorService = require('./AnimeExtractorService');
+const { isReleaseCompatibleWithTarget, isSameMedia } = require('../utils/titleUtils');
 
 class MediaSearchService {
     constructor() {
@@ -373,6 +374,11 @@ class MediaSearchService {
                         }
                     }
                 }
+
+                // 8. Blindagem Estrita de Título e Franquia (impede que versões diferentes como Pokémon Horizons vs 1997, Bleach TYBW vs 2004, etc. se misturem)
+                if (!isReleaseCompatibleWithTarget(r.title, cleanQuery, originalName, { ano, tipo, isAnime, isLiveActionExplicit })) {
+                    return false;
+                }
             }
 
             return true;
@@ -525,6 +531,11 @@ class MediaSearchService {
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
 
+                // Bloqueia releases de séries/spin-offs diferentes (ex: Pokémon Horizons vs Pokémon 1997, Bleach TYBW vs 2004, etc.)
+                if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                    continue;
+                }
+
                 // Grupos de lançamento 100% brasileiros
                 const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo|cinegaveta|wolverdon|guanabara/i.test(title);
 
@@ -668,6 +679,11 @@ class MediaSearchService {
                                 continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
                             }
                         }
+                    }
+
+                    // 5. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
+                    if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                        continue;
                     }
                 }
 
@@ -875,6 +891,11 @@ class MediaSearchService {
                                 continue;
                             }
                         }
+                    }
+
+                    // 5. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
+                    if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                        continue;
                     }
                 }
 

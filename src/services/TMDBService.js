@@ -551,6 +551,9 @@ class TMDBService {
         const base = this.formatItem({ ...raw, media_type: 'tv' });
         base.totalTemporadas = raw.number_of_seasons || 1;
         base.totalEpisodios = raw.number_of_episodes || 0;
+        const isEnded = (raw.status === 'Ended' || raw.status === 'Canceled');
+        base.statusSerie = raw.status || 'Ended';
+        base.emLancamento = !isEnded || !!raw.in_production || !!raw.next_episode_to_air;
         base.temporadas = (raw.seasons || [])
             .filter(s => s.season_number > 0)
             .map(s => ({
