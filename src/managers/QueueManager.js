@@ -2107,6 +2107,8 @@ class QueueManager extends EventEmitter {
                         const matchesTitle = nameClean.includes(titleClean) || folderClean.includes(titleClean) || pathClean.includes(titleClean) || isSameMedia(path.basename(path.dirname(f.path)), job.title) || isSameMedia(f.name, job.title);
                         if (!matchesTitle) return false;
 
+                        const isAnimeWork = !!(job.isAnime || metadata.isAnime || job.category === 'Anime');
+
                         // Proteção estrita contra mistura de versões/spin-offs (ex: Pokémon Horizons vs Pokémon 1997)
                         if (!isReleaseCompatibleWithTarget(f.path, job.title, metadata.nomeOriginal, { ano: metadata.ano, isAnime: isAnimeWork })) {
                             return false;
@@ -2125,7 +2127,6 @@ class QueueManager extends EventEmitter {
                         }
 
                         // Se a obra for Anime e o arquivo tiver indicativo explícito de Live Action:
-                        const isAnimeWork = !!(job.isAnime || metadata.isAnime || job.category === 'Anime');
                         const isLiveActionFile = /\b(live[._ -]?action|netflix|nf[._ -]web)\b/i.test(fullPathStr) && !/\b(anime|animation)\b/i.test(fullPathStr);
                         if (isAnimeWork && isLiveActionFile && expectedYear > 0 && expectedYear < 2020) {
                             return false;
