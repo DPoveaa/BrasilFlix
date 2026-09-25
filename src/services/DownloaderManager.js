@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const config = require('../../config');
 const VideoProcessor = require('./VideoProcessor');
 const SchedulerService = require('./SchedulerService');
+const { isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 
 let WebTorrentClass = null;
 
@@ -587,6 +588,91 @@ class DownloaderManager extends EventEmitter {
                     this.activePaths.add(activeFolderPath);
                 }
 
+                // ─────────────────────────────────────────────────────────────────────
+                // DETECÇÃO PRECOCE DE TORRENT FALSO (antes de baixar qualquer byte)
+                // Cruza os nomes reais dos arquivos de vídeo no torrent com o título
+                // esperado do job. Se não houver nenhuma palavra significativa em comum,
+                // o torrent é descartado imediatamente como falso/mal-etiquetado.
+                // Exemplo: torrent anunciado como "Resident Evil 2026" mas arquivos são
+                // "the.shadow.men.1997.mkv" → abortado ANTES de baixar qualquer coisa.
+                // ─────────────────────────────────────────────────────────────────────
+                if (options.title && torrent.files && torrent.files.length > 0) {
+                    const VIDEO_EXTS = /\.(mp4|mkv|avi|mov|wmv|m4v|ts|webm)$/i;
+                    const videoFiles = torrent.files.filter(f => VIDEO_EXTS.test(f.name));
+                    const allFiles = videoFiles.length > 0 ? videoFiles : torrent.files;
+
+                    const normalizeFake = (s) => (s || '').toLowerCase()
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+                    const STOPWORDS_FAKE = new Set([
+                        'the','a','an','o','os','as','de','da','do','das','dos','e','em','um','uma',
+                        'no','na','nos','nas','por','para','com','sem','part','complete','season',
+                        's01','s02','s03','s04','s1','s2','s3','s4','e01','e02','ep',
+                        '720p','1080p','2160p','hevc','x265','x264','web','dl','bluray','webrip',
+                        'hdtv','cam','hd','full','br','pt','ptbr','dub','leg','legendado','dublado',
+                        'audio','multi','dual','aac','h264','h265','mkv','mp4','repack','proper',
+                        'rmteam','yts','yify','rarbg','opt','eng','por','sub','subs'
+                    ]);
+
+                    // 1. Checa compatibilidade rigorosa de franquia/ano (isReleaseCompatibleWithTarget)
+                    // Se TODOS os arquivos de vídeo forem incompatíveis (ex: Pokémon Horizons para job Pokémon 1997, ou Resident Evil 1997 para filme de 2026)
+                    const hasCompatibleFile = allFiles.some(file => {
+                        const relName = `${file.name} ${torrent.name || ''}`;
+                        return isReleaseCompatibleWithTarget(relName, options.title, options.originalTitle, {
+                            ano: options.ano,
+                            isAnime: options.isAnime,
+                            tipo: options.type
+                        });
+                    });
+
+                    if (!hasCompatibleFile) {
+                        const fileNames = allFiles.slice(0, 3).map(f => f.name).join(' | ');
+                        const errMsg = `🚫 [TORRENT INCOMPATÍVEL — DETECÇÃO PRECOCE] Título esperado: "${options.title}" (${options.ano || ''}) | Arquivos reais no torrent: "${fileNames}". Incompatível com versão/ano do título alvo. Download abortado ANTES de baixar qualquer byte.`;
+                        console.error(errMsg);
+                        finished = true;
+                        safeCleanup();
+                        return reject(new Error(errMsg));
+                    }
+
+                    // 2. Checa palavras-chave do título (ou título original) contra nomes dos arquivos e da pasta
+                    const targetWords = new Set([
+                        ...normalizeFake(options.title || '').split(' '),
+                        ...normalizeFake(options.originalTitle || '').split(' ')
+                    ].filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w) && !/^\d{3,4}$/.test(w)));
+
+                    if (targetWords.size >= 1) {
+                        const hasAnyMatch = allFiles.some(file => {
+                            const fullRel = `${file.path || ''} ${file.name || ''} ${torrent.name || ''}`;
+                            const fileNorm = normalizeFake(fullRel.replace(/\.\w{2,4}$/, ''));
+                            const fileWords = new Set(fileNorm.split(' ')
+                                .filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w) && !/^\d{3,4}$/.test(w)));
+                            return [...targetWords].filter(w => fileWords.has(w)).length > 0;
+                        });
+
+                        if (!hasAnyMatch) {
+                            const fileNames = allFiles.slice(0, 3).map(f => f.name).join(' | ');
+                            const errMsg = `🚫 [TORRENT FALSO — DETECÇÃO PRECOCE] Título esperado: "${options.title}" | Arquivos reais no torrent: "${fileNames}". Nenhuma correspondência de título. Download abortado ANTES de baixar qualquer byte.`;
+                            console.error(errMsg);
+                            finished = true;
+                            safeCleanup();
+                            return reject(new Error(errMsg));
+                        }
+
+                        // Log informativo quando há correspondência confirmada
+                        const bestMatch = allFiles.find(file => {
+                            const fullRel = `${file.path || ''} ${file.name || ''} ${torrent.name || ''}`;
+                            const fileNorm = normalizeFake(fullRel.replace(/\.\w{2,4}$/, ''));
+                            const fileWords = new Set(fileNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w)));
+                            return [...targetWords].filter(w => fileWords.has(w)).length > 0;
+                        });
+                        if (bestMatch) {
+                            console.log(`✅ [Validação Torrent] Título "${options.title}" → arquivo confirmado: "${bestMatch.name}"`);
+                        }
+                    }
+                }
+                // ─────────────────────────────────────────────────────────────────────
+
                 // Proteção contra arquivos gigantes (4K / 20GB): aborta na hora para filmes
                 if (!options.episode && torrent.length > 5.8 * 1024 * 1024 * 1024) {
                     console.log(`⚠️ Arquivo de filme muito pesado (${this.formatBytes(torrent.length)} > 5.5 GB). Abortando para priorizar 1080p leve...`);
@@ -611,6 +697,16 @@ class DownloaderManager extends EventEmitter {
                 if (options.episode && torrent.files.length === 1 && typeof options.isEpisodeMissing === 'function') {
                     if (!options.isEpisodeMissing(epNum)) {
                         console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Episódio ${epNum} já consta no catálogo com a versão solicitada. Abortando download redundante.`);
+                        finished = true;
+                        safeCleanup();
+                        return resolve({ redundant: true, filePath: null });
+                    }
+                }
+
+                // Se o torrent é de filme, verifica se a versão já está presente ou em processamento
+                if (!options.episode && typeof options.isMediaMissing === 'function') {
+                    if (!options.isMediaMissing()) {
+                        console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Conteúdo já consta no catálogo com a versão solicitada ou em processamento. Abortando download redundante.`);
                         finished = true;
                         safeCleanup();
                         return resolve({ redundant: true, filePath: null });
@@ -1136,10 +1232,50 @@ class DownloaderManager extends EventEmitter {
                 }
 
                 // 2. STALL DETECTION — única forma de cancelar download em andamento.
-                // Se os bytes pararam de chegar pelo tempo configurado acima, a fonte morreu.
+                // Se os bytes pararam de chegar pelo tempo configurado acima, a fonte estagnou.
                 if (stalledMs >= stalledTimeoutMs) {
                     process.stdout.write('\n');
-                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)). ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
+                    console.log(`⚠️ [STALL] Download parou de receber dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído, ${torrent.numPeers} peer(s)).`);
+
+                    // 🌾 RESGATE PARCIAL SEGURO DE SEASON PACK (Harvesting Anti-Desperdício)
+                    // Se o pack estagnou mas já possui episódios 100% íntegros e baixados no SSD, resgata todos eles!
+                    if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
+                        const harvestedMap = {};
+                        for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
+                            const epFullPath = path.join(this.downloadDir, f.path);
+                            if (fs.existsSync(epFullPath)) {
+                                const epStat = fs.statSync(epFullPath);
+                                const expectedSize = f.length || 0;
+                                const isSizeOk = expectedSize > 0 ? epStat.size >= expectedSize * 0.95 : epStat.size > minRequiredBytes;
+                                if (isSizeOk && epStat.size > 20 * 1024 * 1024) {
+                                    harvestedMap[parseInt(epStr, 10)] = {
+                                        filePath: epFullPath,
+                                        fileName: f.name,
+                                        sizeBytes: epStat.size
+                                    };
+                                }
+                            }
+                        }
+
+                        const harvestedCount = Object.keys(harvestedMap).length;
+                        if (harvestedCount > 0) {
+                            console.log(`🌾 [SEASON PACK HARVEST] Resgatando ${harvestedCount} episódio(s) 100% íntegro(s) no SSD antes de encerrar fonte estagnada!`);
+                            const primaryEp = (options.episode && harvestedMap[options.episode]) ? harvestedMap[options.episode] : Object.values(harvestedMap)[0];
+                            finished = true;
+                            safeCleanup();
+                            return resolve({
+                                filePath: primaryEp.filePath,
+                                fileName: primaryEp.fileName,
+                                sizeBytes: primaryEp.sizeBytes,
+                                totalTorrentFiles: torrent.files.length,
+                                episodeMap: harvestedMap,
+                                isPack: harvestedCount > 1,
+                                isPartialHarvest: true
+                            });
+                        }
+                    }
+
+                    console.log(`⚠️ [STALL] ${hasMoreSources ? 'Pulando para tentar outra fonte...' : 'Movendo para Swarm Watcher...'}`);
                     finished = true;
                     safeCleanup();
                     return reject(new Error(`Download parado sem dados por ${Math.round(stalledMs / 60000).toFixed(0)} min (${(fileProg * 100).toFixed(1)}% concluído).`));

@@ -14944,9 +14944,13 @@ function initApp() {
 
             const token = getUserStreamingToken();
             const isVip = localStorage.getItem('bf_user_is_vip') === 'true' || (currentUser && currentUser.is_vip) || token !== 'public';
-            const hasDub = !!movie.versoes?.dublado || !!movie.isDublado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('D')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('dublado'));
-            const hasLeg = !!movie.versoes?.legendado || !!movie.isLegendado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('L')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('legendado'));
-            const isDualAudio = (hasDub && hasLeg) || movie.audio === 'dual' || (!!movie.versoes?.dublado && !!movie.versoes?.legendado) || (!!movie.isDublado && !!movie.isLegendado);
+            // hasDub/hasLeg: usa APENAS os campos de disponibilidade real de mídia do backend (isDublado/isLegendado)
+            // NÃO usa audioBadge/audioText como proxy pois esses campos podem estar desatualizados
+            const hasDub = (!!movie.versoes?.dublado && !!(movie.versoes.dublado.messageId || movie.versoes.dublado.fileId))
+                || (!!movie.isDublado && !!(movie.messageId || movie.fileId) && !movie.versoes?.legendado && !movie.versoes?.dublado);
+            const hasLeg = (!!movie.versoes?.legendado && !!(movie.versoes.legendado.messageId || movie.versoes.legendado.fileId))
+                || (!!movie.isLegendado && !!(movie.messageId || movie.fileId) && !movie.versoes?.legendado && !movie.versoes?.dublado && !hasDub);
+            const isDualAudio = hasDub && hasLeg;
 
             // ── PASSO 1: CONFIRMAÇÃO DE CONSUMO DE CRÉDITOS (PRIMEIRO) ──
             const mediaKey = `filme_${movie.id}`;
@@ -14976,11 +14980,13 @@ function initApp() {
             const savedAudioPref = getUserMediaAudioPref('filme', movie.id);
             const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
-            // Seleciona áudio automaticamente sem interrupção por modal (preferência do usuário > dublado > legendado)
-            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id) || 'dublado';
-            if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
-            else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
-            else if (!hasDub && !hasLeg) chosenAudio = 'dublado';
+            // Seleciona áudio automaticamente: preferência salva > preferência do usuário > default inteligente
+            // Default inteligente: prefere 'dublado' se disponível, senão 'legendado'
+            const defaultAudio = hasDub ? 'dublado' : (hasLeg ? 'legendado' : 'dublado');
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id) || defaultAudio;
+            // Sanitiza: se escolheu dublado mas não existe, cai para legendado (e vice-versa)
+            if (chosenAudio === 'dublado' && !hasDub) chosenAudio = hasLeg ? 'legendado' : 'dublado';
+            else if (chosenAudio === 'legendado' && !hasLeg) chosenAudio = hasDub ? 'dublado' : 'legendado';
 
             finalizeMoviePlaybackPage(movie, chosenAudio, updateUrl, token, hasDub, hasLeg);
         }
@@ -15861,7 +15867,7 @@ function initApp() {
                 video.addEventListener('loadedmetadata', onMetaLoaded);
             }
 
-            updatePlayerAudioUI(newAudio, currentPlayingMedia.hasDub !== false, currentPlayingMedia.hasLeg !== false);
+            updatePlayerAudioUI(newAudio, !!currentPlayingMedia.hasDub, !!currentPlayingMedia.hasLeg);
             showToast(`🔊 Áudio alterado para ${newAudio === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)'}`, 'success');
         }
 
@@ -16047,7 +16053,8 @@ function initApp() {
             if (subEl) subEl.innerText = subTitle || 'BrasilFlix Streaming';
 
             // Configura UI de áudio no player
-            updatePlayerAudioUI(mediaInfo.audio || 'dublado', mediaInfo.hasDub !== false, mediaInfo.hasLeg !== false);
+            // Usa !!hasDub/!!hasLeg: false quando undefined, ao invés de !==false que trata undefined como true
+            updatePlayerAudioUI(mediaInfo.audio || 'dublado', !!mediaInfo.hasDub, !!mediaInfo.hasLeg);
 
             // Configura velocidade salva
             const savedSpeed = parseFloat(localStorage.getItem('bf_player_speed')) || 1.0;
@@ -20452,9 +20459,10 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
                     const epsListHtml = (i.temporadas || []).map(t => {
                         const expectedLabel = t.expectedEpisodios ? `${(t.episodios || []).length}/${t.expectedEpisodios}` : `${(t.episodios || []).length}`;
-                        const dubStatus = t.totalDublados !== undefined ? (t.isDubladoCompleto ? '<span style="color:#10b981; font-weight:700; font-size:11px;">🔊 Dub 100%</span>' : `<span style="color:#f59e0b; font-weight:700; font-size:11px;">🔊 Dub ${t.totalDublados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
-                        const legStatus = t.totalLegendados !== undefined ? (t.isLegendadoCompleto ? '<span style="color:#10b981; font-weight:700; font-size:11px;">💬 Leg 100%</span>' : `<span style="color:#38bdf8; font-weight:700; font-size:11px;">💬 Leg ${t.totalLegendados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
-                        const ocultoBadge = (isRegraAtiva && !t.isDubladoCompleto && !t.isLegendadoCompleto) ? '<span style="color:#ef4444; font-weight:800; font-size:10px; background:rgba(239,68,68,0.18); padding:2px 6px; border-radius:4px; border:1px solid rgba(239,68,68,0.4);">OCULTA NO SITE (Incompleta)</span>' : '';
+                        const dubStatus = t.totalDublados !== undefined ? (t.isDubladoCompleto ? (t.isLongRunningDubbed ? '<span style="color:#10b981; font-weight:700; font-size:11px;">🔊 Dub (≥10 eps Progressivo)</span>' : '<span style="color:#10b981; font-weight:700; font-size:11px;">🔊 Dub 100%</span>') : `<span style="color:#f59e0b; font-weight:700; font-size:11px;">🔊 Dub ${t.totalDublados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
+                        const legStatus = t.totalLegendados !== undefined ? (t.isLegendadoCompleto ? (t.isLongRunningSubtitled ? '<span style="color:#10b981; font-weight:700; font-size:11px;">💬 Leg (≥10 eps Progressivo)</span>' : '<span style="color:#10b981; font-weight:700; font-size:11px;">💬 Leg 100%</span>') : `<span style="color:#38bdf8; font-weight:700; font-size:11px;">💬 Leg ${t.totalLegendados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
+                        const lancamentoBadge = i.emLancamento ? '<span style="color:#38bdf8; font-weight:800; font-size:10px; background:rgba(56,189,248,0.18); padding:2px 6px; border-radius:4px; border:1px solid rgba(56,189,248,0.4);">EM LANÇAMENTO</span>' : '';
+                        const ocultoBadge = (!i.emLancamento && isRegraAtiva && !t.isDubladoCompleto && !t.isLegendadoCompleto) ? '<span style="color:#ef4444; font-weight:800; font-size:10px; background:rgba(239,68,68,0.18); padding:2px 6px; border-radius:4px; border:1px solid rgba(239,68,68,0.4);">OCULTA NO SITE (Incompleta)</span>' : '';
 
                         return `
                             <div style="margin-bottom: 10px;">
@@ -20463,6 +20471,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                         <span>Temporada ${t.numero} (${expectedLabel} episódios${t.episodiosFaltantes?.length > 0 ? ` — <span style="color:#ef4444">${t.episodiosFaltantes.length} faltando</span>` : ''})</span>
                                         ${dubStatus}
                                         ${legStatus}
+                                        ${lancamentoBadge}
                                         ${ocultoBadge}
                                     </div>
                                     ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Eps faltantes: ${t.episodiosFaltantes.join(', ')}</span>` : ''}

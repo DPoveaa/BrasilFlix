@@ -598,6 +598,7 @@ class TelegramUploader {
                 fileId: fileId,
                 fileUniqueId: doc?.accessHash?.toString(),
                 fileSize: fs.statSync(filePath).size,
+                fileName: path.basename(filePath), // nome real do arquivo enviado
                 sentMessage: sentMessage
             };
         } catch (error) {

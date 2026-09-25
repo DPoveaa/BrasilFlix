@@ -3,6 +3,7 @@ const config = require('../../config');
 const TMDBService = require('./TMDBService');
 const NyaaSearchService = require('./NyaaSearchService');
 const AnimeExtractorService = require('./AnimeExtractorService');
+const { isReleaseCompatibleWithTarget, isSameMedia } = require('../utils/titleUtils');
 
 class MediaSearchService {
     constructor() {
@@ -339,25 +340,7 @@ class MediaSearchService {
                     }
                 }
 
-                // 5. Validação de Ano para Séries (impede confusão de anos distantes, ex: One Piece 1999 vs 2023)
-                if (ano) {
-                    const expectedYear = parseInt(ano, 10);
-                    const titleYearMatch = r.title.match(/\b(19\d{2}|20\d{2})\b/);
-                    if (titleYearMatch) {
-                        const releaseYear = parseInt(titleYearMatch[1], 10);
-                        if (Math.abs(releaseYear - expectedYear) > 1) return false;
-                    }
-                }
-
-                // 6. Blindagem Anime vs Live-Action
-                if (isAnime && /\b(live[-_ .]?action)\b/i.test(r.title)) {
-                    return false;
-                }
-                if (!isAnime && isLiveActionExplicit && /\b(anime)\b/i.test(r.title)) {
-                    return false;
-                }
-
-                // 7. Validação de Episódio Específico (quando o release é de episódio único e não pack)
+                // 5. Validação de Episódio Específico (quando o release é de episódio único e não pack)
                 if (episode) {
                     const epNum = parseInt(episode, 10);
                     const titleLower = r.title.toLowerCase();
@@ -373,6 +356,30 @@ class MediaSearchService {
                         }
                     }
                 }
+            }
+
+            // Validações aplicadas tanto para FILMES quanto para SÉRIES:
+            // 6. Validação de Ano (impede confusão de anos distantes, ex: Resident Evil 2026 vs The Shadow Men 1997)
+            if (ano) {
+                const expectedYear = parseInt(ano, 10);
+                const titleYearMatch = r.title.match(/\b(19\d{2}|20\d{2})\b/);
+                if (titleYearMatch) {
+                    const releaseYear = parseInt(titleYearMatch[1], 10);
+                    if (Math.abs(releaseYear - expectedYear) > 1) return false;
+                }
+            }
+
+            // 7. Blindagem Anime vs Live-Action
+            if (isAnime && /\b(live[-_ .]?action)\b/i.test(r.title)) {
+                return false;
+            }
+            if (!isAnime && isLiveActionExplicit && /\b(anime)\b/i.test(r.title)) {
+                return false;
+            }
+
+            // 8. Blindagem Estrita de Título e Franquia (impede mistura de versões como Pokémon Horizons vs 1997, Bleach TYBW vs 2004, etc.)
+            if (!isReleaseCompatibleWithTarget(r.title, cleanQuery, originalName, { ano, tipo, isAnime, isLiveActionExplicit })) {
+                return false;
             }
 
             return true;
@@ -402,6 +409,8 @@ class MediaSearchService {
                 if (ptSubs.length > 0) {
                     console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando versões 1080p e Season Packs com sementes ativas...`);
                     const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { 
+                        query: cleanQuery,
+                        originalName,
                         season, 
                         episode,
                         ano,
@@ -524,6 +533,11 @@ class MediaSearchService {
                 const rawTitle = st.title || '';
                 const lines = rawTitle.split('\n');
                 const title = lines[0] || '';
+
+                // Bloqueia releases de séries/spin-offs diferentes (ex: Pokémon Horizons vs Pokémon 1997, Bleach TYBW vs 2004, etc.)
+                if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                    continue;
+                }
 
                 // Grupos de lançamento 100% brasileiros
                 const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo|cinegaveta|wolverdon|guanabara/i.test(title);
@@ -668,6 +682,11 @@ class MediaSearchService {
                                 continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
                             }
                         }
+                    }
+
+                    // 5. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
+                    if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                        continue;
                     }
                 }
 
@@ -825,8 +844,50 @@ class MediaSearchService {
                 if (tipo === 'filme' && parseFloat(sizeMB) < 400) continue;
                 if (tipo === 'serie' && parseFloat(sizeMB) > 0 && parseFloat(sizeMB) < 150) continue;
 
+                // Validações aplicadas tanto para FILMES quanto para SÉRIES:
+                // 1. Validação de Ano (impede confusão de anos distantes, ex: Resident Evil 2026 vs The Shadow Men 1997)
+                if (opts.ano) {
+                    const expectedYear = parseInt(opts.ano, 10);
+                    const yMatch = title.match(/\b(19\d{2}|20\d{2})\b/);
+                    if (yMatch && Math.abs(parseInt(yMatch[1], 10) - expectedYear) > 1) {
+                        continue;
+                    }
+                }
+
+                // 2. Blindagem Anime vs Live Action
+                if (opts.isAnime && /\b(live[-_ .]?action)\b/i.test(title)) {
+                    continue;
+                }
+                if (!opts.isAnime && opts.isLiveActionExplicit && /\b(anime)\b/i.test(title)) {
+                    continue;
+                }
+
+                // 3. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
+                if (opts.query && !isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                    continue;
+                }
+
+                // 4. Validação de palavras-chave mínimas do título
+                if (opts.query) {
+                    const normStream = (s) => (s || '').toLowerCase()
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                    const STOPWORDS_STREAM = new Set(['the','a','an','o','os','as','de','da','do','das','dos','e','em','um','uma','no','na','nos','nas','por','para','com','sem','part','complete','season','s01','s02','s03','s04','s1','s2','s3','s4','e01','e02','ep','720p','1080p','2160p','hevc','x265','x264','web','dl','bluray','webrip','hdtv','cam','hd','full','br','pt','ptbr','dub','leg','legendado','dublado','audio','multi','dual','aac','h264','h265','mkv','mp4']);
+                    const qWords = new Set([
+                        ...normStream(opts.query).split(' ').filter(w => w.length > 2 && !STOPWORDS_STREAM.has(w) && !/^\d{3,4}$/.test(w)),
+                        ...normStream(opts.originalName || '').split(' ').filter(w => w.length > 2 && !STOPWORDS_STREAM.has(w) && !/^\d{3,4}$/.test(w))
+                    ]);
+                    if (qWords.size >= 1) {
+                        const tWords = new Set(normStream(title).split(' ').filter(w => w.length > 2 && !STOPWORDS_STREAM.has(w) && !/^\d{3,4}$/.test(w)));
+                        const hasMatch = [...qWords].some(w => tWords.has(w));
+                        if (!hasMatch) {
+                            continue; // Título completamente diferente (ex: The Shadow Men para Resident Evil)
+                        }
+                    }
+                }
+
                 if (tipo === 'serie') {
-                    // 1. Validação de Temporada
+                    // Validação de Temporada
                     if (opts.season) {
                         const reqSeason = parseInt(opts.season, 10);
                         const sMatch = title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i);
@@ -835,24 +896,7 @@ class MediaSearchService {
                         }
                     }
 
-                    // 2. Validação de Ano
-                    if (opts.ano) {
-                        const expectedYear = parseInt(opts.ano, 10);
-                        const yMatch = title.match(/\b(19\d{2}|20\d{2})\b/);
-                        if (yMatch && Math.abs(parseInt(yMatch[1], 10) - expectedYear) > 1) {
-                            continue;
-                        }
-                    }
-
-                    // 3. Blindagem Anime vs Live Action
-                    if (opts.isAnime && /\b(live[-_ .]?action)\b/i.test(title)) {
-                        continue;
-                    }
-                    if (!opts.isAnime && opts.isLiveActionExplicit && /\b(anime)\b/i.test(title)) {
-                        continue;
-                    }
-
-                    // 4. Validação de Episódio
+                    // Validação de Episódio
                     if (opts.episode) {
                         const epInt = parseInt(opts.episode, 10);
                         const cleanTitleForEp = title
