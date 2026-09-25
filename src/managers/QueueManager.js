@@ -2529,6 +2529,8 @@ class QueueManager extends EventEmitter {
                             }, {
                                 jobId: job.id,
                                 title: job.title,
+                                originalTitle: metadata.nomeOriginal || job.originalTitle,
+                                ano: metadata.ano || job.ano,
                                 season: job.season,
                                 episode: job.episode,
                                 type: job.type,
@@ -2640,6 +2642,8 @@ class QueueManager extends EventEmitter {
                                         }, {
                                             jobId: job.id,
                                             title: job.title,
+                                            originalTitle: metadata.nomeOriginal || job.originalTitle,
+                                            ano: metadata.ano || job.ano,
                                             season: job.season,
                                             episode: job.episode,
                                             type: job.type,
@@ -3273,6 +3277,60 @@ class QueueManager extends EventEmitter {
             job.progressDetails = `Enviando Telegram: ${p.percent}% (${p.speed})`;
             this.activeTask = job;
         });
+
+        // 5.5 VALIDAÇÃO PÓS-UPLOAD: cruza o nome real do arquivo com o título esperado do job
+        // Previne que torrents falsos/renomeados (ex: "The Shadow Men 1997" entregue como "Resident Evil")
+        // sejam silenciosamente cadastrados no catálogo com o nome errado.
+        if (uploadResult.fileName) {
+            const normalize = (s) => (s || '').toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove acentos
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .replace(/\s+/g, ' ').trim();
+            const STOPWORDS = new Set(['the','a','an','o','a','os','as','de','da','do','das','dos','e','em','um','uma',
+                'no','na','nos','nas','por','para','com','sem','seu','sua','sus','ano','part','complete',
+                's01','s02','s03','s04','s1','s2','s3','s4','e01','e02','720p','1080p','hevc','x265',
+                'x264','web','dl','bluray','webrip','hdtv','cam','hd','full','br','pt','ptbr','dub',
+                'dub','leg','legendado','dublado','audio','multi','dual','aac','h264','h265','mkv','mp4']);
+
+            const targetTitle = job.title || metadata.nome || '';
+            const targetOrig = metadata.nomeOriginal || job.originalTitle || '';
+
+            // 1. Validação de compatibilidade de franquia/ano (isReleaseCompatibleWithTarget)
+            const isCompat = isReleaseCompatibleWithTarget(uploadResult.fileName, targetTitle, targetOrig, {
+                ano: metadata.ano || job.ano,
+                isAnime: !!(metadata.isAnime || metadata.is_anime),
+                tipo: job.type
+            });
+
+            if (!isCompat) {
+                const errMsg = `🚫 [TORRENT INCOMPATÍVEL PÓS-UPLOAD] Job "${job.title}" recebeu arquivo incompatível: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
+                console.error(errMsg);
+                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => {});
+                throw new Error(errMsg);
+            }
+
+            // 2. Validação de palavras-chave do título ou título original
+            const jobTitleNorm = normalize(targetTitle);
+            const origTitleNorm = normalize(targetOrig);
+            const fileNameNorm = normalize(uploadResult.fileName.replace(/\.\w{2,4}$/, '')); // remove extensão
+
+            const targetWords = new Set([
+                ...jobTitleNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d{3,4}$/.test(w)),
+                ...origTitleNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d{3,4}$/.test(w))
+            ]);
+            const fileWords = new Set(fileNameNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d{3,4}$/.test(w)));
+
+            const matchCount = [...targetWords].filter(w => fileWords.has(w)).length;
+
+            if (targetWords.size >= 1 && matchCount === 0) {
+                // Nenhuma palavra do título ou título original bateu com o arquivo — torrent falso!
+                const errMsg = `🚫 [TORRENT FALSO DETECTADO PÓS-UPLOAD] Job "${job.title}" recebeu arquivo com nome completamente diferente: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
+                console.error(errMsg);
+                // Apaga o arquivo falso do Telegram imediatamente
+                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => {});
+                throw new Error(errMsg);
+            }
+        }
 
         // 6. Cadastrar ou Atualizar no Catálogo
         if (job.type === 'filme') {

@@ -1791,18 +1791,28 @@
         .step-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
 
         /* ═══════════════════════════════════════════════════════════════════════
-           🛡️ ADMIN PANEL STYLES
+           🛡️ ADMIN PANEL STYLES & RESPONSIVE DASHBOARD
            ═══════════════════════════════════════════════════════════════════════ */
+        #tab-admin {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
         /* Layout Lateral do Painel Admin */
         .admin-layout-wrapper {
             display: flex;
-            gap: 24px;
+            gap: 20px;
             align-items: flex-start;
             margin-top: 10px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .admin-sidebar {
             width: 250px;
+            min-width: 250px;
             flex-shrink: 0;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -1812,10 +1822,18 @@
             top: 80px;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            z-index: 50;
         }
 
         .admin-sidebar-header {
-            padding: 6px 12px 12px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px 12px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             margin-bottom: 8px;
         }
@@ -1826,6 +1844,26 @@
             letter-spacing: 0.8px;
             color: var(--text-muted);
             text-transform: uppercase;
+        }
+
+        .admin-sidebar-close-btn {
+            display: none;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #fff;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .admin-sidebar-close-btn:hover {
+            background: rgba(239, 68, 68, 0.8);
+            border-color: #ef4444;
         }
 
         .admin-sidebar-nav {
@@ -1884,42 +1922,120 @@
         .admin-main-content {
             flex: 1;
             min-width: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* BARRA DO MENU LATERAL NO MOBILE */
+        .admin-mobile-nav-bar {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(12px);
+        }
+
+        .admin-mobile-menu-btn {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 100%);
+            border: 1px solid #10b981;
+            color: #34d399;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+            flex-shrink: 0;
+        }
+
+        .admin-mobile-active-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .admin-sidebar-backdrop {
+            display: none;
         }
 
         @media (max-width: 960px) {
+            .admin-mobile-nav-bar {
+                display: flex;
+            }
+
             .admin-layout-wrapper {
-                flex-direction: column;
-                gap: 16px;
+                display: block !important;
             }
 
             .admin-sidebar {
-                width: 100%;
-                position: static;
-                padding: 12px;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                bottom: 0 !important;
+                width: 290px !important;
+                max-width: 84vw !important;
+                height: 100vh !important;
+                height: 100dvh !important;
+                z-index: 1250 !important;
+                background: #0b0f19 !important;
+                border-right: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-radius: 0 !important;
+                box-shadow: 14px 0 45px rgba(0, 0, 0, 0.9) !important;
+                transform: translateX(-100%);
+                transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                padding: 18px 14px !important;
+            }
+
+            .admin-sidebar.open {
+                transform: translateX(0) !important;
+            }
+
+            .admin-sidebar-close-btn {
+                display: flex !important;
             }
 
             .admin-sidebar-nav {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-                gap: 6px;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
             }
 
-            .admin-sub-btn {
-                padding: 8px 12px;
-                font-size: 12px;
+            .admin-sidebar-backdrop {
+                display: block;
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0, 0, 0, 0.75);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                z-index: 1240;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s ease;
             }
-        }
 
-        @media (max-width: 540px) {
-            .admin-sidebar-nav {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 6px;
-            }
-
-            .admin-sub-btn {
-                padding: 8px 10px;
-                font-size: 11.5px;
-                gap: 6px;
+            .admin-sidebar-backdrop.active {
+                opacity: 1;
+                pointer-events: auto;
             }
         }
 
@@ -2329,11 +2445,13 @@
             top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(12px);
-            z-index: 1000;
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 2000;
             display: none;
             align-items: center;
             justify-content: center;
             padding: 16px;
+            box-sizing: border-box;
         }
 
         .modal-backdrop.active { display: flex; animation: fadeIn 0.2s ease; }
@@ -2343,10 +2461,35 @@
             border: 1px solid rgba(255, 255, 255, 0.14);
             box-shadow: 0 30px 80px rgba(0, 0, 0, 0.95);
             border-radius: 20px;
-            overflow: hidden;
             position: relative;
             max-width: 580px;
             width: 100%;
+            max-height: calc(100vh - 32px);
+            max-height: calc(100dvh - 32px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 600px) {
+            .modal-backdrop {
+                padding: 10px !important;
+            }
+            .modal-card {
+                max-height: calc(100vh - 20px) !important;
+                max-height: calc(100dvh - 20px) !important;
+                border-radius: 16px !important;
+                width: 100% !important;
+            }
+            .modal-body {
+                padding: 16px 14px 20px 14px !important;
+            }
+            .modal-card [style*="grid-template-columns"] {
+                grid-template-columns: 1fr !important;
+                gap: 10px !important;
+            }
         }
 
         .modal-header-img {
@@ -2946,7 +3089,8 @@
         .hero-content {
             position: relative;
             z-index: 2;
-            max-width: 650px;
+            max-width: 680px;
+            width: 100%;
         }
 
         .hero-badge-tag {
@@ -3073,6 +3217,7 @@
             opacity: 0;
         }
 
+        .hero-wrapper:hover .hero-arrow-btn,
         .hero-billboard:hover .hero-arrow-btn {
             opacity: 1;
         }
@@ -3084,11 +3229,11 @@
         }
 
         .hero-arrow-left {
-            left: 18px;
+            left: 12px;
         }
 
         .hero-arrow-right {
-            right: 18px;
+            right: 12px;
         }
 
         /* HERO CAROUSEL PROGRESS BARS */
@@ -3124,22 +3269,7 @@
             transform: scaleY(1.4);
         }
 
-        .hero-progress-seg.done .hero-progress-fill {
-            width: 100% !important;
-        }
-
-        .hero-progress-fill {
-            height: 100%;
-            background: #ffffff;
-            border-radius: 99px;
-            width: 0%;
-            transition: width 0.06s linear;
-        }
-
-        .hero-progress-seg.active .hero-progress-fill {
-            background: #10b981;
-            box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
-        }
+        /* Modern progress fill styles handled dynamically in CAROUSEL SLIDER ENGINE */
 
         @media (max-width: 768px) {
             .hero-arrow-btn {
@@ -3894,39 +4024,145 @@
             margin-bottom: 28px;
         }
 
-        .seasons-tabs-rail {
+        /* ── ACCORDION DE TEMPORADAS ── */
+        .seasons-accordion {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .season-accordion-item {
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.07);
+            overflow: hidden;
+            transition: border-color 0.25s ease;
+        }
+
+        .season-accordion-item.is-open {
+            border-color: rgba(16, 185, 129, 0.35);
+        }
+
+        .season-accordion-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            overflow-x: auto;
-            padding-bottom: 12px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-        }
-
-        .season-tab-btn {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            padding: 8px 18px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 800;
+            justify-content: space-between;
+            padding: 14px 18px;
             cursor: pointer;
-            white-space: nowrap;
-            transition: all 0.2s ease;
+            background: rgba(255, 255, 255, 0.04);
+            user-select: none;
+            transition: background 0.2s ease;
+            gap: 12px;
         }
 
-        .season-tab-btn:hover {
-            color: #fff;
-            border-color: rgba(255,255,255,0.25);
+        .season-accordion-item.is-open .season-accordion-header {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.12), rgba(5, 150, 105, 0.07));
         }
 
-        .season-tab-btn.active {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3));
-            border-color: #10b981;
+        .season-accordion-header:hover {
+            background: rgba(255,255,255,0.07);
+        }
+
+        .season-accordion-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .season-accordion-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(16,185,129,0.1);
+            border: 1px solid rgba(16,185,129,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 900;
             color: #34d399;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+            flex-shrink: 0;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .season-accordion-item.is-open .season-accordion-number {
+            background: rgba(16,185,129,0.22);
+            border-color: #10b981;
+        }
+
+        .season-accordion-label {
+            font-size: 15px;
+            font-weight: 800;
+            color: #e2e8f0;
+            line-height: 1.2;
+        }
+
+        .season-accordion-item.is-open .season-accordion-label {
+            color: #fff;
+        }
+
+        .season-accordion-eps-count {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .season-accordion-item.is-open .season-accordion-eps-count {
+            color: #94a3b8;
+        }
+
+        .season-accordion-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .season-accordion-chevron {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s, border-color 0.2s;
+            color: #64748b;
+        }
+
+        .season-accordion-item.is-open .season-accordion-chevron {
+            transform: rotate(180deg);
+            background: rgba(16,185,129,0.15);
+            border-color: rgba(16,185,129,0.35);
+            color: #34d399;
+        }
+
+        .season-accordion-chevron svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .season-accordion-body {
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .season-accordion-item.is-open .season-accordion-body {
+            max-height: 9999px;
+            opacity: 1;
+        }
+
+        .season-accordion-episodes {
+            padding: 12px 14px 14px 14px;
+            background: rgba(0,0,0,0.2);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         /* ─── SELETOR DE PREFERÊNCIA DE ÁUDIO (SÉRIES) ─── */
@@ -4366,6 +4602,7 @@
             border-radius: 18px;
             padding: 24px;
             margin-bottom: 28px;
+            overflow: hidden;
         }
 
         .review-composer-card {
@@ -4379,23 +4616,35 @@
         .star-rating-picker {
             display: flex;
             align-items: center;
-            gap: 6px;
+            flex-wrap: wrap;
+            gap: 4px;
             margin: 10px 0;
         }
 
         .star-rating-btn {
             background: none;
             border: none;
-            font-size: 22px;
+            font-size: 20px;
             cursor: pointer;
             color: #475569;
             transition: all 0.15s ease;
-            padding: 0;
+            padding: 2px;
+            line-height: 1;
         }
 
         .star-rating-btn.active, .star-rating-btn:hover {
             color: #fbbf24;
             transform: scale(1.2);
+        }
+
+        @media (max-width: 480px) {
+            .star-rating-picker {
+                gap: 2px;
+            }
+            .star-rating-btn {
+                font-size: 17px;
+                padding: 1px;
+            }
         }
 
         .review-textarea {
@@ -4522,18 +4771,42 @@
 
         .review-item-header {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px;
             margin-bottom: 8px;
         }
 
         .review-author {
             display: flex;
             align-items: center;
-            gap: 8px;
+            flex-wrap: wrap;
+            gap: 6px;
             font-size: 13px;
             font-weight: 800;
             color: #fff;
+            min-width: 0;
+        }
+
+        @media (max-width: 600px) {
+            .reviews-section {
+                padding: 16px 14px;
+                border-radius: 14px;
+            }
+            .review-composer-card {
+                padding: 14px 12px;
+            }
+            .review-item-card {
+                padding: 12px;
+            }
+            .review-item-header {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .review-item-header > div:last-child {
+                align-self: flex-end;
+            }
         }
 
         /* IN-PLAYER NEXT EPISODE BUTTON */
@@ -7063,23 +7336,1148 @@
                 font-size: 20px !important;
             }
 
+
+        }
+
+    
+        /* ═══════════════════════════════════════════════════════════════════════
+           🎬 CAROUSEL SLIDER ENGINE (SMOOTH DRAGGING & 60FPS GPU PROGRESS)
+           ═══════════════════════════════════════════════════════════════════════ */
+        @keyframes heroProgressAnim {
+            from {
+                transform: scaleX(0);
+            }
+            to {
+                transform: scaleX(1);
+            }
+        }
+
+        .hero-wrapper {
+            position: relative;
+            width: 100%;
+            margin-bottom: 36px;
+        }
+
+        .hero-viewport {
+            position: relative;
+            width: 100%;
+            min-height: 480px;
+            max-height: 560px;
+            border-radius: 24px;
+            overflow: hidden;
+            background-color: #07090e;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            user-select: none;
+            -webkit-user-select: none;
+            cursor: grab;
+            touch-action: pan-y;
+        }
+
+        .hero-viewport:active {
+            cursor: grabbing;
+        }
+
+        .hero-slider-track {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            min-height: 480px;
+            max-height: 560px;
+            will-change: transform;
+            transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .hero-slide {
+            flex: 0 0 100%;
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            padding: 44px 44px 50px 44px;
+            box-sizing: border-box;
+            overflow: hidden;
+            margin-bottom: 0 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+        }
+
+        .hero-slide::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: 
+                linear-gradient(0deg, #07090e 0%, rgba(7, 9, 14, 0.88) 45%, rgba(7, 9, 14, 0.3) 75%, transparent 100%),
+                linear-gradient(90deg, #07090e 0%, rgba(7, 9, 14, 0.82) 48%, rgba(7, 9, 14, 0.25) 80%, transparent 100%) !important;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* BARRAS DE PROGRESSO SUAVES (GPU SCALE-X, NUNCA TRAVA) */
+        .hero-progress-bar-row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            max-width: 360px;
+        }
+
+        .hero-progress-seg {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 99px;
+            cursor: pointer;
+            overflow: hidden;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .hero-progress-seg:hover {
+            background: rgba(255, 255, 255, 0.5);
+            transform: scaleY(1.4);
+        }
+
+        .hero-progress-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100% !important;
+            background: #ffffff;
+            border-radius: 99px;
+            transform: scaleX(0);
+            transform-origin: left center;
+            will-change: transform;
+            transition: none !important;
+        }
+
+        .hero-progress-seg.done .hero-progress-fill {
+            transform: scaleX(1) !important;
+            background: #ffffff;
+            animation: none !important;
+        }
+
+        .hero-progress-seg.active .hero-progress-fill {
+            background: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);
+        }
+
+        .hero-wrapper.is-paused .hero-progress-seg.active .hero-progress-fill {
+            animation-play-state: paused !important;
+        }
+
+        @media (max-width: 768px) {
+            .hero-viewport {
+                min-height: 480px !important;
+                max-height: none !important;
+                border-radius: 18px !important;
+            }
+
+            .hero-slider-track {
+                min-height: 480px !important;
+                max-height: none !important;
+            }
+
+            .hero-slide {
+                min-height: 480px !important;
+                max-height: none !important;
+                padding: 22px 16px 36px 16px !important;
+            }
+
+            .hero-slide::before {
+                background: linear-gradient(180deg, rgba(7, 9, 14, 0.2) 0%, rgba(7, 9, 14, 0.65) 42%, rgba(7, 9, 14, 0.96) 78%, #07090e 100%) !important;
+            }
+
+            .hero-bottom-controls {
+                left: 16px !important;
+                right: 16px !important;
+                bottom: 12px !important;
+            }
+        }
+
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           🌟 HERO REFINEMENTS: WRAPPER, EXTERNAL ARROWS & STREAMLINED ACTIONS
+           ═══════════════════════════════════════════════════════════════════════ */
+        .hero-wrapper {
+            position: relative;
+            width: 100%;
+            margin-bottom: 36px;
+        }
+
+        .hero-header-badge-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .hero-header-badge-row .hero-badge-tag {
+            margin-bottom: 0 !important;
+        }
+
+        .hero-header-badge-row .hero-pill-rating {
+            font-size: 12px;
+            padding: 4px 10px;
+        }
+
+        /* Setas laterais no Desktop: fora da arte do banner */
+        .hero-arrow-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 25;
+            background: rgba(11, 15, 25, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            opacity: 0;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+        }
+
+        .hero-wrapper:hover .hero-arrow-btn {
+            opacity: 1;
+        }
+
+        .hero-arrow-btn:hover {
+            background: #10b981;
+            border-color: #34d399;
+            color: #ffffff;
+            transform: translateY(-50%) scale(1.12);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+        }
+
+        /* Setas dentro do viewport (overflow:hidden proibiria -20px fora) */
+        .hero-arrow-left {
+            left: 12px !important;
+        }
+
+        .hero-arrow-right {
+            right: 12px !important;
+        }
+
+        @media (max-width: 1000px) and (min-width: 769px) {
+            .hero-arrow-left { left: 6px !important; }
+            .hero-arrow-right { right: 6px !important; }
+            .hero-arrow-btn { width: 38px; height: 38px; }
+        }
+
+        /* Botão Minha Lista Moderno */
+        .hero-btn-fav {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 14.5px;
+            padding: 12px 22px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+        }
+
+        .hero-btn-fav:hover {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.38);
+            transform: translateY(-2px);
+            color: #ffffff;
+        }
+
+        .hero-btn-fav.active {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: rgba(16, 185, 129, 0.55);
+            color: #34d399;
+        }
+
+        .hero-btn-fav.active:hover {
+            background: rgba(16, 185, 129, 0.3);
+            border-color: #10b981;
+            color: #ffffff;
+        }
+
+        .hero-fav-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 768px) {
+            .hero-wrapper {
+                margin-bottom: 24px !important;
+                width: 100% !important;
+            }
+
+            /* No celular, setas somem 100% (navegação por swipe/arrastar) */
+            .hero-arrow-btn {
+                display: none !important;
+            }
+
+            .hero-content {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            /* Grid estável de 2 colunas: NUNCA varia de tamanho e botões lado a lado */
             .hero-actions {
-                display: flex !important;
-                flex-wrap: wrap !important;
-                gap: 8px !important;
+                display: grid !important;
+                grid-template-columns: 1fr 1fr !important;
+                gap: 10px !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+                margin-top: 12px !important;
+            }
+
+            .hero-btn-play,
+            .hero-btn-fav {
+                width: 100% !important;
+                min-height: 46px !important;
+                height: 46px !important;
+                box-sizing: border-box !important;
+                margin: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                text-align: center !important;
+                white-space: nowrap !important;
+                border-radius: 12px !important;
             }
 
             .hero-btn-play {
-                flex: 1 1 100% !important;
-                width: 100% !important;
-                padding: 10px 14px !important;
+                padding: 0 14px !important;
+                font-size: 14px !important;
+                font-weight: 800 !important;
+                gap: 8px !important;
             }
 
-            .hero-btn-secondary {
-                flex: 1 1 calc(50% - 4px) !important;
+            .hero-btn-fav {
+                padding: 0 10px !important;
+                font-size: 13px !important;
+                font-weight: 700 !important;
+                gap: 6px !important;
+            }
+        }
+
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           🌟 RESPONSIVE & HIGH CONTRAST IMPROVEMENTS (MOBILE FIRST & OTT THEME)
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        /* 1. HERO BILLBOARD & HIGH CONTRAST TEXT (BRANCO COM CONTORNO PRETO) */
+        .hero-billboard {
+            position: relative;
+            width: 100%;
+            min-height: 480px;
+            max-height: 560px;
+            border-radius: 24px;
+            overflow: hidden;
+            margin-bottom: 36px;
+            display: flex;
+            align-items: flex-end;
+            padding: 44px;
+            background-color: #07090e;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .hero-billboard::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: 
+                linear-gradient(0deg, #07090e 0%, rgba(7, 9, 14, 0.88) 45%, rgba(7, 9, 14, 0.3) 75%, transparent 100%),
+                linear-gradient(90deg, #07090e 0%, rgba(7, 9, 14, 0.82) 48%, rgba(7, 9, 14, 0.25) 80%, transparent 100%) !important;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 680px;
+        }
+
+        .hero-title {
+            font-size: 38px;
+            font-weight: 900;
+            color: #ffffff !important;
+            line-height: 1.15;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+            text-shadow: 
+                -1.5px -1.5px 0 #000,  
+                 1.5px -1.5px 0 #000,
+                -1.5px  1.5px 0 #000,
+                 1.5px  1.5px 0 #000,
+                 0 2px 8px rgba(0, 0, 0, 1),
+                 0 4px 20px rgba(0, 0, 0, 0.95) !important;
+        }
+
+        .hero-synopsis {
+            font-size: 14.5px;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            line-height: 1.6;
+            margin-bottom: 22px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-shadow: 
+                -1px -1px 0 #000,  
+                 1px -1px 0 #000,
+                -1px  1px 0 #000,
+                 1px  1px 0 #000,
+                 0 1px 4px #000,
+                 0 2px 8px rgba(0, 0, 0, 0.95) !important;
+        }
+
+        .hero-meta-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .hero-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 6px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            text-shadow: 0 1px 2px #000;
+        }
+
+        .hero-pill-rating {
+            background: rgba(234, 179, 8, 0.25);
+            border-color: rgba(234, 179, 8, 0.6);
+            color: #fef08a;
+            font-weight: 800;
+        }
+
+        .hero-badge-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(16, 185, 129, 0.6);
+            color: #34d399;
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 12px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            text-shadow: 0 1px 2px #000;
+        }
+
+        .hero-actions-secondary-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* 2. PADRONIZAÇÃO DOS MENUS DROPDOWN (PC & CELULAR) */
+        .profile-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 300px;
+            background: rgba(13, 18, 29, 0.98);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            padding: 12px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-8px) scale(0.96);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+        }
+
+        .profile-dropdown-menu.visible {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0) scale(1);
+            pointer-events: all;
+        }
+
+        .profile-menu-header {
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            margin-bottom: 4px;
+        }
+
+        .profile-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+            background: transparent;
+        }
+
+        .profile-menu-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            transform: translateX(2px);
+        }
+
+        .profile-menu-item .profile-menu-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: #94a3b8;
+            transition: all 0.15s ease;
+        }
+
+        .profile-menu-item:hover .profile-menu-icon {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+
+        .profile-menu-item.logout-item {
+            margin-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 10px;
+        }
+
+        .profile-menu-item.logout-item:hover {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.25);
+            color: #fca5a5;
+        }
+
+        .profile-menu-item.logout-item:hover .profile-menu-icon {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        .profile-badge-pill {
+            font-size: 10.5px;
+            font-weight: 800;
+            padding: 3px 9px;
+            border-radius: 99px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .profile-badge-pill.admin {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #60a5fa;
+        }
+
+        .profile-badge-pill.vip {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
+        }
+
+        /* 3. COMPONENTES DO MENU LATERAL (DRAWER MOBILE) */
+        .sidebar-mobile-header,
+        .sidebar-search-box,
+        .sidebar-user-box,
+        .sidebar-mobile-only,
+        .mobile-search-btn {
+            display: none;
+        }
+
+        .mobile-search-btn {
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .mobile-search-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+        }
+
+        .sidebar-notif-badge {
+            background: #10b981;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 1px 7px;
+            border-radius: 999px;
+            margin-left: auto;
+        }
+
+        .sidebar-user-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sidebar-user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+        }
+
+        .sidebar-user-names {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-user-name {
+            font-size: 13.5px;
+            font-weight: 800;
+            color: #ffffff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar-user-badge {
+            font-size: 10px;
+            font-weight: 700;
+            color: #38bdf8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar-user-badge.vip {
+            color: #fbbf24;
+        }
+
+        .sidebar-user-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding-top: 8px;
+        }
+
+        .sidebar-user-action-btn {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
+            color: #cbd5e1;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s ease;
+            width: 100%;
+            text-align: left;
+        }
+
+        .sidebar-user-action-btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: #fff;
+        }
+
+        .sidebar-user-action-btn.logout {
+            color: #f87171;
+        }
+
+        .sidebar-user-action-btn.logout:hover {
+            background: rgba(239, 68, 68, 0.12);
+        }
+
+        .sidebar-auth-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 14px;
+            padding: 14px 12px;
+        }
+
+        .sidebar-auth-title {
+            font-size: 13.5px;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 3px;
+        }
+
+        .sidebar-auth-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+
+        .sidebar-login-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #ffffff;
+            font-size: 13px;
+            font-weight: 800;
+            padding: 10px 14px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .sidebar-login-btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        /* 4. REGRAS RESPONSIVAS DEDICADAS (MOBILE FIRST) */
+        @media (max-width: 900px) {
+            .sidebar-nav {
+                position: fixed !important;
+                left: -320px !important;
+                top: 0 !important;
+                bottom: 0 !important;
+                width: min(320px, 86vw) !important;
+                min-width: min(320px, 86vw) !important;
+                height: 100vh !important;
+                height: 100dvh !important;
+                z-index: 3000 !important;
+                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                box-shadow: 12px 0 50px rgba(0, 0, 0, 0.95) !important;
+                padding: 16px 10px 40px 10px !important;
+                background: #090d16 !important;
+                border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+            }
+
+            .sidebar-nav.mobile-open {
+                transform: translateX(320px) !important;
+            }
+
+            .sidebar-mobile-header {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                padding: 4px 6px 14px 6px !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+                margin-bottom: 14px !important;
+            }
+
+            .sidebar-mobile-brand {
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                cursor: pointer !important;
+            }
+
+            .sidebar-mobile-logo {
+                width: 24px !important;
+                height: 24px !important;
+                border-radius: 6px !important;
+                object-fit: cover !important;
+            }
+
+            .sidebar-close-btn {
+                background: rgba(255, 255, 255, 0.06) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                color: #cbd5e1 !important;
+                width: 32px !important;
+                height: 32px !important;
+                border-radius: 8px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                cursor: pointer !important;
+                transition: all 0.15s ease !important;
+            }
+
+            .sidebar-close-btn:hover {
+                background: rgba(255, 255, 255, 0.15) !important;
+                color: #fff !important;
+            }
+
+            .sidebar-search-box {
+                display: block !important;
+                padding: 0 4px !important;
+                margin-bottom: 14px !important;
+            }
+
+            .sidebar-search-inner {
+                position: relative !important;
+                display: flex !important;
+                align-items: center !important;
+                background: rgba(255, 255, 255, 0.07) !important;
+                border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                border-radius: 10px !important;
+                padding: 0 12px !important;
+                height: 42px !important;
+                transition: all 0.2s ease !important;
+            }
+
+            .sidebar-search-inner:focus-within {
+                background: rgba(255, 255, 255, 0.12) !important;
+                border-color: rgba(16, 185, 129, 0.5) !important;
+                box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
+            }
+
+            .sidebar-search-inner svg {
+                color: #94a3b8 !important;
+                margin-right: 8px !important;
+                flex-shrink: 0 !important;
+            }
+
+            .sidebar-search-inner input {
+                width: 100% !important;
+                background: transparent !important;
+                border: none !important;
+                color: #fff !important;
+                font-size: 13px !important;
+                outline: none !important;
+                font-family: inherit !important;
+            }
+
+            .sidebar-search-inner input::placeholder {
+                color: #64748b !important;
+            }
+
+            .sidebar-user-box {
+                display: block !important;
+                padding: 0 4px !important;
+                margin-bottom: 14px !important;
+            }
+
+            .sidebar-mobile-only {
+                display: flex !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            /* TOP HEADER LIMPO E SEM POLUIÇÃO NO CELULAR */
+            header {
+                padding: 8px 12px !important;
+            }
+
+            .header-container {
+                justify-content: space-between !important;
+                gap: 8px !important;
+            }
+
+            .header-search-wrap {
+                display: none !important; /* Busca transferida para o menu lateral */
+            }
+
+            #user-header-profile-box {
+                display: none !important; /* Perfil transferido para o menu lateral */
+            }
+
+            .mobile-search-btn {
+                display: flex !important; /* Ícone minimalista para abrir busca no menu */
+            }
+
+            /* HERO BANNER OTIMIZADO PARA TELAS DE CELULAR */
+            .hero-billboard {
+                min-height: 480px !important;
+                max-height: none !important;
+                padding: 22px 16px 28px 16px !important;
+                border-radius: 18px !important;
+                margin-bottom: 24px !important;
+                background-position: center top !important;
+            }
+
+            .hero-billboard::before {
+                background: linear-gradient(180deg, rgba(7, 9, 14, 0.2) 0%, rgba(7, 9, 14, 0.65) 42%, rgba(7, 9, 14, 0.96) 78%, #07090e 100%) !important;
+            }
+
+            .hero-title {
+                font-size: 23px !important;
+                line-height: 1.22 !important;
+                margin-bottom: 10px !important;
+                text-shadow: 
+                    -1.5px -1.5px 0 #000,  
+                     1.5px -1.5px 0 #000,
+                    -1.5px  1.5px 0 #000,
+                     1.5px  1.5px 0 #000,
+                     0 2px 10px #000 !important;
+            }
+
+            .hero-synopsis {
+                font-size: 13px !important;
+                color: #ffffff !important;
+                font-weight: 600 !important;
+                -webkit-line-clamp: 3 !important;
+                line-clamp: 3 !important;
+                line-height: 1.55 !important;
+                margin-bottom: 18px !important;
+                text-shadow: 
+                    -1px -1px 0 #000,  
+                     1px -1px 0 #000,
+                    -1px  1px 0 #000,
+                     1px  1px 0 #000,
+                     0 1px 4px #000,
+                     0 2px 8px rgba(0, 0, 0, 0.95) !important;
+            }
+
+
+
+            /* CARROSSEL E CARDS NO CELULAR */
+            .rail-slider-track {
+                gap: 10px !important;
+                padding-bottom: 10px !important;
+                scroll-snap-type: x mandatory !important;
+            }
+
+            .rail-card {
+                flex: 0 0 138px !important;
+                scroll-snap-align: start !important;
+                border-radius: 12px !important;
+            }
+
+            .rail-card-title {
+                font-size: 12.5px !important;
+            }
+
+            /* DROPDOWN EM TELAS PEQUENAS CENTRALIZADO E FIXO */
+            .profile-dropdown-menu {
+                position: fixed !important;
+                top: 56px !important;
+                left: 12px !important;
+                right: 12px !important;
                 width: auto !important;
-                padding: 8px 10px !important;
+                max-width: calc(100vw - 24px) !important;
+                z-index: 99999 !important;
+            }
+        }
+
+
+        /* FILTROS E TABELA RESPONSIVA DO CATÁLOGO */
+        .admin-catalog-filters-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .admin-catalog-filters-bar .search-box {
+            flex: 2 1 240px;
+            min-width: 220px;
+            margin-bottom: 0;
+        }
+
+        .admin-catalog-filters-bar .admin-input,
+        .admin-catalog-filters-bar select {
+            flex: 1 1 140px;
+            min-width: 130px;
+            margin-bottom: 0;
+            padding: 8px 12px;
+        }
+
+        .admin-input[type="date"],
+        .admin-input[type="time"] {
+            color-scheme: dark;
+            font-family: inherit;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 680px) {
+            .admin-catalog-filters-bar .search-box {
+                flex: 1 1 100%;
+                width: 100%;
+            }
+            .admin-catalog-filters-bar select {
+                flex: 1 1 calc(50% - 6px);
+                min-width: 120px;
+                font-size: 11.5px;
+            }
+            .admin-catalog-filters-bar select#admin-catalog-status-filter {
+                flex: 1 1 100%;
+            }
+        }
+
+        /* CATÁLOGO RESPONSIVO: MODO CARDS EM TELAS MENORES OU CELULAR */
+        @media (max-width: 768px) {
+            .admin-catalog-table,
+            .admin-catalog-table tbody {
+                display: block;
+                width: 100%;
+            }
+
+            .admin-catalog-table thead {
+                display: none !important;
+            }
+
+            .admin-catalog-table tr.catalog-item-row {
+                display: flex;
+                flex-direction: column;
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid var(--border-color);
+                border-radius: 14px;
+                padding: 12px 14px;
+                margin-bottom: 12px;
+                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            }
+
+            .admin-catalog-table tr.catalog-item-row td {
+                display: block;
+                padding: 3px 0;
+                border: none;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-media {
+                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+                padding-bottom: 10px;
+                margin-bottom: 8px;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-media strong {
+                max-width: 100% !important;
+                font-size: 15px !important;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-media div {
+                max-width: 100% !important;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-cat,
+            .admin-catalog-table tr.catalog-item-row td.col-struct,
+            .admin-catalog-table tr.catalog-item-row td.col-audio,
+            .admin-catalog-table tr.catalog-item-row td.col-tg {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 3px 0;
+                font-size: 12px;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-cat::before {
+                content: 'Categoria:';
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-struct::before {
+                content: 'Estrutura:';
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-audio::before {
+                content: 'Áudio & Qualidade:';
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-tg::before {
+                content: 'Telegram:';
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-actions {
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                margin-top: 8px;
+                padding-top: 10px;
+                text-align: left !important;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-actions .actions-group {
+                display: flex !important;
+                width: 100%;
+                gap: 6px;
+                flex-wrap: wrap;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-actions .btn-action {
+                flex: 1 1 auto;
+                justify-content: center;
+                padding: 7px 10px !important;
                 font-size: 12px !important;
+            }
+
+            .admin-catalog-table tr.accordion-row {
+                display: block;
+                margin-top: -6px;
+                margin-bottom: 12px;
+            }
+
+            .admin-catalog-table tr.accordion-row td {
+                display: block;
+                padding: 0 !important;
+                border: none;
             }
         }
 
@@ -7120,6 +8518,11 @@
 
             <!-- RIGHT ACTIONS -->
             <div class="header-actions">
+                <!-- BOTÃO DE BUSCA RÁPIDA (APENAS MOBILE) -->
+                <button class="mobile-search-btn" id="mobile-search-btn" onclick="openMobileSearchDrawer()" title="Buscar filmes e séries" aria-label="Buscar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                </button>
+
                 <!-- BOTÃO DE SALA (WATCH PARTY) - Hidden by default -->
                 <button id="party-header-btn" onclick="onPartyHeaderBtnClick()" title="Assistir Junto" style="display:none;">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -7399,47 +8802,83 @@
     <div class="app-shell">
         <!-- LEFT SIDEBAR NAV -->
         <nav class="sidebar-nav" id="sidebar-nav">
+            <!-- CABEÇALHO DO MENU LATERAL (APENAS MOBILE) -->
+            <div class="sidebar-mobile-header">
+                <div class="sidebar-mobile-brand" onclick="switchNavCategory('inicio')">
+                    <img src="/icon.png" alt="BrasilFlix" class="sidebar-mobile-logo">
+                    <span class="brand-title-text">
+                        <span class="brand-text-brasil">Brasil</span><span class="brand-text-flix">Fl<span class="brand-text-i">ı<span class="brand-i-dot"></span></span>x</span>
+                    </span>
+                </div>
+                <button class="sidebar-close-btn" onclick="toggleSidebar()" title="Fechar Menu" aria-label="Fechar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <!-- BARRA DE BUSCA RÁPIDA (APENAS MOBILE) -->
+            <div class="sidebar-search-box">
+                <div class="sidebar-search-inner">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    <input type="search" id="sidebar-search-input" placeholder="Buscar filmes, séries, doramas..." autocomplete="off" oninput="onSidebarSearchInput(this.value)" onkeydown="onSidebarSearchKeyDown(event)">
+                </div>
+            </div>
+
+            <!-- ÁREA DO USUÁRIO NO MENU LATERAL (APENAS MOBILE) -->
+            <div id="user-sidebar-profile-box" class="sidebar-user-box">
+                <!-- Preenchido via updateUserHeaderUI() -->
+            </div>
+
+            <div class="sidebar-divider sidebar-mobile-only"></div>
+
             <!-- SEÇÃO PRINCIPAL -->
             <div class="sidebar-section">
+                <!-- AVISOS & NOTIFICAÇÕES (APENAS MOBILE) -->
+                <button class="sidebar-nav-item sidebar-mobile-only" id="sidebar-item-notifs" onclick="toggleHeaderBell(event); toggleSidebar();" title="Avisos & Notificações">
+                    <span class="nav-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    </span>
+                    <span class="nav-label">Avisos &amp; Notificações</span>
+                    <span class="sidebar-notif-badge" id="sidebar-notif-badge" style="display:none;">0</span>
+                </button>
                 <button class="sidebar-nav-item active" id="sidebar-item-inicio" onclick="switchNavCategory('inicio')" title="Início">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                     </span>
                     <span class="nav-label">Início</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-filme" onclick="switchNavCategory('filme')" title="Filmes">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></svg>
                     </span>
                     <span class="nav-label">Filmes</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-serie" onclick="switchNavCategory('serie')" title="Séries">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="15" x="2" y="7" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
                     </span>
                     <span class="nav-label">Séries</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-dorama" onclick="switchNavCategory('dorama')" title="Doramas">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
                     </span>
                     <span class="nav-label">Doramas</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-anime" onclick="switchNavCategory('anime')" title="Animes">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/></svg>
                     </span>
                     <span class="nav-label">Animes</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-favoritos" onclick="switchNavCategory('favoritos')" title="Minha Lista">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
                     </span>
                     <span class="nav-label">Minha Lista</span>
                 </button>
                 <button class="sidebar-nav-item" id="sidebar-item-status" onclick="switchTab('tab-status')" title="Fila &amp; Status" style="display:none!important">
                     <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                     </span>
                     <span class="nav-label">Fila &amp; Status</span>
                 </button>
@@ -7452,77 +8891,76 @@
                 <div class="sidebar-section-label">CATEGORIAS</div>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-todos" onclick="filterBySidebarGenre('todos')" title="Todos">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
                     </span>
                     <span class="nav-label">Todos</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-acao" onclick="filterBySidebarGenre('Ação')" title="Ação">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>
                     </span>
                     <span class="nav-label">Ação</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-aventura" onclick="filterBySidebarGenre('Aventura')" title="Aventura">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
                     </span>
                     <span class="nav-label">Aventura</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-comedia" onclick="filterBySidebarGenre('Comédia')" title="Comédia">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
                     </span>
                     <span class="nav-label">Comédia</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-drama" onclick="filterBySidebarGenre('Drama')" title="Drama">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10c0-5.52-4.48-10-10-10zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="m12 13-1-1 2-3-3-3 2-2"/></svg>
                     </span>
                     <span class="nav-label">Drama</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-fantasia" onclick="filterBySidebarGenre('Fantasia')" title="Fantasia">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2L21 12l-6.6 2.8L12 22l-2.4-7.2L3 12l6.6-2.8L12 2z"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
                     </span>
                     <span class="nav-label">Fantasia</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-terror" onclick="filterBySidebarGenre('Terror')" title="Terror">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg>
                     </span>
                     <span class="nav-label">Terror</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-doc" onclick="filterBySidebarGenre('Documentário')" title="Documentário">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
                     </span>
                     <span class="nav-label">Documentário</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-crime" onclick="filterBySidebarGenre('Crime')" title="Crime">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
                     </span>
                     <span class="nav-label">Crime</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-ficcao" onclick="filterBySidebarGenre('Ficção')" title="Ficção Científica">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
                     </span>
                     <span class="nav-label">Ficção Científica</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-romance" onclick="filterBySidebarGenre('Romance')" title="Romance">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
                     </span>
                     <span class="nav-label">Romance</span>
                 </button>
                 <button class="sidebar-nav-item sidebar-genre-item" id="sidebar-genre-suspense" onclick="filterBySidebarGenre('Suspense')" title="Suspense">
                     <span class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                     </span>
                     <span class="nav-label">Suspense</span>
                 </button>
-
             </div>
         </nav>
 
@@ -7934,7 +9372,7 @@
 
     </div>
 
-    <div id="tab-media-detail" class="tab-content" style="display: none;">
+    <div id="tab-media-detail" class="tab-content" style="display: none; overflow-x: hidden;">
             <div id="media-detail-view-content" class="media-detail-page" style="display: block;"></div>
         </div>
 
@@ -8253,12 +9691,28 @@
                     </div>
                 </div>
 
+                <!-- BARRA DE NAVEGAÇÃO LATERAL NO MOBILE -->
+                <div class="admin-mobile-nav-bar">
+                    <button class="admin-mobile-menu-btn" onclick="toggleAdminSidebar(event)" aria-label="Abrir Menu Lateral do Admin">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                        <span>Menu do Painel</span>
+                    </button>
+                    <div class="admin-mobile-active-label" id="admin-mobile-active-label">
+                        <span class="admin-btn-icon">📊</span>
+                        <span class="admin-btn-label">Visão Geral</span>
+                    </div>
+                </div>
+
+                <!-- BACKDROP DO MENU LATERAL NO MOBILE -->
+                <div class="admin-sidebar-backdrop" id="admin-sidebar-backdrop" onclick="closeAdminSidebar()"></div>
+
                 <!-- LAYOUT EM 2 COLUNAS: MENU LATERAL + CONTEÚDO PRINCIPAL -->
                 <div class="admin-layout-wrapper">
                     <!-- SIDEBAR LATERAL -->
                     <aside class="admin-sidebar">
                         <div class="admin-sidebar-header">
                             <span class="admin-sidebar-title">Painel de Controle</span>
+                            <button class="admin-sidebar-close-btn" onclick="closeAdminSidebar()" title="Fechar Menu">✕</button>
                         </div>
                         <nav class="admin-sidebar-nav">
                             <button class="admin-sub-btn active" id="admin-sub-btn-overview" onclick="switchAdminSubTab('overview')">
@@ -8585,8 +10039,8 @@
                     </div>
 
                     <!-- BARRA DE FILTROS E BUSCA AVANÇADA -->
-                    <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
-                        <div class="search-box" style="flex: 1; min-width: 240px; margin-bottom: 0;">
+                    <div class="admin-catalog-filters-bar">
+                        <div class="search-box">
                             <span class="search-icon">🔍</span>
                             <input type="search" id="admin-catalog-search" name="admin_catalog_search" class="search-input" placeholder="Buscar filmes, séries, episódios..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="renderAdminCatalog()">
                         </div>
@@ -8617,7 +10071,7 @@
 
                     <div id="admin-catalog-container">
                         <div class="admin-table-container">
-                            <table class="admin-table">
+                            <table class="admin-table admin-catalog-table">
                                 <thead>
                                     <tr>
                                         <th>Mídia / Título</th>
@@ -11585,11 +13039,55 @@ function initApp() {
 
         let heroBillboardPool = [];
         let currentHeroIndex = 0;
-        let heroAutoProgress = 0;      // 0..100 — preenchimento da barra
-        let heroTimerInterval = null;
+        let currentSlidePosition = 1; // Posição virtual na esteira infinita (1 a N, 0 = clone do último, N+1 = clone do primeiro)
+        let lastActiveRealIndex = -1;
         let heroIsPaused = false;
-        const HERO_DURATION_MS = 12000; // 12s por slide
-        const HERO_TICK_MS = 60;        // ~60fps suave
+        const HERO_DURATION_MS = 10000; // 10 segundos por banner
+        let heroTimer = null;
+        let heroStartTime = 0;
+        let heroRemainingMs = HERO_DURATION_MS;
+
+        // FÍSICA E INTERAÇÃO DE ARRASTE (PC MOUSE E CELULAR TOUCH)
+        let isHeroDragging = false;
+        let heroDragStartX = 0;
+        let heroDragStartY = 0;
+        let heroDragDeltaX = 0;
+        let heroDragDeltaY = 0;
+        let heroWasDragged = false;
+        let heroTrackEl = null;
+        let heroViewportEl = null;
+
+        function buildHeroSlideHtml(item, realIdx, isClone = false) {
+            const backdrop = item.backdropUrl || item.posterUrl || '';
+            const isFav = userFavorites.some(f => String(f.id) === String(item.id));
+            const synopsis = item.sinopse || item.descricao || 'Assista agora com a melhor qualidade e áudio em português no BrasilFlix.';
+
+            return `
+                <div class="hero-slide hero-billboard" data-index="${realIdx}" ${isClone ? 'data-clone="true"' : ''}>
+                    <div class="hero-billboard-bg" style="background-image: url('${backdrop}');"></div>
+                    <div class="hero-content">
+                        <h1 class="hero-title">${item.nome}</h1>
+                        <p class="hero-synopsis">${synopsis}</p>
+                        <div class="hero-actions">
+                            <button class="hero-btn-play" onclick="handleHeroButtonClick(event, () => openModalById('${item.id}', '${item.itemType}'))">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                <span>Assistir</span>
+                            </button>
+                            <button class="hero-btn-fav ${isFav ? 'active' : ''}" id="hero-fav-btn-${item.id}${isClone ? '-clone' : ''}" onclick="handleHeroButtonClick(event, () => toggleUserFavorite('${item.id}', '${item.itemType}', event))" title="${isFav ? 'Remover da Minha Lista' : 'Adicionar à Minha Lista'}">
+                                <span class="hero-fav-icon">
+                                    ${isFav ? `
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    ` : `
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    `}
+                                </span>
+                                <span>${isFav ? 'Na Minha Lista' : 'Minha Lista'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         function renderHeroBillboard(customItem = null) {
             const container = document.getElementById('hero-billboard-container');
@@ -11611,56 +13109,33 @@ function initApp() {
             }
 
             if (currentHeroIndex >= heroBillboardPool.length) currentHeroIndex = 0;
-            _renderHeroSlide();
-        }
 
-        function _renderHeroSlide() {
-            const container = document.getElementById('hero-billboard-container');
-            if (!container || !heroBillboardPool.length) return;
+            const N = heroBillboardPool.length;
+            currentSlidePosition = N > 1 ? (currentHeroIndex + 1) : 0;
+            lastActiveRealIndex = -1;
 
-            const item = heroBillboardPool[currentHeroIndex];
-            const backdrop = item.backdropUrl || item.posterUrl || '';
-            const rating = item.nota ? Number(item.nota).toFixed(1) : '8.6';
-            const ano = item.ano || '2024';
-            const isAnime = isItemAnime(item);
-            const isDorama = isItemDorama(item);
-            const isSerie = item.itemType === 'serie' || !!item.temporadas;
-
-            let typeBadgeLabel = 'FILME'; let typeBadgeClass = 'badge-type-filme';
-            if (isAnime)       { typeBadgeLabel = 'ANIME';  typeBadgeClass = 'badge-type-anime'; }
-            else if (isDorama) { typeBadgeLabel = 'DORAMA'; typeBadgeClass = 'badge-type-dorama'; }
-            else if (isSerie)  { typeBadgeLabel = 'SÉRIE';  typeBadgeClass = 'badge-type-serie'; }
-
-            let tempBadge = 'Filme';
-            let epBadge = item.isDublado ? 'Dublado (PT-BR)' : 'Legendado';
-            if (isSerie) {
-                const tempCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1);
-                const epCount = (item.temporadas && item.temporadas.length > 0) ? item.temporadas.reduce((a, t) => a + (t.episodios ? t.episodios.length : 0), 0) : (item.totalEpisodios || 1);
-                tempBadge = `${tempCount} Temporada${tempCount > 1 ? 's' : ''}`;
-                epBadge = epCount > 1 ? `+ ${epCount} Eps` : 'Episódio Único';
+            // Renderiza slides com clones virtuais nas pontas para looping infinito 100% contínuo
+            let slidesHtml = '';
+            if (N > 1) {
+                const cloneLast = buildHeroSlideHtml(heroBillboardPool[N - 1], N - 1, true);
+                const realSlides = heroBillboardPool.map((item, idx) => buildHeroSlideHtml(item, idx, false)).join('');
+                const cloneFirst = buildHeroSlideHtml(heroBillboardPool[0], 0, true);
+                slidesHtml = cloneLast + realSlides + cloneFirst;
+            } else {
+                slidesHtml = heroBillboardPool.map((item, idx) => buildHeroSlideHtml(item, idx, false)).join('');
             }
 
-            const isFav = userFavorites.some(f => String(f.id) === String(item.id));
-            const synopsis = item.sinopse || item.descricao || 'Assista agora com a melhor qualidade e áudio em português no BrasilFlix.';
-
-            // Progress bars por slide (segmentos)
+            // Barras de progresso do carrossel (segmentos reais)
             const barsHtml = heroBillboardPool.map((_, idx) => `
                 <div class="hero-progress-seg ${idx < currentHeroIndex ? 'done' : (idx === currentHeroIndex ? 'active' : '')}"
                      onclick="goToHeroSlide(${idx}, event)" title="${heroBillboardPool[idx].nome}">
-                    <div class="hero-progress-fill" id="hero-prog-fill-${idx}"
-                         style="width: ${idx < currentHeroIndex ? '100%' : (idx === currentHeroIndex ? heroAutoProgress + '%' : '0%')}"></div>
+                    <div class="hero-progress-fill" id="hero-prog-fill-${idx}"></div>
                 </div>
             `).join('');
 
             container.innerHTML = `
-                <div class="hero-billboard" id="hero-billboard"
-                     onmouseenter="heroIsPaused=true"
-                     onmouseleave="heroIsPaused=false"
-                     ontouchstart="heroIsPaused=true"
-                     ontouchend="heroIsPaused=false">
-                    <div class="hero-billboard-bg" style="background-image: url('${backdrop}');"></div>
-
-                    <!-- BOTÕES DE NAVEGAÇÃO LATERAL -->
+                <div class="hero-wrapper" id="hero-wrapper" onmouseenter="pauseHeroCarousel()" onmouseleave="resumeHeroCarousel()">
+                    <!-- BOTÕES DE NAVEGAÇÃO LATERAL (DESKTOP: FORA DO BANNER) -->
                     <button class="hero-arrow-btn hero-arrow-left" onclick="prevHeroSlide(event)" title="Anterior" aria-label="Anterior">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="15 18 9 12 15 6"/></svg>
                     </button>
@@ -11668,84 +13143,308 @@ function initApp() {
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
 
-                    <!-- CONTEÚDO PRINCIPAL DO HERO -->
-                    <div class="hero-content">
-                        <span class="hero-badge-tag ${typeBadgeClass}">${typeBadgeLabel}</span>
-                        <h1 class="hero-title">${item.nome}</h1>
-                        <div class="hero-meta-row">
-                            <span class="hero-pill hero-pill-rating">★ ${rating}</span>
-                            <span class="hero-pill">${ano}</span>
-                            <span class="hero-pill">${tempBadge}</span>
-                            <span class="hero-pill">${epBadge}</span>
+                    <!-- JANELA DO CARROSSEL COM ARRASTE SUAVE (PC + CELULAR) -->
+                    <div class="hero-viewport" id="hero-viewport"
+                         onmousedown="handleHeroDragStart(event)"
+                         ontouchstart="handleHeroDragStart(event)">
+                        <div class="hero-slider-track" id="hero-slider-track">
+                            ${slidesHtml}
                         </div>
-                        <p class="hero-synopsis">${synopsis}</p>
-                        <div class="hero-actions">
-                            <button class="hero-btn-play" onclick="openModalById('${item.id}', '${item.itemType}')">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                Assistir Agora
-                            </button>
-                            <button class="hero-btn-secondary" onclick="toggleUserFavorite('${item.id}', '${item.itemType}', event)">
-                                ${isFav ? '— Minha Lista' : '+ Minha Lista'}
-                            </button>
-                            <button class="hero-btn-secondary" onclick="openModalById('${item.id}', '${item.itemType}')">
-                                Mais Detalhes
-                            </button>
-                        </div>
-                    </div>
 
-                    <!-- BARRAS DE PROGRESSO DO CARROSSEL -->
-                    <div class="hero-bottom-controls">
-                        <div class="hero-progress-bar-row" id="hero-progress-bar-row">
-                            ${barsHtml}
+                        <!-- BARRAS DE PROGRESSO DO CARROSSEL (FLUIDAS A 60FPS VIA GPU) -->
+                        <div class="hero-bottom-controls">
+                            <div class="hero-progress-bar-row" id="hero-progress-bar-row">
+                                ${barsHtml}
+                            </div>
                         </div>
                     </div>
                 </div>
             `;
 
-            startHeroCarouselTimer();
+            heroTrackEl = document.getElementById('hero-slider-track');
+            heroViewportEl = document.getElementById('hero-viewport');
+
+            if (heroTrackEl) {
+                heroTrackEl.removeEventListener('transitionend', handleHeroTransitionEnd);
+                heroTrackEl.addEventListener('transitionend', handleHeroTransitionEnd);
+            }
+
+            updateHeroSliderPosition(false);
+        }
+
+        function handleHeroTransitionEnd(e) {
+            if (e && e.propertyName !== 'transform') return;
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N <= 1) return;
+
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+            if (!heroTrackEl) return;
+
+            // Se navegou para frente do último para o clone do primeiro (posição N + 1):
+            // Salta instantaneamente sem transição para a posição 1 real (mesmo slide exato)
+            if (currentSlidePosition >= N + 1) {
+                heroTrackEl.style.transition = 'none';
+                currentSlidePosition = 1;
+                heroTrackEl.style.transform = `translateX(-100%)`;
+                void heroTrackEl.offsetWidth; // Força reflow no browser
+            }
+            // Se retrocedeu antes do primeiro para o clone do último (posição 0):
+            // Salta instantaneamente sem transição para a posição N real (mesmo slide exato)
+            else if (currentSlidePosition <= 0) {
+                heroTrackEl.style.transition = 'none';
+                currentSlidePosition = N;
+                heroTrackEl.style.transform = `translateX(-${N * 100}%)`;
+                void heroTrackEl.offsetWidth; // Força reflow no browser
+            }
+        }
+
+        function updateHeroSliderPosition(smooth = true) {
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N === 0) return;
+
+            if (heroTrackEl) {
+                heroTrackEl.style.transition = smooth ? 'transform 0.45s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
+                const pos = N > 1 ? currentSlidePosition : 0;
+                heroTrackEl.style.transform = `translateX(-${pos * 100}%)`;
+            }
+
+            // Calcula o índice real (0 a N-1) correspondente à posição atual para as barras de progresso
+            let activeRealIndex = 0;
+            if (N > 1) {
+                if (currentSlidePosition === 0) {
+                    activeRealIndex = N - 1;
+                } else if (currentSlidePosition >= N + 1) {
+                    activeRealIndex = 0;
+                } else {
+                    activeRealIndex = currentSlidePosition - 1;
+                }
+            } else {
+                activeRealIndex = 0;
+            }
+            currentHeroIndex = activeRealIndex;
+
+            // Atualiza as barras de progresso apenas se o índice real mudou (evita reset ao pular clones)
+            const realIndexChanged = (activeRealIndex !== lastActiveRealIndex);
+            lastActiveRealIndex = activeRealIndex;
+
+            if (realIndexChanged) {
+                const segs = document.querySelectorAll('.hero-progress-seg');
+                segs.forEach((seg, idx) => {
+                    const fill = seg.querySelector('.hero-progress-fill');
+                    seg.classList.remove('done', 'active');
+                    if (fill) {
+                        fill.style.animation = 'none';
+                        fill.style.transform = '';
+                        void fill.offsetWidth; // Força reflow limpo
+                    }
+                    if (idx < activeRealIndex) {
+                        seg.classList.add('done');
+                    } else if (idx === activeRealIndex) {
+                        seg.classList.add('active');
+                        if (fill) {
+                            fill.style.animation = `heroProgressAnim ${HERO_DURATION_MS}ms linear forwards`;
+                        }
+                    }
+                });
+
+                heroRemainingMs = HERO_DURATION_MS;
+                startHeroCarouselTimer();
+            }
         }
 
         function startHeroCarouselTimer() {
-            if (heroTimerInterval) clearInterval(heroTimerInterval);
-            heroAutoProgress = 0;
+            clearTimeout(heroTimer);
+            if (heroIsPaused) return;
 
-            heroTimerInterval = setInterval(() => {
-                if (heroIsPaused) return;
-                heroAutoProgress += (HERO_TICK_MS / HERO_DURATION_MS) * 100;
-                if (heroAutoProgress >= 100) {
-                    heroAutoProgress = 0;
-                    currentHeroIndex = (currentHeroIndex + 1) % heroBillboardPool.length;
-                    _renderHeroSlide();
-                    return;
+            heroStartTime = Date.now();
+
+            heroTimer = setTimeout(() => {
+                if (!heroIsPaused && !isHeroDragging) {
+                    nextHeroSlide();
                 }
-                // Atualiza apenas a barra do slide ativo (sem re-renderizar o DOM inteiro)
-                const fillEl = document.getElementById(`hero-prog-fill-${currentHeroIndex}`);
-                if (fillEl) fillEl.style.width = heroAutoProgress + '%';
-            }, HERO_TICK_MS);
+            }, heroRemainingMs);
+        }
+
+        function pauseHeroCarousel() {
+            if (heroIsPaused) return;
+            heroIsPaused = true;
+            clearTimeout(heroTimer);
+            const elapsed = Date.now() - heroStartTime;
+            heroRemainingMs = Math.max(800, heroRemainingMs - elapsed);
+            const wrapper = document.getElementById('hero-wrapper');
+            if (wrapper) wrapper.classList.add('is-paused');
+        }
+
+        function resumeHeroCarousel() {
+            if (!heroIsPaused) return;
+            heroIsPaused = false;
+            const wrapper = document.getElementById('hero-wrapper');
+            if (wrapper) wrapper.classList.remove('is-paused');
+
+            clearTimeout(heroTimer);
+            heroStartTime = Date.now();
+            heroTimer = setTimeout(() => {
+                if (!heroIsPaused && !isHeroDragging) {
+                    nextHeroSlide();
+                }
+            }, heroRemainingMs);
+        }
+
+        // FÍSICA DO CARROSSEL: ARRASTAR NO PC (MOUSE) E CELULAR (TOUCH) COM MOVIMENTO REAL E LOOP INFINITO
+        function handleHeroDragStart(e) {
+            const target = e.target;
+            if (target && target.closest('.hero-progress-seg')) {
+                return; // Clique direto nas barras não inicia arraste
+            }
+
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N <= 1) return;
+
+            isHeroDragging = true;
+            heroWasDragged = false;
+            pauseHeroCarousel();
+
+            const pt = e.touches ? e.touches[0] : e;
+            heroDragStartX = pt.clientX;
+            heroDragStartY = pt.clientY;
+            heroDragDeltaX = 0;
+            heroDragDeltaY = 0;
+
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+            if (heroTrackEl) {
+                // Antes de arrastar, se estava em clone, reseta silenciosamente para o slide real equivalente
+                if (currentSlidePosition >= N + 1) {
+                    heroTrackEl.style.transition = 'none';
+                    currentSlidePosition = 1;
+                    heroTrackEl.style.transform = `translateX(-100%)`;
+                    void heroTrackEl.offsetWidth;
+                } else if (currentSlidePosition <= 0) {
+                    heroTrackEl.style.transition = 'none';
+                    currentSlidePosition = N;
+                    heroTrackEl.style.transform = `translateX(-${N * 100}%)`;
+                    void heroTrackEl.offsetWidth;
+                }
+                heroTrackEl.style.transition = 'none';
+            }
+
+            if (!e.touches) {
+                // Previne arraste fantasma nativo do browser em imagens/textos
+                if (target && !target.closest('button') && !target.closest('a')) {
+                    e.preventDefault();
+                }
+                window.addEventListener('mousemove', handleHeroDragMove);
+                window.addEventListener('mouseup', handleHeroDragEnd);
+            } else {
+                window.addEventListener('touchmove', handleHeroDragMove, { passive: false });
+                window.addEventListener('touchend', handleHeroDragEnd);
+            }
+        }
+
+        function handleHeroDragMove(e) {
+            if (!isHeroDragging) return;
+            const pt = e.touches ? e.touches[0] : e;
+            heroDragDeltaX = pt.clientX - heroDragStartX;
+            heroDragDeltaY = pt.clientY - heroDragStartY;
+
+            // Se for movimento primordialmente vertical no touch, permite scroll normal da tela
+            if (e.touches && Math.abs(heroDragDeltaY) > Math.abs(heroDragDeltaX) && Math.abs(heroDragDeltaX) < 12) {
+                return;
+            }
+
+            if (Math.abs(heroDragDeltaX) > 6) {
+                heroWasDragged = true;
+                if (e.cancelable && e.touches) {
+                    e.preventDefault();
+                }
+            }
+
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+            if (heroTrackEl) {
+                // Arraste contínuo infinito: o usuário pode arrastar suavemente em qualquer direção
+                heroTrackEl.style.transform = `translateX(calc(-${currentSlidePosition * 100}% + ${heroDragDeltaX}px))`;
+            }
+        }
+
+        function handleHeroDragEnd(e) {
+            if (!isHeroDragging) return;
+            isHeroDragging = false;
+
+            window.removeEventListener('mousemove', handleHeroDragMove);
+            window.removeEventListener('mouseup', handleHeroDragEnd);
+            window.removeEventListener('touchmove', handleHeroDragMove);
+            window.removeEventListener('touchend', handleHeroDragEnd);
+
+            const threshold = 50; // Sensibilidade do arraste em pixels
+            if (heroDragDeltaX < -threshold) {
+                nextHeroSlide();
+            } else if (heroDragDeltaX > threshold) {
+                prevHeroSlide();
+            } else {
+                updateHeroSliderPosition(true);
+            }
+
+            setTimeout(() => {
+                heroWasDragged = false;
+                resumeHeroCarousel();
+            }, 80);
+        }
+
+        function handleHeroButtonClick(e, fn) {
+            if (e) e.stopPropagation();
+            if (heroWasDragged) return; // Se arrastou, não clica no botão acidentalmente
+            if (typeof fn === 'function') fn(e);
         }
 
         function nextHeroSlide(e) {
             if (e) e.stopPropagation();
-            if (heroBillboardPool.length <= 1) return;
-            heroAutoProgress = 0;
-            currentHeroIndex = (currentHeroIndex + 1) % heroBillboardPool.length;
-            _renderHeroSlide();
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N <= 1) return;
+
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+
+            // Se já estava no clone do primeiro (slide N+1), salta instantaneamente para o slide 1 real
+            if (currentSlidePosition >= N + 1) {
+                if (heroTrackEl) {
+                    heroTrackEl.style.transition = 'none';
+                    heroTrackEl.style.transform = 'translateX(-100%)';
+                    void heroTrackEl.offsetWidth;
+                }
+                currentSlidePosition = 1;
+            }
+
+            currentSlidePosition++;
+            updateHeroSliderPosition(true);
         }
 
         function prevHeroSlide(e) {
             if (e) e.stopPropagation();
-            if (heroBillboardPool.length <= 1) return;
-            heroAutoProgress = 0;
-            currentHeroIndex = (currentHeroIndex - 1 + heroBillboardPool.length) % heroBillboardPool.length;
-            _renderHeroSlide();
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N <= 1) return;
+
+            if (!heroTrackEl) heroTrackEl = document.getElementById('hero-slider-track');
+
+            // Se já estava no clone do último (slide 0), salta instantaneamente para o slide N real
+            if (currentSlidePosition <= 0) {
+                if (heroTrackEl) {
+                    heroTrackEl.style.transition = 'none';
+                    heroTrackEl.style.transform = `translateX(-${N * 100}%)`;
+                    void heroTrackEl.offsetWidth;
+                }
+                currentSlidePosition = N;
+            }
+
+            currentSlidePosition--;
+            updateHeroSliderPosition(true);
         }
 
         function goToHeroSlide(index, e) {
             if (e) e.stopPropagation();
-            if (index >= 0 && index < heroBillboardPool.length) {
-                heroAutoProgress = 0;
-                currentHeroIndex = index;
-                _renderHeroSlide();
+            const N = heroBillboardPool ? heroBillboardPool.length : 0;
+            if (N <= 1) return;
+            if (index >= 0 && index < N) {
+                currentSlidePosition = index + 1;
+                updateHeroSliderPosition(true);
             }
         }
 
@@ -12128,6 +13827,11 @@ function initApp() {
             clearTimeout(_headerSearchTimer);
             const q = (query || '').trim();
 
+            const sideSearch = document.getElementById('sidebar-search-input');
+            if (sideSearch && sideSearch.value !== (query || '')) {
+                sideSearch.value = query || '';
+            }
+
             // Bloqueia autofill do navegador que tenta preencher 'admin' sem foco do usuário
             if (q.toLowerCase() === 'admin' && document.activeElement !== document.getElementById('header-search-input')) {
                 const searchEl = document.getElementById('header-search-input');
@@ -12320,6 +14024,34 @@ function initApp() {
         // ═══════════════════════════════════════════════════════════════════════
         // 📱 SIDEBAR TOGGLE (DESKTOP COLLAPSE + MOBILE DRAWER)
         // ═══════════════════════════════════════════════════════════════════════
+
+        function openMobileSearchDrawer() {
+            const nav = document.getElementById('sidebar-nav');
+            const overlay = document.getElementById('sidebar-mobile-overlay');
+            if (nav) nav.classList.add('mobile-open');
+            if (overlay) overlay.classList.add('active');
+            setTimeout(() => {
+                const sideSearch = document.getElementById('sidebar-search-input');
+                if (sideSearch) sideSearch.focus();
+            }, 180);
+        }
+
+        function onSidebarSearchInput(val) {
+            const desktopSearch = document.getElementById('header-search-input');
+            if (desktopSearch) desktopSearch.value = val;
+            onHeaderSearchInput(val);
+        }
+
+        function onSidebarSearchKeyDown(e) {
+            if (e.key === 'Enter') {
+                const nav = document.getElementById('sidebar-nav');
+                const overlay = document.getElementById('sidebar-mobile-overlay');
+                if (nav) nav.classList.remove('mobile-open');
+                if (overlay) overlay.classList.remove('active');
+                e.target.blur();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
 
         function toggleSidebar() {
             const nav = document.getElementById('sidebar-nav');
@@ -12524,7 +14256,7 @@ function initApp() {
 
         function updateUserHeaderUI(user) {
             const box = document.getElementById('user-header-profile-box');
-            if (!box) return;
+            const sideBox = document.getElementById('user-sidebar-profile-box');
 
             const isUserAdmin = user && (user.role === 'admin' || user.username === 'admin' || !!adminToken);
             const unreadNotifs = (userNotifs || []).filter(n => !n.read).length;
@@ -12539,75 +14271,139 @@ function initApp() {
                 }
             }
 
+            const sidebarNotifBadge = document.getElementById('sidebar-notif-badge');
+            if (sidebarNotifBadge) {
+                if (unreadNotifs > 0) {
+                    sidebarNotifBadge.style.display = 'inline-flex';
+                    sidebarNotifBadge.textContent = unreadNotifs > 9 ? '9+' : unreadNotifs;
+                } else {
+                    sidebarNotifBadge.style.display = 'none';
+                }
+            }
+
             if (user) {
                 const isVip = user.is_vip || isUserAdmin;
 
-                box.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <!-- BOTÃO DE PERFIL DO USUÁRIO -->
-                        <div style="position: relative;">
-                            <button class="user-profile-btn" onclick="toggleProfileDropdown(event)" style="position: relative;">
-                                ${user.avatar_url ? `<img src="${user.avatar_url}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2);" alt="${user.username}">` : `<div class="user-avatar-circle" style="${isUserAdmin ? 'background: linear-gradient(135deg, #3b82f6, #8b5cf6);' : (isVip ? 'background: linear-gradient(135deg, #f59e0b, #d97706);' : '')}"><span>${(user.username || 'U')[0].toUpperCase()}</span></div>`}
-                                <span style="max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.username}</span>
-                                ${isUserAdmin ? '<span style="color: #60a5fa; font-size: 11px; font-weight: 900;">Admin</span>' : (isVip ? '<span style="color: #fbbf24; font-size: 11px; font-weight: 900;">VIP</span>' : '')}
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.7;"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
+                // 1. DESKTOP HEADER DROPDOWN (100% Padronizado, cores uniformes e elegantes)
+                if (box) {
+                    box.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="position: relative;">
+                                <button class="user-profile-btn" onclick="toggleProfileDropdown(event)" style="position: relative;">
+                                    ${user.avatar_url ? `<img src="${user.avatar_url}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2);" alt="${user.username}">` : `<div class="user-avatar-circle" style="${isUserAdmin ? 'background: linear-gradient(135deg, #3b82f6, #8b5cf6);' : (isVip ? 'background: linear-gradient(135deg, #f59e0b, #d97706);' : '')}"><span>${(user.username || 'U')[0].toUpperCase()}</span></div>`}
+                                    <span style="max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.username}</span>
+                                    ${isUserAdmin ? '<span style="color: #60a5fa; font-size: 11px; font-weight: 900;">Admin</span>' : (isVip ? '<span style="color: #fbbf24; font-size: 11px; font-weight: 900;">VIP</span>' : '')}
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.7;"><path d="M6 9l6 6 6-6"/></svg>
+                                </button>
 
-                            <div class="profile-dropdown-menu" id="user-profile-dropdown" onclick="event.stopPropagation()">
-                                <div class="profile-menu-header">
-                                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                                        <div style="font-size: 15px; font-weight: 900; color: #fff;">${user.username}</div>
-                                        ${isUserAdmin ? '<div style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(59,130,246,0.2); color: #60a5fa;">Administrador</div>' : (isVip ? '<div style="font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(245,158,11,0.2); color: #fbbf24;">Assinante VIP</div>' : '')}
+                                <div class="profile-dropdown-menu" id="user-profile-dropdown" onclick="event.stopPropagation()">
+                                    <div class="profile-menu-header">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <div style="font-size: 14px; font-weight: 900; color: #fff;">${user.username}</div>
+                                            ${isUserAdmin ? '<div class="profile-badge-pill admin">Administrador</div>' : (isVip ? '<div class="profile-badge-pill vip">Assinante VIP</div>' : '')}
+                                        </div>
+                                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${user.email || 'Conta vinculada'}</div>
                                     </div>
-                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${user.email || 'Conta vinculada'}</div>
-                                </div>
 
-                                <div class="profile-menu-item" onclick="switchTab('tab-settings'); closeProfileDropdown();">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-                                    <span>Configurações</span>
-                                </div>
+                                    <div class="profile-menu-item" onclick="switchTab('tab-settings'); closeProfileDropdown();">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                                        <span>Configurações</span>
+                                    </div>
 
-                                ${isUserAdmin ? `
-                                <a href="/admin" target="_blank" class="profile-menu-item" style="color: #60a5fa; font-weight: 800; text-decoration: none;">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                                    <span>Painel Admin</span>
-                                </a>` : ''}
+                                    ${isUserAdmin ? `
+                                    <a href="/admin" target="_blank" class="profile-menu-item">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                                        <span>Painel Admin</span>
+                                    </a>` : ''}
 
-                                <div class="profile-menu-item" onclick="switchNavCategory('favoritos'); closeProfileDropdown();">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>
-                                    <span>Minha Lista (${(userFavorites || []).length})</span>
-                                </div>
+                                    <div class="profile-menu-item" onclick="switchNavCategory('favoritos'); closeProfileDropdown();">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>
+                                        <span>Minha Lista (${(userFavorites || []).length})</span>
+                                    </div>
 
-                                <div class="profile-menu-item" onclick="openRequestMediaModal(); closeProfileDropdown();" style="background: rgba(229, 9, 20, 0.08); border-color: rgba(229, 9, 20, 0.25); color: #fca5a5; font-weight: 800;">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>
-                                    <span>Pedir Filme ou Série</span>
-                                </div>
+                                    <div class="profile-menu-item" onclick="openRequestMediaModal(); closeProfileDropdown();">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>
+                                        <span>Pedir Filme ou Série</span>
+                                    </div>
 
-                                <div class="profile-menu-item" onclick="openSupportTicketModal(); closeProfileDropdown();">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-                                    <span>Ajuda &amp; Suporte</span>
-                                </div>
+                                    <div class="profile-menu-item" onclick="openSupportTicketModal(); closeProfileDropdown();">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                                        <span>Ajuda &amp; Suporte</span>
+                                    </div>
 
-                                <div class="profile-menu-item logout-item" onclick="handleUserLogout(); closeProfileDropdown();" style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
-                                    <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
-                                    <span>Sair da Conta</span>
+                                    <div class="profile-menu-item logout-item" onclick="handleUserLogout(); closeProfileDropdown();">
+                                        <span class="profile-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+                                        <span>Sair da Conta</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            } else {
-                // DESLOGADO: Minimalista, sem VIP, sem Sugestões
-                box.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <button class="user-profile-btn" onclick="openAuthUserModal('login')" title="Entrar na conta">
-                            <div class="user-avatar-circle">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    `;
+                }
+
+                // 2. MOBILE DRAWER USER CARD (Totalmente integrado no menu lateral, ultra prático)
+                if (sideBox) {
+                    sideBox.innerHTML = `
+                        <div class="sidebar-user-card">
+                            <div class="sidebar-user-info">
+                                ${user.avatar_url ? `<img src="${user.avatar_url}" class="sidebar-user-avatar" alt="${user.username}">` : `<div class="user-avatar-circle" style="width:34px;height:34px;font-size:13px;${isUserAdmin ? 'background: linear-gradient(135deg, #3b82f6, #8b5cf6);' : (isVip ? 'background: linear-gradient(135deg, #f59e0b, #d97706);' : '')}"><span>${(user.username || 'U')[0].toUpperCase()}</span></div>`}
+                                <div class="sidebar-user-names">
+                                    <span class="sidebar-user-name">${user.username}</span>
+                                    <span class="sidebar-user-badge ${isVip && !isUserAdmin ? 'vip' : ''}">${isUserAdmin ? 'Administrador' : (isVip ? 'Assinante VIP' : 'Membro')}</span>
+                                </div>
                             </div>
-                            <span>Entrar</span>
-                        </button>
-                    </div>
-                `;
+                            <div class="sidebar-user-actions">
+                                <button class="sidebar-user-action-btn" onclick="switchTab('tab-settings'); toggleSidebar();">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                    <span>Configurações</span>
+                                </button>
+                                ${isUserAdmin ? `
+                                <a href="/admin" target="_blank" class="sidebar-user-action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>Painel Admin</span>
+                                </a>` : ''}
+                                <button class="sidebar-user-action-btn" onclick="openRequestMediaModal(); toggleSidebar();">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                                    <span>Pedir Filme ou Série</span>
+                                </button>
+                                <button class="sidebar-user-action-btn" onclick="openSupportTicketModal(); toggleSidebar();">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                    <span>Ajuda &amp; Suporte</span>
+                                </button>
+                                <button class="sidebar-user-action-btn logout" onclick="handleUserLogout(); toggleSidebar();">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                    <span>Sair da Conta</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                // DESLOGADO: Minimalista e elegante
+                if (box) {
+                    box.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button class="user-profile-btn" onclick="openAuthUserModal('login')" title="Entrar na conta">
+                                <div class="user-avatar-circle">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                </div>
+                                <span>Entrar</span>
+                            </button>
+                        </div>
+                    `;
+                }
+                if (sideBox) {
+                    sideBox.innerHTML = `
+                        <div class="sidebar-auth-card">
+                            <div class="sidebar-auth-title">Minha Conta</div>
+                            <div class="sidebar-auth-desc">Entre para salvar seus favoritos, continuar assistindo e pedir filmes ou séries.</div>
+                            <button class="sidebar-login-btn" onclick="openAuthUserModal('login'); toggleSidebar();">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                <span>Entrar na Conta</span>
+                            </button>
+                        </div>
+                    `;
+                }
             }
         }
 
@@ -14300,30 +16096,25 @@ function initApp() {
                     </div>
                 </div>
 
-                <!-- SE FOR SÉRIE: SELETOR DE TEMPORADAS & GRID DE EPISÓDIOS -->
+                <!-- SE FOR SÉRIE: ACORDEÃO DE TEMPORADAS -->
                 ${isSerie ? `
                 <div class="seasons-section" id="detail-seasons-section">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
-                                <span>📺</span> Episódios Disponíveis
-                            </h2>
-                            <span id="detail-episodes-count" style="font-size: 12px; color: var(--text-muted); font-weight: 700;"></span>
-                        </div>
+                        <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
+                            <span>📺</span> Temporadas &amp; Episódios
+                        </h2>
                     </div>
-
-                    <div class="seasons-tabs-rail" id="detail-seasons-tabs"></div>
-                    <div id="detail-episodes-grid" style="margin-top: 16px;"></div>
+                    <div class="seasons-accordion" id="detail-seasons-accordion"></div>
                 </div>
                 ` : ''}
 
                 <!-- SEÇÃO DE AVALIAÇÕES E COMENTÁRIOS DA COMUNIDADE -->
                 <div class="reviews-section" id="detail-reviews-section">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                        <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px;">
-                            <span>💬</span> Avaliações da Comunidade (<span id="reviews-total-count">0</span>)
+                        <h2 style="font-size: 18px; font-weight: 900; color: #fff; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;">
+                            <span>💬</span> <span>Avaliações da Comunidade (<span id="reviews-total-count">0</span>)</span>
                         </h2>
-                        <div id="reviews-avg-badge-box" style="font-size: 13px; font-weight: 800; color: #fbbf24;"></div>
+                        <div id="reviews-avg-badge-box" style="font-size: 13px; font-weight: 800; color: #fbbf24; flex-shrink: 0;"></div>
                     </div>
 
                     <!-- FORMULÁRIO DE NOVA AVALIAÇÃO -->
@@ -14415,7 +16206,7 @@ function initApp() {
             `;
 
             if (isSerie) {
-                renderDetailSeasons(item);
+                renderDetailSeasonsAccordion(item);
             }
         }
 
@@ -14685,65 +16476,18 @@ function initApp() {
 
         let currentSelectedSeasonNum = 1;
 
-        function renderDetailSeasons(serie, activeSeasonNum = null) {
-            const tabsContainer = document.getElementById('detail-seasons-tabs');
-            const gridContainer = document.getElementById('detail-episodes-grid');
-            if (!tabsContainer || !gridContainer || !serie.temporadas) return;
-
-            const temporadas = serie.temporadas || [];
-            if (temporadas.length === 0) {
-                gridContainer.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">Nenhum episódio cadastrado para esta série ainda.</div>';
-                return;
-            }
-
-            const currentSeason = activeSeasonNum || temporadas[0].numero;
-            currentSelectedSeasonNum = currentSeason;
-
-            tabsContainer.innerHTML = temporadas.map(t => `
-                <button class="season-tab-btn ${t.numero === currentSeason ? 'active' : ''}" onclick="renderDetailSeasons(currentDetailMedia, ${t.numero})">
-                    Temporada ${t.numero} (${t.episodios?.length || 0} eps)
-                </button>
-            `).join('');
-
-            renderDetailSeasonsHtmlOnly(serie, currentSeason);
-
-            // Dispara enriquecimento assíncrono com dados reais do TMDB (capa real, nome e sinopse real do ep)
-            if (serie.tmdbId) {
-                enrichSeasonEpisodesWithTmdb(serie, currentSeason);
-            }
-        }
-
-        function renderDetailSeasonsHtmlOnly(serie, currentSeason) {
-            const gridContainer = document.getElementById('detail-episodes-grid');
-            const countLabel = document.getElementById('detail-episodes-count');
-            if (!gridContainer || !serie.temporadas) return;
-
-            const selectedTemp = (serie.temporadas || []).find(t => t.numero === currentSeason) || serie.temporadas[0];
-            if (!selectedTemp) return;
-            currentSelectedSeasonNum = selectedTemp.numero;
-            const episodios = selectedTemp.episodios || [];
-
-            if (countLabel) {
-                countLabel.innerText = '';
-            }
-
+        function buildEpisodesHtml(serie, temporada) {
+            const episodios = temporada.episodios || [];
             if (episodios.length === 0) {
-                gridContainer.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">Episódios desta temporada estarão disponíveis em breve.</div>';
-                return;
+                return '<div style="color: var(--text-muted); padding: 16px; text-align: center; font-size: 13px;">Episódios desta temporada estarão disponíveis em breve.</div>';
             }
-
-            gridContainer.className = 'episodes-cascade-list';
-            gridContainer.innerHTML = episodios.map(ep => {
+            return episodios.map(ep => {
                 let cleanEpTitle = (ep.nome || '').trim();
                 cleanEpTitle = cleanEpTitle.replace(/^(?:(?:Epis[oó]dio|Cap[íi]tulo|Ep\.?|E)\s*\d+[\.\:\-\s]+|\d+[\.\:\-\s]+)/i, '').trim();
-                if (!cleanEpTitle) {
-                    cleanEpTitle = `Episódio ${ep.numero}`;
-                }
+                if (!cleanEpTitle) cleanEpTitle = `Episódio ${ep.numero}`;
 
-                // Detecta áudio do episódio (Dublado / Legendado / Ambos)
                 const hasDub = !!(ep.isDublado || ep.versoes?.dublado);
                 const hasLeg = !!(ep.isLegendado || ep.versoes?.legendado);
-
                 let audioBadgeHtml = '';
                 if (hasDub && hasLeg) {
                     audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dual"><span style="color:#34d399;">Dublado</span> <span style="opacity:0.6; color:#cbd5e1;">&amp;</span> <span style="color:#60a5fa;">Legendado</span></span>`;
@@ -14751,25 +16495,24 @@ function initApp() {
                     audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-dub">Dublado</span>`;
                 } else if (hasLeg) {
                     audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-leg">Legendado</span>`;
-                } else {
-                    audioBadgeHtml = '';
                 }
 
                 const epThumb = ep.stillUrl || ep.thumbUrl || serie.backdropUrl || serie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
-                const epDesc = ep.sinopse || ep.overview || ep.descricao || `Episódio ${ep.numero} da ${selectedTemp.numero}ª temporada.`;
+                const epDesc = ep.sinopse || ep.overview || ep.descricao || `Episódio ${ep.numero} da ${temporada.numero}ª temporada.`;
                 const epDuration = ep.duracao ? `${ep.duracao} min` : '';
 
-                const prog = getEpisodeProgress(serie.id, selectedTemp.numero, ep.numero);
+                const prog = getEpisodeProgress(serie.id, temporada.numero, ep.numero);
                 const isCompleted = prog?.completed || false;
                 const curTime = prog?.currentTime || 0;
                 const isStarted = !isCompleted && curTime > 10;
                 const isWatchedOrStarted = isCompleted || isStarted;
                 const dur = prog?.duration || (ep.duracao ? ep.duracao * 60 : 0);
+                const pct = (dur > 0 && curTime > 0) ? Math.min(100, Math.round((curTime / dur) * 100)) : 0;
                 const userWantsBlur = (currentUser?.preferencias?.spoilerBlur !== false) && (localStorage.getItem('bf_pref_spoiler_blur') !== 'false');
                 const spoilerBlurClass = (!isWatchedOrStarted && userWantsBlur) ? 'episode-preview-spoiler-blur' : '';
 
                 return `
-                    <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="openWebPlayerEpisode('${serie.id}', ${selectedTemp.numero}, ${ep.numero})">
+                    <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="event.stopPropagation(); openWebPlayerEpisode('${serie.id}', ${temporada.numero}, ${ep.numero})">
                         <div class="episode-cascade-num">${ep.numero}</div>
                         <div class="episode-preview-wrapper">
                             <img src="${epThumb}" class="episode-preview-img ${spoilerBlurClass}" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
@@ -14779,9 +16522,7 @@ function initApp() {
                             ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
                         </div>
                         <div class="episode-cascade-info">
-                            <div style="margin-bottom: 2px;">
-                                ${audioBadgeHtml}
-                            </div>
+                            <div style="margin-bottom: 2px;">${audioBadgeHtml}</div>
                             <div class="episode-cascade-title-row">
                                 <div class="episode-cascade-title">${cleanEpTitle}</div>
                             </div>
@@ -14790,6 +16531,116 @@ function initApp() {
                     </div>
                 `;
             }).join('');
+        }
+
+        function toggleSeasonAccordion(itemEl, serieId) {
+            const serie = currentDetailMedia;
+            const accordion = document.getElementById('detail-seasons-accordion');
+            if (!accordion || !serie) return;
+
+            const isOpen = itemEl.classList.contains('is-open');
+
+            // Close all
+            accordion.querySelectorAll('.season-accordion-item').forEach(el => el.classList.remove('is-open'));
+
+            if (!isOpen) {
+                itemEl.classList.add('is-open');
+                const seasonNum = Number(itemEl.getAttribute('data-season-num'));
+                currentSelectedSeasonNum = seasonNum;
+
+                // Lazy-render episodes if not already rendered
+                const body = itemEl.querySelector('.season-accordion-episodes');
+                if (body && !body.dataset.rendered) {
+                    const temporada = (serie.temporadas || []).find(t => t.numero === seasonNum);
+                    if (temporada) {
+                        body.innerHTML = buildEpisodesHtml(serie, temporada);
+                        body.dataset.rendered = '1';
+                        // TMDB enrichment
+                        if (serie.tmdbId) enrichSeasonEpisodesWithTmdb(serie, seasonNum);
+                    }
+                }
+            }
+        }
+
+        function renderDetailSeasonsAccordion(serie) {
+            const accordion = document.getElementById('detail-seasons-accordion');
+            if (!accordion || !serie.temporadas) return;
+
+            const temporadas = serie.temporadas || [];
+            if (temporadas.length === 0) {
+                accordion.innerHTML = '<div style="color: var(--text-muted); padding: 20px; text-align: center;">Nenhum episódio cadastrado para esta série ainda.</div>';
+                return;
+            }
+
+            accordion.innerHTML = temporadas.map((t, idx) => {
+                const epCount = (t.episodios || []).length;
+                const isFirst = idx === 0;
+                return `
+                    <div class="season-accordion-item ${isFirst ? 'is-open' : ''}" data-season-num="${t.numero}">
+                        <div class="season-accordion-header" onclick="toggleSeasonAccordion(this.closest('.season-accordion-item'), '${serie.id}')">
+                            <div class="season-accordion-left">
+                                <div class="season-accordion-number">${t.numero}</div>
+                                <div>
+                                    <div class="season-accordion-label">Temporada ${t.numero}</div>
+                                    <div class="season-accordion-eps-count">${epCount} episódio${epCount !== 1 ? 's' : ''} • Clique para ${isFirst ? 'recolher' : 'expandir'}</div>
+                                </div>
+                            </div>
+                            <div class="season-accordion-right">
+                                <div class="season-accordion-chevron">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="season-accordion-body">
+                            <div class="season-accordion-episodes" ${isFirst ? `data-rendered="1"` : ''}>
+                                ${isFirst ? buildEpisodesHtml(serie, t) : '<div style="height:1px"></div>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            currentSelectedSeasonNum = temporadas[0].numero;
+
+            // Enrich first season
+            if (serie.tmdbId) enrichSeasonEpisodesWithTmdb(serie, temporadas[0].numero);
+        }
+
+        // Compat shim: renderDetailSeasons still called by some code paths
+        function renderDetailSeasons(serie, activeSeasonNum = null) {
+            renderDetailSeasonsAccordion(serie);
+            if (activeSeasonNum !== null) {
+                // Open the specified season
+                const accordion = document.getElementById('detail-seasons-accordion');
+                if (accordion) {
+                    const target = accordion.querySelector(`[data-season-num="${activeSeasonNum}"]`);
+                    if (target) {
+                        accordion.querySelectorAll('.season-accordion-item').forEach(el => el.classList.remove('is-open'));
+                        target.classList.add('is-open');
+                        const body = target.querySelector('.season-accordion-episodes');
+                        if (body && !body.dataset.rendered) {
+                            const temporada = (serie.temporadas || []).find(t => t.numero === activeSeasonNum);
+                            if (temporada) { body.innerHTML = buildEpisodesHtml(serie, temporada); body.dataset.rendered = '1'; }
+                        }
+                    }
+                }
+            }
+        }
+
+        function renderDetailSeasonsHtmlOnly(serie, currentSeason) {
+            // Re-render the open accordion season's episodes (e.g. after marking watched)
+            const accordion = document.getElementById('detail-seasons-accordion');
+            if (!accordion) return;
+            const target = accordion.querySelector(`[data-season-num="${currentSeason}"]`);
+            if (!target) return;
+            const body = target.querySelector('.season-accordion-episodes');
+            if (!body) return;
+            const temporada = (serie.temporadas || []).find(t => t.numero === currentSeason);
+            if (temporada) {
+                body.innerHTML = buildEpisodesHtml(serie, temporada);
+                body.dataset.rendered = '1';
+            }
+            currentSelectedSeasonNum = currentSeason;
         }
 
         let pendingAudioChoiceMedia = null;
@@ -14944,9 +16795,13 @@ function initApp() {
 
             const token = getUserStreamingToken();
             const isVip = localStorage.getItem('bf_user_is_vip') === 'true' || (currentUser && currentUser.is_vip) || token !== 'public';
-            const hasDub = !!movie.versoes?.dublado || !!movie.isDublado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('D')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('dublado'));
-            const hasLeg = !!movie.versoes?.legendado || !!movie.isLegendado || movie.audio === 'dual' || (typeof movie.audioBadge === 'string' && movie.audioBadge.includes('L')) || (typeof movie.audioText === 'string' && movie.audioText.toLowerCase().includes('legendado'));
-            const isDualAudio = (hasDub && hasLeg) || movie.audio === 'dual' || (!!movie.versoes?.dublado && !!movie.versoes?.legendado) || (!!movie.isDublado && !!movie.isLegendado);
+            // hasDub/hasLeg: usa APENAS os campos de disponibilidade real de mídia do backend (isDublado/isLegendado)
+            // NÃO usa audioBadge/audioText como proxy pois esses campos podem estar desatualizados
+            const hasDub = (!!movie.versoes?.dublado && !!(movie.versoes.dublado.messageId || movie.versoes.dublado.fileId))
+                || (!!movie.isDublado && !!(movie.messageId || movie.fileId) && !movie.versoes?.legendado && !movie.versoes?.dublado);
+            const hasLeg = (!!movie.versoes?.legendado && !!(movie.versoes.legendado.messageId || movie.versoes.legendado.fileId))
+                || (!!movie.isLegendado && !!(movie.messageId || movie.fileId) && !movie.versoes?.legendado && !movie.versoes?.dublado && !hasDub);
+            const isDualAudio = hasDub && hasLeg;
 
             // ── PASSO 1: CONFIRMAÇÃO DE CONSUMO DE CRÉDITOS (PRIMEIRO) ──
             const mediaKey = `filme_${movie.id}`;
@@ -14976,11 +16831,13 @@ function initApp() {
             const savedAudioPref = getUserMediaAudioPref('filme', movie.id);
             const userPrefAudio = currentUser?.preferencias?.defaultAudio || localStorage.getItem('bf_pref_default_audio');
 
-            // Seleciona áudio automaticamente sem interrupção por modal (preferência do usuário > dublado > legendado)
-            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id) || 'dublado';
-            if (chosenAudio === 'dublado' && !hasDub && hasLeg) chosenAudio = 'legendado';
-            else if (chosenAudio === 'legendado' && !hasLeg && hasDub) chosenAudio = 'dublado';
-            else if (!hasDub && !hasLeg) chosenAudio = 'dublado';
+            // Seleciona áudio automaticamente: preferência salva > preferência do usuário > default inteligente
+            // Default inteligente: prefere 'dublado' se disponível, senão 'legendado'
+            const defaultAudio = hasDub ? 'dublado' : (hasLeg ? 'legendado' : 'dublado');
+            let chosenAudio = explicitAudio || savedAudioPref || (userPrefAudio === 'dublado' || userPrefAudio === 'legendado' ? userPrefAudio : null) || getUserPreferredAudio('filme', movie.id) || defaultAudio;
+            // Sanitiza: se escolheu dublado mas não existe, cai para legendado (e vice-versa)
+            if (chosenAudio === 'dublado' && !hasDub) chosenAudio = hasLeg ? 'legendado' : 'dublado';
+            else if (chosenAudio === 'legendado' && !hasLeg) chosenAudio = hasDub ? 'dublado' : 'legendado';
 
             finalizeMoviePlaybackPage(movie, chosenAudio, updateUrl, token, hasDub, hasLeg);
         }
@@ -15861,7 +17718,7 @@ function initApp() {
                 video.addEventListener('loadedmetadata', onMetaLoaded);
             }
 
-            updatePlayerAudioUI(newAudio, currentPlayingMedia.hasDub !== false, currentPlayingMedia.hasLeg !== false);
+            updatePlayerAudioUI(newAudio, !!currentPlayingMedia.hasDub, !!currentPlayingMedia.hasLeg);
             showToast(`🔊 Áudio alterado para ${newAudio === 'dublado' ? 'Dublado (PT-BR)' : 'Legendado (PT-BR)'}`, 'success');
         }
 
@@ -16047,7 +17904,8 @@ function initApp() {
             if (subEl) subEl.innerText = subTitle || 'BrasilFlix Streaming';
 
             // Configura UI de áudio no player
-            updatePlayerAudioUI(mediaInfo.audio || 'dublado', mediaInfo.hasDub !== false, mediaInfo.hasLeg !== false);
+            // Usa !!hasDub/!!hasLeg: false quando undefined, ao invés de !==false que trata undefined como true
+            updatePlayerAudioUI(mediaInfo.audio || 'dublado', !!mediaInfo.hasDub, !!mediaInfo.hasLeg);
 
             // Configura velocidade salva
             const savedSpeed = parseFloat(localStorage.getItem('bf_player_speed')) || 1.0;
@@ -18523,6 +20381,27 @@ function initApp() {
             }
         }
 
+        function toggleAdminSidebar(e) {
+            if (e) e.stopPropagation();
+            const sidebar = document.querySelector('.admin-sidebar');
+            const backdrop = document.getElementById('admin-sidebar-backdrop');
+            if (!sidebar) return;
+            const isOpen = sidebar.classList.contains('open');
+            if (isOpen) {
+                closeAdminSidebar();
+            } else {
+                sidebar.classList.add('open');
+                if (backdrop) backdrop.classList.add('active');
+            }
+        }
+
+        function closeAdminSidebar() {
+            const sidebar = document.querySelector('.admin-sidebar');
+            const backdrop = document.getElementById('admin-sidebar-backdrop');
+            if (sidebar) sidebar.classList.remove('open');
+            if (backdrop) backdrop.classList.remove('active');
+        }
+
         function switchAdminSubTab(subTabId, updateUrl = true) {
             document.querySelectorAll('.admin-sub-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.admin-subtab-content').forEach(c => c.style.display = 'none');
@@ -18532,6 +20411,13 @@ function initApp() {
 
             if (btn) btn.classList.add('active');
             if (content) content.style.display = 'block';
+
+            // Atualiza rótulo no cabeçalho do mobile
+            const activeLabel = document.getElementById('admin-mobile-active-label');
+            if (activeLabel && btn) {
+                activeLabel.innerHTML = btn.innerHTML;
+            }
+            closeAdminSidebar();
 
             // Salva sub-aba no localStorage e na URL
             localStorage.setItem('bf_admin_subtab', subTabId);
@@ -20394,25 +22280,25 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                     }
 
                     html += `
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                            <td>
+                        <tr class="catalog-item-row" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            <td class="col-media">
                                 <div style="display:flex; align-items:center; gap:10px;">
-                                    <img src="${poster}" style="width:36px; height:50px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1);" onerror="this.src='/logo.jpg'">
-                                    <div>
-                                        <strong style="color:#fff; font-size:14px;">${i.nome}</strong>
-                                        <div style="font-size:11px; color:var(--text-muted);">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
+                                    <img src="${poster}" style="width:38px; height:52px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" onerror="this.src='/logo.jpg'">
+                                    <div style="min-width:0;">
+                                        <strong style="color:#fff; font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nome}</strong>
+                                        <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
                                     </div>
                                 </div>
                             </td>
-                            <td><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
-                            <td><span style="font-size:12px; color:var(--text-muted);">1 Filme (${i.qualidade || '1080p'})</span></td>
-                            <td>
+                            <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td class="col-struct"><span style="font-size:12px; color:var(--text-muted);">1 Filme (${i.qualidade || '1080p'})</span></td>
+                            <td class="col-audio">
                                 <div>${audPill}</div>
                                 <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${i.qualidade || '1080p'}</div>
                             </td>
-                            <td><span style="font-size:12px;">${tgBadge}</span></td>
-                            <td style="text-align: right; white-space: nowrap;">
-                                <div style="display:inline-flex; align-items:center; gap:4px;">
+                            <td class="col-tg"><span style="font-size:12px;">${tgBadge}</span></td>
+                            <td class="col-actions" style="text-align: right; white-space: nowrap;">
+                                <div class="actions-group" style="display:inline-flex; align-items:center; gap:4px;">
                                     ${rebaixarButtons}
                                     <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo Definitivo">
                                         🗑️
@@ -20548,28 +22434,28 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                     }
 
                     html += `
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                            <td>
+                        <tr class="catalog-item-row" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            <td class="col-media">
                                 <div style="display:flex; align-items:center; gap:10px;">
-                                    <img src="${poster}" style="width:36px; height:50px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1);" onerror="this.src='/logo.jpg'">
-                                    <div>
-                                        <strong style="color:#fff; font-size:14px;">${i.nome}</strong>
-                                        <div style="font-size:11px; color:var(--text-muted);">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
+                                    <img src="${poster}" style="width:38px; height:52px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" onerror="this.src='/logo.jpg'">
+                                    <div style="min-width:0;">
+                                        <strong style="color:#fff; font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nome}</strong>
+                                        <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
                                     </div>
                                 </div>
                             </td>
-                            <td><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
-                            <td>
+                            <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td class="col-struct">
                                 <div style="font-size:12px; font-weight:600; color:#fff;">${(i.temporadas || []).length} temp • ${totalEps} eps</div>
                                 <div style="font-size:11px; margin-top:2px;">${missingBadge}</div>
                             </td>
-                            <td>
+                            <td class="col-audio">
                                 <div>${audPill}</div>
                                 <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${qual}</div>
                             </td>
-                            <td><span style="font-size:12px;">${tgBadge}</span></td>
-                            <td style="text-align: right; white-space: nowrap;">
-                                <div style="display:inline-flex; align-items:center; gap:4px;">
+                            <td class="col-tg"><span style="font-size:12px;">${tgBadge}</span></td>
+                            <td class="col-actions" style="text-align: right; white-space: nowrap;">
+                                <div class="actions-group" style="display:inline-flex; align-items:center; gap:4px;">
                                     ${regraBtn}
                                     <button class="btn-action btn-action-primary btn-icon-compact" onclick="toggleSerieEpisodes('${accordionId}', this)" title="Ver episódios">
                                         ▶ ${totalEps}
@@ -20581,7 +22467,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                 </div>
                             </td>
                         </tr>
-                        <tr id="${accordionId}" style="display: none;">
+                        <tr id="${accordionId}" class="accordion-row" style="display: none;">
                             <td colspan="6" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.25);">
                                 <div class="episodes-nested-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px; margin-top: 10px;">
                                     <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
@@ -20603,7 +22489,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             const el = document.getElementById(accordionId);
             if (!el) return;
             if (el.style.display === 'none') {
-                el.style.display = 'table-row';
+                el.style.display = window.innerWidth <= 768 ? 'block' : 'table-row';
                 if (btn) btn.innerText = btn.innerText.replace('▶', '▼');
             } else {
                 el.style.display = 'none';
