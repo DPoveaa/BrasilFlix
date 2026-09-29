@@ -18,6 +18,110 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
 
+        /* ═══════════ BRASILFLIX ADSTERRA ADS (DISCRETO & VIP CONDICIONAL) ═══════════ */
+        .bf-side-ad {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 160px;
+            min-height: 600px;
+            z-index: 90;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(8, 11, 17, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 8px 4px 6px 4px;
+            box-sizing: border-box;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+        .bf-side-ad-left { left: 10px; }
+        .bf-side-ad-right { right: 10px; }
+        .bf-ad-label {
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #64748b;
+            margin-bottom: 6px;
+            font-weight: 700;
+            user-select: none;
+        }
+        .bf-ad-content {
+            width: 160px;
+            height: 600px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        .bf-banner-ad-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            max-width: 760px;
+            width: 100%;
+            border-radius: 14px;
+            background: rgba(13, 18, 29, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 10px 12px 14px 12px;
+            box-sizing: border-box;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+        .bf-ad-header {
+            display: flex;
+            width: 100%;
+            max-width: 728px;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 11px;
+            padding: 0 4px;
+        }
+        .bf-ad-vip-hint {
+            color: #f59e0b;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 11px;
+            transition: opacity 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .bf-ad-vip-hint:hover {
+            opacity: 0.85;
+            text-decoration: underline;
+        }
+        .bf-ad-content-728 {
+            width: 100%;
+            max-width: 728px;
+            min-height: 90px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        @media (max-width: 1460px) {
+            .bf-side-ad {
+                display: none !important;
+            }
+        }
+        :fullscreen .bf-side-ad,
+        :fullscreen .bf-banner-ad-wrapper,
+        :-webkit-full-screen .bf-side-ad,
+        :-webkit-full-screen .bf-banner-ad-wrapper {
+            display: none !important;
+        }
+
         :root {
             --sidebar-w: 216px;
         }
@@ -9090,6 +9194,15 @@
                             Carregando catálogo...
                         </div>
                     </div>
+
+                    <!-- BANNER DE ANÚNCIO DISCRETO NO CATÁLOGO (728x90) -->
+                    <div class="bf-banner-ad-wrapper" id="bf-catalog-bottom-ad" aria-label="Publicidade">
+                        <div class="bf-ad-header">
+                            <span class="bf-ad-label">Publicidade</span>
+                            <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
+                        </div>
+                        <div class="bf-ad-content-728" id="ad-slot-catalog-bottom"></div>
+                    </div>
                 </main>
             </div>
         </div>
@@ -9285,6 +9398,15 @@
             <button id="playback-btn-next" class="playback-nav-btn" title="Ir para o Próximo Episódio">
                 <span class="nav-text">Próximo Episódio</span> <span class="nav-icon">⏭</span>
             </button>
+        </div>
+
+        <!-- BANNER DE ANÚNCIO DISCRETO ABAIXO DO PLAYER (728x90) -->
+        <div class="bf-banner-ad-wrapper" id="bf-player-bottom-ad" aria-label="Publicidade">
+            <div class="bf-ad-header">
+                <span class="bf-ad-label">Publicidade</span>
+                <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
+            </div>
+            <div class="bf-ad-content-728" id="ad-slot-player-bottom"></div>
         </div>
 
         <!-- SEÇÃO: OUTROS EPISÓDIOS DA MESMA TEMPORADA (SÓ PARA SÉRIES) -->
@@ -15471,48 +15593,9 @@ function initApp() {
         let pendingStreamAction = null;
 
         async function showQuotaConfirmationModal(title, type, onConfirm, mediaKey = null) {
-            const token = getUserStreamingToken();
-            const isVip = currentUser?.is_vip || (token !== 'public' && token !== '');
-            if (isVip) {
+            // Acesso 100% gratuito e ilimitado para assistir com anúncios discretos
+            if (typeof onConfirm === 'function') {
                 onConfirm();
-                return;
-            }
-
-            try {
-                const res = await fetch(`/api/user/quota-check?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}&mediaKey=${encodeURIComponent(mediaKey || '')}`);
-                if (!res.ok) throw new Error('Erro na consulta');
-                const quota = await res.json();
-
-                if (quota.isVip) {
-                    onConfirm();
-                    return;
-                }
-
-                // Se não tiver crédito restante, bloqueia ANTES de abrir o player e abre o modal de VIP
-                if (!quota.permitido) {
-                    showQuotaLimitExceededModal(type, quota.motivo);
-                    return;
-                }
-
-                // Se tiver créditos disponíveis, pede confirmação
-                pendingStreamAction = onConfirm;
-                const desc = document.getElementById('quota-confirm-desc');
-                if (desc) {
-                    const restante = type === 'filme' ? (quota.restanteFilmes ?? 2) : (quota.restanteEpisodios ?? 4);
-                    const renova = quota.renovacaoEm ? `renova em ${quota.renovacaoEm}` : 'renova na próxima segunda-feira';
-                    desc.innerHTML = `Você possui <strong>${restante} ${type === 'filme' ? 'filme(s)' : 'episódio(s)'} gratuito(s)</strong> restante(s) esta semana (${renova}).<br><br>Deseja usar 1 de seus créditos para assistir a <strong>"${escapeHtml(title)}"</strong> agora?`;
-                }
-                const modal = document.getElementById('quota-confirm-modal');
-                if (modal) modal.classList.add('active');
-            } catch (e) {
-                // Fallback gracioso
-                pendingStreamAction = onConfirm;
-                const desc = document.getElementById('quota-confirm-desc');
-                if (desc) {
-                    desc.innerHTML = `Você possui <strong>2 filmes e 4 episódios gratuitos</strong> por semana.<br><br>Deseja usar 1 de seus créditos para assistir a <strong>"${escapeHtml(title)}"</strong> agora?`;
-                }
-                const modal = document.getElementById('quota-confirm-modal');
-                if (modal) modal.classList.add('active');
             }
         }
 
@@ -15520,12 +15603,11 @@ function initApp() {
             const desc = document.getElementById('quota-limit-modal-desc');
             if (desc) {
                 desc.innerHTML = customMsg 
-                    ? `${escapeHtml(customMsg)}<br><br>Para maratonar todos os filmes, séries e animes <strong>sem limites e sem travamentos</strong>, assine o VIP por apenas <strong>R$ 15,00/mês</strong>!`
-                    : `Você atingiu o limite gratuito de <strong>2 filmes</strong> e <strong>4 episódios</strong> desta semana.<br><br>Seus créditos renovam toda <strong>segunda-feira</strong>. Assine o VIP por apenas <strong>R$ 15,00/mês</strong> para assistir sem limites!`;
+                    ? `${escapeHtml(customMsg)}<br><br>Para maratonar todos os filmes, séries e animes <strong>sem limites e sem anúncios</strong>, assine o VIP por apenas <strong>R$ 15,00/mês</strong>!`
+                    : `Você está na versão gratuita com anúncios discretos.<br><br>Assine o VIP por apenas <strong>R$ 15,00/mês</strong> para assistir com zero anúncios e velocidade máxima!`;
             }
             const modal = document.getElementById('quota-limit-modal');
             if (modal) modal.classList.add('active');
-            showToast(`⚠️ Limite gratuito semanal de ${type === 'filme' ? '2 filmes' : '4 episódios'} atingido. Assine o VIP para continuar!`, 'error');
         }
 
         function closeQuotaLimitModal(event) {
@@ -15539,30 +15621,15 @@ function initApp() {
             const text = document.getElementById('detail-quota-pill-text');
             if (!pill || !text) return;
 
-            const token = getUserStreamingToken();
-            const isVip = currentUser?.is_vip || (token !== 'public' && token !== '');
+            const isVip = isBfVipUser();
             if (isVip) {
                 pill.className = 'detail-quota-pill vip';
-                text.innerText = '👑 VIP Ativo • Acesso Ilimitado';
+                text.innerText = '👑 VIP Ativo • Zero Anúncios';
                 return;
             }
 
-            try {
-                const res = await fetch(`/api/user/quota-check?token=${encodeURIComponent(token)}&type=${encodeURIComponent(type || 'filme')}`);
-                const data = await res.json();
-                if (data.isVip) {
-                    pill.className = 'detail-quota-pill vip';
-                    text.innerText = '👑 VIP Ativo • Acesso Ilimitado';
-                } else {
-                    pill.className = 'detail-quota-pill';
-                    const rf = data.restanteFilmes ?? 2;
-                    const re = data.restanteEpisodios ?? 4;
-                    const renova = data.renovacaoEm ? `Renova ${data.renovacaoEm}` : 'Renova Segunda';
-                    text.innerHTML = `<strong>${rf} filme${rf !== 1 ? 's' : ''}</strong> • <strong>${re} ep${re !== 1 ? 's' : ''}</strong> restantes (${renova})`;
-                }
-            } catch (e) {
-                text.innerText = '2 filmes • 4 eps por semana';
-            }
+            pill.className = 'detail-quota-pill';
+            text.innerHTML = '🎁 Grátis • Ilimitado (Com Anúncios)';
         }
 
         function closeQuotaConfirmModal() {
@@ -23955,5 +24022,137 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         📢 ANÚNCIOS LATERAIS FIXOS (ADSTERRA 160x600 - DESKTOP DISCRETO)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="bf-side-ad bf-side-ad-left" id="bf-side-ad-left" aria-label="Publicidade">
+        <div class="bf-ad-label">Publicidade</div>
+        <div class="bf-ad-content" id="ad-slot-side-left"></div>
+    </aside>
+
+    <aside class="bf-side-ad bf-side-ad-right" id="bf-side-ad-right" aria-label="Publicidade">
+        <div class="bf-ad-label">Publicidade</div>
+        <div class="bf-ad-content" id="ad-slot-side-right"></div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         📢 BRASILFLIX AD MANAGER (ADSTERRA SCRIPT LOADER)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <script>
+        function isBfVipUser() {
+            try {
+                if (window.currentUser && (window.currentUser.is_vip || window.currentUser.role === 'admin')) return true;
+                if (localStorage.getItem('bf_user_is_vip') === 'true') return true;
+                const authData = localStorage.getItem('bf_auth_user');
+                if (authData) {
+                    const parsed = JSON.parse(authData);
+                    if (parsed && (parsed.is_vip || parsed.role === 'admin')) return true;
+                }
+            } catch(e) {}
+            return false;
+        }
+
+        const BF_ADS_CONFIG = {
+            skyscraper160x600: {
+                key: 'f837fb6bb3fc2c44944149ac47d27028',
+                width: 160,
+                height: 600,
+                scriptUrl: 'https://www.highrevenueformat.com/f837fb6bb3fc2c44944149ac47d27028/invoke.js'
+            },
+            leaderboard728x90: {
+                key: '53ccc3a996860fedd50bd7b7d69b729a',
+                width: 728,
+                height: 90,
+                scriptUrl: 'https://www.highrevenueformat.com/53ccc3a996860fedd50bd7b7d69b729a/invoke.js'
+            }
+        };
+
+        function createAdIframe(config) {
+            const iframe = document.createElement('iframe');
+            iframe.width = config.width;
+            iframe.height = config.height;
+            iframe.style.border = 'none';
+            iframe.style.overflow = 'hidden';
+            iframe.style.display = 'block';
+            iframe.style.margin = '0 auto';
+            iframe.scrolling = 'no';
+            iframe.setAttribute('frameborder', '0');
+            iframe.setAttribute('loading', 'lazy');
+            iframe.setAttribute('title', 'Publicidade');
+
+            const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; width: ${config.width}px; height: ${config.height}px; display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+  <script type="text/javascript">
+    atOptions = {
+      'key' : '${config.key}',
+      'format' : 'iframe',
+      'height' : ${config.height},
+      'width' : ${config.width},
+      'params' : {}
+    };
+  <\/script>
+  <script type="text/javascript" src="${config.scriptUrl}"><\/script>
+</body>
+</html>`;
+
+            iframe.srcdoc = htmlContent;
+            return iframe;
+        }
+
+        let bfAdsInitialized = false;
+
+        function initBrasilFlixAds() {
+            // Se o usuário for VIP, garante que todos os anúncios fiquem ocultos e zerados
+            if (isBfVipUser()) {
+                const adElements = document.querySelectorAll('.bf-side-ad, .bf-banner-ad-wrapper');
+                adElements.forEach(el => {
+                    el.style.display = 'none';
+                    el.innerHTML = '';
+                });
+                return;
+            }
+
+            if (bfAdsInitialized) return;
+            bfAdsInitialized = true;
+
+            // Renderiza banner lateral esquerdo (160x600)
+            const slotLeft = document.getElementById('ad-slot-side-left');
+            if (slotLeft && !slotLeft.hasChildNodes()) {
+                slotLeft.appendChild(createAdIframe(BF_ADS_CONFIG.skyscraper160x600));
+            }
+
+            // Renderiza banner lateral direito (160x600)
+            const slotRight = document.getElementById('ad-slot-side-right');
+            if (slotRight && !slotRight.hasChildNodes()) {
+                slotRight.appendChild(createAdIframe(BF_ADS_CONFIG.skyscraper160x600));
+            }
+
+            // Renderiza banner abaixo do player (728x90)
+            const slotPlayer = document.getElementById('ad-slot-player-bottom');
+            if (slotPlayer && !slotPlayer.hasChildNodes()) {
+                slotPlayer.appendChild(createAdIframe(BF_ADS_CONFIG.leaderboard728x90));
+            }
+
+            // Renderiza banner no catálogo (728x90)
+            const slotCatalog = document.getElementById('ad-slot-catalog-bottom');
+            if (slotCatalog && !slotCatalog.hasChildNodes()) {
+                slotCatalog.appendChild(createAdIframe(BF_ADS_CONFIG.leaderboard728x90));
+            }
+        }
+
+        // Inicializa anúncios após carregamento do DOM
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initBrasilFlixAds);
+        } else {
+            setTimeout(initBrasilFlixAds, 500);
+        }
+    </script>
 </body>
 </html>

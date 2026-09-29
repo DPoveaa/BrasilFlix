@@ -691,6 +691,18 @@ class AssinaturaManager {
             };
         }
 
+        // Modelo Gratuito Aberto com Anúncios Discretos (Sem trava de limite semanal)
+        return {
+            permitido: true,
+            isVip: false,
+            restanteFilmes: 999,
+            restanteEpisodios: 999,
+            limiteFilmes: 999,
+            limiteEpisodios: 999,
+            renovacaoEm: 'Ilimitado (Com Anúncios)',
+            renovacaoCompleta: 'Ilimitado'
+        };
+
         const cleanId = String(identificador || 'public').trim();
         const limiteFilmes = 2;
         const limiteEps = 4;
