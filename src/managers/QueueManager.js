@@ -59,6 +59,7 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentDownloads = config.MAX_CONCURRENT_DOWNLOADS || 4;
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
+        this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
         this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
 
         // Notificação em tempo real quando o agendador autorizar ou alterar o modo da esteira
@@ -857,8 +858,8 @@ class QueueManager extends EventEmitter {
                 `INSERT INTO queue_jobs
                     (id, title, type, priority, audio_preference, season, episode,
                      status, progress, progress_details, user_id, username, tmdb_id,
-                     extra_data, error, queue_order, created_at, updated_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
+                     extra_data, error, queue_order, attempt_count, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW())
                  ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     progress = EXCLUDED.progress,
@@ -867,6 +868,7 @@ class QueueManager extends EventEmitter {
                     extra_data = EXCLUDED.extra_data,
                     error = EXCLUDED.error,
                     queue_order = EXCLUDED.queue_order,
+                    attempt_count = EXCLUDED.attempt_count,
                     updated_at = NOW()`,
                 [
                     job.id,
@@ -900,6 +902,7 @@ class QueueManager extends EventEmitter {
                     }),
                     job.error || null,
                     job.queueOrder !== undefined ? job.queueOrder : 0,
+                    job.attemptCount || 0,
                     job.createdAt || new Date().toISOString()
                 ]
             );
@@ -946,6 +949,7 @@ class QueueManager extends EventEmitter {
             subtipo: extra.subtipo || null,
             originalLanguage: extra.originalLanguage || null,
             idiomaOriginal: extra.originalLanguage || null,
+            attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
             createdAt: row.created_at
         };
     }
@@ -1696,11 +1700,53 @@ class QueueManager extends EventEmitter {
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
             console.log(`🎉 [TRILHA CONCLUÍDA] Trabalho finalizado com sucesso: "${nextJob.title}"`);
         } catch (error) {
-            console.error(`❌ [TRILHA FALHA] Falha no processamento de "${nextJob.title}":`, error.message);
-            nextJob.status = 'failed';
-            nextJob.error = error.message;
-            await this.saveJob(nextJob);
-            this.queue = this.queue.filter(j => j.id !== nextJob.id);
+            // Incrementa o contador de tentativas
+            nextJob.attemptCount = (nextJob.attemptCount || 0) + 1;
+
+            if (nextJob.attemptCount < this.MAX_JOB_ATTEMPTS) {
+                // Ainda tem tentativas restantes: move para o FINAL da fila para garantir rotatividade
+                // Outros conteúdos serão processados antes da próxima tentativa deste job
+                const attemptsLeft = this.MAX_JOB_ATTEMPTS - nextJob.attemptCount;
+                console.warn(`⚠️ [TRILHA FALHA ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}] "${nextJob.title}" falhou: ${error.message}`);
+                console.log(`🔄 [ROTATIVIDADE] Movendo "${nextJob.title}" para o final da fila (${attemptsLeft} tentativa(s) restante(s)). Processando outros conteúdos primeiro...`);
+
+                // Registra o episódio no skippedEpisodes para evitar que o AutoFeeder re-adicione
+                // o mesmo episódio enquanto ele já está aguardando no final da fila
+                if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
+                    this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
+                }
+
+                nextJob.status = 'queued';
+                nextJob.progress = 0;
+                nextJob.error = `Tentativa ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}: ${error.message}`;
+                nextJob.progressDetails = `Aguardando nova tentativa (${attemptsLeft} restante(s))...`;
+
+                // Define queueOrder máximo para garantir que fique no final absoluto da fila
+                const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 100;
+                nextJob.queueOrder = maxOrder;
+
+                // Atualiza no banco e na fila em memória
+                await db.query(
+                    `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6 WHERE id = $7`,
+                    ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, nextJob.id]
+                ).catch(() => {});
+
+                // Garante que está na fila em memória (pode ter sido removida por race condition)
+                const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
+                if (memIdx >= 0) {
+                    this.queue[memIdx] = nextJob;
+                } else {
+                    this.queue.push(nextJob);
+                }
+                this.sortQueue();
+            } else {
+                // Esgotou todas as tentativas: marca como failed definitivo
+                console.error(`❌ [TRILHA FALHA DEFINITIVA] "${nextJob.title}" falhou ${this.MAX_JOB_ATTEMPTS}x consecutivas. Marcando como failed.`, error.message);
+                nextJob.status = 'failed';
+                nextJob.error = error.message;
+                await this.saveJob(nextJob);
+                this.queue = this.queue.filter(j => j.id !== nextJob.id);
+            }
         } finally {
             // Garante liberação do slot de download mesmo se o job falhou antes do finally interno
             this.releaseDownloadSlot(nextJob.id);
@@ -3878,6 +3924,7 @@ class QueueManager extends EventEmitter {
         job.progress = 0;
         job.progressDetails = 'Reenfileirado pelo Administrador';
         job.error = null;
+        job.attemptCount = 0; // Reseta contagem de tentativas ao reenfileirar manualmente
 
         // Se já estava na fila em memória, atualiza
         const existingIdx = this.queue.findIndex(j => j.id === jobId);

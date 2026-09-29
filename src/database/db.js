@@ -306,6 +306,7 @@ async function createTables() {
         );
 
         ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS queue_order BIGINT DEFAULT 0;
+        ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0;
 
         CREATE TABLE IF NOT EXISTS stremio_tokens (
             token VARCHAR(100) PRIMARY KEY,
