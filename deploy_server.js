@@ -4,8 +4,10 @@ async function deployToServer() {
     console.log('🚀 Conectando ao servidor para deploy e reinicialização...');
     const conn = new Client();
 
+    const host = process.env.DEPLOY_HOST || '192.168.68.58';
+
     conn.on('ready', () => {
-        console.log('🔌 Conectado via SSH (192.168.68.56:22). Executando deploy seguro (preservando catálogo)...');
+        console.log(`🔌 Conectado via SSH (${host}:22). Executando deploy seguro (preservando catálogo)...`);
         const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git fetch origin main && git config pull.ff only && git pull --ff-only origin main && npm install --omit=dev && (pip install ffsubsync --break-system-packages 2>/dev/null || pip install ffsubsync 2>/dev/null || true) && pm2 restart brasilflix && pm2 status';
 
         conn.exec(cmd, (err, stream) => {
@@ -31,7 +33,7 @@ async function deployToServer() {
     });
 
     conn.connect({
-        host: '192.168.68.56',
+        host,
         port: 22,
         username: 'povea',
         password: 'Daniel123.',
