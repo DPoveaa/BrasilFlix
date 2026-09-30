@@ -18,22 +18,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
 
-        /* ═══════════ BRASILFLIX ADSTERRA ADS (DISCRETO & VIP CONDICIONAL) ═══════════ */
+        /* ═══════════ BRASILFLIX ADSTERRA ADS (DISCRETO, RESPONSIVO & ADMIN/VIP FLEX) ═══════════ */
         .bf-banner-ad-wrapper {
-            display: none; /* Ativado via JS somente para usuários comuns (não-VIP e não-Admin) */
+            display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            margin: 20px auto;
+            margin: 24px auto;
             max-width: 760px;
             width: 100%;
             border-radius: 14px;
-            background: rgba(13, 18, 29, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(13, 18, 29, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             padding: 10px 12px 14px 12px;
             box-sizing: border-box;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
         .bf-banner-ad-wrapper iframe {
             background: transparent !important;
@@ -52,9 +52,9 @@
             padding: 0 4px;
         }
         .bf-ad-label {
-            font-size: 9.5px;
+            font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 0.8px;
+            letter-spacing: 0.9px;
             color: #64748b;
             font-weight: 700;
             user-select: none;
@@ -73,10 +73,9 @@
             opacity: 0.85;
             text-decoration: underline;
         }
+        .bf-ad-content-slot,
         .bf-ad-content-728 {
             width: 100%;
-            max-width: 728px;
-            min-height: 90px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -84,8 +83,105 @@
             border-radius: 8px;
             background: transparent;
         }
+
+        /* COLUNAS LATERAIS (DESKTOP DISCRETO, TOTALMENTE ISOLADAS E FORA DO MENU) */
+        .bf-side-col {
+            display: none;
+            width: 172px;
+            min-width: 172px;
+            flex-shrink: 0;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 16px 6px;
+            background: transparent;
+            z-index: 40;
+            box-sizing: border-box;
+        }
+        .bf-side-ad-inner {
+            position: sticky;
+            top: 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 8px;
+            border-radius: 12px;
+            background: rgba(13, 18, 29, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+        .bf-side-ad-inner iframe {
+            border: none !important;
+            background: transparent !important;
+            overflow: hidden;
+        }
+        .bf-side-ad-tag {
+            font-size: 8.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #64748b;
+            font-weight: 800;
+            user-select: none;
+        }
+        .bf-side-ad-slot {
+            width: 160px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-radius: 6px;
+        }
+
+        /* NATIVE WIDGET CONTAINER */
+        .bf-native-ad-wrapper {
+            margin: 28px auto 16px auto;
+            max-width: 1100px;
+            width: 100%;
+            padding: 0 12px;
+            box-sizing: border-box;
+        }
+
+        /* 1. Telas Grandes Desktop (>= 1220px): Lateral Direita Ativa */
+        @media (min-width: 1220px) {
+            body:not(.in-admin-tab) .bf-side-col-right {
+                display: flex !important;
+            }
+        }
+
+        /* 2. Telas Ultra-Wide (>= 1480px): Lateral Esquerda Ativa (acompanha o site ao lado do menu, NUNCA sobrepõe) */
+        @media (min-width: 1480px) {
+            body:not(.in-admin-tab) .bf-side-col-left {
+                display: flex !important;
+            }
+        }
+
+        /* 3. CELULARES E TABLETS (< 1220px): NENHUM ANÚNCIO LATERAL (100% LIVRE E RESPONSIVO) */
+        @media (max-width: 1219px) {
+            .bf-side-col,
+            .bf-side-col-left,
+            .bf-side-col-right {
+                display: none !important;
+            }
+        }
+
+        /* 4. TELA CHEIA / PLAYER FULLSCREEN: ZERO ANÚNCIOS */
         :fullscreen .bf-banner-ad-wrapper,
-        :-webkit-full-screen .bf-banner-ad-wrapper {
+        :fullscreen .bf-side-col,
+        :fullscreen .bf-native-ad-wrapper,
+        :-webkit-full-screen .bf-banner-ad-wrapper,
+        :-webkit-full-screen .bf-side-col,
+        :-webkit-full-screen .bf-native-ad-wrapper {
+            display: none !important;
+        }
+
+        /* 5. PAINEL ADMIN: ZERO ANÚNCIOS NA TELA ADMINISTRATIVA */
+        body.in-admin-tab .bf-banner-ad-wrapper,
+        body.in-admin-tab .bf-side-col,
+        body.in-admin-tab .bf-native-ad-wrapper {
             display: none !important;
         }
 
@@ -7774,8 +7870,8 @@
             position: absolute;
             inset: 0;
             background: 
-                linear-gradient(0deg, #07090e 0%, rgba(7, 9, 14, 0.88) 45%, rgba(7, 9, 14, 0.3) 75%, transparent 100%),
-                linear-gradient(90deg, #07090e 0%, rgba(7, 9, 14, 0.82) 48%, rgba(7, 9, 14, 0.25) 80%, transparent 100%) !important;
+                linear-gradient(0deg, rgba(7, 9, 14, 0.72) 0%, rgba(7, 9, 14, 0.2) 20%, transparent 45%),
+                linear-gradient(90deg, rgba(7, 9, 14, 0.55) 0%, rgba(7, 9, 14, 0.12) 25%, transparent 55%) !important;
             z-index: 1;
             pointer-events: none;
         }
@@ -8324,7 +8420,7 @@
             }
 
             .hero-billboard::before {
-                background: linear-gradient(180deg, rgba(7, 9, 14, 0.2) 0%, rgba(7, 9, 14, 0.65) 42%, rgba(7, 9, 14, 0.96) 78%, #07090e 100%) !important;
+                background: linear-gradient(180deg, transparent 40%, rgba(7, 9, 14, 0.35) 70%, rgba(7, 9, 14, 0.8) 100%) !important;
             }
 
             .hero-title {
@@ -9032,8 +9128,15 @@
                     </span>
                     <span class="nav-label">Suspense</span>
                 </button>
-            </div>
         </nav>
+        
+        <!-- LATERAL ESQUERDA (Ativa em Telas Ultra-Wide >= 1480px, acompanha o layout ao lado do menu sem nunca sobrepor) -->
+        <aside class="bf-side-col bf-side-col-left" id="bf-side-col-left" aria-label="Publicidade Lateral Esquerda">
+            <div class="bf-side-ad-inner">
+                <span class="bf-side-ad-tag">Publicidade</span>
+                <div id="ad-slot-side-left" class="bf-side-ad-slot"></div>
+            </div>
+        </aside>
 
         <!-- MAIN SCROLLABLE CONTENT AREA -->
         <div class="app-main-area" id="app-main-area">
@@ -9127,6 +9230,20 @@
 
             <!-- CARROSSÉIS HORIZONTAIS NETFLIX RAILS (MODO INÍCIO) -->
             <div id="netflix-rails-container"></div>
+
+            <!-- BANNER DE RODAPÉ NA TELA INICIAL (HORIZONTAL DISCRETO) -->
+            <div id="bf-home-bottom-ad" class="bf-banner-ad-wrapper" style="display: none;" aria-label="Publicidade">
+                <div class="bf-ad-header">
+                    <span class="bf-ad-label">Publicidade</span>
+                    <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
+                </div>
+                <div class="bf-ad-content-slot" id="ad-slot-home-bottom"></div>
+            </div>
+
+            <!-- WIDGET NATIVO DE RECOMENDAÇÕES PATROCINADAS NO RODAPÉ -->
+            <div class="bf-native-ad-wrapper" id="bf-native-home-wrapper" style="display: none;">
+                <div id="container-4120a3d13ce2b8cb6073da3984309212"></div>
+            </div>
 
             <!-- BACKDROP MOBILE -->
             <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar()"></div>
@@ -10794,6 +10911,14 @@
     
             </div><!-- /main-container -->
         </div><!-- /app-main-area -->
+
+        <!-- LATERAL DIREITA (Ativa em Telas Desktop >= 1220px, alinhada à direita do site) -->
+        <aside class="bf-side-col bf-side-col-right" id="bf-side-col-right" aria-label="Publicidade Lateral Direita">
+            <div class="bf-side-ad-inner">
+                <span class="bf-side-ad-tag">Publicidade</span>
+                <div id="ad-slot-side-right" class="bf-side-ad-slot"></div>
+            </div>
+        </aside>
     </div><!-- /app-shell -->
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -11873,6 +11998,9 @@
 
                 // 1.4 Categorias de Navegação
                 if (['inicio', 'filmes', 'filme', 'series', 'serie', 'doramas', 'dorama', 'animes', 'anime', 'minha-lista', 'favoritos'].includes(key)) {
+                    if (window.location.pathname.startsWith('/admin')) {
+                        history.replaceState(null, '', '/' + window.location.hash);
+                    }
                     let cat = key;
                     if (cat === 'filmes') cat = 'filme';
                     if (cat === 'series') cat = 'serie';
@@ -11884,6 +12012,14 @@
 
                 if (key === 'admin') {
                     let sub = (parts[1] || 'overview').toLowerCase();
+                    if (sub === 'inicio' || sub === 'home') {
+                        if (window.location.pathname.startsWith('/admin')) {
+                            history.replaceState(null, '', '/#inicio');
+                        } else {
+                            history.replaceState(null, '', '#inicio');
+                        }
+                        return { type: 'nav', category: 'inicio' };
+                    }
                     if (sub === 'catalogo') sub = 'catalog';
                     return { type: 'tab', mainTab: 'tab-admin', adminSubTab: sub };
                 }
@@ -12115,16 +12251,24 @@ function initApp() {
                     const currentSetSec = localStorage.getItem('bf_settings_section') || 'profile';
                     newHash = `#settings/${currentSetSec}`;
                 }
-                if (window.location.hash !== newHash) {
+
+                if (tabId !== 'tab-admin' && window.location.pathname.startsWith('/admin')) {
+                    history.replaceState(null, '', '/' + newHash);
+                } else if (window.location.hash !== newHash) {
                     history.replaceState(null, '', newHash);
                 }
             }
 
             if (tabId === 'tab-catalogo') {
+                document.body.classList.remove('in-admin-tab');
                 renderCatalog();
+                if (typeof initBrasilFlixAds === 'function') initBrasilFlixAds();
             } else if (tabId === 'tab-settings') {
+                document.body.classList.remove('in-admin-tab');
                 loadSettingsView();
+                if (typeof initBrasilFlixAds === 'function') initBrasilFlixAds();
             } else if (tabId === 'tab-admin') {
+                document.body.classList.add('in-admin-tab');
                 if (typeof hideBrasilFlixAds === 'function') hideBrasilFlixAds();
                 if (adminToken) {
                     const sub = localStorage.getItem('bf_admin_subtab') || 'overview';
@@ -12134,6 +12278,7 @@ function initApp() {
                     document.getElementById('admin-dashboard-view').style.display = 'none';
                 }
             } else {
+                document.body.classList.remove('in-admin-tab');
                 if (typeof initBrasilFlixAds === 'function') initBrasilFlixAds();
             }
         }
@@ -13040,8 +13185,11 @@ function initApp() {
                     anime: '#animes',
                     favoritos: '#minha-lista'
                 };
-                if (window.location.hash !== (hashMap[cat] || '#inicio')) {
-                    history.replaceState(null, '', hashMap[cat] || '#inicio');
+                const targetHash = hashMap[cat] || '#inicio';
+                if (window.location.pathname.startsWith('/admin')) {
+                    history.replaceState(null, '', '/' + targetHash);
+                } else if (window.location.hash !== targetHash) {
+                    history.replaceState(null, '', targetHash);
                 }
             }
 
@@ -13049,12 +13197,16 @@ function initApp() {
 
             const heroBox = document.getElementById('hero-billboard-container');
             const railsBox = document.getElementById('netflix-rails-container');
+            const homeAdBox = document.getElementById('bf-home-bottom-ad');
+            const homeNativeBox = document.getElementById('bf-native-home-wrapper');
             const gridLayout = document.getElementById('catalog-layout-grid');
             const typeFilterSection = document.getElementById('sidebar-filter-section-type');
 
             if (cat === 'inicio') {
                 if (heroBox) heroBox.style.display = 'block';
                 if (railsBox) railsBox.style.display = 'block';
+                if (homeAdBox && typeof shouldHideBrasilFlixAds === 'function' && !shouldHideBrasilFlixAds()) homeAdBox.style.display = 'flex';
+                if (homeNativeBox && typeof shouldHideBrasilFlixAds === 'function' && !shouldHideBrasilFlixAds()) homeNativeBox.style.display = 'block';
                 if (gridLayout) gridLayout.style.display = 'none';
                 if (typeFilterSection) typeFilterSection.style.display = 'block';
                 catalogFilters.sort = 'default';
@@ -13063,6 +13215,8 @@ function initApp() {
             } else {
                 if (heroBox) heroBox.style.display = 'none';
                 if (railsBox) railsBox.style.display = 'none';
+                if (homeAdBox) homeAdBox.style.display = 'none';
+                if (homeNativeBox) homeNativeBox.style.display = 'none';
                 if (gridLayout) gridLayout.style.display = 'flex';
                 if (typeFilterSection) typeFilterSection.style.display = (cat === 'em-alta' || cat === 'todos') ? 'block' : 'none';
                 const doramaSection = document.getElementById('sidebar-filter-section-dorama');
@@ -23993,93 +24147,161 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
-         📢 BRASILFLIX AD MANAGER (ADSTERRA - ZERO ANÚNCIOS PARA ADMIN & VIP)
+         📢 BRASILFLIX AD MANAGER (ADSTERRA - DISCRETO, RESPONSIVO & ISOLADO)
          ═══════════════════════════════════════════════════════════════════════ -->
     <script>
-        function isBfVipOrAdminUser() {
+        function shouldHideBrasilFlixAds() {
             try {
-                // 1. Bloqueio total se estiver na rota /admin ou hash #admin
-                if (window.location.pathname.startsWith('/admin') || window.location.hash.startsWith('#admin')) return true;
-                if (typeof adminToken !== 'undefined' && !!adminToken) return true;
-                if (localStorage.getItem('bf_admin_token')) return true;
-                if (localStorage.getItem('bf_active_tab') === 'tab-admin') return true;
+                // 1. Regra estrita: Oculta anúncios apenas e exclusivamente dentro da tela do Admin
+                const activeTab = localStorage.getItem('bf_active_tab');
+                if (activeTab === 'tab-admin') return true;
+                if (window.location.hash.startsWith('#admin')) return true;
+                if (window.location.pathname.startsWith('/admin')) return true;
 
-                // 2. Se a aba de admin estiver aberta/ativa no DOM
                 const adminTabEl = document.getElementById('tab-admin');
-                if (adminTabEl && (adminTabEl.classList.contains('active') || adminTabEl.style.display !== 'none')) return true;
-
-                // 3. Usuário autenticado como Admin ou VIP
-                if (window.currentUser) {
-                    if (window.currentUser.role === 'admin' || window.currentUser.isAdmin || window.currentUser.is_admin) return true;
-                    if (window.currentUser.is_vip || window.currentUser.isVip) return true;
+                if (adminTabEl && (adminTabEl.classList.contains('active') || adminTabEl.style.display !== 'none')) {
+                    return true;
                 }
-                if (localStorage.getItem('bf_user_is_vip') === 'true') return true;
-                const authData = localStorage.getItem('bf_auth_user');
-                if (authData) {
-                    const parsed = JSON.parse(authData);
-                    if (parsed && (parsed.is_vip || parsed.isVip || parsed.role === 'admin' || parsed.isAdmin)) return true;
+
+                // 2. Se o usuário for assinante VIP (e NÃO for administrador), oculta anúncios
+                // (O Administrador vê anúncios nas páginas comuns para validação e monetização normal)
+                if (window.currentUser) {
+                    const isAdm = window.currentUser.role === 'admin' || window.currentUser.isAdmin || window.currentUser.is_admin;
+                    const isVip = window.currentUser.is_vip || window.currentUser.isVip;
+                    if (isVip && !isAdm) return true;
+                }
+                if (localStorage.getItem('bf_user_is_vip') === 'true' && !localStorage.getItem('bf_admin_token')) {
+                    return true;
                 }
             } catch(e) {}
             return false;
         }
 
-        function isBfVipUser() {
-            return isBfVipOrAdminUser();
-        }
-
         function hideBrasilFlixAds() {
-            const wrappers = document.querySelectorAll('.bf-banner-ad-wrapper, .bf-side-ad');
+            document.body.classList.add('in-admin-tab');
+            const wrappers = document.querySelectorAll('.bf-banner-ad-wrapper, .bf-side-col, .bf-native-ad-wrapper');
             wrappers.forEach(w => {
                 w.style.display = 'none';
-                w.innerHTML = '';
             });
         }
 
-        function renderAdsterraBanner(containerId) {
+        // Renderizador 100% isolado em iframe para Adsterra (elimina retângulos brancos e erros de document.write)
+        function loadAdsterraIframe(containerId, key, width, height) {
             const container = document.getElementById(containerId);
             if (!container) return;
-            if (container.dataset.loaded === 'true') return;
-            container.dataset.loaded = 'true';
-            container.innerHTML = '';
+            if (container.dataset.adLoaded === 'true') return;
+            container.dataset.adLoaded = 'true';
 
-            const wrapper = container.closest('.bf-banner-ad-wrapper');
-            if (wrapper) {
-                wrapper.style.display = 'flex';
+            const iframe = document.createElement('iframe');
+            iframe.width = width;
+            iframe.height = height;
+            iframe.style.width = width + 'px';
+            iframe.style.height = height + 'px';
+            iframe.style.maxWidth = '100%';
+            iframe.style.border = 'none';
+            iframe.style.overflow = 'hidden';
+            iframe.style.background = 'transparent';
+            iframe.scrolling = 'no';
+            iframe.setAttribute('frameborder', '0');
+            iframe.setAttribute('allowtransparency', 'true');
+
+            container.innerHTML = '';
+            container.appendChild(iframe);
+
+            const adHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background: transparent; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+iframe { border: none !important; }
+</style>
+</head>
+<body>
+<script type="text/javascript">
+atOptions = {
+    'key' : '${key}',
+    'format' : 'iframe',
+    'height' : ${height},
+    'width' : ${width},
+    'params' : {}
+};
+<\/script>
+<script type="text/javascript" src="https://www.highrevenueformat.com/${key}/invoke.js"><\/script>
+</body>
+</html>`;
+
+            try {
+                const doc = iframe.contentWindow?.document || iframe.contentDocument;
+                if (doc) {
+                    doc.open();
+                    doc.write(adHtml);
+                    doc.close();
+                } else {
+                    iframe.srcdoc = adHtml;
+                }
+            } catch(e) {
+                iframe.srcdoc = adHtml;
             }
 
-            const confScript = document.createElement('script');
-            confScript.type = 'text/javascript';
-            confScript.text = "atOptions = { 'key' : '53ccc3a996860fedd50bd7b7d69b729a', 'format' : 'iframe', 'height' : 90, 'width' : 728, 'params' : {} };";
+            const wrapper = container.closest('.bf-banner-ad-wrapper');
+            if (wrapper) wrapper.style.display = 'flex';
+        }
 
-            const invokeScript = document.createElement('script');
-            invokeScript.type = 'text/javascript';
-            invokeScript.src = 'https://www.highrevenueformat.com/53ccc3a996860fedd50bd7b7d69b729a/invoke.js';
+        // Carrega widget nativo de recomendações patrocinadas no rodapé
+        function loadAdsterraNativeWidget() {
+            const container = document.getElementById('container-4120a3d13ce2b8cb6073da3984309212');
+            if (!container || container.dataset.loaded === 'true') return;
+            container.dataset.loaded = 'true';
 
-            container.appendChild(confScript);
-            container.appendChild(invokeScript);
+            const wrapper = document.getElementById('bf-native-home-wrapper');
+            if (wrapper) wrapper.style.display = 'block';
+
+            const script = document.createElement('script');
+            script.async = true;
+            script.setAttribute('data-cfasync', 'false');
+            script.src = 'https://pl31580195.profitableratecpmnetwork.com/4120a3d13ce2b8cb6073da3984309212/invoke.js';
+            document.head.appendChild(script);
         }
 
         let bfAdsInitialized = false;
 
         function initBrasilFlixAds() {
-            if (isBfVipOrAdminUser()) {
+            if (shouldHideBrasilFlixAds()) {
                 hideBrasilFlixAds();
                 return;
             }
 
+            document.body.classList.remove('in-admin-tab');
             if (bfAdsInitialized) return;
             bfAdsInitialized = true;
 
-            // Carrega banners horizontais sem travar nem criar bordas brancas
-            renderAdsterraBanner('ad-slot-player-bottom');
-            renderAdsterraBanner('ad-slot-catalog-bottom');
+            // 1. Lateral Direita (160x600 skyscraper para telas desktop >= 1220px)
+            loadAdsterraIframe('ad-slot-side-right', 'f837fb6bb3fc2c44944149ac47d27028', 160, 600);
+
+            // 2. Lateral Esquerda (160x300 compacto para telas ultra-wide >= 1480px, sem tocar na barra lateral)
+            loadAdsterraIframe('ad-slot-side-left', 'ba319b72e8df38cf5150b5748b50fc81', 160, 300);
+
+            // 3. Banners Horizontais Responsivos (728x90 em PC, 320x50 em Celular para não quebrar a tela)
+            const isMobile = window.innerWidth < 768;
+            const hKey = isMobile ? '2ba717173a1f4340a3eb5521bc8b1d68' : '53ccc3a996860fedd50bd7b7d69b729a';
+            const hWidth = isMobile ? 320 : 728;
+            const hHeight = isMobile ? 50 : 90;
+
+            loadAdsterraIframe('ad-slot-home-bottom', hKey, hWidth, hHeight);
+            loadAdsterraIframe('ad-slot-catalog-bottom', hKey, hWidth, hHeight);
+            loadAdsterraIframe('ad-slot-player-bottom', hKey, hWidth, hHeight);
+
+            // 4. Widget Nativo Discreto no Rodapé
+            loadAdsterraNativeWidget();
         }
 
-        // Inicializa anúncios após carregamento do DOM
+        // Inicializa anúncios de forma segura após o DOM estar pronto
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initBrasilFlixAds);
+            document.addEventListener('DOMContentLoaded', () => setTimeout(initBrasilFlixAds, 300));
         } else {
-            setTimeout(initBrasilFlixAds, 400);
+            setTimeout(initBrasilFlixAds, 300);
         }
     </script>
 </body>
