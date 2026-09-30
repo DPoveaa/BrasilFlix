@@ -155,16 +155,22 @@ class SubtitleSync {
         }
 
         const isRefSubtitle = videoOrRefSrt.toLowerCase().endsWith('.srt') || videoOrRefSrt.toLowerCase().endsWith('.vtt') || videoOrRefSrt.toLowerCase().endsWith('.ass');
-        // Janela conservadora: máximo 15s para sub-to-sub, 20s para audio-to-sub.
-        // Valores altos (180s/240s) causavam alinhamento falso positivo contra faixas Signs & Songs
-        // em releases EMBER/Judas de anime, deslocando legendas em 90+ segundos.
-        const maxOffsetSec = options.maxOffsetSeconds || (isRefSubtitle ? 15 : 20);
+        const isAnime = options.isAnime === true;
 
-        console.log(`🎙️ [SubtitleSync] Sincronizando legenda via ${isRefSubtitle ? 'Legenda de Referência (Sub-to-Sub 100% Preciso)' : 'Análise de Voz no Áudio (VAD Audio-to-Sub)'} [Janela: ${maxOffsetSec}s]...`);
+        // Janela dinâmica e segura de sincronização:
+        // - Sub-to-Sub (Legenda de Referência): 180s (alinhamento em memória super rápido, absorve vinhetas longas da Fox, FX, HBO, etc.)
+        // - Audio-to-Sub (VAD): 120s para séries/filmes (absorve vinhetas de canais e emissoras) e 35s para animes (evita falsos picos com J-pop)
+        const defaultOffsetSec = isRefSubtitle ? 180 : (isAnime ? 35 : 120);
+        const maxOffsetSec = options.maxOffsetSeconds || defaultOffsetSec;
+
+        console.log(`🎙️ [SubtitleSync] Sincronizando legenda via ${isRefSubtitle ? 'Legenda de Referência (Sub-to-Sub 100% Preciso)' : 'Análise de Voz no Áudio (VAD Audio-to-Sub)'} [Janela: ${maxOffsetSec}s, Anime: ${isAnime ? 'SIM' : 'NÃO'}]...`);
         const startTime = Date.now();
 
         try {
             await fs.ensureDir(path.dirname(srtOutputPath));
+
+            // Permite correção de framerate (23.976 vs 25 fps PAL) por padrão, exceto se expressamente desabilitado
+            const fixFramerateArg = options.noFixFramerate ? ["'--no-fix-framerate',"] : [];
 
             const pythonCode = `
 import sys
@@ -175,13 +181,15 @@ sys.argv = [
     '-i', sys.argv[2],
     '-o', sys.argv[3],
     '--max-offset-seconds', str(${maxOffsetSec}),
-    '--no-fix-framerate',
+    ${fixFramerateArg.join('\n    ')}
     '--vad', 'subs_then_webrtc'
 ]
 sys.exit(main())
             `.trim();
 
             const pythonExec = process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
+            const timeoutMs = options.timeoutMs || 180000; // 3 minutos para permitir análise completa de voz sem corte prematuro
+
             const success = await new Promise((resolve) => {
                 let isDone = false;
                 const pyProc = spawn(pythonExec, ['-c', pythonCode, videoOrRefSrt, srtInputPath, srtOutputPath], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -190,10 +198,10 @@ sys.exit(main())
                     if (!isDone) {
                         isDone = true;
                         try { pyProc.kill('SIGKILL'); } catch (e) {}
-                        console.warn('⚠️ [SubtitleSync] Timeout de 90s ao sincronizar legenda.');
+                        console.warn(`⚠️ [SubtitleSync] Timeout de ${(timeoutMs/1000)}s ao sincronizar legenda.`);
                         resolve(false);
                     }
-                }, 90000);
+                }, timeoutMs);
 
                 pyProc.on('error', (err) => {
                     if (!isDone) {

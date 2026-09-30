@@ -1112,7 +1112,9 @@ ${events.join('\n')}
             const enSubStream = (info.subtitleStreams || []).find(s => {
                 const lang = (s.language || '').toLowerCase();
                 const title = (s.title || '').toLowerCase();
-                const isBadTrack = /sign|song|s&s|forced|commentary|sdh|hearing/i.test(title);
+                // Bloqueia apenas trilhas puramente não-diálogo: Signs & Songs, Forced, Commentary.
+                // NOTA: 'sdh' e 'hearing' NÃO são bloqueados pois trazem todo o diálogo original em inglês dos WebRips oficiais.
+                const isBadTrack = /sign|song|s&s|forced|commentary/i.test(title);
                 const isEnglish = ['eng', 'en', 'english'].includes(lang) || title.includes('english');
                 return isEnglish && !isBadTrack;
             });
@@ -1133,8 +1135,9 @@ ${events.join('\n')}
                         const refStats = fs.statSync(refEnSrtPath);
                         const refContent = fs.readFileSync(refEnSrtPath, 'utf8');
                         const cueCount = (refContent.match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/g) || []).length;
-                        // Validação: mínimo 80 cues e 15KB — rejeita faixas Signs & Songs mini-tracks
-                        if (cueCount >= 80 && refStats.size >= 15000) {
+                        // Validação: aceita episódios curtos (ex: South Park tem ~180 cues e ~12KB),
+                        // rejeitando apenas mini-tracks Signs & Songs de poucas falas (< 25 cues ou < 2.5KB)
+                        if (cueCount >= 25 && refStats.size >= 2500) {
                             refSyncTarget = refEnSrtPath;
                             console.log(`🎯 [SubtitleSync] Trilha de referência em inglês extraída para alinhamento sub-to-sub (${cueCount} cues, ${(refStats.size/1024).toFixed(1)} KB)!`);
                         } else {
@@ -1204,46 +1207,86 @@ ${events.join('\n')}
                 }
 
                 if (ptSubs.length > 0) {
-                    console.log(`🌐 Testando ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
+                    console.log(`🌐 Testando até ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
 
-                    let candidateChosen = false;
-                    let fallbackPtSub = null;
+                    let fallbackPtCandidate = null;
+                    let lastValidPtBrCandidatePath = null;
 
-                    for (const sub of ptSubs) {
+                    // Itera pelas legendas candidatas e tenta sincronizar até achar uma correspondência ideal
+                    for (let idx = 0; idx < Math.min(ptSubs.length, 6); idx++) {
+                        const sub = ptSubs[idx];
                         try {
                             const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
-                            if (subRes.data && subRes.data.length > 500) {
-                                const isPtBr = this.isBrazilianPortugueseSubtitle(subRes.data);
-                                const isGenericPt = this.isGenericPortugueseSubtitle(subRes.data);
+                            if (!subRes.data || subRes.data.length < 500) continue;
 
-                                if (isPtBr) {
-                                    await fs.writeFile(srtPath, subRes.data, 'utf8');
-                                    console.log(`✅ Legenda PT-BR oficial (${sub.lang}) baixada e validada linguisticamente (${(subRes.data.length / 1024).toFixed(1)} KB)!`);
-                                    candidateChosen = true;
-                                    break;
-                                } else if (isGenericPt && !fallbackPtSub) {
-                                    fallbackPtSub = { sub, data: subRes.data };
-                                } else {
-                                    console.warn(`⚠️ Legenda OpenSubtitles (${sub.lang}) descartada: texto não reconhecido como Português autêntico.`);
-                                }
+                            const isPtBr = this.isBrazilianPortugueseSubtitle(subRes.data);
+                            const isGenericPt = this.isGenericPortugueseSubtitle(subRes.data);
+
+                            if (!isPtBr && !isGenericPt) {
+                                console.warn(`⚠️ Legenda OpenSubtitles #${idx + 1} (${sub.lang}) descartada: texto não reconhecido como Português autêntico.`);
+                                continue;
                             }
-                        } catch (errSub) {}
-                    }
 
-                    // Se nenhuma passou no filtro estrito PT-BR, mas temos uma legenda válida em Português, usa como fallback seguro
-                    if (!candidateChosen && fallbackPtSub) {
-                        console.log(`ℹ️ [Hardsub Fallback] Nenhuma legenda estritamente PT-BR confirmada. Utilizando legenda em Português disponível (${fallbackPtSub.sub.lang}) para garantir Hardsub...`);
-                        await fs.writeFile(srtPath, fallbackPtSub.data, 'utf8');
-                        candidateChosen = true;
-                    }
+                            if (!isPtBr && isGenericPt && !fallbackPtCandidate) {
+                                fallbackPtCandidate = { sub, data: subRes.data };
+                                continue;
+                            }
 
-                    if (candidateChosen && fs.existsSync(srtPath)) {
-                        // Sincroniza a legenda externa contra o áudio ou referência de legenda do vídeo
-                        const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
-                        const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath);
-                        if (finalSrt) {
-                            return finalSrt;
+                            const candidateSrtPath = path.join(path.dirname(inputPath), `sub_pt_cand_${Date.now()}_${idx}.srt`);
+                            await fs.writeFile(candidateSrtPath, subRes.data, 'utf8');
+                            lastValidPtBrCandidatePath = candidateSrtPath;
+
+                            console.log(`✅ Legenda PT-BR oficial #${idx + 1} (${sub.lang}) baixada (${(subRes.data.length / 1024).toFixed(1)} KB). Sincronizando...`);
+
+                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}_${idx}.srt`);
+                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, candidateSrtPath, syncedSrtPath, { isAnime: metadata.isAnime });
+
+                            if (finalSrt && fs.existsSync(finalSrt)) {
+                                console.log(`🎯 [SubtitleSync] Legenda candidata #${idx + 1} perfeitamente sincronizada com o conteúdo!`);
+                                if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                                    fs.remove(refSyncTarget).catch(() => {});
+                                }
+                                if (candidateSrtPath !== finalSrt) {
+                                    fs.remove(candidateSrtPath).catch(() => {});
+                                }
+                                return finalSrt;
+                            } else {
+                                console.warn(`⚠️ Legenda candidata #${idx + 1} falhou na sincronia. Testando próxima legenda candidata do OpenSubtitles...`);
+                            }
+                        } catch (errSub) {
+                            console.warn(`⚠️ Falha ao baixar/testar candidata #${idx + 1}: ${errSub.message}`);
                         }
+                    }
+
+                    // Se nenhuma das PT-BR sincronizou com o áudio/ref mas temos o fallback genérico em Português:
+                    if (fallbackPtCandidate) {
+                        try {
+                            console.log(`ℹ️ [Hardsub Fallback] Testando legenda de fallback em Português (${fallbackPtCandidate.sub.lang})...`);
+                            const fallbackSrtPath = path.join(path.dirname(inputPath), `sub_pt_fallback_${Date.now()}.srt`);
+                            await fs.writeFile(fallbackSrtPath, fallbackPtCandidate.data, 'utf8');
+
+                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_fb_${Date.now()}.srt`);
+                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, fallbackSrtPath, syncedSrtPath, { isAnime: metadata.isAnime });
+
+                            if (finalSrt && fs.existsSync(finalSrt)) {
+                                if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                                    fs.remove(refSyncTarget).catch(() => {});
+                                }
+                                fs.remove(fallbackSrtPath).catch(() => {});
+                                return finalSrt;
+                            }
+                        } catch (e) {}
+                    }
+
+                    // Se a sincronização VAD falhou em todas as opções mas temos a legenda PT-BR baixada,
+                    // usa como último recurso de emergência aplicando otimização de leitura
+                    if (lastValidPtBrCandidatePath && fs.existsSync(lastValidPtBrCandidatePath)) {
+                        console.warn(`⚠️ [SubtitleSync] Sincronização automática falhou em todas as opções. Utilizando legenda PT-BR com tempo de leitura otimizado como fallback emergencial.`);
+                        await SubtitleSync.optimizeSubtitleFile(lastValidPtBrCandidatePath);
+                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                            fs.remove(refSyncTarget).catch(() => {});
+                        }
+                        return lastValidPtBrCandidatePath;
                     }
                 }
             } catch (e) {}
@@ -1258,8 +1301,11 @@ ${events.join('\n')}
                     console.log(`✅ Legenda PT-BR direta baixada e validada!`);
                     
                     const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}.srt`);
-                    const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath);
+                    const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath, { isAnime: metadata.isAnime });
                     if (finalSrt) {
+                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                            fs.remove(refSyncTarget).catch(() => {});
+                        }
                         return finalSrt;
                     }
                 }
