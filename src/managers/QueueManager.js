@@ -62,6 +62,11 @@ class QueueManager extends EventEmitter {
         this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
         this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
         this._processingStarted = false; // Só inicia downloads após o servidor web estar no ar
+        // Mutex para evitar race condition no loop de lançamento de workers paralelos
+        this._processNextRunning = false;
+        // Reserva de série ANTES do worker iniciar (fecha janela entre launch e status=downloading)
+        // Chave: normalizeTitle(title) ou 'tmdb_<id>'
+        this._pendingSeriesDownloads = new Set();
 
         // Notificação em tempo real quando o agendador autorizar ou alterar o modo da esteira
         SchedulerService.on('stateChange', async ({ allowed, mode, reason }) => {
@@ -1259,7 +1264,15 @@ class QueueManager extends EventEmitter {
 
         // Constrói um set de chaves de títulos / episódios ATIVOS para evitar qualquer concorrência sobre o mesmo item
         const activeKeys = new Set();
-        const activeSeriesDownloading = new Set(); // Evita baixar múltiplos torrents em paralelo para a MESMA série
+        // Evita baixar múltiplos torrents em paralelo para a MESMA série.
+        // Inclui tanto workers já em execução (activeJobs) quanto os que foram reservados mas ainda
+        // não transitaram para status 'downloading' (_pendingSeriesDownloads — fecha a janela de race condition).
+        const activeSeriesDownloading = new Set();
+
+        // Copia as reservas pendentes (workers lançados mas ainda sem status 'downloading')
+        for (const entry of this._pendingSeriesDownloads) {
+            activeSeriesDownloading.add(entry);
+        }
 
         for (const active of this.activeJobs.values()) {
             const normTitle = normalizeTitle(active.title);
@@ -1294,7 +1307,8 @@ class QueueManager extends EventEmitter {
                 if (activeKeys.has(`serie_${normTitle}_s${s}_e${e}`)) continue;
                 if (j.tmdbId && activeKeys.has(`serie_tmdb_${j.tmdbId}_s${s}_e${e}`)) continue;
 
-                // Se NÃO tem arquivo local e a série já tem um download de torrent em andamento, pula para não baixar torrent concorrente duplicado
+                // Se NÃO tem arquivo local e a série já tem um download de torrent em andamento (ou reservado
+                // em _pendingSeriesDownloads), pula para não baixar torrent concorrente duplicado
                 if (!hasLocalFile) {
                     if (activeSeriesDownloading.has(normTitle) || (j.tmdbId && activeSeriesDownloading.has(`tmdb_${j.tmdbId}`))) {
                         continue;
@@ -1562,6 +1576,25 @@ class QueueManager extends EventEmitter {
         }
     }
 
+    /**
+     * Remove a reserva de série de _pendingSeriesDownloads para um dado job.
+     * Deve ser chamado em todos os caminhos de saída de runJobWorker (finally + early returns)
+     * para garantir que a reserva não permaneça indefinidamente e bloqueie outros downloads.
+     */
+    _releasePendingSeriesReservation(job) {
+        if (!job || job.type !== 'serie') return;
+        const normTitle = normalizeTitle(job.title);
+        if (this._pendingSeriesDownloads.has(normTitle)) {
+            this._pendingSeriesDownloads.delete(normTitle);
+        }
+        if (job.tmdbId) {
+            const tmdbKey = `tmdb_${job.tmdbId}`;
+            if (this._pendingSeriesDownloads.has(tmdbKey)) {
+                this._pendingSeriesDownloads.delete(tmdbKey);
+            }
+        }
+    }
+
     getActiveDownloadsCount() {
         let count = 0;
         for (const job of this.activeJobs.values()) {
@@ -1609,47 +1642,69 @@ class QueueManager extends EventEmitter {
 
     async processNext() {
         if (config.LOCAL_DEMO_MODE || !this._processingStarted) return;
-        const isNetworkAllowed = SchedulerService.isAllowedToRun();
-        const mode = SchedulerService.getActiveMode(); // 'performance', 'eco', 'paused'
 
-        // Concorrência adaptativa por etapa independente (Pipeline contínua)
-        // No Modo Desempenho (Madrugada): 6 downloads simultâneos, 4 transcodes simultâneos, 3 uploads simultâneos
-        // No Modo Econômico: 1 download, 2 transcodes, 1 upload
-        const maxDownloads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || config.MAX_CONCURRENT_DOWNLOADS || 6);
-        const maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
-        const maxUploads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || config.MAX_CONCURRENT_UPLOADS || 3);
-        // O limite global de concorrência é a soma dos slots independentes de cada fase
-        const maxConcurrent = mode === 'eco' ? (maxDownloads + maxTranscodes + maxUploads) : (maxDownloads + maxTranscodes + maxUploads);
+        // ── Mutex: evita race condition quando processNext() é chamado de forma reentrante
+        // (ex: setImmediate() de múltiplos workers terminando ao mesmo tempo). O loop abaixo
+        // seleciona e lança workers sem await, portanto sem o mutex dois chamadores paralelos
+        // poderiam selecionar o mesmo job para execução antes que o primeiro fosse registrado.
+        if (this._processNextRunning) return;
+        this._processNextRunning = true;
 
-        // Se o disco estiver acima da margem, aguarda uploads liberarem espaço antes de novos downloads
-        const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
-        if (diskCrowded) {
-            console.log('⏳ [Guarda de Disco] Espaço temporário atingiu margem de segurança. Segurando novos downloads até uploads concluírem.');
-        }
+        try {
+            const isNetworkAllowed = SchedulerService.isAllowedToRun();
+            const mode = SchedulerService.getActiveMode(); // 'performance', 'eco', 'paused'
 
-        // Dispara jobs em paralelo enquanto houver slots livres
-        while (this.activeJobs.size < maxConcurrent) {
-            const activeDownloads = this.getActiveDownloadsCount();
-            const activeTranscodes = this.getActiveOptimizationsCount();
-            const activeUploads = this.getActiveUploadsCount();
+            // Concorrência adaptativa por etapa independente (Pipeline contínua)
+            // No Modo Desempenho (Madrugada): 6 downloads simultâneos, 4 transcodes simultâneos, 3 uploads simultâneos
+            // No Modo Econômico: 1 download, 2 transcodes, 1 upload
+            const maxDownloads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || config.MAX_CONCURRENT_DOWNLOADS || 6);
+            const maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
+            const maxUploads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || config.MAX_CONCURRENT_UPLOADS || 3);
+            // O limite global de concorrência é a soma dos slots independentes de cada fase
+            const maxConcurrent = mode === 'eco' ? (maxDownloads + maxTranscodes + maxUploads) : (maxDownloads + maxTranscodes + maxUploads);
 
-            const canDownload = !diskCrowded && isNetworkAllowed && activeDownloads < maxDownloads;
-            const canTranscode = activeTranscodes < maxTranscodes;
-            const canUpload = isNetworkAllowed && activeUploads < maxUploads;
-
-            if (!canDownload && !canTranscode && !canUpload) {
-                break;
+            // Se o disco estiver acima da margem, aguarda uploads liberarem espaço antes de novos downloads
+            const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
+            if (diskCrowded) {
+                console.log('⏳ [Guarda de Disco] Espaço temporário atingiu margem de segurança. Segurando novos downloads até uploads concluírem.');
             }
 
-            const nextJob = this.findNextJobToProcess({ canDownload, canTranscode, canUpload });
-            if (!nextJob) {
-                if (this.queue.length === 0 && this.activeJobs.size < 4) {
-                    this.emit('queueDepleted');
+            // Dispara jobs em paralelo enquanto houver slots livres
+            while (this.activeJobs.size < maxConcurrent) {
+                const activeDownloads = this.getActiveDownloadsCount();
+                const activeTranscodes = this.getActiveOptimizationsCount();
+                const activeUploads = this.getActiveUploadsCount();
+
+                const canDownload = !diskCrowded && isNetworkAllowed && activeDownloads < maxDownloads;
+                const canTranscode = activeTranscodes < maxTranscodes;
+                const canUpload = isNetworkAllowed && activeUploads < maxUploads;
+
+                if (!canDownload && !canTranscode && !canUpload) {
+                    break;
                 }
-                break;
-            }
 
-            this.runJobWorker(nextJob);
+                const nextJob = this.findNextJobToProcess({ canDownload, canTranscode, canUpload });
+                if (!nextJob) {
+                    if (this.queue.length === 0 && this.activeJobs.size < 4) {
+                        this.emit('queueDepleted');
+                    }
+                    break;
+                }
+
+                // ── Reserva atômica de série ANTES de lançar o worker ──────────────────────
+                // Garante que findNextJobToProcess não selecione outro job da mesma série
+                // enquanto o worker recém-lançado ainda não transitou para status 'downloading'.
+                // A reserva é liberada no finally de runJobWorker (quando activeJobs já cobre).
+                if (nextJob.type === 'serie' && !nextJob.rawFilePath && !nextJob.optimizedPath) {
+                    const pendingNorm = normalizeTitle(nextJob.title);
+                    this._pendingSeriesDownloads.add(pendingNorm);
+                    if (nextJob.tmdbId) this._pendingSeriesDownloads.add(`tmdb_${nextJob.tmdbId}`);
+                }
+
+                this.runJobWorker(nextJob);
+            }
+        } finally {
+            this._processNextRunning = false;
         }
     }
 
@@ -1663,6 +1718,8 @@ class QueueManager extends EventEmitter {
         // Registra o job em activeJobs PRIMEIRO para fechar a janela de corrida antes de qualquer verificação
         if (this.activeJobs.has(nextJob.id)) {
             console.log(`🛡️ [Bloqueio Anti-Duplicata] Job ${nextJob.id} já está em activeJobs. Ignorando lançamento duplicado.`);
+            // Libera reserva pendente se existir (safety net)
+            this._releasePendingSeriesReservation(nextJob);
             return;
         }
         this.activeJobs.set(nextJob.id, nextJob);
@@ -1676,11 +1733,13 @@ class QueueManager extends EventEmitter {
                         console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para "${nextJob.title}" T${s}E${e} (já em execução pelo worker do job ${active.id}).`);
                         this.activeJobs.delete(nextJob.id);
                         this.queue = this.queue.filter(j => j.id !== nextJob.id);
+                        this._releasePendingSeriesReservation(nextJob);
                         return;
                     } else if (nextJob.type === 'filme') {
                         console.log(`🛡️ [Bloqueio Anti-Duplicata] Abortando worker duplicado para o filme "${nextJob.title}" (já em execução).`);
                         this.activeJobs.delete(nextJob.id);
                         this.queue = this.queue.filter(j => j.id !== nextJob.id);
+                        this._releasePendingSeriesReservation(nextJob);
                         return;
                     }
                 }
@@ -1765,6 +1824,9 @@ class QueueManager extends EventEmitter {
             // Garante liberação do slot de download mesmo se o job falhou antes do finally interno
             this.releaseDownloadSlot(nextJob.id);
             this.activeJobs.delete(nextJob.id);
+            // Libera reserva pendente da série (activeJobs já a cobria durante a execução,
+            // mas garante limpeza caso o worker tenha saído sem transitar para 'downloading')
+            this._releasePendingSeriesReservation(nextJob);
 
             // Continua imediatamente para processar o próximo item disponível
             setImmediate(() => this.processNext());
@@ -2484,6 +2546,12 @@ class QueueManager extends EventEmitter {
                 job.status = 'downloading';
                 await this.saveJob(job);
 
+                // A partir daqui o job está em activeJobs com status 'downloading', então
+                // activeSeriesDownloading em findNextJobToProcess já cobre o bloqueio.
+                // Libera a reserva pendente para não impedir que episódios com arquivo local
+                // (de outro pack já baixado) sejam processados em paralelo.
+                this._releasePendingSeriesReservation(job);
+
                 // Factory que cria a função de verificação de episódio faltante considerando o áudio real da fonte
                 // e verificando processos concorrentes (upload, remux, download), disco e catálogo.
                 const makeIsEpisodeMissing = (sourceIsDublado) => (epNumber) => {
@@ -2499,6 +2567,20 @@ class QueueManager extends EventEmitter {
                             if (sameT && (active.season ?? 1) === sNum && (active.episode ?? 1) === epNum) {
                                 return false; // Já em andamento em outro worker! Não baixar!
                             }
+                        }
+                    }
+
+                    // 1b. Verifica reservas pendentes — workers lançados mas ainda não em status 'downloading'
+                    // (_pendingSeriesDownloads cobre a janela de race condition entre processNext e runJobWorker)
+                    // Para episódios específicos o bloqueio acima (activeJobs) já cobre; aqui bloqueamos
+                    // qualquer download novo para a mesma série enquanto há reserva ativa sem arquivo local.
+                    if (this._pendingSeriesDownloads.size > 0) {
+                        const pendingNorm = normalizeTitle(job.title);
+                        const pendingTmdb = metadata.tmdbId ? `tmdb_${metadata.tmdbId}` : null;
+                        if (this._pendingSeriesDownloads.has(pendingNorm) || (pendingTmdb && this._pendingSeriesDownloads.has(pendingTmdb))) {
+                            // Só bloqueia se o episódio em questão NÃO tiver arquivo local disponível
+                            const localDiskCheck = this.findLocalMediaOnDisk(job.title, 'serie', sNum, epNum, metadata.tmdbId);
+                            if (!localDiskCheck) return false;
                         }
                     }
 
