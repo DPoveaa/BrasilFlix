@@ -233,34 +233,36 @@
         .sidebar-nav::-webkit-scrollbar { width: 3px; }
         .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 
-        /* COLLAPSED STATE (DESKTOP) */
-        .sidebar-nav.collapsed {
-            width: 64px !important;
-            min-width: 64px !important;
-        }
+        /* COLLAPSED STATE (DESKTOP ONLY - NUNCA NO MOBILE) */
+        @media (min-width: 901px) {
+            .sidebar-nav.collapsed {
+                width: 64px !important;
+                min-width: 64px !important;
+            }
 
-        .sidebar-nav.collapsed .sidebar-section-label,
-        .sidebar-nav.collapsed .nav-label,
-        .sidebar-nav.collapsed .sidebar-divider,
-        .sidebar-nav.collapsed .sidebar-genre-item {
-            display: none !important;
-        }
+            .sidebar-nav.collapsed .sidebar-section-label,
+            .sidebar-nav.collapsed .nav-label,
+            .sidebar-nav.collapsed .sidebar-divider,
+            .sidebar-nav.collapsed .sidebar-genre-item {
+                display: none !important;
+            }
 
-        .sidebar-nav.collapsed .sidebar-nav-item {
-            justify-content: center;
-            padding: 10px 0;
-            margin: 4px auto;
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-        }
+            .sidebar-nav.collapsed .sidebar-nav-item {
+                justify-content: center;
+                padding: 10px 0;
+                margin: 4px auto;
+                width: 44px;
+                height: 44px;
+                border-radius: 10px;
+            }
 
-        .sidebar-nav.collapsed .sidebar-nav-item .nav-icon {
-            width: auto;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            .sidebar-nav.collapsed .sidebar-nav-item .nav-icon {
+                width: auto;
+                margin: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
         }
 
         .sidebar-section {
@@ -366,12 +368,13 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.75);
-            z-index: 290;
-            backdrop-filter: blur(4px);
+            background: rgba(0,0,0,0.78);
+            z-index: 9998 !important;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
         }
 
-        .sidebar-mobile-overlay.active { display: block; }
+        .sidebar-mobile-overlay.active { display: block !important; }
 
         .sidebar-toggle-btn {
             background: transparent;
@@ -396,21 +399,6 @@
         }
 
         @media (max-width: 900px) {
-            .sidebar-nav {
-                position: fixed;
-                left: -230px;
-                top: 0;
-                bottom: 0;
-                height: 100vh;
-                z-index: 300;
-                transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
-                box-shadow: 6px 0 40px rgba(0,0,0,0.9);
-                padding-top: 16px;
-                background: #080b11;
-            }
-            .sidebar-nav.mobile-open {
-                transform: translateX(230px);
-            }
             .app-shell {
                 height: calc(100vh - 54px);
                 max-height: calc(100vh - 54px);
@@ -8267,29 +8255,98 @@
             transform: translateY(-1px);
         }
 
-        /* 4. REGRAS RESPONSIVAS DEDICADAS (MOBILE FIRST) */
+        /* 4. REGRAS RESPONSIVAS DEDICADAS (MOBILE FIRST - DRAWER LATERAL) */
         @media (max-width: 900px) {
-            .sidebar-nav {
+            .sidebar-nav,
+            .sidebar-nav.collapsed {
                 position: fixed !important;
-                left: -320px !important;
                 top: 0 !important;
+                left: 0 !important;
                 bottom: 0 !important;
-                width: min(320px, 86vw) !important;
-                min-width: min(320px, 86vw) !important;
+                width: 290px !important;
+                min-width: 290px !important;
+                max-width: 86vw !important;
                 height: 100vh !important;
                 height: 100dvh !important;
-                z-index: 3000 !important;
-                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 12px 0 50px rgba(0, 0, 0, 0.95) !important;
-                padding: 16px 10px 40px 10px !important;
+                z-index: 9999 !important;
+                transform: translateX(-105%) !important;
+                transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+                box-shadow: 14px 0 50px rgba(0, 0, 0, 0.95) !important;
+                padding: 16px 12px 40px 12px !important;
                 background: #090d16 !important;
-                border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+                border-right: 1px solid rgba(255, 255, 255, 0.12) !important;
                 overflow-y: auto !important;
                 overflow-x: hidden !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
 
-            .sidebar-nav.mobile-open {
-                transform: translateX(320px) !important;
+            .sidebar-nav.mobile-open,
+            .sidebar-nav.collapsed.mobile-open {
+                transform: translateX(0) !important;
+            }
+
+            /* Força exibição de labels, títulos e categorias no mobile */
+            .sidebar-nav .sidebar-section-label,
+            .sidebar-nav.collapsed .sidebar-section-label {
+                display: block !important;
+                color: #64748b !important;
+                font-size: 10px !important;
+                font-weight: 800 !important;
+                padding: 12px 14px 6px 14px !important;
+            }
+
+            .sidebar-nav .nav-label,
+            .sidebar-nav.collapsed .nav-label {
+                display: inline-block !important;
+                font-size: 13.5px !important;
+                font-weight: 600 !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
+
+            .sidebar-nav .sidebar-divider,
+            .sidebar-nav.collapsed .sidebar-divider {
+                display: block !important;
+                height: 1px !important;
+                background: rgba(255, 255, 255, 0.08) !important;
+                margin: 10px 10px !important;
+            }
+
+            .sidebar-nav .sidebar-genre-item,
+            .sidebar-nav.collapsed .sidebar-genre-item {
+                display: flex !important;
+                align-items: center !important;
+                gap: 12px !important;
+                font-size: 13px !important;
+                padding: 7px 12px !important;
+                margin: 2px 8px !important;
+                width: calc(100% - 16px) !important;
+                border-radius: 8px !important;
+            }
+
+            .sidebar-nav .sidebar-nav-item,
+            .sidebar-nav.collapsed .sidebar-nav-item {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 12px !important;
+                padding: 9px 12px !important;
+                margin: 2px 8px !important;
+                width: calc(100% - 16px) !important;
+                height: auto !important;
+                border-radius: 9px !important;
+                text-align: left !important;
+            }
+
+            .sidebar-nav .sidebar-nav-item .nav-icon,
+            .sidebar-nav.collapsed .sidebar-nav-item .nav-icon {
+                width: 20px !important;
+                min-width: 20px !important;
+                margin: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
             }
 
             .sidebar-mobile-header {
@@ -8386,6 +8443,10 @@
 
             .sidebar-mobile-only {
                 display: flex !important;
+            }
+
+            .sidebar-divider.sidebar-mobile-only {
+                display: block !important;
             }
         }
 
@@ -13185,6 +13246,7 @@ function initApp() {
             const mOverlay = document.getElementById('sidebar-mobile-overlay');
             if (mNav) mNav.classList.remove('mobile-open');
             if (mOverlay) mOverlay.classList.remove('active');
+            document.body.style.overflow = '';
 
             localStorage.setItem('bf_active_nav', cat);
             localStorage.setItem('bf_active_tab', 'tab-catalogo');
@@ -14161,6 +14223,7 @@ function initApp() {
             const sOv = document.getElementById('sidebar-mobile-overlay');
             if (sNav) sNav.classList.remove('mobile-open');
             if (sOv) sOv.classList.remove('active');
+            document.body.style.overflow = '';
 
             if (genre === 'todos') {
                 // Limpa o filtro de gênero mas permanece na categoria/tipo atual
@@ -14307,6 +14370,7 @@ function initApp() {
                 const overlay = document.getElementById('sidebar-mobile-overlay');
                 if (nav) nav.classList.remove('mobile-open');
                 if (overlay) overlay.classList.remove('active');
+                document.body.style.overflow = '';
                 e.target.blur();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
@@ -14317,9 +14381,15 @@ function initApp() {
             const overlay = document.getElementById('sidebar-mobile-overlay');
             if (!nav) return;
             if (window.innerWidth <= 900) {
+                nav.classList.remove('collapsed');
                 nav.classList.toggle('mobile-open');
-                if (overlay) overlay.classList.toggle('active');
+                const isOpen = nav.classList.contains('mobile-open');
+                if (overlay) overlay.classList.toggle('active', isOpen);
+                document.body.style.overflow = isOpen ? 'hidden' : '';
             } else {
+                nav.classList.remove('mobile-open');
+                document.body.style.overflow = '';
+                if (overlay) overlay.classList.remove('active');
                 nav.classList.toggle('collapsed');
                 const isCollapsed = nav.classList.contains('collapsed');
                 document.body.classList.toggle('sidebar-is-collapsed', isCollapsed);
@@ -14333,14 +14403,37 @@ function initApp() {
             toggleSidebar();
         }
 
-        // Restaura estado colapsado no desktop
+        // Restaura estado colapsado no desktop e garante estado limpo e funcional no mobile
         try {
-            if (window.innerWidth > 900 && localStorage.getItem('brasilflix_sidebar_collapsed') === '1') {
-                document.addEventListener('DOMContentLoaded', () => {
-                    document.getElementById('sidebar-nav')?.classList.add('collapsed');
-                    document.body.classList.add('sidebar-is-collapsed');
-                });
-            }
+            document.addEventListener('DOMContentLoaded', () => {
+                const nav = document.getElementById('sidebar-nav');
+                if (!nav) return;
+                if (window.innerWidth > 900) {
+                    if (localStorage.getItem('brasilflix_sidebar_collapsed') === '1') {
+                        nav.classList.add('collapsed');
+                        document.body.classList.add('sidebar-is-collapsed');
+                    }
+                } else {
+                    nav.classList.remove('collapsed');
+                    document.body.classList.remove('sidebar-is-collapsed');
+                }
+            });
+            window.addEventListener('resize', () => {
+                const nav = document.getElementById('sidebar-nav');
+                const overlay = document.getElementById('sidebar-mobile-overlay');
+                if (window.innerWidth > 900) {
+                    if (nav) nav.classList.remove('mobile-open');
+                    if (overlay) overlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                    if (localStorage.getItem('brasilflix_sidebar_collapsed') === '1') {
+                        nav?.classList.add('collapsed');
+                        document.body.classList.add('sidebar-is-collapsed');
+                    }
+                } else {
+                    if (nav) nav.classList.remove('collapsed');
+                    document.body.classList.remove('sidebar-is-collapsed');
+                }
+            });
         } catch(e) {}
 
         // ═══════════════════════════════════════════════════════════════════════
