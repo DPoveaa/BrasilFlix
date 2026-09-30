@@ -19,12 +19,13 @@ let botInstance = null;
 async function bootstrap() {
     console.log('🚀 Iniciando BrasilFlix Engine...');
     
-    // 1. Inicializa o banco de dados PostgreSQL
-    await db.initDb();
-
-    // 2. Inicializa o Bot e todos os serviços
+    // 1. Instancia o Bot e os serviços
     botInstance = new BrasilFlixBot();
+
+    // 2. Sobe o site IMEDIATAMENTE no ar, depois carrega banco, catálogo e inicia esteira
     await botInstance.init();
+
+    // 3. Inicializa polling e handlers do bot
     botInstance.start();
 
     console.log('✅ BrasilFlix 100% online com PostgreSQL e MTProto!');

@@ -56,6 +56,21 @@ class CatalogoManager {
         };
         this.backupDir = config.BACKUP_DIR || './data/backups';
         this.ensureDataDirectory();
+
+        // Pré-carrega instantaneamente o catálogo local em milissegundos para que o site e a API
+        // estejam imediatamente prontos e com dados assim que a porta web abrir
+        try {
+            const catalogoPath = config.CATALOGO_FILE || path.resolve(__dirname, '../../data/catalogo.json');
+            if (fs.existsSync(catalogoPath)) {
+                const localData = fs.readJsonSync(catalogoPath);
+                if (localData && (Array.isArray(localData.filmes) || Array.isArray(localData.series))) {
+                    this.catalogo = {
+                        filmes: localData.filmes || [],
+                        series: localData.series || []
+                    };
+                }
+            }
+        } catch (e) {}
     }
 
     setBot(bot) {

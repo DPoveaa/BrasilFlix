@@ -10,6 +10,7 @@ const StremioServer = require('./services/StremioServer');
 const MessageHandler = require('./handlers/MessageHandler');
 const CommandHandler = require('./handlers/CommandHandler');
 const cron = require('node-cron');
+const db = require('./database/db');
 
 class BrasilFlixBot {
     constructor() {
@@ -33,15 +34,33 @@ class BrasilFlixBot {
     }
 
     async init() {
-        await Promise.all([
-            this.catalogoManager.loadCatalogo(),
-            this.pedidosManager.loadPedidos(),
-            this.assinaturaManager.loadAssinaturas(),
-            this.favoritosManager.loadData()
-        ]);
+        // 1º PASSO CRÍTICO: Sobe o site / servidor HTTP Stremio IMEDIATAMENTE no ar!
+        await this.stremioServer.start();
+        console.log('🌐 [Web Server] Site BrasilFlix e API Webplayer/Stremio 100% online no ar!');
+
+        // 2º PASSO: Inicializa esquemas do PostgreSQL
+        try {
+            await db.initDb();
+        } catch (dbErr) {
+            console.warn('⚠️ Aviso ao inicializar PostgreSQL (usando fallback se necessário):', dbErr.message);
+        }
+
+        // 3º PASSO: Carrega catálogo e dados do sistema
+        try {
+            await Promise.all([
+                this.catalogoManager.loadCatalogo(),
+                this.pedidosManager.loadPedidos(),
+                this.assinaturaManager.loadAssinaturas(),
+                this.favoritosManager.loadData()
+            ]);
+        } catch (loadErr) {
+            console.warn('⚠️ Aviso ao carregar dados complementares (usando dados locais):', loadErr.message);
+        }
+
+        // 4º PASSO: Com o site no ar e estável, inicia o AutoFeeder e a fila de downloads!
         this.autoFeeder.start();
-        this.stremioServer.start();
-        console.log('🤖 BrasilFlix Bot + Auto-Feeder + Servidor Stremio iniciado com sucesso!');
+        this.queueManager.startProcessing();
+        console.log('🤖 BrasilFlix Bot + Auto-Feeder + Esteira de Downloads iniciados com sucesso!');
     }
 
     start() {

@@ -61,6 +61,7 @@ class QueueManager extends EventEmitter {
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
         this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
         this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
+        this._processingStarted = false; // Só inicia downloads após o servidor web estar no ar
 
         // Notificação em tempo real quando o agendador autorizar ou alterar o modo da esteira
         SchedulerService.on('stateChange', async ({ allowed, mode, reason }) => {
@@ -74,7 +75,7 @@ class QueueManager extends EventEmitter {
                 if (mode === 'eco') {
                     // Se mudou para Econômico, garante que NÃO existam múltiplos downloads/jobs rodando em paralelo
                     this.enforceConcurrencyLimits();
-                } else {
+                } else if (this._processingStarted) {
                     setImmediate(() => this.processNext());
                 }
             } else {
@@ -83,10 +84,8 @@ class QueueManager extends EventEmitter {
             }
         });
 
-
-
         // Inicializa banco, prioridades e carrega fila de forma assíncrona
-        this._init();
+        this._initPromise = this._init();
     }
 
     get isProcessing() {
@@ -581,11 +580,26 @@ class QueueManager extends EventEmitter {
         } catch (e) {
             console.error('❌ Erro ao inicializar fila do banco:', e.message);
         }
-        setTimeout(() => this.processNext(), 2000);
 
         // Auto-auditoria da fila: roda 5 minutos após o boot e depois a cada 30 minutos
         setTimeout(() => this.auditQueue(), 5 * 60 * 1000);
         setInterval(() => this.auditQueue(), 30 * 60 * 1000);
+    }
+
+    /**
+     * Inicia o processamento da esteira de downloads SOMENTE após o servidor web
+     * estar 100% online no ar e o catálogo carregado.
+     */
+    startProcessing(delayMs = 2500) {
+        if (this._processingStarted) return;
+        this._processingStarted = true;
+        console.log(`🚀 [QueueManager] Servidor Web no ar. Iniciando esteira de processamento e downloads em ${delayMs}ms...`);
+        setTimeout(async () => {
+            if (this._initPromise) {
+                await this._initPromise.catch(() => {});
+            }
+            this.processNext();
+        }, delayMs);
     }
 
     /**
@@ -1594,7 +1608,7 @@ class QueueManager extends EventEmitter {
     }
 
     async processNext() {
-        if (config.LOCAL_DEMO_MODE) return;
+        if (config.LOCAL_DEMO_MODE || !this._processingStarted) return;
         const isNetworkAllowed = SchedulerService.isAllowedToRun();
         const mode = SchedulerService.getActiveMode(); // 'performance', 'eco', 'paused'
 

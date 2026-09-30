@@ -3330,10 +3330,28 @@ class StremioServer {
     }
 
     start() {
-        this.app.listen(this.port, () => {
-            console.log(`Servidor BrasilFlix Web Dashboard + Stremio Addon rodando na porta ${this.port}!`);
-            console.log(`URL da Dashboard Web: http://localhost:${this.port}/`);
-            console.log(`URL do Addon Stremio: http://localhost:${this.port}/manifest.json`);
+        return new Promise((resolve) => {
+            try {
+                this.server = this.app.listen(this.port, () => {
+                    console.log(`🌐 [Web Server] Servidor BrasilFlix Web Dashboard + Stremio Addon rodando na porta ${this.port}!`);
+                    console.log(`🚀 [Web Server] Dashboard Web acessível: http://localhost:${this.port}/`);
+                    console.log(`📦 [Web Server] Addon Stremio ativo: http://localhost:${this.port}/manifest.json`);
+                    resolve(this.server);
+                });
+
+                this.server.on('error', (err) => {
+                    if (err.code === 'EADDRINUSE') {
+                        console.warn(`⚠️ [Web Server] Porta ${this.port} já em uso. Mantendo conexão existente.`);
+                        resolve(null);
+                    } else {
+                        console.error('❌ [Web Server] Erro ao iniciar servidor HTTP:', err.message);
+                        resolve(null);
+                    }
+                });
+            } catch (e) {
+                console.error('❌ [Web Server] Exceção ao abrir porta HTTP:', e.message);
+                resolve(null);
+            }
         });
     }
 }
