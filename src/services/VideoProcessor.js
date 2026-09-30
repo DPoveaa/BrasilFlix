@@ -1082,9 +1082,13 @@ ${events.join('\n')}
                                                    titleTag.includes('brazil') || titleTag.includes('brasil') || titleTag.includes('pob');
 
                         if (isOfficialStudioPob || this.isBrazilianPortugueseSubtitle(content)) {
-                            await SubtitleSync.optimizeSubtitleFile(srtPath);
-                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída, otimizada e validada (100% Sincronia de Estúdio)!`);
-                            return srtPath;
+                            // CORREÇÃO: Não retornar direto — a legenda interna também pode estar fora de sincronia
+                            // se o vídeo tem intro de emissora (Fox, SHOWTIME, etc.) que o SRT original não esperava.
+                            // Sincronizamos via ffsubsync antes de confirmar.
+                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada. Sincronizando contra o vídeo...`);
+                            // Guarda o caminho da legenda interna para sincronizar após construir a referência
+                            info._internalPtSrtPath = srtPath;
+                            break; // Sai do loop de streams PT — já temos a melhor candidata interna
                         } else {
                             console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída continha Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
                             await fs.remove(srtPath).catch(() => {});
@@ -1099,12 +1103,12 @@ ${events.join('\n')}
 
         // 2. Verifica se o torrent já trouxe a legenda oficial PT-BR na pasta (Companion Subs do release)
         const companion = await this.findCompanionSubtitle(inputPath, metadata);
-        if (companion.ptSrtPath) {
-            await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
-            return companion.ptSrtPath;
-        }
+        // CORREÇÃO: Não retornar companion subs direto sem sincronizar — o vídeo pode ter intro/recaps
+        // de emissora (Fox, SHOWTIME, HBO, etc.) que deslocariam a legenda. Sync obrigatório abaixo.
 
         // Determina a melhor referência para sincronização (Sub-to-Sub ou Audio-to-Sub)
+        // CORREÇÃO: Este bloco agora roda ANTES de retornar qualquer legenda interna ou companion,
+        // garantindo que todas as fontes passem pelo ffsubsync.
         let refSyncTarget = companion.refEnPath || null;
         if (!refSyncTarget) {
             // Filtra faixas Signs & Songs / Forced que são incompatíveis com alinhamento sub-to-sub
@@ -1151,6 +1155,57 @@ ${events.join('\n')}
 
         if (!refSyncTarget) {
             refSyncTarget = inputPath; // Fallback: alinha contra o áudio do vídeo via VAD
+        }
+
+        // Sincroniza legenda PT-BR interna (extraída do próprio vídeo) se encontrada acima
+        if (info._internalPtSrtPath && fs.existsSync(info._internalPtSrtPath)) {
+            try {
+                const syncedInternalPath = path.join(path.dirname(inputPath), `sub_pt_synced_internal_${Date.now()}.srt`);
+                const finalInternalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, info._internalPtSrtPath, syncedInternalPath, { isAnime: metadata.isAnime });
+                if (finalInternalSrt && fs.existsSync(finalInternalSrt)) {
+                    if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                        fs.remove(refSyncTarget).catch(() => {});
+                    }
+                    if (info._internalPtSrtPath !== finalInternalSrt) {
+                        fs.remove(info._internalPtSrtPath).catch(() => {});
+                    }
+                    console.log(`✅ Legenda PT-BR interna sincronizada com sucesso!`);
+                    return finalInternalSrt;
+                } else {
+                    // Sync falhou: usa a legenda interna sem sync como fallback (melhor que nada)
+                    console.warn(`⚠️ [SubtitleSync] Sync da legenda interna falhou. Usando legenda interna sem ajuste como fallback.`);
+                    await SubtitleSync.optimizeSubtitleFile(info._internalPtSrtPath);
+                    return info._internalPtSrtPath;
+                }
+            } catch (e) {
+                console.warn(`⚠️ [SubtitleSync] Erro ao sincronizar legenda interna: ${e.message}. Usando sem sync.`);
+                await SubtitleSync.optimizeSubtitleFile(info._internalPtSrtPath);
+                return info._internalPtSrtPath;
+            }
+        }
+
+        // Sincroniza companion sub PT-BR do torrent se encontrada
+        if (companion.ptSrtPath && fs.existsSync(companion.ptSrtPath)) {
+            try {
+                const syncedCompanionPath = path.join(path.dirname(inputPath), `sub_pt_synced_companion_${Date.now()}.srt`);
+                const finalCompanionSrt = await SubtitleSync.syncSubtitle(refSyncTarget, companion.ptSrtPath, syncedCompanionPath, { isAnime: metadata.isAnime });
+                if (finalCompanionSrt && fs.existsSync(finalCompanionSrt)) {
+                    if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                        fs.remove(refSyncTarget).catch(() => {});
+                    }
+                    console.log(`✅ [Companion Subs] Legenda PT-BR do torrent sincronizada com sucesso!`);
+                    return finalCompanionSrt;
+                } else {
+                    // Sync falhou: usa a companion sub sem sync como fallback
+                    console.warn(`⚠️ [SubtitleSync] Sync da companion sub falhou. Usando sem ajuste como fallback.`);
+                    await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
+                    return companion.ptSrtPath;
+                }
+            } catch (e) {
+                console.warn(`⚠️ [SubtitleSync] Erro ao sincronizar companion sub: ${e.message}. Usando sem sync.`);
+                await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
+                return companion.ptSrtPath;
+            }
         }
 
         // 3. Busca e validação no OpenSubtitles via IMDb ID
