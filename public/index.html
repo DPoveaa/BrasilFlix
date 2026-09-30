@@ -18,7 +18,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
 
-        /* ═══════════ BRASILFLIX ADSTERRA ADS (DISCRETO, RESPONSIVO & ADMIN/VIP FLEX) ═══════════ */
+        /* ═══════════ BRASILFLIX ADSTERRA ADS (SIMÉTRICO, DARK & RESPONSIVO) ═══════════ */
         .bf-banner-ad-wrapper {
             display: none;
             flex-direction: column;
@@ -28,17 +28,19 @@
             max-width: 760px;
             width: 100%;
             border-radius: 14px;
-            background: rgba(13, 18, 29, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(8, 11, 17, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             padding: 10px 12px 14px 12px;
             box-sizing: border-box;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
         }
         .bf-banner-ad-wrapper iframe {
-            background: transparent !important;
+            background: #080b11 !important;
             border: none !important;
             max-width: 100%;
+            border-radius: 8px;
             color-scheme: normal;
         }
         .bf-ad-header {
@@ -81,19 +83,19 @@
             align-items: center;
             overflow: hidden;
             border-radius: 8px;
-            background: transparent;
+            background: #080b11;
         }
 
-        /* COLUNAS LATERAIS (DESKTOP DISCRETO, TOTALMENTE ISOLADAS E FORA DO MENU) */
+        /* COLUNAS LATERAIS SIMÉTRICAS (160x600 ESQUERDA & DIREITA - TEMA ESCURO) */
         .bf-side-col {
             display: none;
-            width: 172px;
-            min-width: 172px;
+            width: 176px;
+            min-width: 176px;
             flex-shrink: 0;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            padding: 16px 6px;
+            padding: 16px 8px;
             background: transparent;
             z-index: 40;
             box-sizing: border-box;
@@ -106,17 +108,22 @@
             align-items: center;
             gap: 6px;
             padding: 8px;
-            border-radius: 12px;
-            background: rgba(13, 18, 29, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            border-radius: 14px;
+            background: rgba(8, 11, 17, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
         }
-        .bf-side-ad-inner iframe {
+        .bf-side-ad-inner iframe,
+        .bf-side-ad-slot iframe {
             border: none !important;
-            background: transparent !important;
+            background: #080b11 !important;
             overflow: hidden;
+            width: 160px !important;
+            height: 600px !important;
+            border-radius: 8px;
+            display: block;
         }
         .bf-side-ad-tag {
             font-size: 8.5px;
@@ -128,12 +135,14 @@
         }
         .bf-side-ad-slot {
             width: 160px;
-            min-height: 300px;
+            height: 600px;
+            min-height: 600px;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
-            border-radius: 6px;
+            border-radius: 8px;
+            background: #080b11;
         }
 
         /* NATIVE WIDGET CONTAINER */
@@ -145,22 +154,16 @@
             box-sizing: border-box;
         }
 
-        /* 1. Telas Grandes Desktop (>= 1220px): Lateral Direita Ativa */
-        @media (min-width: 1220px) {
+        /* 1. Telas Desktop (>= 1260px): Ambas as Laterais Ativas, Simétricas (160x600) e Elegantes */
+        @media (min-width: 1260px) {
+            body:not(.in-admin-tab) .bf-side-col-left,
             body:not(.in-admin-tab) .bf-side-col-right {
                 display: flex !important;
             }
         }
 
-        /* 2. Telas Ultra-Wide (>= 1480px): Lateral Esquerda Ativa (acompanha o site ao lado do menu, NUNCA sobrepõe) */
-        @media (min-width: 1480px) {
-            body:not(.in-admin-tab) .bf-side-col-left {
-                display: flex !important;
-            }
-        }
-
-        /* 3. CELULARES E TABLETS (< 1220px): NENHUM ANÚNCIO LATERAL (100% LIVRE E RESPONSIVO) */
-        @media (max-width: 1219px) {
+        /* 2. CELULARES E TELAS MENORES (< 1260px): NENHUM ANÚNCIO LATERAL (100% LIVRE E RESPONSIVO) */
+        @media (max-width: 1259px) {
             .bf-side-col,
             .bf-side-col-left,
             .bf-side-col-right {
@@ -9130,11 +9133,13 @@
                 </button>
         </nav>
         
-        <!-- LATERAL ESQUERDA (Ativa em Telas Ultra-Wide >= 1480px, acompanha o layout ao lado do menu sem nunca sobrepor) -->
+        <!-- LATERAL ESQUERDA (Ativa em Telas Desktop >= 1260px, simétrica com 160x600 e tema escuro) -->
         <aside class="bf-side-col bf-side-col-left" id="bf-side-col-left" aria-label="Publicidade Lateral Esquerda">
             <div class="bf-side-ad-inner">
                 <span class="bf-side-ad-tag">Publicidade</span>
-                <div id="ad-slot-side-left" class="bf-side-ad-slot"></div>
+                <div id="ad-slot-side-left" class="bf-side-ad-slot">
+                    <iframe src="/ad-160x600.html" width="160" height="600" scrolling="no" frameborder="0" loading="lazy" title="Publicidade Lateral Esquerda"></iframe>
+                </div>
             </div>
         </aside>
 
@@ -9231,13 +9236,15 @@
             <!-- CARROSSÉIS HORIZONTAIS NETFLIX RAILS (MODO INÍCIO) -->
             <div id="netflix-rails-container"></div>
 
-            <!-- BANNER DE RODAPÉ NA TELA INICIAL (HORIZONTAL DISCRETO) -->
+            <!-- BANNER DE RODAPÉ NA TELA INICIAL (HORIZONTAL DISCRETO & DARK) -->
             <div id="bf-home-bottom-ad" class="bf-banner-ad-wrapper" style="display: none;" aria-label="Publicidade">
                 <div class="bf-ad-header">
                     <span class="bf-ad-label">Publicidade</span>
                     <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
                 </div>
-                <div class="bf-ad-content-slot" id="ad-slot-home-bottom"></div>
+                <div class="bf-ad-content-slot" id="ad-slot-home-bottom">
+                    <iframe src="/ad-728x90.html" width="728" height="90" scrolling="no" frameborder="0" loading="lazy" title="Publicidade"></iframe>
+                </div>
             </div>
 
             <!-- WIDGET NATIVO DE RECOMENDAÇÕES PATROCINADAS NO RODAPÉ -->
@@ -9285,7 +9292,9 @@
                             <span class="bf-ad-label">Publicidade</span>
                             <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
                         </div>
-                        <div class="bf-ad-content-728" id="ad-slot-catalog-bottom"></div>
+                        <div class="bf-ad-content-slot" id="ad-slot-catalog-bottom">
+                            <iframe src="/ad-728x90.html" width="728" height="90" scrolling="no" frameborder="0" loading="lazy" title="Publicidade"></iframe>
+                        </div>
                     </div>
                 </main>
             </div>
@@ -9490,7 +9499,9 @@
                 <span class="bf-ad-label">Publicidade</span>
                 <a href="/assinar" class="bf-ad-vip-hint">💎 Remova todos os anúncios com o VIP</a>
             </div>
-            <div class="bf-ad-content-728" id="ad-slot-player-bottom"></div>
+            <div class="bf-ad-content-slot" id="ad-slot-player-bottom">
+                <iframe src="/ad-728x90.html" width="728" height="90" scrolling="no" frameborder="0" loading="lazy" title="Publicidade"></iframe>
+            </div>
         </div>
 
         <!-- SEÇÃO: OUTROS EPISÓDIOS DA MESMA TEMPORADA (SÓ PARA SÉRIES) -->
@@ -10912,11 +10923,13 @@
             </div><!-- /main-container -->
         </div><!-- /app-main-area -->
 
-        <!-- LATERAL DIREITA (Ativa em Telas Desktop >= 1220px, alinhada à direita do site) -->
+        <!-- LATERAL DIREITA (Ativa em Telas Desktop >= 1260px, simétrica com 160x600 e tema escuro) -->
         <aside class="bf-side-col bf-side-col-right" id="bf-side-col-right" aria-label="Publicidade Lateral Direita">
             <div class="bf-side-ad-inner">
                 <span class="bf-side-ad-tag">Publicidade</span>
-                <div id="ad-slot-side-right" class="bf-side-ad-slot"></div>
+                <div id="ad-slot-side-right" class="bf-side-ad-slot">
+                    <iframe src="/ad-160x600.html" width="160" height="600" scrolling="no" frameborder="0" loading="lazy" title="Publicidade Lateral Direita"></iframe>
+                </div>
             </div>
         </aside>
     </div><!-- /app-shell -->
@@ -24185,71 +24198,6 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             });
         }
 
-        // Renderizador 100% isolado em iframe para Adsterra (elimina retângulos brancos e erros de document.write)
-        function loadAdsterraIframe(containerId, key, width, height) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-            if (container.dataset.adLoaded === 'true') return;
-            container.dataset.adLoaded = 'true';
-
-            const iframe = document.createElement('iframe');
-            iframe.width = width;
-            iframe.height = height;
-            iframe.style.width = width + 'px';
-            iframe.style.height = height + 'px';
-            iframe.style.maxWidth = '100%';
-            iframe.style.border = 'none';
-            iframe.style.overflow = 'hidden';
-            iframe.style.background = 'transparent';
-            iframe.scrolling = 'no';
-            iframe.setAttribute('frameborder', '0');
-            iframe.setAttribute('allowtransparency', 'true');
-
-            container.innerHTML = '';
-            container.appendChild(iframe);
-
-            const adHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background: transparent; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-iframe { border: none !important; }
-</style>
-</head>
-<body>
-<script type="text/javascript">
-atOptions = {
-    'key' : '${key}',
-    'format' : 'iframe',
-    'height' : ${height},
-    'width' : ${width},
-    'params' : {}
-};
-<\/script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/${key}/invoke.js"><\/script>
-</body>
-</html>`;
-
-            try {
-                const doc = iframe.contentWindow?.document || iframe.contentDocument;
-                if (doc) {
-                    doc.open();
-                    doc.write(adHtml);
-                    doc.close();
-                } else {
-                    iframe.srcdoc = adHtml;
-                }
-            } catch(e) {
-                iframe.srcdoc = adHtml;
-            }
-
-            const wrapper = container.closest('.bf-banner-ad-wrapper');
-            if (wrapper) wrapper.style.display = 'flex';
-        }
-
-        // Carrega widget nativo de recomendações patrocinadas no rodapé
         function loadAdsterraNativeWidget() {
             const container = document.getElementById('container-4120a3d13ce2b8cb6073da3984309212');
             if (!container || container.dataset.loaded === 'true') return;
@@ -24265,8 +24213,6 @@ atOptions = {
             document.head.appendChild(script);
         }
 
-        let bfAdsInitialized = false;
-
         function initBrasilFlixAds() {
             if (shouldHideBrasilFlixAds()) {
                 hideBrasilFlixAds();
@@ -24274,34 +24220,39 @@ atOptions = {
             }
 
             document.body.classList.remove('in-admin-tab');
-            if (bfAdsInitialized) return;
-            bfAdsInitialized = true;
 
-            // 1. Lateral Direita (160x600 skyscraper para telas desktop >= 1220px)
-            loadAdsterraIframe('ad-slot-side-right', 'f837fb6bb3fc2c44944149ac47d27028', 160, 600);
+            // Garante exibição dos banners horizontais apropriados
+            const activeTab = localStorage.getItem('bf_active_tab') || 'tab-catalogo';
+            const navMode = typeof currentNavMode !== 'undefined' ? currentNavMode : (localStorage.getItem('bf_active_nav') || 'inicio');
 
-            // 2. Lateral Esquerda (160x300 compacto para telas ultra-wide >= 1480px, sem tocar na barra lateral)
-            loadAdsterraIframe('ad-slot-side-left', 'ba319b72e8df38cf5150b5748b50fc81', 160, 300);
+            const homeAd = document.getElementById('bf-home-bottom-ad');
+            const catAd = document.getElementById('bf-catalog-bottom-ad');
+            const playerAd = document.getElementById('bf-player-bottom-ad');
 
-            // 3. Banners Horizontais Responsivos (728x90 em PC, 320x50 em Celular para não quebrar a tela)
-            const isMobile = window.innerWidth < 768;
-            const hKey = isMobile ? '2ba717173a1f4340a3eb5521bc8b1d68' : '53ccc3a996860fedd50bd7b7d69b729a';
-            const hWidth = isMobile ? 320 : 728;
-            const hHeight = isMobile ? 50 : 90;
+            if (activeTab === 'tab-catalogo') {
+                if (navMode === 'inicio') {
+                    if (homeAd) homeAd.style.display = 'flex';
+                    if (catAd) catAd.style.display = 'none';
+                    loadAdsterraNativeWidget();
+                } else {
+                    if (homeAd) homeAd.style.display = 'none';
+                    if (catAd) catAd.style.display = 'flex';
+                }
+            } else {
+                if (homeAd) homeAd.style.display = 'none';
+                if (catAd) catAd.style.display = 'none';
+            }
 
-            loadAdsterraIframe('ad-slot-home-bottom', hKey, hWidth, hHeight);
-            loadAdsterraIframe('ad-slot-catalog-bottom', hKey, hWidth, hHeight);
-            loadAdsterraIframe('ad-slot-player-bottom', hKey, hWidth, hHeight);
-
-            // 4. Widget Nativo Discreto no Rodapé
-            loadAdsterraNativeWidget();
+            if (playerAd) {
+                playerAd.style.display = 'flex';
+            }
         }
 
         // Inicializa anúncios de forma segura após o DOM estar pronto
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => setTimeout(initBrasilFlixAds, 300));
+            document.addEventListener('DOMContentLoaded', () => setTimeout(initBrasilFlixAds, 200));
         } else {
-            setTimeout(initBrasilFlixAds, 300);
+            setTimeout(initBrasilFlixAds, 200);
         }
     </script>
 </body>
