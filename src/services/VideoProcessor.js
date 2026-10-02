@@ -509,12 +509,13 @@ class VideoProcessor {
         // Altura de referência baseada no viewport 16:9 padrão para manter escala proporcional
         // consistente em qualquer formato (ex: cinemascope 2.39:1 1920x800, 2:1 1920x960, 4:3 1440x1080)
         const refH = Math.max(outH, Math.round(outW * (9 / 16)));
-        // ~4.5% da altura de referência (~49px em 1080p, ~32px em 720p)
+        // ~5% da altura de referência (~54px em 1080p, ~36px em 720p)
         // Legível e confortável sem ficar nem minúsculo em filmes ultrawide nem gigante em animes
-        const fontSize = Math.max(28, Math.min(52, Math.round(refH * 0.045)));
-        const outline = Math.max(2.2, Number((fontSize / 17).toFixed(1)));
-        // Margem vertical segura (~4.8% da altura real) para não encostar na borda inferior nem sobrepor barras
-        const marginV = Math.max(32, Math.round(outH * 0.048));
+        const fontSize = Math.max(35, Math.min(56, Math.round(refH * 0.050)));
+        const outline = Math.max(2.4, Number((fontSize / 16).toFixed(1)));
+        // Margem vertical generosa (~8% da altura real) para não colar no fundo da tela no Telegram
+        // (o Telegram adiciona sua própria barra inferior que reduziria ainda mais o espaço disponível)
+        const marginV = Math.max(70, Math.round(outH * 0.080));
         const assPath = srtPath.replace(/\.srt$/i, '') + `_hardsub_${outW}x${outH}.ass`;
 
         const srtContent = await fs.readFile(srtPath, 'utf8');
@@ -1738,9 +1739,9 @@ ${events.join('\n')}
                     vfFilter += `,ass='${assEscaped}'`;
                 } else if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                     // Fallback: force_style com FontSize relativo ao PlayResY padrão (288)
-                    const scaledFont = Math.max(12, Math.min(16, Math.round(288 * 0.045)));
+                    const scaledFont = Math.max(14, Math.min(18, Math.round(288 * 0.050)));
                     const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,Outline=1.8,Shadow=1.0,MarginV=34,Alignment=2,Bold=0'`;
+                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,Outline=2.0,Shadow=1.0,MarginV=55,Alignment=2,Bold=0'`;
                 }
 
                 const args = [

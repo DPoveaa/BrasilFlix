@@ -34,11 +34,10 @@ class SubtitleSync {
     }
 
     /**
-     * Ajusta o ritmo e tempo de exibição das legendas (CPS e Duração Mínima)
-     * Garante que legendas rápidas não desapareçam em 0.5s/1s, mantendo tempo
-     * confortável de leitura (mínimo de 1.8s a 2.0s por fala) sem sobrepor o próximo diálogo.
+     * Normaliza o formato SRT: padroniza quebras de linha, remove blocos vazios
+     * e renumera as entradas. NÃO altera timestamps (respeita o resultado do ffsubsync).
      */
-    adjustSubtitleTimingAndReadability(srtContent) {
+    normalizeSrtFormat(srtContent) {
         if (!srtContent || typeof srtContent !== 'string') return srtContent;
 
         const normalized = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -62,79 +61,41 @@ class SubtitleSync {
             if (tcIndex === -1) continue;
 
             const match = lines[tcIndex].match(tcRegex);
-            const startMs = this.parseTimecodeToMs(match[1]);
-            const endMs = this.parseTimecodeToMs(match[2]);
+            const startTc = match[1].replace('.', ',');
+            const endTc = match[2].replace('.', ',');
             const textLines = lines.slice(tcIndex + 1);
-            const text = textLines.join('\n');
+            const text = textLines.join('\n').trim();
 
-            if (endMs > startMs && text.length > 0) {
-                cues.push({
-                    startMs,
-                    endMs,
-                    text
-                });
+            if (text.length > 0) {
+                cues.push({ startTc, endTc, text });
             }
         }
 
         if (cues.length === 0) return srtContent;
 
-        // Ordena cronologicamente
-        cues.sort((a, b) => a.startMs - b.startMs);
-
-        const GAP_MS = 80; // Espaço limpo mínimo entre legendas consecutivas
-
-        for (let i = 0; i < cues.length; i++) {
-            const cue = cues[i];
-            const nextCue = cues[i + 1] || null;
-
-            // Remove tags HTML/formatação para contagem real de caracteres
-            const cleanText = cue.text.replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').trim();
-            const charCount = cleanText.length;
-
-            // Cálculo do tempo ideal de leitura:
-            // Base mínima de 1800ms (1.8s) + ~65ms por caractere (velocidade confortável de 15.4 CPS)
-            const idealDurationMs = Math.min(7000, Math.max(1800, charCount * 65 + 300));
-            const targetEndMs = cue.startMs + idealDurationMs;
-
-            let finalEndMs = Math.max(cue.endMs, targetEndMs);
-
-            if (nextCue) {
-                const maxAllowedEndMs = nextCue.startMs - GAP_MS;
-                if (maxAllowedEndMs > cue.startMs + 500) {
-                    finalEndMs = Math.min(finalEndMs, maxAllowedEndMs);
-                } else if (nextCue.startMs > cue.startMs) {
-                    finalEndMs = Math.min(cue.endMs, nextCue.startMs - 20);
-                }
-            }
-
-            cue.endMs = Math.max(cue.startMs + 500, finalEndMs);
-        }
-
-        // Reconstrói o arquivo SRT padronizado
+        // Reconstrói o arquivo SRT com numeração sequencial correta
         const outputBlocks = cues.map((cue, idx) => {
-            const num = idx + 1;
-            const startTc = this.formatMsToTimecode(cue.startMs);
-            const endTc = this.formatMsToTimecode(cue.endMs);
-            return `${num}\n${startTc} --> ${endTc}\n${cue.text}`;
+            return `${idx + 1}\n${cue.startTc} --> ${cue.endTc}\n${cue.text}`;
         });
 
         return outputBlocks.join('\n\n') + '\n';
     }
 
     /**
-     * Aplica otimização de legibilidade e tempo de leitura diretamente em um arquivo .srt
+     * Normaliza o formato de um arquivo .srt sem alterar timestamps.
+     * Apenas padroniza quebras de linha e renumera blocos.
      */
     async optimizeSubtitleFile(srtPath) {
         try {
             if (!fs.existsSync(srtPath)) return srtPath;
             const content = await fs.readFile(srtPath, 'utf8');
-            const optimized = this.adjustSubtitleTimingAndReadability(content);
-            if (optimized && optimized.length > 100) {
-                await fs.writeFile(srtPath, optimized, 'utf8');
+            const normalized = this.normalizeSrtFormat(content);
+            if (normalized && normalized.length > 100) {
+                await fs.writeFile(srtPath, normalized, 'utf8');
             }
             return srtPath;
         } catch (e) {
-            console.warn(`⚠️ [SubtitleSync] Falha ao otimizar tempo de leitura do SRT "${path.basename(srtPath)}":`, e.message);
+            console.warn(`⚠️ [SubtitleSync] Falha ao normalizar SRT "${path.basename(srtPath)}":`, e.message);
             return srtPath;
         }
     }
@@ -228,9 +189,9 @@ sys.exit(main())
             const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
             if (success && this.validateSynchronizedSubtitle(srtOutputPath)) {
-                // Aplica otimização de tempo de leitura na legenda sincronizada
+                // Normaliza o formato SRT sem alterar os timestamps produzidos pelo ffsubsync
                 await this.optimizeSubtitleFile(srtOutputPath);
-                console.log(`✅ [SubtitleSync] Legenda sincronizada e otimizada para leitura confortável em ${elapsedSec}s!`);
+                console.log(`✅ [SubtitleSync] Legenda sincronizada em ${elapsedSec}s!`);
                 return srtOutputPath;
             } else {
                 console.warn(`⚠️ [SubtitleSync] Não foi possível garantir sincronia perfeita via análise (${elapsedSec}s).`);
