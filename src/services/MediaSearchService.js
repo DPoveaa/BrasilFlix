@@ -113,8 +113,11 @@ class MediaSearchService {
             }
         }
 
-        // 2. BUSCA NO NYAA.SI PARA ANIMES (Fonte Primária Especializada P2P de Alta Qualidade e Velocidade)
+        // 2. BUSCA ESPECIALIZADA PARA ANIMES (Nyaa.si P2P e Web Direct AnimesDigital CDN)
         if (isAnime) {
+            const titulosAlt = options.titulosAlternativos || tmdbDetails?.titulosAlternativos || [];
+            const absEp = options.absoluteEpisode || null;
+
             try {
                 const nyaaResults = await NyaaSearchService.searchAnime(cleanQuery, tipo, {
                     originalName,
@@ -124,7 +127,9 @@ class MediaSearchService {
                     ano,
                     tmdbSeasonName: options.tmdbSeasonName || null,
                     ignorarFallbackLegendado: options.ignorarFallbackLegendado,
-                    ignorarFallbackDublado: options.ignorarFallbackDublado
+                    ignorarFallbackDublado: options.ignorarFallbackDublado,
+                    titulosAlternativos: titulosAlt,
+                    absoluteEpisode: absEp
                 });
 
                 for (const item of nyaaResults) {
@@ -138,6 +143,26 @@ class MediaSearchService {
                 }
             } catch (e) {
                 console.warn('⚠️ Falha ao consultar NyaaSearchService:', e.message);
+            }
+
+            // 2.1 Fallback Web Direct (AnimesDigital CDN m3u8) para episódios dublados/legendados de animes
+            try {
+                const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
+                    season,
+                    episode,
+                    audioPreference: pref,
+                    tmdbSeasonName: options.tmdbSeasonName || null,
+                    absoluteEpisode: absEp
+                });
+
+                for (const item of animeDirectResults) {
+                    allResults.push(item);
+                }
+                if (animeDirectResults.length > 0) {
+                    console.log(`⛩️ [AnimeExtractor] ${animeDirectResults.length} stream(s) Web Direct adicionados.`);
+                }
+            } catch (e) {
+                console.warn('⚠️ Falha ao consultar AnimeExtractorService:', e.message);
             }
         }
 

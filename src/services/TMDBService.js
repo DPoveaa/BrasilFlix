@@ -240,7 +240,7 @@ class TMDBService {
 
         try {
             const data = await this._getWithRetry(`/movie/${tmdbId}`, {
-                append_to_response: 'external_ids'
+                append_to_response: 'external_ids,alternative_titles'
             });
             if (!data) return null;
             const formatted = this.formatItem({ ...data, media_type: 'movie' });
@@ -261,7 +261,7 @@ class TMDBService {
 
         try {
             const data = await this._getWithRetry(`/tv/${tmdbId}`, {
-                append_to_response: 'external_ids'
+                append_to_response: 'external_ids,alternative_titles'
             });
             if (!data) return null;
             const formatted = this.formatTVDetails(data);
@@ -463,7 +463,31 @@ class TMDBService {
                 { nome: 'Jujutsu Kaisen', ano: '2020', tipo: 'serie', isAnime: true, nota: 8.6, generos: ['Anime', 'Ação', 'Sobrenatural'] },
                 { nome: 'Demon Slayer', ano: '2019', tipo: 'serie', isAnime: true, nota: 8.7, generos: ['Anime', 'Ação', 'Fantasia'] },
                 { nome: 'One Piece', ano: '1999', tipo: 'serie', isAnime: true, nota: 8.9, generos: ['Anime', 'Aventura', 'Fantasia'] },
-                { nome: 'Bleach: Thousand-Year Blood War', ano: '2022', tipo: 'serie', isAnime: true, nota: 8.9, generos: ['Anime', 'Ação'] }
+            ];
+        }
+    }
+
+    async getPopularAnimeMovies() {
+        try {
+            const data = await this._getWithRetry('/discover/movie', {
+                sort_by: 'popularity.desc',
+                with_original_language: 'ja',
+                with_genres: '16',
+                'vote_count.gte': 15
+            }, 15000);
+            return (data.results || []).map(item => ({
+                ...this.formatItem({ ...item, media_type: 'movie' }),
+                isAnime: true,
+                tipo: 'filme',
+                categoria: 'Anime'
+            }));
+        } catch (error) {
+            console.warn('⚠️ Erro ao buscar filmes de anime populares no TMDB:', error.message);
+            return [
+                { nome: 'Demon Slayer: O Trem Infinito', ano: '2020', tipo: 'filme', isAnime: true, nota: 8.3, generos: ['Animação', 'Ação', 'Fantasia'] },
+                { nome: 'Suzume', ano: '2022', tipo: 'filme', isAnime: true, nota: 7.9, generos: ['Animação', 'Fantasia', 'Aventura'] },
+                { nome: 'Your Name.', ano: '2016', tipo: 'filme', isAnime: true, nota: 8.5, generos: ['Animação', 'Romance', 'Drama'] },
+                { nome: 'Jujutsu Kaisen 0', ano: '2021', tipo: 'filme', isAnime: true, nota: 8.2, generos: ['Animação', 'Ação', 'Fantasia'] },
             ];
         }
     }
@@ -525,6 +549,13 @@ class TMDBService {
         if (isAnime) tipo = 'anime';
         else if (isDorama && !isWesternKnown) tipo = 'dorama';
 
+        const rawAltTitles = raw.alternative_titles?.results || raw.alternative_titles?.titles || [];
+        const titulosAlternativos = Array.from(new Set(
+            rawAltTitles
+                .map(t => (t.title || '').trim())
+                .filter(t => t && t.length > 1 && !/^[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\u0600-\u06ff\u0400-\u04ff]+$/.test(t))
+        ));
+
         return {
             tmdbId: raw.id,
             imdbId: raw.external_ids?.imdb_id || raw.imdb_id || null,
@@ -534,6 +565,7 @@ class TMDBService {
             isDorama: isDorama && !isWesternKnown,
             nome: nome.trim(),
             nomeOriginal: nomeOriginal.trim(),
+            titulosAlternativos: titulosAlternativos,
             sinopse: raw.overview ? raw.overview.trim() : 'Sem sinopse disponível.',
             ano: ano,
             dataLancamento,

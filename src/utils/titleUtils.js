@@ -91,14 +91,26 @@ const KNOWN_SUBTITLE_ALIASES = {
 const KNOWN_FRANCHISE_ALIASES = [
     ['demonslayer', 'kimetsunoyaiba'],
     ['attackontitan', 'shingekinokyojin'],
-    ['myheroacademia', 'bokunoheroacademia'],
+    ['myheroacademia', 'bokunoheroacademia', 'bnha'],
     ['jujutsukaisen', 'sorceryfight'],
-    ['hunterxhunter', 'hunterhunter'],
-    ['fullmetalalchemist', 'haganenorenkinjutsushi'],
+    ['hunterxhunter', 'hunterhunter', 'hxh'],
+    ['fullmetalalchemist', 'haganenorenkinjutsushi', 'fma'],
     ['konosuba', 'konosubarashiisekaanishukufukuwo'],
     ['danmachi', 'isitwrongtotrytopickupgirlsinadungeon'],
-    ['thattimeigotreincarnatedasaslime', 'tenseishitaraslimedattaken', 'slimetensei'],
-    ['spyxfamily', 'spyfamily']
+    ['thattimeigotreincarnatedasaslime', 'tenseishitaraslimedattaken', 'slimetensei', 'tensura'],
+    ['spyxfamily', 'spyfamily'],
+    ['sololeveling', 'oredakedanivelupnaken', 'nahonjamanlevelup'],
+    ['frieren', 'sousounofrieren', 'frierenbeyondjourneysend'],
+    ['dungeonmeshi', 'deliciousindungeon'],
+    ['chainsawman', 'csm'],
+    ['jojosbizarreadventure', 'jojonokimyounabouken', 'jojo'],
+    ['onepiece', 'wanpisu'],
+    ['bleach', 'burichi'],
+    ['drstone', 'doctorstone'],
+    ['fireforce', 'ennennoshouboutai'],
+    ['hellsparadise', 'jigokuraku'],
+    ['mashle', 'mashlemagicandmuscles'],
+    ['kaijuno8', 'kaiju8', 'kaijuunihou']
 ];
 
 function extractPrefixAndSubtitle(raw) {

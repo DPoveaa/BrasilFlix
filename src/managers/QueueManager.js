@@ -23,6 +23,7 @@ const PRIORITIES = new Proxy({}, {
 
 
 const { normalizeTitle, isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
+const AnimeSeasonMapper = require('../utils/AnimeSeasonMapper');
 
 /** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
 function parseSeasonEpisodeFromPath(filePath) {
@@ -2484,6 +2485,12 @@ class QueueManager extends EventEmitter {
                         }
                     }
 
+                    let absoluteEpisode = job.absoluteEpisode || job.extraData?.absoluteEpisode || null;
+                    if (!absoluteEpisode && isAnimeFlag && metadata.temporadas) {
+                        absoluteEpisode = AnimeSeasonMapper.calculateAbsoluteEpisode(job.title, targetSeasonNum, job.episode || 1, metadata.temporadas);
+                    }
+                    const titulosAlternativos = metadata.titulosAlternativos || job.titulosAlternativos || job.extraData?.titulosAlternativos || [];
+
                     const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
                     sources = await MediaSearchService.search(job.title, job.type, {
                         nomeOriginal: metadata.nomeOriginal,
@@ -2501,7 +2508,9 @@ class QueueManager extends EventEmitter {
                         isDorama: !!(job.isDorama || metadata.isDorama),
                         isMicrodrama: isMicroFlag,
                         originalLanguage: isMicroFlag ? 'zh' : (job.originalLanguage || metadata.original_language || metadata.originalLanguage || null),
-                        tmdbSeasonName: tmdbSeasonName // Nome da temporada TMDB para busca alternativa em animes (ex: Bleach S2 -> "Guerra Sangrenta de Mil Anos")
+                        tmdbSeasonName: tmdbSeasonName,
+                        absoluteEpisode: absoluteEpisode,
+                        titulosAlternativos: titulosAlternativos
                     });
 
                     if (jaTemCam || forcarNaoCam) {
@@ -2576,6 +2585,8 @@ class QueueManager extends EventEmitter {
                                     allowOriginalAudio: true,
                                     isAnime: _isAnime2,
                                     isDorama: !!(job.isDorama || metadata.isDorama),
+                                    absoluteEpisode: absoluteEpisode,
+                                    titulosAlternativos: titulosAlternativos
                                 });
                                 if (legSources.length > 0) {
                                     console.log(`✅ [FALLBACK LEGENDADO] Encontradas ${legSources.length} fonte(s) legendada(s) para "${job.title}". Alterando preferência para Legendado.`);

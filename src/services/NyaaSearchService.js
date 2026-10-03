@@ -71,21 +71,24 @@ class NyaaSearchService {
                /\b(s\d{1,2}\s*\(|s\d{1,2}\s*\[)/i.test(t);
     }
 
-    isEpisodeMatch(itemTitle, season, episode) {
+    isEpisodeMatch(itemTitle, season, episode, absoluteEpisode = null) {
         const t = (itemTitle || '').toLowerCase();
         const epNum = parseInt(episode, 10);
         const seasonNum = parseInt(season, 10);
         const epPadded = String(epNum).padStart(2, '0');
         const sPadded = String(seasonNum).padStart(2, '0');
+        const absNum = absoluteEpisode ? parseInt(absoluteEpisode, 10) : null;
 
         // Se for um pacote completo (batch), contém o episódio desejado
         if (this.isBatch(itemTitle)) {
-            // Se o batch especifica intervalo de episódios, e.g. (01-12)
-            const rangeMatch = t.match(/[\[\(](\d{1,3})\s*-\s*(\d{1,3})[\]\)]/);
+            // Se o batch especifica intervalo de episódios, e.g. (01-12) ou (001-1120)
+            const rangeMatch = t.match(/[\[\(](\d{1,4})\s*-\s*(\d{1,4})[\]\)]/);
             if (rangeMatch) {
                 const start = parseInt(rangeMatch[1], 10);
                 const end = parseInt(rangeMatch[2], 10);
-                return epNum >= start && epNum <= end;
+                if (epNum >= start && epNum <= end) return true;
+                if (absNum && absNum >= start && absNum <= end) return true;
+                return false;
             }
             // Se especifica temporada, verifica se é a mesma
             const sMatch = t.match(/\b(?:s|season|temporada)\s*0*(\d{1,2})\b/i);
@@ -99,6 +102,18 @@ class NyaaSearchService {
         // S01E05, S1E5, 1x05
         const sRegex = new RegExp(`s0*${seasonNum}[._ -]*e0*${epNum}(?:\\D|$)`, 'i');
         if (sRegex.test(t)) return true;
+
+        // Se tiver absoluteEpisode (ex: One Piece 1120)
+        if (absNum && absNum > 0) {
+            const absStrictRegex = new RegExp(`(?:-|\\b)0*${absNum}(?:v\\d+)?\\s*(?:\\[|\\(|\\b)(?:1080p|720p|480p|hevc|x264|x265|cr|fun|web|bd|dvd)`, 'i');
+            if (absStrictRegex.test(t)) return true;
+
+            const dashAbsRegex = new RegExp(`\\s+-\\s+0*${absNum}\\s+`, 'i');
+            if (dashAbsRegex.test(t)) return true;
+
+            const wordAbsRegex = new RegExp(`[\\s\\[_]0*${absNum}[\\s\\]_]`, 'i');
+            if (wordAbsRegex.test(t) && absNum !== 1080 && absNum !== 720 && absNum !== 480) return true;
+        }
 
         // Formatos comuns de animes: " - 05", " - 05 ", " - 05v2", " 05 "
         // Evita confundir com resolução (1080p, 720p) ou ano (2024)
@@ -119,10 +134,10 @@ class NyaaSearchService {
         }
 
         // Se especificou outro episódio qualquer (ex: - 02 quando queremos 05), descarta
-        const anyEpMatch = t.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || t.match(/\s+-\s+0*(\d{1,4})\s+/);
+        const anyEpMatch = t.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || t.match(/\s+-\\s+0*(\d{1,4})\s+/);
         if (anyEpMatch) {
             const found = parseInt(anyEpMatch[1], 10);
-            if (found !== epNum && found !== 1080 && found !== 720 && found !== 480) {
+            if (found !== epNum && (!absNum || found !== absNum) && found !== 1080 && found !== 720 && found !== 480) {
                 return false;
             }
         }
@@ -174,8 +189,10 @@ class NyaaSearchService {
         const pref = options.audioPreference || 'legendado';
         const sPadded = String(season).padStart(2, '0');
         const epPadded = String(episode).padStart(2, '0');
+        const absEp = options.absoluteEpisode ? parseInt(options.absoluteEpisode, 10) : null;
+        const absEpRaw = absEp ? String(absEp) : null;
 
-        console.log(`⛩️ [Nyaa.si] Buscando anime: "${titlePt}"${origName && origName !== titlePt ? ` / "${origName}"` : ''} ${tipo === 'serie' ? `(S${season}E${episode})` : ''} [${pref}]...`);
+        console.log(`⛩️ [Nyaa.si] Buscando anime: "${titlePt}"${origName && origName !== titlePt ? ` / "${origName}"` : ''} ${tipo === 'serie' ? `(S${season}E${episode}${absEp ? ` / #${absEp}` : ''})` : ''} [${pref}]...`);
 
         const searches = [];
 
@@ -185,9 +202,16 @@ class NyaaSearchService {
             searches.push({ q: `${titlePt} PT-BR`, cat: '1_3' });
             searches.push({ q: `${titlePt} Dublado`, cat: '1_3' });
             searches.push({ q: `${titlePt} ${epPadded}`, cat: '1_3' });
+            if (absEpRaw) {
+                searches.push({ q: `${titlePt} ${absEpRaw}`, cat: '1_3' });
+                searches.push({ q: `${titlePt} ${absEpRaw} PT-BR`, cat: '1_3' });
+            }
             if (origName && origName !== titlePt) {
                 searches.push({ q: `${origName} PT-BR`, cat: '1_3' });
                 searches.push({ q: `${origName} ${epPadded}`, cat: '1_3' });
+                if (absEpRaw) {
+                    searches.push({ q: `${origName} ${absEpRaw}`, cat: '1_3' });
+                }
             }
         } else {
             searches.push({ q: `${titlePt} PT-BR`, cat: '1_3' });
@@ -207,6 +231,12 @@ class NyaaSearchService {
             searches.push({ q: `SubsPlease ${titlePt} ${epPadded}`, cat: '1_2' });
             searches.push({ q: `Erai-raws ${titlePt} ${epPadded}`, cat: '1_2' });
 
+            if (absEpRaw) {
+                searches.push({ q: `${titlePt} ${absEpRaw}`, cat: '1_2' });
+                searches.push({ q: `${titlePt} - ${absEpRaw}`, cat: '1_2' });
+                searches.push({ q: `SubsPlease ${titlePt} ${absEpRaw}`, cat: '1_2' });
+            }
+
             // Batch / Season packs (permite ao Downloader extrair o episódio localmente)
             searches.push({ q: `${titlePt} Season ${season}`, cat: '1_2' });
             searches.push({ q: `${titlePt} S${sPadded}`, cat: '1_2' });
@@ -215,6 +245,23 @@ class NyaaSearchService {
                 searches.push({ q: `${origName} ${epPadded}`, cat: '1_2' });
                 searches.push({ q: `${origName} S${sPadded}E${epPadded}`, cat: '1_2' });
                 searches.push({ q: `SubsPlease ${origName} ${epPadded}`, cat: '1_2' });
+                if (absEpRaw) {
+                    searches.push({ q: `${origName} ${absEpRaw}`, cat: '1_2' });
+                    searches.push({ q: `SubsPlease ${origName} ${absEpRaw}`, cat: '1_2' });
+                }
+            }
+
+            // Títulos alternativos (Romaji / English / etc.)
+            const altTitles = Array.isArray(options.titulosAlternativos) ? options.titulosAlternativos : [];
+            for (const alt of altTitles.slice(0, 3)) {
+                if (alt && alt.toLowerCase() !== titlePt.toLowerCase()) {
+                    searches.push({ q: `${alt} S${sPadded}E${epPadded}`, cat: '1_2' });
+                    searches.push({ q: `SubsPlease ${alt} ${epPadded}`, cat: '1_2' });
+                    if (absEpRaw) {
+                        searches.push({ q: `${alt} ${absEpRaw}`, cat: '1_2' });
+                        searches.push({ q: `SubsPlease ${alt} ${absEpRaw}`, cat: '1_2' });
+                    }
+                }
             }
         } else {
             searches.push({ q: `${titlePt} 1080p`, cat: '1_2' });
@@ -222,6 +269,14 @@ class NyaaSearchService {
             if (origName && origName !== titlePt) {
                 searches.push({ q: `${origName} 1080p`, cat: '1_2' });
                 searches.push({ q: `${origName}`, cat: '1_2' });
+            }
+
+            const altTitles = Array.isArray(options.titulosAlternativos) ? options.titulosAlternativos : [];
+            for (const alt of altTitles.slice(0, 3)) {
+                if (alt && alt.toLowerCase() !== titlePt.toLowerCase()) {
+                    searches.push({ q: `${alt} 1080p`, cat: '1_2' });
+                    searches.push({ q: `${alt} PT-BR`, cat: '1_3' });
+                }
             }
         }
 
@@ -260,7 +315,7 @@ class NyaaSearchService {
 
             // Se for série, valida se o release corresponde ao episódio ou temporada
             if (tipo === 'serie') {
-                const matches = this.isEpisodeMatch(item.title, season, episode);
+                const matches = this.isEpisodeMatch(item.title, season, episode, absEp);
                 if (!matches) continue;
             }
 

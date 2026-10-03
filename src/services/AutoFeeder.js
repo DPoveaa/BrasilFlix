@@ -7,6 +7,7 @@ const DiskCleaner = require('./DiskCleaner');
 const SchedulerService = require('./SchedulerService');
 const { PRIORITIES } = require('../managers/QueueManager');
 const { isSameMedia } = require('../utils/titleUtils');
+const AnimeSeasonMapper = require('../utils/AnimeSeasonMapper');
 
 class AutoFeeder {
     constructor(queueManager, catalogoManager, pedidosManager = null) {
@@ -123,15 +124,23 @@ class AutoFeeder {
             //    pronta quando a janela de desempenho abrir — limita para não sobrecarregar a rede
             console.log('🌙 [AutoFeeder Eco] Pré-carregando conteúdo em alta para a fila (limite reduzido)...');
 
-            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
+            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && !j.isAnime && !j.extraData?.isAnime && j.status === 'queued');
+            const animeMoviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
             const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.isAnime && !j.isMicrodrama && !j.extraData?.isDorama && !j.extraData?.isAnime && !j.extraData?.isMicrodrama && j.status === 'queued');
             const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
-            const animesInQueue = (this.queueManager.queue || []).filter(j => (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
+            const animesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
 
             if (moviesInQueue.length < 3) {
                 const trendingMovies = await TMDBService.getTrendingMovies('week');
                 for (const movie of trendingMovies.slice(0, 3)) {
                     await this.considerItem(movie, 'filme');
+                }
+            }
+
+            if (animeMoviesInQueue.length < 2) {
+                const popularAnimeMovies = await TMDBService.getPopularAnimeMovies();
+                for (const movie of popularAnimeMovies.slice(0, 2)) {
+                    await this.considerItem(movie, 'filme', false, true);
                 }
             }
 
@@ -201,10 +210,11 @@ class AutoFeeder {
 
             console.log('🔍 AutoFeeder: Consultando conteúdos em alta no TMDB para preenchimento equilibrado de todas as faixas...');
 
-            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && j.status === 'queued');
+            const moviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && !j.isAnime && !j.extraData?.isAnime && j.status === 'queued');
+            const animeMoviesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'filme' && (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
             const seriesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && !j.isDorama && !j.isAnime && !j.isMicrodrama && !j.extraData?.isDorama && !j.extraData?.isAnime && !j.extraData?.isMicrodrama && j.status === 'queued');
             const doramasInQueue = (this.queueManager.queue || []).filter(j => (j.isDorama || j.extraData?.isDorama) && j.status === 'queued');
-            const animesInQueue = (this.queueManager.queue || []).filter(j => (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
+            const animesInQueue = (this.queueManager.queue || []).filter(j => j.type === 'serie' && (j.isAnime || j.extraData?.isAnime) && j.status === 'queued');
             const microdramasInQueue = (this.queueManager.queue || []).filter(j => (j.isMicrodrama || j.subtipo === 'microdrama' || j.extraData?.isMicrodrama || j.extraData?.subtipo === 'microdrama') && j.status === 'queued');
 
             // 6. Filmes em alta (mantém cota independente para Faixa 1)
@@ -212,6 +222,14 @@ class AutoFeeder {
                 const trendingMovies = await TMDBService.getTrendingMovies('week');
                 for (const movie of trendingMovies.slice(0, 6)) {
                     await this.considerItem(movie, 'filme');
+                }
+            }
+
+            // 6.1 Filmes de Animes populares em alta (cota independente para filmes de anime)
+            if (animeMoviesInQueue.length < 3) {
+                const popularAnimeMovies = await TMDBService.getPopularAnimeMovies();
+                for (const movie of popularAnimeMovies.slice(0, 3)) {
+                    await this.considerItem(movie, 'filme', false, true);
                 }
             }
 
@@ -479,6 +497,10 @@ class AutoFeeder {
 
                 const hoje = new Date().toISOString().split('T')[0];
 
+                const isAnime = serie.isAnime || serie.categoria === 'Anime' || (serie.generos && serie.generos.includes('Anime')) || serie.originalLanguage === 'ja';
+                const isContinuous = isAnime && AnimeSeasonMapper.isContinuousAnime(serie.nome);
+                const catalogHasSingleSeason = (serie.temporadas || []).length === 1 && isContinuous;
+
                 for (const t of tmdbData.temporadas) {
                     const sNum = t.numero;
                     if (sNum <= 0) continue;
@@ -487,30 +509,46 @@ class AutoFeeder {
                     if (!seasonDetail || !seasonDetail.episodios) continue;
 
                     const epsLancados = seasonDetail.episodios.filter(ep => ep.dataLancamento && ep.dataLancamento <= hoje);
-                    const tempNoCatalogo = (serie.temporadas || []).find(temp => temp.numero === sNum);
-                    const epsNoCatalogo = new Set((tempNoCatalogo?.episodios || []).map(e => e.numero));
 
-                    const proximoEpFaltante = epsLancados.find(ep => !epsNoCatalogo.has(ep.numero));
+                    for (const ep of epsLancados) {
+                        // Mapeia do TMDB para o Catálogo BrasilFlix (ex: Kimetsu no Yaiba arcos -> 5 temporadas, One Piece contínuo)
+                        const mapped = isAnime 
+                            ? AnimeSeasonMapper.mapTmdbToCatalog(serie.nome, sNum, ep.numero, {
+                                tmdbSeasons: tmdbData.temporadas,
+                                catalogHasSingleSeason
+                            })
+                            : { season: sNum, episode: ep.numero, isCustomMapped: false };
 
-                    if (proximoEpFaltante) {
+                        const targetSeason = mapped.season;
+                        const targetEpisode = mapped.episode;
+
+                        const tempNoCatalogo = (serie.temporadas || []).find(temp => temp.numero === targetSeason);
+                        const epsNoCatalogo = new Set((tempNoCatalogo?.episodios || []).map(e => e.numero));
+
+                        if (epsNoCatalogo.has(targetEpisode)) continue;
+
                         const jaNaFila = this.queueManager.queue.some(j => 
                             j.type === 'serie' && 
                             isSameMedia(j.title, serie.nome) && 
-                            j.season === sNum && 
-                            j.episode === proximoEpFaltante.numero &&
+                            j.season === targetSeason && 
+                            j.episode === targetEpisode &&
                             ['queued', 'downloading', 'processing', 'uploading'].includes(j.status)
                         );
 
                         if (!jaNaFila) {
-                            const isAnime = serie.isAnime || serie.categoria === 'Anime' || (serie.generos && serie.generos.includes('Anime')) || serie.originalLanguage === 'ja';
                             const isMicrodrama = serie.isMicrodrama || serie.subtipo === 'microdrama';
                             const isDorama = !isAnime && (serie.isDorama || serie.categoria === 'Dorama' || isMicrodrama || serie.originalLanguage === 'ko' || serie.originalLanguage === 'zh');
+                            const absEp = isAnime ? AnimeSeasonMapper.calculateAbsoluteEpisode(serie.nome, sNum, ep.numero, tmdbData.temporadas) : null;
 
-                            console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${sNum}E${proximoEpFaltante.numero} ("${proximoEpFaltante.nome}") [${isAnime ? 'Anime' : (isMicrodrama ? 'Microdrama' : (isDorama ? 'Dorama' : 'Série'))}]! Enfileirando download...`);
+                            console.log(`🌟 NOVO EPISÓDIO DETECTADO: "${serie.nome}" T${targetSeason}E${targetEpisode}${absEp ? ` (Ep. Absoluto #${absEp})` : ''} ("${ep.nome}") [${isAnime ? 'Anime' : (isMicrodrama ? 'Microdrama' : (isDorama ? 'Dorama' : 'Série'))}]! Enfileirando download...`);
                             this.queueManager.addJob(serie.nome, 'serie', PRIORITIES.SERIES, {
                                 tmdbId: tmdbData.tmdbId,
-                                season: sNum,
-                                episode: proximoEpFaltante.numero,
+                                season: targetSeason,
+                                episode: targetEpisode,
+                                tmdbSeason: sNum,
+                                tmdbEpisode: ep.numero,
+                                absoluteEpisode: absEp,
+                                titulosAlternativos: tmdbData.titulosAlternativos || [],
                                 nomeOriginal: serie.nomeOriginal,
                                 isAnime: isAnime,
                                 isDorama: isDorama,
@@ -519,6 +557,7 @@ class AutoFeeder {
                                 originalLanguage: serie.originalLanguage || (isAnime ? 'ja' : (isDorama ? 'ko' : null)),
                                 queueOrder: -1
                             });
+                            break;
                         }
                     }
                 }
@@ -945,7 +984,7 @@ class AutoFeeder {
             return;
         }
 
-        const tag = isAnime ? 'Anime' : (isDorama ? 'Dorama' : (item.isMicrodrama ? 'Microdrama' : (tipo === 'filme' ? 'Filme' : 'Série')));
+        const tag = isAnime ? (tipo === 'filme' ? 'Filme de Anime' : 'Anime') : (isDorama ? 'Dorama' : (item.isMicrodrama ? 'Microdrama' : (tipo === 'filme' ? 'Filme' : 'Série')));
         console.log(`✨ AutoFeeder adicionando à fila: "${title}" (${tag})`);
 
         const itemPrio = tipo === 'filme' ? PRIORITIES.CAM_UPGRADE : PRIORITIES.SERIES;
@@ -957,7 +996,7 @@ class AutoFeeder {
             isMicrodrama: item.isMicrodrama || false,
             subtipo: item.subtipo || (item.isMicrodrama ? 'microdrama' : null),
             originalLanguage: isAnime ? 'ja' : (isDorama ? 'ko' : (item.idiomaOriginal || null)),
-            season: 1,
+            season: tipo === 'serie' ? 1 : null,
             episode: tipo === 'serie' ? 1 : null
         });
     }
