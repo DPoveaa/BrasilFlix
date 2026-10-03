@@ -4879,6 +4879,126 @@
             box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
         }
 
+        /* ═══ EPISÓDIOS EM LANÇAMENTO (FUTUROS / PENDENTES) ═══ */
+        .episode-cascade-row.ep-pending {
+            opacity: 0.65;
+            cursor: pointer;
+            border-color: rgba(148, 163, 184, 0.18);
+            background: rgba(255, 255, 255, 0.02);
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .episode-cascade-row.ep-pending:hover {
+            opacity: 0.92;
+            transform: translateX(3px);
+            border-color: rgba(167, 139, 250, 0.45);
+            background: rgba(139, 92, 246, 0.06);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+        }
+
+        .episode-cascade-row.ep-pending .episode-play-overlay-icon {
+            display: none;
+        }
+
+        .episode-cascade-row.ep-pending .episode-preview-wrapper {
+            filter: grayscale(0.3) brightness(0.65);
+        }
+
+        .episode-cascade-num.ep-pending-num {
+            color: #64748b;
+        }
+
+        .ep-pending-clock-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 3;
+            color: #94a3b8;
+            font-size: 16px;
+        }
+
+        .ep-pending-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 5px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            background: rgba(99, 102, 241, 0.18);
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            color: #a5b4fc;
+            width: fit-content;
+        }
+
+        .ep-pending-date {
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .ep-air-date {
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        /* Badge "Em Lançamento" no cabeçalho da temporada */
+        .season-launching-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.2));
+            border: 1px solid rgba(139, 92, 246, 0.5);
+            color: #c4b5fd;
+            animation: pulse-badge 2.5s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes pulse-badge {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.35); }
+            50% { opacity: 0.85; box-shadow: 0 0 0 4px rgba(139, 92, 246, 0); }
+        }
+
+        .season-launching-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #a78bfa;
+            animation: blink-dot 1.4s ease-in-out infinite;
+        }
+
+        @keyframes blink-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         .btn-toggle-watched {
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -16788,8 +16908,13 @@ function initApp() {
                         </div>
 
                         <div class="detail-main-info">
-                            <div style="font-size: 13px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px;">
-                                ${isSerie ? (item.isAnime ? 'Anime' : (item.isDorama ? 'Dorama' : 'Série')) : 'Filme'}
+                            <div style="font-size: 13px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span>${isSerie ? (item.isAnime ? 'Anime' : (item.isDorama ? 'Dorama' : 'Série')) : 'Filme'}</span>
+                                ${(isSerie && (item.emLancamento || item.isLancamento)) ? `
+                                    <span class="season-launching-badge" style="font-size: 10px; padding: 2px 7px;">
+                                        <span class="season-launching-dot"></span> Em Lançamento
+                                    </span>
+                                ` : ''}
                             </div>
 
                             <h1 class="detail-title">${item.nome}</h1>
@@ -17141,7 +17266,21 @@ function initApp() {
         const tmdbSeasonCache = new Map();
 
         async function enrichSeasonEpisodesWithTmdb(serie, seasonNum) {
-            if (!serie || !serie.tmdbId) return;
+            if (!serie) return;
+            if (!serie.tmdbId || Number(serie.tmdbId) <= 0) {
+                try {
+                    const cleanName = (serie.nome || '').replace(/\[.*?\]/g, '').trim();
+                    if (cleanName) {
+                        const sRes = await fetch(`/api/tmdb/search-all?q=${encodeURIComponent(cleanName)}`);
+                        const sJson = await sRes.json();
+                        const found = (sJson.results || []).find(r => r.tipo === 'serie' || r.media_type === 'tv');
+                        if (found && found.tmdbId) {
+                            serie.tmdbId = found.tmdbId;
+                        }
+                    }
+                } catch (e) {}
+            }
+            if (!serie.tmdbId || Number(serie.tmdbId) <= 0) return;
             const cacheKey = `${serie.tmdbId}_${seasonNum}`;
             
             try {
@@ -17157,9 +17296,15 @@ function initApp() {
 
                 if (seasonData && seasonData.episodios) {
                     const temp = (serie.temporadas || []).find(t => t.numero === seasonNum);
-                    if (temp && temp.episodios) {
+                    if (temp) {
+                        if (!temp.episodios) temp.episodios = [];
                         let hasChanges = false;
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+
+                        // Enrich existing (available) episodes with TMDB metadata
                         for (const ep of temp.episodios) {
+                            if (ep._isPending) continue; // skip ghost eps
                             const tmdbEp = seasonData.episodios.find(e => e.numero === ep.numero);
                             if (tmdbEp) {
                                 if (tmdbEp.nome && tmdbEp.nome !== `Episódio ${ep.numero}` && ep.nome !== tmdbEp.nome) {
@@ -17178,7 +17323,59 @@ function initApp() {
                                     ep.duracao = tmdbEp.duracaoMinutos || tmdbEp.runtime;
                                     hasChanges = true;
                                 }
+                                if (tmdbEp.dataLancamento && !ep.dataLancamento) {
+                                    ep.dataLancamento = tmdbEp.dataLancamento;
+                                    hasChanges = true;
+                                }
                             }
+                        }
+
+                        // Detecção inteligente de série em lançamento:
+                        // 1. Flag explícita `emLancamento` na série
+                        // 2. Ou TMDB possui episódios com data de lançamento futura (air_date > hoje)
+                        // 3. Ou o episódio mais recente no TMDB foi exibido nos últimos 60 dias (temporada em exibição)
+                        const maxTmdbEp = seasonData.episodios[seasonData.episodios.length - 1];
+                        const maxAirDate = maxTmdbEp?.dataLancamento ? new Date(maxTmdbEp.dataLancamento + 'T12:00:00') : null;
+                        const sixtyDaysAgo = new Date(today.getTime() - (60 * 24 * 60 * 60 * 1000));
+                        const hasFutureEps = seasonData.episodios.some(e => e.dataLancamento && new Date(e.dataLancamento + 'T12:00:00') > today);
+                        const isSeasonRecentlyAiring = !!(maxAirDate && maxAirDate >= sixtyDaysAgo);
+                        const isOngoing = !!(serie.emLancamento || serie.isLancamento || hasFutureEps || isSeasonRecentlyAiring);
+
+                        const existingNums = new Set(temp.episodios.map(e => e.numero));
+
+                        for (const tmdbEp of seasonData.episodios) {
+                            if (existingNums.has(tmdbEp.numero)) continue;
+
+                            const airDateStr = tmdbEp.dataLancamento || '';
+                            const airDate = airDateStr ? new Date(airDateStr + 'T12:00:00') : null;
+                            const isFuture = airDate && airDate > today;
+                            const isRecentlyAired = airDate && airDate <= today;
+
+                            // Adiciona como pendente se a temporada está em lançamento
+                            if (isFuture || (isOngoing && (!airDate || isRecentlyAired))) {
+                                temp.episodios.push({
+                                    numero: tmdbEp.numero,
+                                    nome: tmdbEp.nome || `Episódio ${tmdbEp.numero}`,
+                                    sinopse: tmdbEp.sinopse || '',
+                                    stillUrl: tmdbEp.stillUrl || null,
+                                    duracao: tmdbEp.duracaoMinutos || tmdbEp.runtime || 0,
+                                    dataLancamento: airDateStr,
+                                    _isPending: true,
+                                    _isFutureAir: !!isFuture,
+                                    _isRecentAir: !!(isRecentlyAired && isOngoing)
+                                });
+                                hasChanges = true;
+                            }
+                        }
+
+                        // Se encontrou episódios pendentes ou futuros, marca a série como em lançamento
+                        if (hasChanges && (hasFutureEps || isOngoing)) {
+                            serie.emLancamento = true;
+                        }
+
+                        // Mantém episódios ordenados por número
+                        if (hasChanges) {
+                            temp.episodios.sort((a, b) => Number(a.numero) - Number(b.numero));
                         }
 
                         if (hasChanges && currentDetailMedia && String(currentDetailMedia.id) === String(serie.id)) {
@@ -17221,6 +17418,37 @@ function initApp() {
 
         let currentSelectedSeasonNum = 1;
 
+        function formatEpisodeAirDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const parts = dateStr.split('-');
+                if (parts.length !== 3) return dateStr;
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const day = parseInt(parts[2], 10);
+                const epDate = new Date(year, month, day);
+                if (isNaN(epDate.getTime())) return dateStr;
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const diffTime = epDate.getTime() - today.getTime();
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+                const monthsPt = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                const formattedDate = `${day} de ${monthsPt[month]}. de ${year}`;
+
+                if (diffDays === 0) return 'Lança Hoje!';
+                if (diffDays === 1) return `Amanhã (${day} ${monthsPt[month]})`;
+                if (diffDays > 1 && diffDays <= 7) return `Em ${diffDays} dias (${day} ${monthsPt[month]})`;
+                if (diffDays > 7) return `Lança em ${formattedDate}`;
+
+                return formattedDate;
+            } catch (e) {
+                return dateStr;
+            }
+        }
+
         function buildEpisodesHtml(serie, temporada) {
             const episodios = temporada.episodios || [];
             if (episodios.length === 0) {
@@ -17231,6 +17459,45 @@ function initApp() {
                 cleanEpTitle = cleanEpTitle.replace(/^(?:(?:Epis[oó]dio|Cap[íi]tulo|Ep\.?|E)\s*\d+[\.\:\-\s]+|\d+[\.\:\-\s]+)/i, '').trim();
                 if (!cleanEpTitle) cleanEpTitle = `Episódio ${ep.numero}`;
 
+                const epThumb = ep.stillUrl || ep.thumbUrl || serie.backdropUrl || serie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
+                const epDesc = ep.sinopse || ep.overview || ep.descricao || (ep._isPending ? 'Sinopse oficial deste episódio estará disponível após a transmissão original.' : `Episódio ${ep.numero} da ${temporada.numero}ª temporada.`);
+                const epDuration = ep.duracao ? `${ep.duracao} min` : '';
+
+                // CASO 1: EPISÓDIO EM LANÇAMENTO (FUTURO OU AINDA NÃO DISPONÍVEL NO BRASILFLIX)
+                if (ep._isPending) {
+                    const airDateFormatted = formatEpisodeAirDate(ep.dataLancamento);
+                    let badgeHtml = '';
+                    if (ep._isFutureAir || (airDateFormatted && airDateFormatted.startsWith('Lança'))) {
+                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.45); color: #c4b5fd;">🗓️ ${airDateFormatted}</span>`;
+                    } else if (airDateFormatted) {
+                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.45); color: #fcd34d;">⏳ Em Processamento • Exibido em ${airDateFormatted}</span>`;
+                    } else {
+                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.45); color: #c4b5fd;">⏳ Em Breve</span>`;
+                    }
+
+                    return `
+                        <div class="episode-cascade-row ep-pending" onclick="event.stopPropagation(); showToast('O Episódio ${ep.numero} ainda não foi disponibilizado porque está em fase de lançamento. Fique atento às novidades!', 'info')">
+                            <div class="episode-cascade-num ep-pending-num">${ep.numero}</div>
+                            <div class="episode-preview-wrapper" style="filter: grayscale(0.25) brightness(0.65);">
+                                <img src="${epThumb}" class="episode-preview-img" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
+                                <div class="ep-pending-clock-overlay" title="Episódio em fase de lançamento">⏳</div>
+                                <div style="position: absolute; bottom: 6px; left: 6px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 5px; padding: 2px 7px; font-size: 10px; font-weight: 800; color: #cbd5e1; z-index: 4;">Ainda não lançado</div>
+                                ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
+                            </div>
+                            <div class="episode-cascade-info">
+                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap;">
+                                    ${badgeHtml}
+                                </div>
+                                <div class="episode-cascade-title-row">
+                                    <div class="episode-cascade-title" style="color: #cbd5e1;">${cleanEpTitle}</div>
+                                </div>
+                                <div class="episode-cascade-desc" style="color: #64748b;">${epDesc}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // CASO 2: EPISÓDIO DISPONÍVEL PARA ASSISTIR
                 const hasDub = !!(ep.isDublado || ep.versoes?.dublado);
                 const hasLeg = !!(ep.isLegendado || ep.versoes?.legendado);
                 let audioBadgeHtml = '';
@@ -17242,10 +17509,6 @@ function initApp() {
                     audioBadgeHtml = `<span class="badge-ep-audio badge-ep-audio-leg">Legendado</span>`;
                 }
 
-                const epThumb = ep.stillUrl || ep.thumbUrl || serie.backdropUrl || serie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
-                const epDesc = ep.sinopse || ep.overview || ep.descricao || `Episódio ${ep.numero} da ${temporada.numero}ª temporada.`;
-                const epDuration = ep.duracao ? `${ep.duracao} min` : '';
-
                 const prog = getEpisodeProgress(serie.id, temporada.numero, ep.numero);
                 const isCompleted = prog?.completed || false;
                 const curTime = prog?.currentTime || 0;
@@ -17255,6 +17518,7 @@ function initApp() {
                 const pct = (dur > 0 && curTime > 0) ? Math.min(100, Math.round((curTime / dur) * 100)) : 0;
                 const userWantsBlur = (currentUser?.preferencias?.spoilerBlur !== false) && (localStorage.getItem('bf_pref_spoiler_blur') !== 'false');
                 const spoilerBlurClass = (!isWatchedOrStarted && userWantsBlur) ? 'episode-preview-spoiler-blur' : '';
+                const airDateStr = ep.dataLancamento ? formatEpisodeAirDate(ep.dataLancamento) : '';
 
                 return `
                     <div class="episode-cascade-row ${isCompleted ? 'is-completed' : ''}" onclick="event.stopPropagation(); openWebPlayerEpisode('${serie.id}', ${temporada.numero}, ${ep.numero})">
@@ -17267,7 +17531,10 @@ function initApp() {
                             ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
                         </div>
                         <div class="episode-cascade-info">
-                            <div style="margin-bottom: 2px;">${audioBadgeHtml}</div>
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; flex-wrap: wrap; gap: 6px;">
+                                <div>${audioBadgeHtml}</div>
+                                ${airDateStr ? `<span class="ep-air-date" style="font-size: 11px; font-weight: 700; color: #94a3b8; display: inline-flex; align-items: center; gap: 4px;" title="Data de Lançamento Original">📅 ${airDateStr}</span>` : ''}
+                            </div>
                             <div class="episode-cascade-title-row">
                                 <div class="episode-cascade-title">${cleanEpTitle}</div>
                             </div>
@@ -17318,16 +17585,32 @@ function initApp() {
             }
 
             accordion.innerHTML = temporadas.map((t, idx) => {
-                const epCount = (t.episodios || []).length;
+                const eps = t.episodios || [];
+                const availableEps = eps.filter(e => !e._isPending);
+                const pendingEps = eps.filter(e => !!e._isPending);
+                const isSeasonLaunching = pendingEps.length > 0 || !!serie.emLancamento;
                 const isFirst = idx === 0;
+
                 return `
                     <div class="season-accordion-item ${isFirst ? 'is-open' : ''}" data-season-num="${t.numero}">
                         <div class="season-accordion-header" onclick="toggleSeasonAccordion(this.closest('.season-accordion-item'), '${serie.id}')">
                             <div class="season-accordion-left">
                                 <div class="season-accordion-number">${t.numero}</div>
                                 <div>
-                                    <div class="season-accordion-label">Temporada ${t.numero}</div>
-                                    <div class="season-accordion-eps-count">${epCount} episódio${epCount !== 1 ? 's' : ''} • Clique para ${isFirst ? 'recolher' : 'expandir'}</div>
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <div class="season-accordion-label">Temporada ${t.numero}</div>
+                                        ${isSeasonLaunching ? `
+                                            <span class="season-launching-badge">
+                                                <span class="season-launching-dot"></span> Em Lançamento
+                                            </span>
+                                        ` : ''}
+                                    </div>
+                                    <div class="season-accordion-eps-count">
+                                        ${pendingEps.length > 0 
+                                            ? `${eps.length} episódios (${availableEps.length} disponíveis • ${pendingEps.length} em lançamento)`
+                                            : `${eps.length} episódio${eps.length !== 1 ? 's' : ''}`
+                                        } • Clique para ${isFirst ? 'recolher' : 'expandir'}
+                                    </div>
                                 </div>
                             </div>
                             <div class="season-accordion-right">
@@ -17373,18 +17656,63 @@ function initApp() {
         }
 
         function renderDetailSeasonsHtmlOnly(serie, currentSeason) {
-            // Re-render the open accordion season's episodes (e.g. after marking watched)
+            // Re-render the open accordion season's episodes (e.g. after marking watched or TMDB enrichment)
             const accordion = document.getElementById('detail-seasons-accordion');
             if (!accordion) return;
             const target = accordion.querySelector(`[data-season-num="${currentSeason}"]`);
             if (!target) return;
-            const body = target.querySelector('.season-accordion-episodes');
-            if (!body) return;
             const temporada = (serie.temporadas || []).find(t => t.numero === currentSeason);
-            if (temporada) {
+            if (!temporada) return;
+
+            // Update body episodes
+            const body = target.querySelector('.season-accordion-episodes');
+            if (body) {
                 body.innerHTML = buildEpisodesHtml(serie, temporada);
                 body.dataset.rendered = '1';
             }
+
+            // Update header count and launch badge
+            const eps = temporada.episodios || [];
+            const availableEps = eps.filter(e => !e._isPending);
+            const pendingEps = eps.filter(e => !!e._isPending);
+            const isSeasonLaunching = pendingEps.length > 0 || !!serie.emLancamento;
+
+            const left = target.querySelector('.season-accordion-left');
+            if (left) {
+                left.innerHTML = `
+                    <div class="season-accordion-number">${temporada.numero}</div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <div class="season-accordion-label">Temporada ${temporada.numero}</div>
+                            ${isSeasonLaunching ? `
+                                <span class="season-launching-badge">
+                                    <span class="season-launching-dot"></span> Em Lançamento
+                                </span>
+                            ` : ''}
+                        </div>
+                        <div class="season-accordion-eps-count">
+                            ${pendingEps.length > 0 
+                                ? `${eps.length} episódios (${availableEps.length} disponíveis • ${pendingEps.length} em lançamento)`
+                                : `${eps.length} episódio${eps.length !== 1 ? 's' : ''}`
+                            } • Clique para alternar
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Update main hero badge if series is now identified as in launch
+            if (isSeasonLaunching && !serie.emLancamento) {
+                serie.emLancamento = true;
+            }
+            const heroCategoryRow = document.querySelector('.detail-main-info > div:first-child');
+            if (heroCategoryRow && (serie.emLancamento || isSeasonLaunching) && !heroCategoryRow.querySelector('.season-launching-badge')) {
+                heroCategoryRow.innerHTML += `
+                    <span class="season-launching-badge" style="font-size: 10px; padding: 2px 7px;">
+                        <span class="season-launching-dot"></span> Em Lançamento
+                    </span>
+                `;
+            }
+
             currentSelectedSeasonNum = currentSeason;
         }
 
@@ -17686,6 +18014,12 @@ function initApp() {
             const episode = (season.episodios || []).find(e => e.numero === eNum) || season.episodios?.[0];
             if (!episode) {
                 showToast(`❌ Episódio ${eNum} indisponível.`, 'error');
+                return;
+            }
+
+            if (episode._isPending) {
+                showToast(`O Episódio ${eNum} ainda não foi disponibilizado porque está em fase de lançamento.`, 'info');
+                openMediaDetailPage(serie.id, 'serie');
                 return;
             }
 
