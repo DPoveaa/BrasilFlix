@@ -4881,20 +4881,20 @@
 
         /* ═══ EPISÓDIOS EM LANÇAMENTO (FUTUROS / PENDENTES) ═══ */
         .episode-cascade-row.ep-pending {
-            opacity: 0.65;
-            cursor: pointer;
-            border-color: rgba(148, 163, 184, 0.18);
-            background: rgba(255, 255, 255, 0.02);
+            opacity: 0.6;
+            cursor: default;
+            border-color: rgba(148, 163, 184, 0.14);
+            background: rgba(255, 255, 255, 0.015);
             position: relative;
-            transition: all 0.2s ease;
+            pointer-events: none;
+            user-select: none;
         }
 
         .episode-cascade-row.ep-pending:hover {
-            opacity: 0.92;
-            transform: translateX(3px);
-            border-color: rgba(167, 139, 250, 0.45);
-            background: rgba(139, 92, 246, 0.06);
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+            transform: none;
+            box-shadow: none;
+            border-color: rgba(148, 163, 184, 0.14);
+            background: rgba(255, 255, 255, 0.015);
         }
 
         .episode-cascade-row.ep-pending .episode-play-overlay-icon {
@@ -13335,10 +13335,13 @@ function initApp() {
 
             let epCount = 0;
             if (item.temporadas && item.temporadas.length > 0) {
-                epCount = item.temporadas.reduce((a, t) => a + (t.episodios ? t.episodios.length : 0), 0);
+                epCount = item.temporadas.reduce((a, t) => {
+                    const available = (t.episodios || []).filter(e => !e._isPending);
+                    return a + available.length;
+                }, 0);
             }
             if (epCount === 0) {
-                epCount = item.totalEpisodios || 1;
+                epCount = 1;
             }
 
             const tempStr = `${tempCount} temp${tempCount > 1 ? 's' : ''}`;
@@ -16926,7 +16929,7 @@ function initApp() {
                                 <span>${item.ano || '2026'}</span>
                                 <span style="color: #60a5fa; font-weight: 700;">${audioText}</span>
                                 <span>${qualText}</span>
-                                ${isSerie ? `<span>${(item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)} Temporada${((item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)) > 1 ? 's' : ''} • ${item.totalEpisodios || (item.temporadas ? item.temporadas.reduce((a,t) => a + (t.episodios?.length || 0), 0) : 1)} Episódios</span>` : ''}
+                                ${isSerie ? `<span>${(item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)} Temporada${((item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.totalTemporadas || 1)) > 1 ? 's' : ''} • ${(item.temporadas ? item.temporadas.reduce((a,t) => a + (t.episodios ? t.episodios.filter(e => !e._isPending).length : 0), 0) : 1)} Episódio${(item.temporadas ? item.temporadas.reduce((a,t) => a + (t.episodios ? t.episodios.filter(e => !e._isPending).length : 0), 0) : 1) > 1 ? 's' : ''}</span>` : ''}
                             </div>
 
                             ${genresPills ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0;">${genresPills}</div>` : ''}
@@ -17460,38 +17463,30 @@ function initApp() {
                 if (!cleanEpTitle) cleanEpTitle = `Episódio ${ep.numero}`;
 
                 const epThumb = ep.stillUrl || ep.thumbUrl || serie.backdropUrl || serie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80';
-                const epDesc = ep.sinopse || ep.overview || ep.descricao || (ep._isPending ? 'Sinopse oficial deste episódio estará disponível após a transmissão original.' : `Episódio ${ep.numero} da ${temporada.numero}ª temporada.`);
-                const epDuration = ep.duracao ? `${ep.duracao} min` : '';
+                const epDesc = (ep.sinopse || ep.overview || ep.descricao || '').trim();
+                const epDuration = (ep.duracao && Number(ep.duracao) > 0) ? `${ep.duracao} min` : '';
 
                 // CASO 1: EPISÓDIO EM LANÇAMENTO (FUTURO OU AINDA NÃO DISPONÍVEL NO BRASILFLIX)
                 if (ep._isPending) {
                     const airDateFormatted = formatEpisodeAirDate(ep.dataLancamento);
-                    let badgeHtml = '';
-                    if (ep._isFutureAir || (airDateFormatted && airDateFormatted.startsWith('Lança'))) {
-                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.45); color: #c4b5fd;">🗓️ ${airDateFormatted}</span>`;
-                    } else if (airDateFormatted) {
-                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.45); color: #fcd34d;">⏳ Em Processamento • Exibido em ${airDateFormatted}</span>`;
-                    } else {
-                        badgeHtml = `<span class="badge-ep-audio ep-pending-badge" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.45); color: #c4b5fd;">⏳ Em Breve</span>`;
+                    let releaseTitle = 'Em Breve';
+                    if (airDateFormatted) {
+                        releaseTitle = airDateFormatted.startsWith('Lança') ? airDateFormatted : `Lança em ${airDateFormatted}`;
                     }
 
                     return `
-                        <div class="episode-cascade-row ep-pending" onclick="event.stopPropagation(); showToast('O Episódio ${ep.numero} ainda não foi disponibilizado porque está em fase de lançamento. Fique atento às novidades!', 'info')">
+                        <div class="episode-cascade-row ep-pending">
                             <div class="episode-cascade-num ep-pending-num">${ep.numero}</div>
                             <div class="episode-preview-wrapper" style="filter: grayscale(0.25) brightness(0.65);">
-                                <img src="${epThumb}" class="episode-preview-img" loading="lazy" alt="${cleanEpTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
+                                <img src="${epThumb}" class="episode-preview-img" loading="lazy" alt="${releaseTitle}" onerror="this.src='${serie.backdropUrl || serie.posterUrl}'">
                                 <div class="ep-pending-clock-overlay" title="Episódio em fase de lançamento">⏳</div>
-                                <div style="position: absolute; bottom: 6px; left: 6px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 5px; padding: 2px 7px; font-size: 10px; font-weight: 800; color: #cbd5e1; z-index: 4;">Ainda não lançado</div>
                                 ${epDuration ? `<span class="episode-duration-badge">${epDuration}</span>` : ''}
                             </div>
                             <div class="episode-cascade-info">
-                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap;">
-                                    ${badgeHtml}
-                                </div>
                                 <div class="episode-cascade-title-row">
-                                    <div class="episode-cascade-title" style="color: #cbd5e1;">${cleanEpTitle}</div>
+                                    <div class="episode-cascade-title" style="color: #c4b5fd; font-weight: 800;">${releaseTitle}</div>
                                 </div>
-                                <div class="episode-cascade-desc" style="color: #64748b;">${epDesc}</div>
+                                ${epDesc ? `<div class="episode-cascade-desc" style="color: #64748b;">${epDesc}</div>` : ''}
                             </div>
                         </div>
                     `;
@@ -17533,12 +17528,12 @@ function initApp() {
                         <div class="episode-cascade-info">
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; flex-wrap: wrap; gap: 6px;">
                                 <div>${audioBadgeHtml}</div>
-                                ${airDateStr ? `<span class="ep-air-date" style="font-size: 11px; font-weight: 700; color: #94a3b8; display: inline-flex; align-items: center; gap: 4px;" title="Data de Lançamento Original">📅 ${airDateStr}</span>` : ''}
+                                ${airDateStr ? `<span class="ep-air-date" style="font-size: 11px; font-weight: 700; color: #94a3b8;" title="Data de Lançamento Original">${airDateStr}</span>` : ''}
                             </div>
                             <div class="episode-cascade-title-row">
                                 <div class="episode-cascade-title">${cleanEpTitle}</div>
                             </div>
-                            <div class="episode-cascade-desc">${epDesc}</div>
+                            ${epDesc ? `<div class="episode-cascade-desc">${epDesc}</div>` : ''}
                         </div>
                     </div>
                 `;

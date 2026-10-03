@@ -2679,7 +2679,7 @@ class CatalogoManager {
                 emLancamento: s.emLancamento || false,
                 statusSerie: s.statusSerie || s.status_serie || 'Ended',
                 totalTemporadas: (s.temporadas || []).length,
-                totalEpisodios: s.totalEpisodios || 0,
+                totalEpisodios: (s.temporadas || []).reduce((a, t) => a + (t.episodios ? t.episodios.filter(e => !e._isPending).length : 0), 0) || 1,
                 exigirTemporadaCompleta: s.exigirTemporadaCompleta !== false,
                 audioBadge: s.audioBadge || ((s.isDublado && s.isLegendado) ? 'D/L' : (s.isDublado ? 'D' : (s.isLegendado ? 'L' : ''))),
                 temporadas: (s.temporadas || []).map(t => ({
