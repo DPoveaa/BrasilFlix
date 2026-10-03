@@ -17333,47 +17333,60 @@ function initApp() {
                             }
                         }
 
-                        // Detecção inteligente de série em lançamento:
-                        // 1. Flag explícita `emLancamento` na série
-                        // 2. Ou TMDB possui episódios com data de lançamento futura (air_date > hoje)
-                        // 3. Ou o episódio mais recente no TMDB foi exibido nos últimos 60 dias (temporada em exibição)
-                        const maxTmdbEp = seasonData.episodios[seasonData.episodios.length - 1];
-                        const maxAirDate = maxTmdbEp?.dataLancamento ? new Date(maxTmdbEp.dataLancamento + 'T12:00:00') : null;
-                        const sixtyDaysAgo = new Date(today.getTime() - (60 * 24 * 60 * 60 * 1000));
-                        const hasFutureEps = seasonData.episodios.some(e => e.dataLancamento && new Date(e.dataLancamento + 'T12:00:00') > today);
-                        const isSeasonRecentlyAiring = !!(maxAirDate && maxAirDate >= sixtyDaysAgo);
-                        const isOngoing = !!(serie.emLancamento || serie.isLancamento || hasFutureEps || isSeasonRecentlyAiring);
+                        // Filtro fiel: uma temporada só está em lançamento se ainda tiver episódios futuros agendados (air_date > hoje)
+                        const hasFutureEps = seasonData.episodios.some(e => {
+                            if (!e.dataLancamento) return false;
+                            const d = new Date(e.dataLancamento + 'T12:00:00');
+                            return !isNaN(d.getTime()) && d > today;
+                        });
 
                         const existingNums = new Set(temp.episodios.map(e => e.numero));
 
-                        for (const tmdbEp of seasonData.episodios) {
-                            if (existingNums.has(tmdbEp.numero)) continue;
+                        if (hasFutureEps) {
+                            // Adiciona como pendente apenas episódios com data de lançamento futura (ainda a estrear)
+                            for (const tmdbEp of seasonData.episodios) {
+                                if (existingNums.has(tmdbEp.numero)) continue;
 
-                            const airDateStr = tmdbEp.dataLancamento || '';
-                            const airDate = airDateStr ? new Date(airDateStr + 'T12:00:00') : null;
-                            const isFuture = airDate && airDate > today;
-                            const isRecentlyAired = airDate && airDate <= today;
+                                const airDateStr = tmdbEp.dataLancamento || '';
+                                const airDate = airDateStr ? new Date(airDateStr + 'T12:00:00') : null;
+                                const isFuture = airDate && airDate > today;
 
-                            // Adiciona como pendente se a temporada está em lançamento
-                            if (isFuture || (isOngoing && (!airDate || isRecentlyAired))) {
-                                temp.episodios.push({
-                                    numero: tmdbEp.numero,
-                                    nome: tmdbEp.nome || `Episódio ${tmdbEp.numero}`,
-                                    sinopse: tmdbEp.sinopse || '',
-                                    stillUrl: tmdbEp.stillUrl || null,
-                                    duracao: tmdbEp.duracaoMinutos || tmdbEp.runtime || 0,
-                                    dataLancamento: airDateStr,
-                                    _isPending: true,
-                                    _isFutureAir: !!isFuture,
-                                    _isRecentAir: !!(isRecentlyAired && isOngoing)
-                                });
-                                hasChanges = true;
+                                if (isFuture) {
+                                    temp.episodios.push({
+                                        numero: tmdbEp.numero,
+                                        nome: tmdbEp.nome || `Episódio ${tmdbEp.numero}`,
+                                        sinopse: tmdbEp.sinopse || '',
+                                        stillUrl: tmdbEp.stillUrl || null,
+                                        duracao: tmdbEp.duracaoMinutos || tmdbEp.runtime || 0,
+                                        dataLancamento: airDateStr,
+                                        _isPending: true,
+                                        _isFutureAir: true
+                                    });
+                                    hasChanges = true;
+                                }
                             }
-                        }
-
-                        // Se encontrou episódios pendentes ou futuros, marca a série como em lançamento
-                        if (hasChanges && (hasFutureEps || isOngoing)) {
+                            temp._isLaunching = true;
                             serie.emLancamento = true;
+                        } else {
+                            // Se todos os episódios do TMDB já foram lançados (ex: Neagley onde todos lançaram no mesmo dia):
+                            // Não adiciona episódios fantasmas e remove a tag de em lançamento
+                            const prevLen = temp.episodios.length;
+                            temp.episodios = temp.episodios.filter(e => !e._isPending);
+                            if (temp.episodios.length !== prevLen) hasChanges = true;
+                            temp._isLaunching = false;
+
+                            // Verifica se alguma OUTRA temporada da série ainda tem episódios pendentes
+                            const anySeasonLaunching = (serie.temporadas || []).some(t => 
+                                (t.episodios || []).some(e => e._isPending)
+                            );
+                            if (!anySeasonLaunching) {
+                                serie.emLancamento = false;
+                                if (currentDetailMedia && String(currentDetailMedia.id) === String(serie.id)) {
+                                    currentDetailMedia.emLancamento = false;
+                                    const heroBadge = document.querySelector('.detail-main-info .season-launching-badge');
+                                    if (heroBadge) heroBadge.remove();
+                                }
+                            }
                         }
 
                         // Mantém episódios ordenados por número
@@ -17381,7 +17394,7 @@ function initApp() {
                             temp.episodios.sort((a, b) => Number(a.numero) - Number(b.numero));
                         }
 
-                        if (hasChanges && currentDetailMedia && String(currentDetailMedia.id) === String(serie.id)) {
+                        if (currentDetailMedia && String(currentDetailMedia.id) === String(serie.id)) {
                             renderDetailSeasonsHtmlOnly(serie, seasonNum);
                         }
                     }
@@ -17583,7 +17596,7 @@ function initApp() {
                 const eps = t.episodios || [];
                 const availableEps = eps.filter(e => !e._isPending);
                 const pendingEps = eps.filter(e => !!e._isPending);
-                const isSeasonLaunching = pendingEps.length > 0 || !!serie.emLancamento;
+                const isSeasonLaunching = pendingEps.length > 0;
                 const isFirst = idx === 0;
 
                 return `
@@ -17670,7 +17683,7 @@ function initApp() {
             const eps = temporada.episodios || [];
             const availableEps = eps.filter(e => !e._isPending);
             const pendingEps = eps.filter(e => !!e._isPending);
-            const isSeasonLaunching = pendingEps.length > 0 || !!serie.emLancamento;
+            const isSeasonLaunching = pendingEps.length > 0;
 
             const left = target.querySelector('.season-accordion-left');
             if (left) {
@@ -17695,17 +17708,24 @@ function initApp() {
                 `;
             }
 
-            // Update main hero badge if series is now identified as in launch
-            if (isSeasonLaunching && !serie.emLancamento) {
-                serie.emLancamento = true;
-            }
+            // Sincroniza badge de lançamento no hero da série
+            const anySeasonLaunching = (serie.temporadas || []).some(t => (t.episodios || []).some(e => e._isPending));
             const heroCategoryRow = document.querySelector('.detail-main-info > div:first-child');
-            if (heroCategoryRow && (serie.emLancamento || isSeasonLaunching) && !heroCategoryRow.querySelector('.season-launching-badge')) {
-                heroCategoryRow.innerHTML += `
-                    <span class="season-launching-badge" style="font-size: 10px; padding: 2px 7px;">
-                        <span class="season-launching-dot"></span> Em Lançamento
-                    </span>
-                `;
+            const heroBadge = document.querySelector('.detail-main-info .season-launching-badge');
+            if (anySeasonLaunching) {
+                serie.emLancamento = true;
+                if (heroCategoryRow && !heroBadge) {
+                    heroCategoryRow.innerHTML += `
+                        <span class="season-launching-badge" style="font-size: 10px; padding: 2px 7px;">
+                            <span class="season-launching-dot"></span> Em Lançamento
+                        </span>
+                    `;
+                }
+            } else {
+                serie.emLancamento = false;
+                if (heroBadge) {
+                    heroBadge.remove();
+                }
             }
 
             currentSelectedSeasonNum = currentSeason;
