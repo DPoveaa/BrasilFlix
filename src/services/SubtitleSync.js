@@ -34,8 +34,53 @@ class SubtitleSync {
     }
 
     /**
-     * Normaliza o formato SRT: padroniza quebras de linha, remove blocos vazios
-     * e renumera as entradas. NÃO altera timestamps (respeita o resultado do ffsubsync).
+     * Estende a duração de cada cue SRT respeitando o próximo cue.
+     *
+     * Regras:
+     *  - Tenta estender até +EXTEND_MS além do fim original.
+     *  - Garante duração mínima de MIN_DURATION_MS por cue.
+     *  - Nunca encosta no próximo cue: mantém gap de GAP_MS.
+     *  - Se não há próximo cue, estende livremente até o ideal.
+     *  - Nunca reduz uma duração já maior que o ideal.
+     *
+     * @param {Array<{startTc:string, endTc:string, text:string}>} cues
+     * @returns {Array<{startTc:string, endTc:string, text:string}>}
+     */
+    extendSubtitleDurations(cues) {
+        const EXTEND_MS     = 300;  // ms extras a tentar adicionar no fim de cada cue
+        const MIN_DURATION_MS = 1000; // duração mínima de qualquer cue
+        const GAP_MS        = 50;   // gap de segurança entre o fim de um cue e o início do próximo
+
+        return cues.map((cue, i) => {
+            const startMs = this.parseTimecodeToMs(cue.startTc);
+            const endMs   = this.parseTimecodeToMs(cue.endTc);
+
+            // Fim ideal: o maior entre (fim + extensão) e (início + duração mínima)
+            const idealEndMs = Math.max(endMs + EXTEND_MS, startMs + MIN_DURATION_MS);
+
+            // Teto: início do próximo cue menos o gap de segurança (ou ilimitado se for o último)
+            let maxEndMs = Infinity;
+            if (i + 1 < cues.length) {
+                const nextStartMs = this.parseTimecodeToMs(cues[i + 1].startTc);
+                maxEndMs = nextStartMs - GAP_MS;
+            }
+
+            // Aplica: nunca reduz e nunca ultrapassa o teto
+            const newEndMs = Math.min(idealEndMs, maxEndMs);
+            const finalEndMs = Math.max(endMs, newEndMs); // nunca encolhe
+
+            return {
+                startTc: cue.startTc,
+                endTc: this.formatMsToTimecode(finalEndMs),
+                text: cue.text
+            };
+        });
+    }
+
+    /**
+     * Normaliza o formato SRT: padroniza quebras de linha, remove blocos vazios,
+     * renumera as entradas e estende suavemente a duração de cada cue para
+     * melhorar a legibilidade sem sobrepor diálogos consecutivos.
      */
     normalizeSrtFormat(srtContent) {
         if (!srtContent || typeof srtContent !== 'string') return srtContent;
@@ -73,8 +118,11 @@ class SubtitleSync {
 
         if (cues.length === 0) return srtContent;
 
+        // Estende duração de cada cue sem sobrepor o seguinte
+        const extendedCues = this.extendSubtitleDurations(cues);
+
         // Reconstrói o arquivo SRT com numeração sequencial correta
-        const outputBlocks = cues.map((cue, idx) => {
+        const outputBlocks = extendedCues.map((cue, idx) => {
             return `${idx + 1}\n${cue.startTc} --> ${cue.endTc}\n${cue.text}`;
         });
 
