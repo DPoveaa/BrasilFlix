@@ -752,6 +752,14 @@
             padding: 2px 5px;
             pointer-events: none;
             line-height: 1.2;
+            transition: opacity 0.15s ease;
+        }
+
+        /* Oculta dica Ctrl+K quando o input está focado ou tem conteúdo */
+        .header-search-input:focus ~ .header-search-shortcut,
+        .header-search-input:not(:placeholder-shown) ~ .header-search-shortcut {
+            opacity: 0;
+            pointer-events: none;
         }
 
         /* Bell button & badge */
@@ -9598,26 +9606,29 @@
                             Carregando catálogo...
                         </div>
                     </div>
-
-                    <!-- BANNER DE ANÚNCIO DISCRETO NO CATÁLOGO (728x90) -->
-                    <div class="bf-banner-ad-wrapper" id="bf-catalog-bottom-ad" aria-label="Publicidade">
-                        <div class="bf-ad-header">
-                            <div class="bf-ad-header-left">
-                                <span class="bf-ad-badge">Publicidade</span>
-                                <button type="button" class="bf-ad-info-btn" onclick="openAdTransparencyModal()" title="Por que exibimos anúncios?">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                                    <span>Por que anúncios?</span>
-                                </button>
-                            </div>
-                            <a href="/assinar" class="bf-ad-vip-hint" title="Conhecer Plano VIP">
-                                👑 Seja VIP (Sem Anúncios)
-                            </a>
-                        </div>
-                        <div class="bf-ad-content-slot" id="ad-slot-catalog-bottom">
-                            <iframe src="/ad-728x90.html" width="728" height="90" scrolling="no" frameborder="0" loading="lazy" title="Publicidade"></iframe>
-                        </div>
-                    </div>
                 </main>
+            </div>
+
+            <!-- BANNER DE ANÚNCIO DISCRETO NO CATÁLOGO (728x90) — sempre abaixo do grid/resultados -->
+            <div class="bf-banner-ad-wrapper" id="bf-catalog-bottom-ad" aria-label="Publicidade" style="border-top: 2px solid rgba(16,185,129,0.25); margin-top: 0;">
+                <div style="width: 100%; max-width: 728px; display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
+                    <span style="font-size: 9px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(16,185,129,0.7); padding: 2px 7px; border: 1px solid rgba(16,185,129,0.3); border-radius: 4px; background: rgba(16,185,129,0.07);">ANÚNCIO</span>
+                </div>
+                <div class="bf-ad-header">
+                    <div class="bf-ad-header-left">
+                        <span class="bf-ad-badge">Publicidade</span>
+                        <button type="button" class="bf-ad-info-btn" onclick="openAdTransparencyModal()" title="Por que exibimos anúncios?">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            <span>Por que anúncios?</span>
+                        </button>
+                    </div>
+                    <a href="/assinar" class="bf-ad-vip-hint" title="Conhecer Plano VIP">
+                        👑 Seja VIP (Sem Anúncios)
+                    </a>
+                </div>
+                <div class="bf-ad-content-slot" id="ad-slot-catalog-bottom">
+                    <iframe src="/ad-728x90.html" width="728" height="90" scrolling="no" frameborder="0" loading="lazy" title="Publicidade"></iframe>
+                </div>
             </div>
         </div>
 

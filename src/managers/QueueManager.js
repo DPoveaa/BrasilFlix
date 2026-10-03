@@ -619,11 +619,19 @@ class QueueManager extends EventEmitter {
         try {
             console.log('🔍 [AuditQueue] Iniciando auditoria automática da fila...');
 
+            // Resgata periodicamente jobs que possam ter ficado com status 'failed' para nunca deixá-los esquecidos
+            await db.query(
+                `UPDATE queue_jobs 
+                 SET status = 'queued', progress = 0, retry_after = NOW() + INTERVAL '5 minutes',
+                     progress_details = 'Recuperado para nova tentativa periódica'
+                 WHERE status = 'failed'`
+            );
+
             // Carrega todos os jobs não-finalizados do banco
             const res = await db.query(
-                `SELECT id, title, type, season, episode, status, audio_preference, progress, progress_details, updated_at
+                `SELECT id, title, type, season, episode, status, audio_preference, progress, progress_details, retry_after, updated_at
                  FROM queue_jobs
-                 WHERE status NOT IN ('completed', 'failed', 'cancelled')
+                 WHERE status NOT IN ('completed', 'cancelled')
                  ORDER BY created_at ASC`
             );
             const jobs = res.rows;
@@ -858,9 +866,20 @@ class QueueManager extends EventEmitter {
                 `UPDATE queue_jobs SET status = 'queued', progress = 0
                  WHERE status IN ('processing', 'downloading', 'uploading')`
             );
+            // Resgata jobs 'failed' para NUNCA ficarem esquecidos para sempre (cooldown inicial suave de 2 min)
+            const failedRes = await db.query(
+                `UPDATE queue_jobs 
+                 SET status = 'queued', progress = 0, retry_after = NOW() + INTERVAL '2 minutes',
+                     progress_details = 'Recuperado da falha para nova tentativa com cooldown'
+                 WHERE status = 'failed' RETURNING id`
+            );
+            if (failedRes.rows && failedRes.rows.length > 0) {
+                console.log(`🔄 [QueueManager] Resgatados ${failedRes.rows.length} job(s) anteriormente em 'failed' para nova tentativa com cooldown.`);
+            }
+
             const res = await db.query(
                 `SELECT * FROM queue_jobs
-                 WHERE status NOT IN ('completed', 'failed')
+                 WHERE status NOT IN ('completed', 'cancelled')
                  ORDER BY priority ASC, queue_order ASC, created_at ASC`
             );
             this.queue = res.rows.map(r => this._rowToJob(r));
@@ -877,8 +896,8 @@ class QueueManager extends EventEmitter {
                 `INSERT INTO queue_jobs
                     (id, title, type, priority, audio_preference, season, episode,
                      status, progress, progress_details, user_id, username, tmdb_id,
-                     extra_data, error, queue_order, attempt_count, created_at, updated_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW())
+                     extra_data, error, queue_order, attempt_count, retry_after, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
                  ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     progress = EXCLUDED.progress,
@@ -888,6 +907,7 @@ class QueueManager extends EventEmitter {
                     error = EXCLUDED.error,
                     queue_order = EXCLUDED.queue_order,
                     attempt_count = EXCLUDED.attempt_count,
+                    retry_after = EXCLUDED.retry_after,
                     updated_at = NOW()`,
                 [
                     job.id,
@@ -922,6 +942,7 @@ class QueueManager extends EventEmitter {
                     job.error || null,
                     job.queueOrder !== undefined ? job.queueOrder : 0,
                     job.attemptCount || 0,
+                    job.retryAfter ? new Date(job.retryAfter) : null,
                     job.createdAt || new Date().toISOString()
                 ]
             );
@@ -969,6 +990,7 @@ class QueueManager extends EventEmitter {
             originalLanguage: extra.originalLanguage || null,
             idiomaOriginal: extra.originalLanguage || null,
             attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
+            retryAfter: row.retry_after ? new Date(row.retry_after).toISOString() : null,
             createdAt: row.created_at
         };
     }
@@ -1128,7 +1150,13 @@ class QueueManager extends EventEmitter {
                         console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} (${pref}) já está cadastrado no catálogo (memória). Ignorando.`);
                         return null;
                     }
-                    if (audioMatches && !extraData.isManualAdd) {
+                    // Pedido explícito de usuário por episódio específico → não redirecionar, apenas ignorar
+                    const isUserSpecificRequest = !!(extraData.userId && (extraData.episode || extraData.season));
+                    if (audioMatches && isUserSpecificRequest) {
+                        console.log(`ℹ️ [Fila] "${title}" T${job.season}E${job.episode} (${pref}) já está catalogado. Pedido de usuário ${extraData.userId} ignorado (já disponível).`);
+                        return null;
+                    }
+                    if (audioMatches && !extraData.isManualAdd && !isUserSpecificRequest) {
                         const temporada = (serieExistente.temporadas || []).find(t => t.numero === job.season);
                         let nextMissing = null;
                         for (let ep = 1; ep <= 30; ep++) {
@@ -1295,7 +1323,12 @@ class QueueManager extends EventEmitter {
 
         // Filtra jobs cujo episódio ou filme já está sendo processado ativamente ou já foi concluído no catálogo
         let eligibleJobs = [];
+        const now = Date.now();
         for (const j of queuedJobs) {
+            // Se o job estiver em cooldown ativo, pula temporariamente para não bloquear outros conteúdos
+            if (j.retryAfter && new Date(j.retryAfter).getTime() > now) {
+                continue;
+            }
             const normTitle = normalizeTitle(j.title);
             const hasRaw = !!(j.rawFilePath && fs.existsSync(j.rawFilePath));
             const hasOpt = !!(j.optimizedPath && fs.existsSync(j.optimizedPath));
@@ -1813,49 +1846,39 @@ class QueueManager extends EventEmitter {
                 }
                 this.sortQueue();
             } else {
-                // Se for um pedido de cliente/usuário ou erro por falta momentânea de fontes/seeders,
-                // NUNCA descarta nem marca como failed definitivo!
-                // Recoloca no final da fila para continuar tentando indefinidamente!
-                const isUserRequest = !!(nextJob.userId || nextJob.isPedido || nextJob.extraData?.isPedido || (nextJob.extra_data && nextJob.extra_data.isPedido));
-                const errMsg = (error && error.message) ? error.message : '';
-                const isNoSourceError = errMsg.includes('Nenhuma fonte') || errMsg.includes('seeders') || errMsg.includes('timeout') || errMsg.includes('ETIMEDOUT');
+                // Atingiu 3 tentativas ou mais. NENHUMA SÉRIE, TEMPORADA OU FILME É DESCARTADO!
+                // Entra em COOLDOWN inteligente (30 a 60 minutos) e será tentado novamente após esse tempo.
+                const cooldownMinutes = nextJob.attemptCount >= 6 ? 60 : 30;
+                const retryAfter = new Date(Date.now() + cooldownMinutes * 60 * 1000);
+                const horaRetry = retryAfter.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-                if (isUserRequest || isNoSourceError) {
-                    console.warn(`🔄 [RETRY CONTÍNUO] "${nextJob.title}" é pedido de usuário ou está sem fontes ativas no momento (${errMsg}). NUNCA descartar: recolocando no fim da fila para nova tentativa!`);
+                console.warn(`⏸️ [COOLDOWN] "${nextJob.title}" atingiu ${nextJob.attemptCount} tentativas com falha (${error.message}). Entrando em cooldown de ${cooldownMinutes}m (tentará novamente às ${horaRetry}). NENHUM conteúdo é descartado.`);
 
-                    if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
-                        this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
-                    }
-
-                    nextJob.status = 'queued';
-                    nextJob.progress = 0;
-                    nextJob.error = `Buscando fontes ativas... (${errMsg})`;
-                    nextJob.progressDetails = `Aguardando novas fontes/seeders (retry contínuo no final da fila)...`;
-
-                    const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 300;
-                    nextJob.queueOrder = maxOrder;
-                    nextJob.attemptCount = 0; // Reinicia contador para permitir novos ciclos
-
-                    await db.query(
-                        `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6 WHERE id = $7`,
-                        ['queued', 0, nextJob.error, nextJob.progressDetails, 0, maxOrder, nextJob.id]
-                    ).catch(() => {});
-
-                    const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
-                    if (memIdx >= 0) {
-                        this.queue[memIdx] = nextJob;
-                    } else {
-                        this.queue.push(nextJob);
-                    }
-                    this.sortQueue();
-                } else {
-                    // Esgotou todas as tentativas: marca como failed definitivo (apenas para itens automáticos genéricos)
-                    console.error(`❌ [TRILHA FALHA DEFINITIVA] "${nextJob.title}" falhou ${this.MAX_JOB_ATTEMPTS}x consecutivas. Marcando como failed.`, error.message);
-                    nextJob.status = 'failed';
-                    nextJob.error = error.message;
-                    await this.saveJob(nextJob);
-                    this.queue = this.queue.filter(j => j.id !== nextJob.id);
+                if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
+                    this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
                 }
+
+                nextJob.status = 'queued';
+                nextJob.progress = 0;
+                nextJob.retryAfter = retryAfter.toISOString();
+                nextJob.error = `Tentativa ${nextJob.attemptCount}: ${error.message}`;
+                nextJob.progressDetails = `⏸️ Cooldown até ${horaRetry} (${cooldownMinutes} min). Retentará automaticamente.`;
+
+                const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 500;
+                nextJob.queueOrder = maxOrder;
+
+                await db.query(
+                    `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6, retry_after = $7, updated_at = NOW() WHERE id = $8`,
+                    ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, retryAfter, nextJob.id]
+                ).catch(e => console.error('Erro ao salvar cooldown no PostgreSQL:', e.message));
+
+                const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
+                if (memIdx >= 0) {
+                    this.queue[memIdx] = nextJob;
+                } else {
+                    this.queue.push(nextJob);
+                }
+                this.sortQueue();
             }
         } finally {
             // Garante liberação do slot de download mesmo se o job falhou antes do finally interno
@@ -1991,79 +2014,82 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
-                const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
-                let nextTargetSeason = null;
-                let nextTargetEp = null;
+                // 🛡️ REGRA CRÍTICA: Se o job foi explicitamente enfileirado para uma temporada/episódio específico (ex: T2E1)
+                // e esse episódio AINDA NÃO EXISTE no catálogo, NUNCA sequestrar o job para fazer upgrade de temporadas anteriores!
+                const epJaExiste = await this.isEpisodeInDatabase(metadata.nome || job.title, metadata.tmdbId, seasonNum, requestedEp, pref);
 
-                // Busca de forma estritamente cronológica o PRIMEIRO episódio faltante ou pendente de Dublado por temporada
-                for (let s = 1; s <= totalTemporadas; s++) {
-                    const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
+                if (!epJaExiste) {
+                    // O episódio solicitado ainda não existe no catálogo. Este é o alvo direto do job!
+                    // Mantém job.season e job.episode inalterados para baixar este episódio faltante!
+                } else {
+                    // O episódio solicitado já existe e está satisfeito. Procura o próximo episódio pendente na série:
+                    const totalTemporadas = metadata.totalTemporadas || (metadata.temporadas ? metadata.temporadas.length : 1);
+                    let nextTargetSeason = null;
+                    let nextTargetEp = null;
 
-                    let totalEpsInS = 10;
-                    try {
-                        if (metadata.tmdbId) {
-                            const tmdbSInfo = (metadata.temporadas || []).find(t => t.numero === s);
-                            if (tmdbSInfo && tmdbSInfo.episodiosContagem > 0) {
-                                totalEpsInS = tmdbSInfo.episodiosContagem;
-                            } else {
-                                const sDetails = await TMDBService.getSeasonDetails(metadata.tmdbId, s);
-                                if (sDetails?.episodios?.length > 0) {
-                                    totalEpsInS = sDetails.episodios.length;
+                    // Passo A: Primeiro varre TODAS as temporadas à procura de episódios faltantes (sem cadastro)
+                    // Prioriza da temporada solicitada em diante, e depois as anteriores
+                    const seasonOrder = [];
+                    for (let s = seasonNum; s <= totalTemporadas; s++) seasonOrder.push(s);
+                    for (let s = 1; s < seasonNum; s++) seasonOrder.push(s);
+
+                    for (const s of seasonOrder) {
+                        const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
+                        let totalEpsInS = 10;
+                        try {
+                            if (metadata.tmdbId) {
+                                const tmdbSInfo = (metadata.temporadas || []).find(t => t.numero === s);
+                                if (tmdbSInfo && tmdbSInfo.episodiosContagem > 0) {
+                                    totalEpsInS = tmdbSInfo.episodiosContagem;
+                                } else {
+                                    const sDetails = await TMDBService.getSeasonDetails(metadata.tmdbId, s);
+                                    if (sDetails?.episodios?.length > 0) {
+                                        totalEpsInS = sDetails.episodios.length;
+                                    }
                                 }
                             }
-                        }
-                    } catch (e) { }
+                        } catch (e) { }
 
-                    // Passo A: Encontra o primeiro episódio totalmente faltante na Temporada S que não esteja ativo em outro worker
-                    for (let ep = 1; ep <= totalEpsInS; ep++) {
-                        if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
-                        const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
-                        if (!epItem) {
-                            // Verifica se o episódio já não foi gravado no banco PostgreSQL recentemente
-                            const inDb = await this.isEpisodeInDatabase(metadata.nome || job.title, metadata.tmdbId, s, ep, pref);
-                            if (inDb) continue;
-                            nextTargetSeason = s;
-                            nextTargetEp = ep;
-                            break;
-                        }
-                    }
-                    if (nextTargetSeason !== null) break;
-
-                    // Passo B: Se todos os episódios da Temporada S já existem, verifica se algum precisa de upgrade para Dublado
-                    if (pref === 'dublado') {
                         for (let ep = 1; ep <= totalEpsInS; ep++) {
                             if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
-                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) continue;
                             const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
-                            if (epItem) {
-                                const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
-                                if (!epDub) {
-                                    nextTargetSeason = s;
-                                    nextTargetEp = ep;
-                                    break;
-                                }
+                            if (!epItem) {
+                                const inDb = await this.isEpisodeInDatabase(metadata.nome || job.title, metadata.tmdbId, s, ep, pref);
+                                if (inDb) continue;
+                                nextTargetSeason = s;
+                                nextTargetEp = ep;
+                                break;
                             }
                         }
-                    } else if (pref === 'legendado') {
-                        // Passo C: Se o pedido for Legendado, verifica se algum episódio ainda não tem a opção Legendada
-                        for (let ep = 1; ep <= totalEpsInS; ep++) {
-                            if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
-                            if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) continue;
-                            const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
-                            if (epItem) {
-                                const epLeg = epItem.isLegendado || !!epItem.versoes?.legendado;
-                                if (!epLeg) {
-                                    nextTargetSeason = s;
-                                    nextTargetEp = ep;
-                                    break;
+                        if (nextTargetSeason !== null) break;
+                    }
+
+                    // Passo B: Apenas se NENHUMA temporada tiver episódios faltantes (ou se for job específico de upgrade),
+                    // procura episódios que precisem de upgrade de áudio
+                    if (nextTargetSeason === null && (job.isUpgrade || job.extraData?.isUpgrade)) {
+                        for (let s = 1; s <= totalTemporadas; s++) {
+                            const tempS = (serieExistente.temporadas || []).find(t => t.numero === s);
+                            let totalEpsInS = (tempS?.episodios || []).length || 10;
+                            if (pref === 'dublado') {
+                                for (let ep = 1; ep <= totalEpsInS; ep++) {
+                                    if (activeEpKeys.has(`s${s}_e${ep}`)) continue;
+                                    if (this.isEpisodeSkippedRecently(metadata.nome || job.title, s, ep)) continue;
+                                    const epItem = (tempS?.episodios || []).find(e => e.numero === ep);
+                                    if (epItem) {
+                                        const epDub = epItem.isDublado || !!epItem.versoes?.dublado || epItem.audio?.toLowerCase().includes('dublado');
+                                        if (!epDub) {
+                                            nextTargetSeason = s;
+                                            nextTargetEp = ep;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
+                            if (nextTargetSeason !== null) break;
                         }
                     }
-                    if (nextTargetSeason !== null) break;
-                }
 
-                if (nextTargetSeason !== null && nextTargetEp !== null) {
+                    if (nextTargetSeason !== null && nextTargetEp !== null) {
                     if (job.season !== nextTargetSeason || job.episode !== nextTargetEp) {
                         console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente/upgrade na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
                         job.season = nextTargetSeason;
@@ -2074,6 +2100,7 @@ class QueueManager extends EventEmitter {
                     console.log(`🎉 [SÉRIE COMPLETA] Todos os episódios de todas as ${totalTemporadas} temporadas de "${job.title}" já estão 100% catalogados ou em processamento ativo!`);
                     await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
                     return;
+                }
                 }
             } else if (requestedEp > 1) {
                 console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Iniciando a partir do Episódio 1 (T${seasonNum}E1)!`);
