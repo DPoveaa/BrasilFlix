@@ -2642,6 +2642,8 @@ class CatalogoManager {
         return {
             filmes: (this.catalogo.filmes || []).map(f => ({
                 id: f.id,
+                tmdbId: f.tmdbId || f.tmdb_id || null,
+                imdbId: f.imdbId || f.imdb_id || null,
                 nome: f.nome,
                 nomeOriginal: f.nomeOriginal,
                 ano: f.ano,
@@ -2660,6 +2662,8 @@ class CatalogoManager {
             })),
             series: (this.catalogo.series || []).map(s => ({
                 id: s.id,
+                tmdbId: s.tmdbId || s.tmdb_id || null,
+                imdbId: s.imdbId || s.imdb_id || null,
                 nome: s.nome,
                 nomeOriginal: s.nomeOriginal,
                 ano: s.ano,
@@ -2673,6 +2677,7 @@ class CatalogoManager {
                 isAnime: s.isAnime || false,
                 isDorama: s.isDorama || false,
                 emLancamento: s.emLancamento || false,
+                statusSerie: s.statusSerie || s.status_serie || 'Ended',
                 totalTemporadas: (s.temporadas || []).length,
                 totalEpisodios: s.totalEpisodios || 0,
                 exigirTemporadaCompleta: s.exigirTemporadaCompleta !== false,
@@ -2691,6 +2696,7 @@ class CatalogoManager {
                         sinopse: ep.sinopse,
                         stillUrl: ep.stillUrl,
                         duracao: ep.duracao,
+                        dataLancamento: ep.dataLancamento || ep.data_lancamento || '',
                         qualidade: ep.qualidade || '1080p Full HD',
                         isDublado: ep.isDublado,
                         isLegendado: ep.isLegendado,
