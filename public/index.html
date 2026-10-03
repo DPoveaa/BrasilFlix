@@ -7296,6 +7296,20 @@
             box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
         }
 
+        .settings-badge-status.processando {
+            background: rgba(14, 165, 233, 0.2);
+            color: #38bdf8;
+            border: 1px solid rgba(14, 165, 233, 0.45);
+            box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2);
+        }
+
+        .settings-badge-status.recusado {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+        }
+
         .settings-reviews-list {
             display: flex;
             flex-direction: column;
@@ -16056,17 +16070,29 @@ function initApp() {
                 }
 
                 listEl.innerHTML = requests.map(req => {
-                    const statusClass = req.processado ? 'atendido' : 'pendente';
-                    const statusLabel = req.processado ? '✓ Atendido' : '⏳ Em Processamento';
+                    const status = req.status || (req.processado ? 'adicionado' : 'pendente');
+                    let statusClass = 'pendente';
+                    let statusLabel = '⏳ Pendente';
+
+                    if (status === 'adicionado' || req.processado) {
+                        statusClass = 'atendido';
+                        statusLabel = '✓ Atendido';
+                    } else if (status === 'em_processamento' || status === 'na_fila') {
+                        statusClass = 'processando';
+                        statusLabel = '⚡ Na Fila / Baixando';
+                    } else if (status === 'recusado') {
+                        statusClass = 'recusado';
+                        statusLabel = '✕ Recusado';
+                    }
                     const dateStr = req.created_at ? new Date(req.created_at).toLocaleDateString('pt-BR') : '';
 
                     return `
                         <div class="settings-request-row">
                             <div style="display: flex; align-items: center; gap: 12px;">
-                                <span style="font-size: 20px;">${req.tipo === 'serie' ? '📺' : '🎬'}</span>
+                                <span style="font-size: 20px;">${req.tipo === 'serie' ? '📺' : (req.tipo === 'anime' ? '🌸' : (req.tipo === 'dorama' ? '🇰🇷' : '🎬'))}</span>
                                 <div>
                                     <div style="font-size: 14px; font-weight: 800; color: #ffffff;">${req.nome}</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);">${req.tipo === 'serie' ? 'Série' : 'Filme'} • Solicitado em ${dateStr}</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">${req.tipo === 'serie' ? 'Série' : (req.tipo === 'anime' ? 'Anime' : (req.tipo === 'dorama' ? 'Dorama' : 'Filme'))} • Solicitado em ${dateStr}</div>
                                 </div>
                             </div>
                             <span class="settings-badge-status ${statusClass}">${statusLabel}</span>
@@ -22762,14 +22788,29 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 }
 
                 tbody.innerHTML = list.slice(-50).reverse().map(p => {
-                    const isProc = p.status === 'adicionado' || p.processado;
+                    const status = p.status || (p.processado ? 'adicionado' : 'pendente');
+                    const isProc = status === 'adicionado';
+                    const isProcessing = status === 'em_processamento' || status === 'na_fila';
                     const dataStr = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+
+                    let statusLabel = '⏳ PENDENTE';
+                    let statusColor = '#f59e0b';
+                    if (isProc) {
+                        statusLabel = '✓ ATENDIDO';
+                        statusColor = '#34d399';
+                    } else if (isProcessing) {
+                        statusLabel = '⚡ NA FILA';
+                        statusColor = '#38bdf8';
+                    } else if (status === 'recusado') {
+                        statusLabel = '✕ RECUSADO';
+                        statusColor = '#f87171';
+                    }
 
                     return `
                         <tr>
                             <td>
                                 <strong>${p.nome}</strong>
-                                <div style="font-size: 10px; color: var(--text-muted);">${p.tipo === 'serie' ? '📺 Série' : '🎬 Filme'}</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">${p.tipo === 'serie' ? '📺 Série' : (p.tipo === 'anime' ? '🌸 Anime' : (p.tipo === 'dorama' ? '🇰🇷 Dorama' : '🎬 Filme'))}</div>
                             </td>
                             <td>
                                 <div>@${p.username || 'Usuário'}</div>
@@ -22778,13 +22819,13 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                 </span>
                             </td>
                             <td>
-                                <span style="color: ${isProc ? '#34d399' : '#f59e0b'}; font-weight: 800; font-size: 11px;">
-                                    ${isProc ? '✓ ATENDIDO' : '⏳ PENDENTE'}
+                                <span style="color: ${statusColor}; font-weight: 800; font-size: 11px;">
+                                    ${statusLabel}
                                 </span>
                             </td>
                             <td>${dataStr}</td>
                             <td style="text-align: right; white-space: nowrap;">
-                                ${!isProc ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')">🚀 Baixar Agora</button>` : ''}
+                                ${!isProc && !isProcessing ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')">🚀 Baixar Agora</button>` : ''}
                                 <button class="btn-action btn-action-danger" onclick="handleDeleteRequest('${p.id}')">✕</button>
                             </td>
                         </tr>
@@ -24057,10 +24098,10 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
             e.preventDefault();
             const btn = document.getElementById('btn-submit-req-media');
             const inputName = document.getElementById('req-media-input').value.trim();
-            const type = document.getElementById('req-media-type').value;
-            const season = document.getElementById('req-media-season').value.trim();
-            const audio = document.getElementById('req-media-audio').value;
-            const notes = document.getElementById('req-media-notes').value.trim();
+            const type = document.getElementById('req-media-type') ? document.getElementById('req-media-type').value : (selectedTMDBData?.type || 'filme');
+            const season = (type !== 'filme') ? 'todas as temporadas' : '';
+            const audio = 'Dual Áudio (Dublado + Legendado)';
+            const notes = '';
 
             const tmdbId = document.getElementById('req-hidden-tmdb-id').value;
             const poster = document.getElementById('req-hidden-poster').value;
@@ -24350,12 +24391,31 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
                 tbody.innerHTML = list.slice(-80).reverse().map(p => {
                     const status = p.status || (p.processado ? 'adicionado' : 'pendente');
-                    const isProc = status === 'adicionado' || p.processado;
+                    const isProc = status === 'adicionado';
+                    const isProcessing = status === 'em_processamento' || status === 'na_fila';
                     const dataStr = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+
+                    let statusLabel = '⏳ PENDENTE';
+                    let statusColor = '#f59e0b';
+                    if (isProc) {
+                        statusLabel = '✓ ATENDIDO';
+                        statusColor = '#34d399';
+                    } else if (isProcessing) {
+                        statusLabel = '⚡ NA FILA / PROCESSANDO';
+                        statusColor = '#38bdf8';
+                    } else if (status === 'recusado') {
+                        statusLabel = '✕ RECUSADO';
+                        statusColor = '#f87171';
+                    }
 
                     const posterImg = p.posterUrl 
                         ? `<img src="${p.posterUrl}" style="width: 32px; height: 44px; object-fit: cover; border-radius: 4px; vertical-align: middle; margin-right: 8px;">`
                         : '';
+
+                    let tipoDesc = '🎬 Filme';
+                    if (p.tipo === 'anime') tipoDesc = '🌸 Anime';
+                    else if (p.tipo === 'dorama') tipoDesc = '🇰🇷 Dorama';
+                    else if (p.tipo === 'serie') tipoDesc = '📺 Série';
 
                     return `
                         <tr>
@@ -24365,7 +24425,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                     <div>
                                         <strong>${p.nome} ${p.ano ? '(' + p.ano + ')' : ''}</strong>
                                         <div style="font-size: 11px; color: var(--text-muted);">
-                                            ${p.tipo === 'serie' ? '📺 Série' : '🎬 Filme'} ${p.temporada ? '• ' + p.temporada : ''} ${p.idioma ? '• ' + p.idioma : ''}
+                                            ${tipoDesc} ${p.temporada ? '• ' + p.temporada : ''} ${p.idioma ? '• ' + p.idioma : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -24377,13 +24437,13 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                                 </span>
                             </td>
                             <td>
-                                <span style="font-size: 11px; font-weight: 800; color: ${isProc ? '#34d399' : (status === 'recusado' ? '#f87171' : '#f59e0b')};">
-                                    ${isProc ? '✓ ATENDIDO' : (status === 'recusado' ? '✕ RECUSADO' : '⏳ PENDENTE')}
+                                <span style="font-size: 11px; font-weight: 800; color: ${statusColor};">
+                                    ${statusLabel}
                                 </span>
                             </td>
                             <td>${dataStr}</td>
                             <td style="text-align: right; white-space: nowrap;">
-                                ${!isProc ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')" title="Adicionar à fila de downloads">🚀 Baixar</button>` : ''}
+                                ${!isProc && !isProcessing ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')" title="Adicionar à fila de downloads">🚀 Baixar</button>` : ''}
                                 <button class="btn-action" onclick="handleAdminSetPedidoStatus('${p.id}', '${isProc ? 'pendente' : 'adicionado'}')" title="Alternar status">
                                     ${isProc ? '🔄 Reabrir' : '✅ Concluir'}
                                 </button>
@@ -24551,16 +24611,16 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
 
             <form id="form-request-media" onsubmit="handleRequestMediaSubmit(event)">
                 <!-- BUSCADOR TMDB -->
-                <div class="tmdb-autocomplete-wrap" style="margin-bottom: 12px;">
-                    <label class="settings-label" style="margin-bottom: 6px;">Nome do Filme / Série / Anime *</label>
-                    <input type="text" id="req-media-input" class="settings-input" placeholder="Digite o nome... (ex: The Rookie, Silo, One Piece, Batman)" autocomplete="off" oninput="handleTMDBAutocomplete(this.value)" required>
+                <div class="tmdb-autocomplete-wrap" style="margin-bottom: 14px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Qual obra você deseja assistir? *</label>
+                    <input type="text" id="req-media-input" class="settings-input" placeholder="Digite o nome do filme, série ou anime..." autocomplete="off" oninput="handleTMDBAutocomplete(this.value)" required>
                     
                     <!-- DROPDOWN DE SUGESTÕES TMDB -->
                     <div id="req-tmdb-dropdown" class="tmdb-autocomplete-dropdown"></div>
                 </div>
 
                 <!-- CARD DE SELEÇÃO CONFIRMADA DO TMDB -->
-                <div id="req-selected-preview" style="display: none;">
+                <div id="req-selected-preview" style="display: none; margin-bottom: 14px;">
                     <div class="req-selected-card">
                         <img id="req-sel-poster" src="" alt="Poster">
                         <div style="flex: 1; min-width: 0;">
@@ -24572,38 +24632,18 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                     </div>
                 </div>
 
-                <!-- TIPO DE CONTEÚDO -->
-                <div style="margin-bottom: 12px;">
-                    <label class="settings-label" style="margin-bottom: 6px;">Tipo de Conteúdo</label>
+                <!-- TIPO DE CONTEÚDO (SIMPLES) -->
+                <div style="margin-bottom: 16px;">
+                    <label class="settings-label" style="margin-bottom: 6px;">Categoria</label>
                     <select id="req-media-type" class="settings-input">
                         <option value="filme">🎬 Filme</option>
-                        <option value="serie" selected>📺 Série de TV</option>
-                        <option value="anime">🌸 Anime</option>
-                        <option value="dorama">🇰🇷 Dorama Asiático</option>
+                        <option value="serie" selected>📺 Série (Todas as Temporadas)</option>
+                        <option value="anime">🌸 Anime (Todas as Temporadas)</option>
+                        <option value="dorama">🇰🇷 Dorama (Todas as Temporadas)</option>
                     </select>
-                </div>
-
-                <!-- TEMPORADA / EPISÓDIO (OPCIONAL) -->
-                <div style="margin-bottom: 12px;">
-                    <label class="settings-label" style="margin-bottom: 6px;">Temporada ou Episódios <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
-                    <input type="text" id="req-media-season" class="settings-input" placeholder="Ex: Temporada 3, ou Todas as Temporadas, ou Ep 1 a 12">
-                </div>
-
-                <!-- PREFERÊNCIA DE IDIOMA / ÁUDIO (OPCIONAL) -->
-                <div style="margin-bottom: 12px;">
-                    <label class="settings-label" style="margin-bottom: 6px;">Preferência de Áudio / Dublagem <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
-                    <select id="req-media-audio" class="settings-input">
-                        <option value="Dual Áudio (Dublado + Legendado)" selected>🎧 Ambas as Versões / Dual Áudio (Dublado + Legendado)</option>
-                        <option value="Dublado PT-BR">🎙️ Apenas Dublado em Português (PT-BR)</option>
-                        <option value="Legendado PT-BR">💬 Apenas Legendado (Áudio Original com Legendas PT-BR)</option>
-                        <option value="Qualquer / Indiferente">🌐 Tanto faz / Qualquer um</option>
-                    </select>
-                </div>
-
-                <!-- OBSERVAÇÕES DETALHES (OPCIONAL) -->
-                <div style="margin-bottom: 18px;">
-                    <label class="settings-label" style="margin-bottom: 6px;">Observações / Detalhes Adicionais <span style="font-weight: 400; opacity: 0.7;">(Opcional)</span></label>
-                    <textarea id="req-media-notes" class="settings-input" rows="2" style="resize: vertical;" placeholder="Ex: Lançamento recente da Netflix, versão sem cortes, etc..."></textarea>
+                    <p style="font-size: 11.5px; color: var(--text-muted); margin: 6px 0 0 2px; line-height: 1.4;">
+                        ✨ Ao pedir uma série ou anime, o robô adiciona automaticamente todas as temporadas completas com áudio Dublado e Legendado!
+                    </p>
                 </div>
 
                 <!-- HIDDEN FIELDS FOR TMDB METADATA -->
@@ -24612,7 +24652,7 @@ const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
                 <input type="hidden" id="req-hidden-year" value="">
                 <input type="hidden" id="req-hidden-formatted-title" value="">
 
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; margin-top: 8px;">
                     <button type="submit" id="btn-submit-req-media" class="btn-modal btn-modal-primary" style="flex: 1; padding: 12px; font-weight: 800;">
                         🚀 Enviar Pedido ao Catálogo
                     </button>

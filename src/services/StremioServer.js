@@ -575,12 +575,24 @@ class StremioServer {
                 if (!pedido) return res.status(404).json({ error: 'Pedido não encontrado.' });
 
                 const priority = req.body.priority || (pedido.isAssinante ? 1 : 2);
-                this.queueManager.addJob(pedido.nome, pedido.tipo || 'filme', parseInt(priority, 10), {
+                const isAnime = pedido.tipo === 'anime';
+                const isDorama = pedido.tipo === 'dorama';
+                const isSerie = pedido.tipo === 'serie' || isAnime || isDorama;
+
+                this.queueManager.addJob(pedido.nome, isSerie ? 'serie' : (pedido.tipo || 'filme'), parseInt(priority, 10), {
                     userId: pedido.userId,
-                    username: pedido.username
+                    username: pedido.username,
+                    pedidoId: pedido.id,
+                    isPedido: true,
+                    tmdbId: pedido.tmdbId,
+                    season: isSerie ? 1 : null,
+                    episode: isSerie ? 1 : null,
+                    isAnime,
+                    isDorama,
+                    audioPreference: (pedido.idioma && pedido.idioma.toLowerCase().includes('legendado') && !pedido.idioma.toLowerCase().includes('dublado')) ? 'legendado' : 'dublado'
                 });
 
-                await this.pedidosManager.atualizarStatus(pedido.id, 'adicionado');
+                await this.pedidosManager.atualizarStatus(pedido.id, 'em_processamento');
                 res.json({ success: true, message: `Pedido "${pedido.nome}" enviado para a fila!` });
             } catch (e) {
                 res.status(500).json({ error: e.message });
@@ -1168,13 +1180,17 @@ class StremioServer {
                     }
                 }
 
+                const resolvedTipo = (tipo || 'filme').toLowerCase();
+                const resolvedTemporada = (temporada || '').trim() || (resolvedTipo !== 'filme' ? 'todas as temporadas' : '');
+                const resolvedIdioma = (idioma || '').trim() || 'Dual Áudio (Dublado + Legendado)';
+
                 const pedido = await this.pedidosManager?.adicionarPedidoCompleto({
                     userId,
                     username,
                     nome: nome.trim(),
-                    tipo: tipo || 'filme',
-                    temporada: (temporada || '').trim(),
-                    idioma: (idioma || '').trim(),
+                    tipo: resolvedTipo,
+                    temporada: resolvedTemporada,
+                    idioma: resolvedIdioma,
                     tmdbId: tmdb_id || null,
                     posterUrl: poster_url || '',
                     ano: ano || '',

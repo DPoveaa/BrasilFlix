@@ -31,14 +31,14 @@ class PedidosManager {
                 detalhes: p.detalhes || '',
                 data: p.created_at,
                 status: p.status || (p.processado ? 'adicionado' : 'pendente'),
-                processado: p.processado || p.status === 'adicionado',
+                processado: p.status === 'adicionado',
                 isAssinante: p.is_assinante,
                 prioridade: p.is_assinante ? 'alta' : 'normal'
             }));
 
             this.pedidosPendentes.clear();
             this.pedidos.forEach(p => {
-                if (p.status === 'pendente') {
+                if (p.status === 'pendente' || p.status === 'em_processamento') {
                     this.pedidosPendentes.set(p.id, p);
                 }
             });
@@ -122,7 +122,7 @@ class PedidosManager {
         if (pedido) {
             pedido.status = novoStatus;
             pedido.processado = novoStatus === 'adicionado';
-            if (novoStatus === 'pendente') {
+            if (novoStatus === 'pendente' || novoStatus === 'em_processamento') {
                 this.pedidosPendentes.set(pedido.id, pedido);
             } else {
                 this.pedidosPendentes.delete(pedido.id);
@@ -169,7 +169,7 @@ class PedidosManager {
             this.pedidosPendentes.delete(pedido.id);
 
             try {
-                await db.query(`UPDATE pedidos SET processado = true WHERE id = $1`, [pedido.id]);
+                await db.query(`UPDATE pedidos SET status = 'adicionado', processado = true WHERE id = $1`, [pedido.id]);
             } catch (e) {
                 console.warn('⚠️ Erro ao atualizar pedido no PostgreSQL:', e.message);
             }

@@ -300,59 +300,122 @@ class AutoFeeder {
     async checkPendingPedidos() {
         try {
             if (!this.pedidosManager) return;
-            const pedidosPendentes = (this.pedidosManager.getPedidos() || []).filter(p => !p.processado);
+            const pedidosPendentes = (this.pedidosManager.getPedidos() || []).filter(p => p.status !== 'adicionado' && p.status !== 'recusado');
             if (pedidosPendentes.length === 0) return;
 
             console.log(`📋 AutoFeeder: Verificando ${pedidosPendentes.length} pedido(s) pendente(s) de clientes...`);
 
             for (const pedido of pedidosPendentes) {
-                const title = pedido.nome;
+                const title = (pedido.nome || '').trim();
                 if (!title) continue;
 
-                // Verifica se já existe no catálogo
-                const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
-                const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie');
+                const isAnime = pedido.tipo === 'anime' || (pedido.detalhes && pedido.detalhes.toLowerCase().includes('anime'));
+                const isDorama = pedido.tipo === 'dorama';
+                let isSerie = pedido.tipo === 'serie' || isAnime || isDorama;
+                let tipo = isSerie ? 'serie' : (pedido.tipo || 'filme');
+                let tmdbId = pedido.tmdbId ? Number(pedido.tmdbId) : null;
+                let originalName = '';
 
-                if (filmeExistente) {
-                    await this.pedidosManager.marcarComoProcessado(pedido.id);
-                    continue;
-                }
-
-                if (serieExistente) {
-                    let totalEpsTemp1 = 10;
-                    try {
-                        if (serieExistente.tmdbId) {
-                            const sDetails = await TMDBService.getSeasonDetails(serieExistente.tmdbId, 1);
-                            if (sDetails?.episodios?.length > 0) {
-                                totalEpsTemp1 = sDetails.episodios.length;
+                // Busca metadados TMDB precisos
+                try {
+                    if (tmdbId) {
+                        if (isSerie) {
+                            const tvData = await TMDBService.getTVDetails(tmdbId).catch(() => null);
+                            if (tvData) {
+                                originalName = tvData.nomeOriginal || '';
+                                tipo = 'serie';
+                                isSerie = true;
+                            }
+                        } else {
+                            const movData = await TMDBService.getMovieDetails(tmdbId).catch(() => null);
+                            if (movData) {
+                                originalName = movData.nomeOriginal || '';
+                                tipo = 'filme';
+                                isSerie = false;
                             }
                         }
-                    } catch (e) {}
-
-                    const temp1 = (serieExistente.temporadas || []).find(t => t.numero === 1);
-                    const epsCadastrados = temp1 ? (temp1.episodios || []).length : 0;
-
-                    if (epsCadastrados >= totalEpsTemp1 && totalEpsTemp1 > 0) {
-                        await this.pedidosManager.marcarComoProcessado(pedido.id);
-                        continue;
-                    }
-                }
-
-                // Detecta tipo no TMDB
-                let tipo = 'filme';
-                let tmdbId = null;
-                let originalName = '';
-                try {
-                    const searchResults = await TMDBService.searchMulti(title);
-                    if (searchResults && searchResults.length > 0) {
-                        tipo = searchResults[0].tipo === 'serie' ? 'serie' : 'filme';
-                        tmdbId = searchResults[0].tmdbId;
-                        originalName = searchResults[0].nomeOriginal || '';
+                    } else {
+                        if (isSerie) {
+                            const searchTV = await TMDBService.searchTV(title, pedido.ano).catch(() => null);
+                            if (searchTV && searchTV.length > 0) {
+                                tmdbId = searchTV[0].tmdbId;
+                                originalName = searchTV[0].nomeOriginal || '';
+                                tipo = 'serie';
+                            }
+                        }
+                        if (!tmdbId) {
+                            const searchResults = await TMDBService.searchMulti(title).catch(() => null);
+                            if (searchResults && searchResults.length > 0) {
+                                const match = isSerie ? (searchResults.find(r => r.tipo === 'serie') || searchResults[0]) : searchResults[0];
+                                tipo = match.tipo === 'serie' ? 'serie' : 'filme';
+                                isSerie = tipo === 'serie';
+                                tmdbId = match.tmdbId;
+                                originalName = match.nomeOriginal || '';
+                            }
+                        }
                     }
                 } catch (e) {}
 
-                const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
+                // 1. Verifica se já existe COMPLETAMENTE no catálogo
+                if (!isSerie) {
+                    const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
+                    if (filmeExistente) {
+                        console.log(`✅ [PEDIDO] Filme "${title}" já está disponível no catálogo!`);
+                        await this.pedidosManager.marcarComoProcessado(pedido.id);
+                        continue;
+                    }
+                } else {
+                    const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie')
+                        || (tmdbId ? this.catalogoManager.buscarSeriePorTmdb(tmdbId) : null);
 
+                    let startSeason = 1;
+                    let startEp = 1;
+                    let isFullyCataloged = false;
+
+                    if (serieExistente && tmdbId) {
+                        try {
+                            const tvDetails = await TMDBService.getTVDetails(tmdbId).catch(() => null);
+                            const nowStr = new Date().toISOString().split('T')[0];
+                            const releasedSeasons = (tvDetails?.temporadas || []).filter(t => t.numero > 0 && (!t.dataLancamento || t.dataLancamento <= nowStr));
+
+                            let missingFound = false;
+                            for (const s of releasedSeasons) {
+                                const sNum = s.numero;
+                                const sDetails = await TMDBService.getSeasonDetails(tmdbId, sNum).catch(() => null);
+                                const releasedEps = (sDetails?.episodios || []).filter(ep => !ep.dataLancamento || ep.dataLancamento <= nowStr);
+
+                                const catSeason = (serieExistente.temporadas || []).find(t => t.numero === sNum);
+                                const epsNoCat = new Set((catSeason?.episodios || []).map(e => e.numero));
+
+                                const missingEp = releasedEps.find(ep => !epsNoCat.has(ep.numero));
+                                if (missingEp) {
+                                    startSeason = sNum;
+                                    startEp = missingEp.numero;
+                                    missingFound = true;
+                                    break;
+                                }
+                            }
+
+                            if (!missingFound && releasedSeasons.length > 0) {
+                                isFullyCataloged = true;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (isFullyCataloged) {
+                        console.log(`✅ [PEDIDO] Série "${title}" já está 100% completa e em dia no catálogo!`);
+                        await this.pedidosManager.marcarComoProcessado(pedido.id);
+                        continue;
+                    }
+
+                    // Se a série já existe mas faltam episódios/temporadas, garantimos que começará do primeiro episódio faltante
+                    if (serieExistente && !isFullyCataloged) {
+                        console.log(`📺 [PEDIDO SÉRIE] "${title}" já possui episódios, continuando a partir de T${startSeason}E${startEp}...`);
+                    }
+                }
+
+                // 2. Verifica se já está em processamento na fila
+                const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
                 const inQueue = this.queueManager.queue.some(j =>
                     isSameMedia(j.title, title) && j.status !== 'failed'
                 );
@@ -362,14 +425,21 @@ class AutoFeeder {
                     this.queueManager.addJob(title, tipo, priority, {
                         userId: pedido.userId,
                         username: pedido.username,
+                        pedidoId: pedido.id,
+                        isPedido: true,
                         tmdbId,
                         nomeOriginal: originalName,
-                        season: tipo === 'serie' ? 1 : null,
-                        episode: tipo === 'serie' ? 1 : null
+                        season: isSerie ? (startSeason || 1) : null,
+                        episode: isSerie ? (startEp || 1) : null,
+                        isAnime,
+                        isDorama,
+                        audioPreference: (pedido.idioma && pedido.idioma.toLowerCase().includes('legendado') && !pedido.idioma.toLowerCase().includes('dublado')) ? 'legendado' : 'dublado'
                     });
-                    await this.pedidosManager.marcarComoProcessado(pedido.id);
-                } else {
-                    await this.pedidosManager.marcarComoProcessado(pedido.id);
+                }
+
+                // Mantém o pedido com status 'em_processamento' até que QueueManager confirme adição real ao catálogo
+                if (pedido.status !== 'em_processamento') {
+                    await this.pedidosManager.atualizarStatus(pedido.id, 'em_processamento');
                 }
             }
         } catch (e) {

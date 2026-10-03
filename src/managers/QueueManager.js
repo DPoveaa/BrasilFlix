@@ -1206,7 +1206,7 @@ class QueueManager extends EventEmitter {
             const correspondentes = pedidos.filter(p => {
                 if (p.processado || p.status === 'adicionado') return false;
                 const pNome = (p.nome || '').toLowerCase().trim();
-                return pNome === cleanTitle || cleanTitle.includes(pNome) || pNome.includes(cleanTitle);
+                return isSameMedia(p.nome, titulo) || pNome === cleanTitle || cleanTitle.includes(pNome) || pNome.includes(cleanTitle);
             });
 
             for (const p of correspondentes) {
@@ -1216,7 +1216,7 @@ class QueueManager extends EventEmitter {
                 if (this.bot && p.userId && p.userId !== config.ADMIN_ID) {
                     const itemSalvo = this.catalogoManager.buscarItemExato(p.nome, p.tipo || tipo);
                     const sId = itemSalvo?.id || '';
-                    const callbackAssistir = (p.tipo === 'serie' || tipo === 'serie') ? `info_serie_${sId}` : `info_filme_${sId}`;
+                    const callbackAssistir = (p.tipo === 'serie' || tipo === 'serie' || p.tipo === 'anime' || p.tipo === 'dorama') ? `info_serie_${sId}` : `info_filme_${sId}`;
                     const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
                         `🎬 *${p.nome}*\n` +
                         `✨ *Qualidade:* 1080p Full HD\n` +
@@ -1813,12 +1813,49 @@ class QueueManager extends EventEmitter {
                 }
                 this.sortQueue();
             } else {
-                // Esgotou todas as tentativas: marca como failed definitivo
-                console.error(`❌ [TRILHA FALHA DEFINITIVA] "${nextJob.title}" falhou ${this.MAX_JOB_ATTEMPTS}x consecutivas. Marcando como failed.`, error.message);
-                nextJob.status = 'failed';
-                nextJob.error = error.message;
-                await this.saveJob(nextJob);
-                this.queue = this.queue.filter(j => j.id !== nextJob.id);
+                // Se for um pedido de cliente/usuário ou erro por falta momentânea de fontes/seeders,
+                // NUNCA descarta nem marca como failed definitivo!
+                // Recoloca no final da fila para continuar tentando indefinidamente!
+                const isUserRequest = !!(nextJob.userId || nextJob.isPedido || nextJob.extraData?.isPedido || (nextJob.extra_data && nextJob.extra_data.isPedido));
+                const errMsg = (error && error.message) ? error.message : '';
+                const isNoSourceError = errMsg.includes('Nenhuma fonte') || errMsg.includes('seeders') || errMsg.includes('timeout') || errMsg.includes('ETIMEDOUT');
+
+                if (isUserRequest || isNoSourceError) {
+                    console.warn(`🔄 [RETRY CONTÍNUO] "${nextJob.title}" é pedido de usuário ou está sem fontes ativas no momento (${errMsg}). NUNCA descartar: recolocando no fim da fila para nova tentativa!`);
+
+                    if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
+                        this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
+                    }
+
+                    nextJob.status = 'queued';
+                    nextJob.progress = 0;
+                    nextJob.error = `Buscando fontes ativas... (${errMsg})`;
+                    nextJob.progressDetails = `Aguardando novas fontes/seeders (retry contínuo no final da fila)...`;
+
+                    const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 300;
+                    nextJob.queueOrder = maxOrder;
+                    nextJob.attemptCount = 0; // Reinicia contador para permitir novos ciclos
+
+                    await db.query(
+                        `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6 WHERE id = $7`,
+                        ['queued', 0, nextJob.error, nextJob.progressDetails, 0, maxOrder, nextJob.id]
+                    ).catch(() => {});
+
+                    const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
+                    if (memIdx >= 0) {
+                        this.queue[memIdx] = nextJob;
+                    } else {
+                        this.queue.push(nextJob);
+                    }
+                    this.sortQueue();
+                } else {
+                    // Esgotou todas as tentativas: marca como failed definitivo (apenas para itens automáticos genéricos)
+                    console.error(`❌ [TRILHA FALHA DEFINITIVA] "${nextJob.title}" falhou ${this.MAX_JOB_ATTEMPTS}x consecutivas. Marcando como failed.`, error.message);
+                    nextJob.status = 'failed';
+                    nextJob.error = error.message;
+                    await this.saveJob(nextJob);
+                    this.queue = this.queue.filter(j => j.id !== nextJob.id);
+                }
             }
         } finally {
             // Garante liberação do slot de download mesmo se o job falhou antes do finally interno
@@ -3750,6 +3787,10 @@ class QueueManager extends EventEmitter {
                     episode: nextEp,
                     userId: job.userId,
                     username: job.username,
+                    pedidoId: job.pedidoId || job.extraData?.pedidoId,
+                    isPedido: job.isPedido || job.extraData?.isPedido,
+                    isAnime: job.isAnime || job.extraData?.isAnime,
+                    isDorama: job.isDorama || job.extraData?.isDorama,
                     audioPreference: job.audioPreference || 'dublado',
                     queueOrder: -1
                 });
@@ -3768,10 +3809,10 @@ class QueueManager extends EventEmitter {
                             inline_keyboard: [[{ text: '▶️ Assistir Série', callback_data: `info_serie_${sId}` }]]
                         }
                     }).catch(() => { });
+                }
 
-                    if (this.pedidosManager) {
-                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
-                    }
+                if (this.pedidosManager) {
+                    await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
                 }
 
                 // Avança para a próxima temporada SOMENTE se a próxima temporada estiver lançada
@@ -3784,11 +3825,18 @@ class QueueManager extends EventEmitter {
                         episode: 1,
                         userId: job.userId,
                         username: job.username,
+                        pedidoId: job.pedidoId || job.extraData?.pedidoId,
+                        isPedido: job.isPedido || job.extraData?.isPedido,
+                        isAnime: job.isAnime || job.extraData?.isAnime,
+                        isDorama: job.isDorama || job.extraData?.isDorama,
                         audioPreference: job.audioPreference || 'dublado',
                         queueOrder: -1
                     });
                 } else {
                     console.log(`🎉 [SÉRIE/DORAMA] SÉRIE COMPLETA! Todas as ${maxReleasedSeason} temporada(s) lançadas de "${metadata.nome || job.title}" foram catalogadas com sucesso!`);
+                    if (this.pedidosManager) {
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
+                    }
                 }
             }
         }

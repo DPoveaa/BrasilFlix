@@ -874,7 +874,27 @@ ${events.join('\n')}
         const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|(?:ó|epa)\s+pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno\s+almoço|parvalhão|casa\s+de\s+banho)\b/gi;
         const ptPtVocabMatches = (content.match(ptPtVocabRegex) || []).length;
 
-        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtEncliseMatches * 3) + (ptPtVocabMatches * 4);
+        // NOVO: Pretérito perfeito da 2ª pessoa singular (TU) — "cortaste", "destrancaste", "fizeste", "disseste"
+        // Este padrão é INEQUÍVOCO de PT-PT: no Brasil usa-se "você cortou", "você fez", nunca "-aste/-este/-iste"
+        // Excluímos sufixos comuns em substantivos/adjetivos brasileiros (ex: "artiste", "contraste" não conta)
+        const ptPtTuPreteritoRegex = /\b[a-záéíóúàâêôãõç]{3,15}(?:aste|este|iste)\b/gi;
+        const ptPtTuPreteritoRaw = (content.match(ptPtTuPreteritoRegex) || []);
+        // Filtra falsos-positivos: palavras que existem em PT-BR como substantivos/adj (contraste, artiste, etc.)
+        const ptPtFalsoPositivoPreterito = /^(contraste|entusiastes?|fantaste|realiste|moraliste|socialiste|capitaliste|artiste|comuniste|fasciste|pacifiste|otimiste|pessimiste|realiste|idealiste|racionalist[ae]|sensacionaliste|profissionaliste|especialiste|minimaliste|maximaliste|nacionaliste|imperialiste|colonialiste|liberaliste|globaliste|digitaliste|analiste|jornaliste|naturaliste|formaliste|universaliste|feministe|humaniste|triste|existe|insiste|persiste|consiste|resiste|assiste|subsiste)$/i;
+        const ptPtTuPreteritoMatches = ptPtTuPreteritoRaw.filter(w => !ptPtFalsoPositivoPreterito.test(w)).length;
+
+        // NOVO: Pronome "tu" como sujeito direto (PT-PT) — "tu sabes", "tu és", "tu tens", "tu vais"
+        // No Brasil, "tu" é raramente usado e quando aparece é sem concordância ("tu vai" não "tu vais")
+        const ptPtTuSubjectRegex = /\btu\s+(?:és|estás|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|dás|vês|trazes|trazes|pões|traís|crês)\b/gi;
+        const ptPtTuSubjectMatches = (content.match(ptPtTuSubjectRegex) || []).length;
+
+        // NOVO: Conjugações da 2ª pessoa singular do presente/imperfeito (típicas de PT-PT com tu)
+        // "fazes", "sabes", "podes", "tens", "vais", "queres" — quando frequentes, indicam PT-PT
+        const ptPtTuPresenteRegex = /\b(fazes|sabes|podes|queres|vens|trazes|disseste|fizeste|foste|vieste|puseste|trouxeste|soubeste|pudeste|quiseste|ouviste|viste|deste|tiveste|estiveste|fores|fares|puderes|quiseres)\b/gi;
+        const ptPtTuPresenteMatches = (content.match(ptPtTuPresenteRegex) || []).length;
+
+        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtEncliseMatches * 3) + (ptPtVocabMatches * 4) +
+                          (ptPtTuPreteritoMatches * 4) + (ptPtTuSubjectMatches * 5) + (ptPtTuPresenteMatches * 3);
 
         // 2. Padrões característicos de Português Brasileiro (PT-BR)
         // Gerúndios naturais abundantes no Brasil (-ando, -endo, -indo)
@@ -902,8 +922,24 @@ ${events.join('\n')}
             return false;
         }
 
+        // Limiar reduzido: bastam alguns poucos marcadores fortes de PT-PT sem contrapartida BR clara
+        if (ptPtScore >= 12 && ptBrVocabMatches === 0 && ptBrScore < 10) {
+            return false;
+        }
+
         // Se tiver muitos gerúndios europeus (a + inf) e quase nenhum gerúndio brasileiro natural
         if (ptPtGerundMatches >= 6 && ptBrAllGerundsMatches < 2) {
+            return false;
+        }
+
+        // NOVO: Rejeita se tiver muitos pretéritos "tu" (-aste/-este/-iste) sem nenhum vocabulário PT-BR
+        // Caso típico: legendas YIFY do Resident Evil, Spider-Man etc. com tratamento por "tu"
+        if (ptPtTuPreteritoMatches >= 3 && ptBrVocabMatches === 0) {
+            return false;
+        }
+
+        // NOVO: Presença forte de conjugações/pronomes de 2ª pessoa (tu) sem nenhum traço PT-BR
+        if ((ptPtTuSubjectMatches >= 2 || ptPtTuPresenteMatches >= 4) && ptBrVocabMatches === 0 && ptBrScore < 8) {
             return false;
         }
 
