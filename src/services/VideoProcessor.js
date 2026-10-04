@@ -1,5 +1,6 @@
 const { spawn, exec } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs-extra');
 const config = require('../../config');
 const SubtitleSync = require('./SubtitleSync');
@@ -516,7 +517,10 @@ class VideoProcessor {
         // Margem vertical generosa (~8% da altura real) para não colar no fundo da tela no Telegram
         // (o Telegram adiciona sua própria barra inferior que reduziria ainda mais o espaço disponível)
         const marginV = Math.max(70, Math.round(outH * 0.080));
-        const assPath = srtPath.replace(/\.srt$/i, '') + `_hardsub_${outW}x${outH}.ass`;
+        // Gera o arquivo .ass temporário diretamente em os.tmpdir com nome 100% sanitizado e alfanumérico
+        // evitando problemas com apóstrofos (ex: JoJo's), colchetes [MICO XD], parênteses ou espaços no parser do FFmpeg
+        const safeAssName = `hardsub_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${outW}x${outH}.ass`;
+        const assPath = path.join(os.tmpdir(), safeAssName);
 
         const srtContent = await fs.readFile(srtPath, 'utf8');
         const events = [];
@@ -1750,13 +1754,22 @@ ${events.join('\n')}
                 : (info.height || 1080);
 
             let hardsubPath = null;
+            let tempSanitizedSrt = null;
+
             if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                 try {
                     hardsubPath = await this.buildHardsubAssFromSrt(metadata.srtPath, outW, outH);
                     metadata._hardsubAssPath = hardsubPath;
-                    console.log(`📝 [Hardsub] ASS gerado com PlayRes ${outW}x${outH} (fonte proporcional à resolução)`);
+                    console.log(`📝 [Hardsub] ASS gerado em caminho seguro com PlayRes ${outW}x${outH}: ${hardsubPath}`);
                 } catch (e) {
                     console.warn(`⚠️ [Hardsub] Falha ao gerar ASS tipográfico, usando SRT com force_style escalado: ${e.message}`);
+                    try {
+                        const safeSrtName = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.srt`;
+                        tempSanitizedSrt = path.join(os.tmpdir(), safeSrtName);
+                        await fs.copyFile(metadata.srtPath, tempSanitizedSrt);
+                    } catch (_) {
+                        tempSanitizedSrt = metadata.srtPath;
+                    }
                 }
             }
 
@@ -1771,12 +1784,12 @@ ${events.join('\n')}
                 // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub com PlayRes correto)
                 let vfFilter = "scale='min(1920,iw)':-2";
                 if (hardsubPath && fs.existsSync(hardsubPath)) {
-                    const assEscaped = hardsubPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+                    const assEscaped = this.escapeFFmpegFilterPath(hardsubPath);
                     vfFilter += `,ass='${assEscaped}'`;
-                } else if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+                } else if (tempSanitizedSrt && fs.existsSync(tempSanitizedSrt)) {
                     // Fallback: force_style com FontSize relativo ao PlayResY padrão (288)
                     const scaledFont = Math.max(14, Math.min(18, Math.round(288 * 0.050)));
-                    const srtEscaped = metadata.srtPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+                    const srtEscaped = this.escapeFFmpegFilterPath(tempSanitizedSrt);
                     vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,Outline=2.0,Shadow=1.0,MarginV=55,Alignment=2,Bold=0'`;
                 }
 
@@ -1851,13 +1864,23 @@ ${events.join('\n')}
                     }
                 });
 
-                ffmpeg.on('close', async (code) => {
+                const cleanupSubtitleFiles = () => {
+                    if (hardsubPath && fs.existsSync(hardsubPath)) {
+                        fs.remove(hardsubPath).catch(() => {});
+                    }
                     if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
                         fs.remove(metadata._hardsubAssPath).catch(() => {});
+                    }
+                    if (tempSanitizedSrt && fs.existsSync(tempSanitizedSrt)) {
+                        fs.remove(tempSanitizedSrt).catch(() => {});
                     }
                     if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                         fs.remove(metadata.srtPath).catch(() => {});
                     }
+                };
+
+                ffmpeg.on('close', async (code) => {
+                    cleanupSubtitleFiles();
 
                     if (code === 0 && fs.existsSync(tempOutputPath)) {
                         try {
@@ -1884,11 +1907,9 @@ ${events.join('\n')}
                 });
 
                 ffmpeg.on('error', (err) => {
+                    cleanupSubtitleFiles();
                     if (fs.existsSync(tempOutputPath)) {
                         fs.remove(tempOutputPath).catch(() => {});
-                    }
-                    if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
-                        fs.remove(metadata.srtPath).catch(() => {});
                     }
                     reject(err);
                 });
@@ -1896,6 +1917,24 @@ ${events.join('\n')}
         } finally {
             releaseTranscodeSlot();
         }
+    }
+
+    /**
+     * Escapa caminhos de arquivos para inserção segura no filtergraph do FFmpeg.
+     * Trata backslashes, colons (C:), aspas simples e caracteres especiais de grafo.
+     */
+    escapeFFmpegFilterPath(filePath) {
+        if (!filePath) return '';
+        let escaped = filePath.replace(/\\/g, '/');
+        // Escapa dois pontos (ex: C\:/... no Windows)
+        escaped = escaped.replace(/:/g, '\\:');
+        // Escapa aspas simples
+        escaped = escaped.replace(/'/g, "'\\\\''");
+        // Escapa colchetes (evita que sejam interpretados como labels de links do filtergraph)
+        escaped = escaped.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+        // Escapa vírgulas e pontos-e-vírgulas
+        escaped = escaped.replace(/;/g, '\\;').replace(/,/g, '\\,');
+        return escaped;
     }
 
     formatDuration(seconds) {
