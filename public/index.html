@@ -11471,40 +11471,49 @@
                                 <!-- SUB-TAB 2: FILA & DOWNLOADS -->
                                 <div id="admin-subtab-queue" class="admin-subtab-content" style="display: none;">
 
-                                    <!-- LIVE TASK CARD NO PAINEL ADMIN -->
-                                    <div class="live-card" id="adm-live-card" style="margin-bottom: 20px;">
-                                        <div id="adm-idle-message"
-                                            style="display: block; text-align: center; padding: 10px; color: var(--text-muted);">
-                                            <span style="font-size: 20px;">🛰️</span> Esteira ociosa. Nenhum download
-                                            ativo no momento.
+                                    <!-- TERMINAL DE LOGS EM TEMPO REAL (SSE) -->
+                                    <div id="adm-terminal-wrapper" style="margin-bottom: 20px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #0d1117;">
+                                        <!-- Barra de título do terminal -->
+                                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.07);">
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#ff5f57;"></span>
+                                                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#febc2e;"></span>
+                                                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#28c840;"></span>
+                                                <span style="margin-left: 6px; font-size: 12px; color: #8b949e; font-family: 'Courier New', monospace; font-weight: 600;">brasilflix — logs ao vivo</span>
+                                                <span id="adm-log-status-dot" style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#28c840; margin-left:4px; box-shadow: 0 0 6px #28c840; animation: logDotPulse 1.8s ease-in-out infinite;"></span>
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <span id="adm-log-count-badge" style="font-size: 10px; color: #8b949e; font-family: monospace;">0 linhas</span>
+                                                <button id="adm-log-scroll-btn" onclick="admTerminalToggleScroll()" title="Pausar/Retomar auto-scroll" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #8b949e; border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer;">⏸ Auto-scroll</button>
+                                                <button onclick="admTerminalClear()" title="Limpar terminal" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #8b949e; border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer;">🗑 Limpar</button>
+                                            </div>
                                         </div>
-
-                                        <div id="adm-active-container" style="display: none;">
-                                            <div class="live-header">
-                                                <div class="live-title-area">
-                                                    <span class="live-tag" id="adm-live-status-tag"
-                                                        style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4);">PROCESSANDO</span>
-                                                    <h3 class="live-item-title" id="adm-live-title"
-                                                        style="font-size: 16px;">Carregando...</h3>
-                                                </div>
-                                                <span class="badge-priority" id="adm-live-priority">🔥 VIP</span>
-                                            </div>
-
-                                            <div class="live-progress-container" style="height: 12px;">
-                                                <div class="live-progress-bar" id="adm-live-bar" style="width: 0%;">
-                                                </div>
-                                            </div>
-
-                                            <div class="live-details-grid">
-                                                <span id="adm-live-stage"
-                                                    style="color: #fff; font-weight: 700;">Iniciando esteira...</span>
-                                                <span id="adm-live-speed"
-                                                    style="color: #34d399; font-weight: 800; font-size: 13px;">-</span>
-                                                <span id="adm-live-pct"
-                                                    style="color: #fff; font-weight: 900; font-size: 14px;">0%</span>
-                                            </div>
+                                        <!-- Área de logs -->
+                                        <div id="adm-terminal-body" style="height: 320px; overflow-y: auto; padding: 10px 14px; font-family: 'Courier New', Consolas, monospace; font-size: 12px; line-height: 1.55; color: #c9d1d9; scroll-behavior: smooth;">
+                                            <div id="adm-terminal-lines"></div>
+                                            <div id="adm-terminal-cursor" style="display: inline-block; width: 8px; height: 14px; background: #28c840; vertical-align: middle; animation: logCursorBlink 1s step-end infinite; margin-left: 2px;"></div>
                                         </div>
                                     </div>
+                                    <style>
+                                        @keyframes logDotPulse {
+                                            0%, 100% { opacity: 1; }
+                                            50% { opacity: 0.3; }
+                                        }
+                                        @keyframes logCursorBlink {
+                                            0%, 100% { opacity: 1; }
+                                            50% { opacity: 0; }
+                                        }
+                                        #adm-terminal-body::-webkit-scrollbar { width: 5px; }
+                                        #adm-terminal-body::-webkit-scrollbar-track { background: transparent; }
+                                        #adm-terminal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+                                        .adm-log-line { padding: 1px 0; word-break: break-all; }
+                                        .adm-log-ts   { color: #484f58; user-select: none; margin-right: 6px; }
+                                        .adm-log-level-log   { color: #c9d1d9; }
+                                        .adm-log-level-info  { color: #79c0ff; }
+                                        .adm-log-level-warn  { color: #d29922; }
+                                        .adm-log-level-error { color: #f85149; }
+                                        .adm-log-scroll-paused #adm-log-status-dot { background: #febc2e !important; box-shadow: 0 0 6px #febc2e !important; animation: none !important; }
+                                    </style>
 
                                     <div
                                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
@@ -14501,9 +14510,9 @@
                         const activeContainer = document.getElementById('active-task-container');
                         const idleMessage = document.getElementById('idle-message');
 
-                        // Atualiza Card de Live Task público e do painel admin
-                        const admActiveContainer = document.getElementById('adm-active-container');
-                        const admIdleMsg = document.getElementById('adm-idle-message');
+                        // Atualiza Card de Live Task público
+                        const admActiveContainer = null; // legacy — substituído pelo terminal SSE
+                        const admIdleMsg = null;         // legacy — substituído pelo terminal SSE
 
                         const activeTasks = (data.queue && (data.queue.activeTasks || (data.queue.activeTask ? [data.queue.activeTask] : []))) || [];
                         const maxJobs = data.queue?.maxConcurrentJobs || 10;
@@ -14558,31 +14567,16 @@
                                 `;
                                 }).join('');
                             }
-
-                            // Atualiza admin se presente
-                            if (admIdleMsg) admIdleMsg.style.display = 'none';
-                            if (admActiveContainer) admActiveContainer.style.display = 'block';
-                            const firstTask = activeTasks[0];
-                            const epStr = (firstTask.type === 'serie' && (firstTask.season || firstTask.episode)) ? ` (T${firstTask.season || 1}E${firstTask.episode || 1})` : '';
-                            const progVal = typeof firstTask.progress === 'number' ? Math.round(firstTask.progress) : 0;
-                            const admTitle = document.getElementById('adm-live-title');
-                            if (admTitle) admTitle.innerText = `${firstTask.title}${epStr} (+${activeTasks.length - 1} em paralelo)`;
-                            const admBarEl = document.getElementById('adm-live-bar');
-                            if (admBarEl) admBarEl.style.width = `${progVal}%`;
-                            const admPct = document.getElementById('adm-live-pct');
-                            if (admPct) admPct.innerText = `${progVal}%`;
                         } else {
                             const sched = data.queue?.scheduler;
                             const isSchedActive = sched && sched.config?.ativo !== false;
                             const isOutsideHours = isSchedActive && !sched.allowed;
 
                             let idleHtml = '<span style="font-size: 24px;">🛰️</span> Esteira ociosa. Nenhum download ou otimização ativa no momento.';
-                            let admIdleHtml = '<span style="font-size: 20px;">🛰️</span> Esteira ociosa. Nenhum download ativo no momento.';
 
                             if (isOutsideHours) {
                                 const prox = sched.proximaJanela?.descricao ? `Próxima janela: <strong>${sched.proximaJanela.descricao}</strong>` : 'Janela: <strong>Seg–Sex 01h–05h (SP)</strong>';
                                 idleHtml = `<span style="font-size: 24px;">⏰</span> <strong>Downloads e uploads pausados fora do horário</strong> (Seg–Sex 01h–05h SP). ${prox}`;
-                                admIdleHtml = `<span style="font-size: 20px;">⏰</span> <strong>Downloads e uploads pausados fora do horário de SP (01h–05h).</strong> ${prox}`;
                             }
 
                             if (idleMessage) {
@@ -14590,11 +14584,6 @@
                                 idleMessage.style.display = 'block';
                             }
                             if (activeContainer) activeContainer.style.display = 'none';
-                            if (admIdleMsg) {
-                                admIdleMsg.innerHTML = admIdleHtml;
-                                admIdleMsg.style.display = 'block';
-                            }
-                            if (admActiveContainer) admActiveContainer.style.display = 'none';
                         }
 
                         const queueList = document.getElementById('queue-items-container');
@@ -23042,6 +23031,115 @@
                 if (backdrop) backdrop.classList.remove('active');
             }
 
+            // ═══════════════════════════════════════════════════════════════════════
+            // 📟 TERMINAL DE LOGS SSE — PAINEL ADMIN
+            // ═══════════════════════════════════════════════════════════════════════
+
+            let _admLogES = null;           // EventSource ativo
+            let _admLogAutoScroll = true;   // true = rola para baixo em cada nova linha
+            let _admLogLineCount = 0;       // total de linhas no terminal
+            const ADM_LOG_MAX_LINES = 500;  // limite visual para não crashar o DOM
+
+            /** Converte texto a HTML seguro (evita XSS nos logs). */
+            function _admEscHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            /** Adiciona uma linha ao terminal visual. */
+            function _admTerminalAppend(entry) {
+                const container = document.getElementById('adm-terminal-lines');
+                if (!container) return;
+
+                // Descarta linhas mais antigas se ultrapassar o limite visual
+                if (_admLogLineCount >= ADM_LOG_MAX_LINES) {
+                    const first = container.firstElementChild;
+                    if (first) { container.removeChild(first); _admLogLineCount--; }
+                }
+
+                const line = document.createElement('div');
+                line.className = `adm-log-line adm-log-level-${entry.level || 'log'}`;
+                line.innerHTML =
+                    `<span class="adm-log-ts">${_admEscHtml(entry.ts || '')}</span>` +
+                    `<span>${_admEscHtml(entry.text || '')}</span>`;
+                container.appendChild(line);
+                _admLogLineCount++;
+
+                // Atualiza contador
+                const badge = document.getElementById('adm-log-count-badge');
+                if (badge) badge.textContent = `${_admLogLineCount} linha${_admLogLineCount !== 1 ? 's' : ''}`;
+
+                // Auto-scroll
+                if (_admLogAutoScroll) {
+                    const body = document.getElementById('adm-terminal-body');
+                    if (body) body.scrollTop = body.scrollHeight;
+                }
+            }
+
+            /** Limpa o terminal visualmente (não afeta o buffer do servidor). */
+            function admTerminalClear() {
+                const container = document.getElementById('adm-terminal-lines');
+                if (container) container.innerHTML = '';
+                _admLogLineCount = 0;
+                const badge = document.getElementById('adm-log-count-badge');
+                if (badge) badge.textContent = '0 linhas';
+            }
+
+            /** Alterna o auto-scroll (pausa/retoma). */
+            function admTerminalToggleScroll() {
+                _admLogAutoScroll = !_admLogAutoScroll;
+                const btn = document.getElementById('adm-log-scroll-btn');
+                const wrapper = document.getElementById('adm-terminal-wrapper');
+                if (btn) btn.textContent = _admLogAutoScroll ? '⏸ Auto-scroll' : '▶ Auto-scroll';
+                if (wrapper) {
+                    if (_admLogAutoScroll) {
+                        wrapper.classList.remove('adm-log-scroll-paused');
+                    } else {
+                        wrapper.classList.add('adm-log-scroll-paused');
+                    }
+                }
+                if (_admLogAutoScroll) {
+                    const body = document.getElementById('adm-terminal-body');
+                    if (body) body.scrollTop = body.scrollHeight;
+                }
+            }
+
+            /** Inicia a conexão SSE de logs (chamada ao entrar na aba queue). */
+            function admTerminalConnect() {
+                if (_admLogES && _admLogES.readyState !== EventSource.CLOSED) return; // já conectado
+                if (!adminToken) return;
+
+                const url = `/api/admin/logs/stream?token=${encodeURIComponent(adminToken)}`;
+                _admLogES = new EventSource(url);
+
+                _admLogES.onmessage = (e) => {
+                    try {
+                        const entry = JSON.parse(e.data);
+                        _admTerminalAppend(entry);
+                    } catch (_) {}
+                };
+
+                _admLogES.onerror = () => {
+                    // Reconecta automaticamente após 4 s se a aba ainda estiver visível
+                    if (_admLogES) { _admLogES.close(); _admLogES = null; }
+                    const queueTab = document.getElementById('admin-subtab-queue');
+                    if (queueTab && queueTab.style.display !== 'none') {
+                        setTimeout(admTerminalConnect, 4000);
+                    }
+                };
+            }
+
+            /** Encerra a conexão SSE (chamada ao sair da aba queue). */
+            function admTerminalDisconnect() {
+                if (_admLogES) {
+                    _admLogES.close();
+                    _admLogES = null;
+                }
+            }
+
             function switchAdminSubTab(subTabId, updateUrl = true) {
                 document.querySelectorAll('.admin-sub-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.admin-subtab-content').forEach(c => c.style.display = 'none');
@@ -23066,6 +23164,13 @@
                     if (window.location.hash !== newHash) {
                         history.replaceState(null, '', newHash);
                     }
+                }
+
+                // Gerencia conexão SSE: conecta ao entrar na aba queue, desconecta ao sair
+                if (subTabId === 'queue') {
+                    admTerminalConnect();
+                } else {
+                    admTerminalDisconnect();
                 }
 
                 if (subTabId === 'overview') loadAdminStats();

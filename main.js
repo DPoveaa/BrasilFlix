@@ -8,6 +8,11 @@
 const path = require('path');
 require('dotenv').config();
 
+// ⚡ LogBroadcaster: deve ser instalado ANTES de qualquer outro require
+// para interceptar todos os console.log/warn/error desde o boot.
+const logBroadcaster = require('./src/utils/LogBroadcaster');
+logBroadcaster.install();
+
 // Configurar o caminho para os módulos
 process.env.NODE_PATH = path.join(__dirname, 'src');
 

@@ -15,6 +15,7 @@ const ProgressManager = require('../managers/ProgressManager');
 const CatalogoManager = require('../managers/CatalogoManager');
 const db = require('../database/db');
 const auditService = require('./AuditService');
+const logBroadcaster = require('../utils/LogBroadcaster');
 
 class StremioServer {
     constructor(catalogoManager, assinaturaManager, queueManager = null, pedidosManager = null, port = config.STREMIO_PORT || 7000) {
@@ -287,6 +288,46 @@ class StremioServer {
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
+        });
+
+        // ── LOGS EM TEMPO REAL (SSE) ──────────────────────────────────────────────
+        //
+        // GET /api/admin/logs/stream   → Server-Sent Events (streaming contínuo)
+        //   Autenticação: Bearer token no header Authorization OU ?token= na query
+        //   (SSE não suporta headers customizados em alguns browsers / EventSource)
+        //
+        // GET /api/admin/logs/history  → Snapshot do buffer atual em JSON
+        // ─────────────────────────────────────────────────────────────────────────
+
+        this.app.get('/api/admin/logs/stream', (req, res) => {
+            // Valida token – aceita Authorization: Bearer <token> OU ?token=<jwt>
+            // (EventSource da W3C não suporta headers customizados, por isso aceitamos query param)
+            const rawToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() ||
+                             String(req.query.token || '').trim();
+            if (!rawToken) return res.status(401).json({ error: 'Token obrigatório.' });
+
+            // verifyToken retorna null em caso de token inválido/expirado (não lança exceção)
+            const decoded = authService.verifyToken(rawToken);
+            if (!decoded) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+
+            // Cabeçalhos SSE
+            res.setHeader('Content-Type',  'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection',    'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no'); // necessário no Nginx/proxy reverso
+            res.flushHeaders();
+
+            const clientId = `sse_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            logBroadcaster.addClient(clientId, res);
+
+            // Remove cliente ao desconectar (normal ou abrupto)
+            req.on('close',   () => logBroadcaster.removeClient(clientId));
+            req.on('aborted', () => logBroadcaster.removeClient(clientId));
+        });
+
+        this.app.get('/api/admin/logs/history', auth, (req, res) => {
+            const limit = Math.min(parseInt(req.query.limit || 300, 10), 300);
+            res.json({ logs: logBroadcaster.getHistory(limit) });
         });
 
         // 3.1 Gerenciamento do Agendador de Horários (Scheduler)
