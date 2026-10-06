@@ -631,12 +631,19 @@ ${events.join('\n')}
     hasPortugueseSubtitles(info, rawFileName = '') {
         const lowerName = (rawFileName || '').toLowerCase();
 
-        // 1. Verifica se há trilhas de legenda em Português embutidas no arquivo
+        // Se o nome do arquivo traz tag explícita de Portugal, rejeita imediatamente
+        const isExplicitPtPtName = /\b(pt[-_ ]?pt|por[-_ ]?pt|portugal|european|europeu)\b/i.test(lowerName);
+        if (isExplicitPtPtName) return false;
+
+        // 1. Verifica se há trilhas de legenda em Português embutidas no arquivo (excluindo explicitamente faixas PT-PT)
         if (info.subtitleStreams && info.subtitleStreams.length > 0) {
             const ptLanguages = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'portuguese', 'português'];
             const hasPtSubStream = info.subtitleStreams.some(s => {
                 const lang = (s.language || '').toLowerCase();
                 const title = (s.title || '').toLowerCase();
+                const isExplicitPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt') ||
+                                       title.includes('pt-pt') || title.includes('portugal') || title.includes('european') || title.includes('europeu');
+                if (isExplicitPtPt) return false;
                 return ptLanguages.includes(lang) || title.includes('portug') || title.includes('legenda') || title.includes('pt-br');
             });
             if (hasPtSubStream) return true;
@@ -862,88 +869,130 @@ ${events.join('\n')}
         });
     }
 
-    isBrazilianPortugueseSubtitle(content) {
-        if (!content || typeof content !== 'string' || content.length < 200) return false;
+    normalizeSubtitleText(rawContent) {
+        if (!rawContent || typeof rawContent !== 'string') return '';
+        return rawContent
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+    }
 
-        // 1. Padrões característicos e inequívocos de Português de Portugal (PT-PT)
-        // Gerúndio substituído por 'a + infinitivo verbal' (excluindo substantivos/adjetivos como par, lugar, circular, militar, postos)
-        const ptPtGerundRegex = /\b(estou|está|estás|estava|estavam|estávamos|estiver|estiverem|andar|ando|andas|anda|andamos|andam|andava|andavam)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|andar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir)\b/gi;
-        const ptPtGerundMatches = (content.match(ptPtGerundRegex) || []).length;
+    isEuropeanPortugueseSubtitle(content) {
+        if (!content || typeof content !== 'string' || content.length < 150) return false;
+        const norm = this.normalizeSubtitleText(content);
 
-        // Ênclise típica europeia com hífen
-        const ptPtEncliseRegex = /\b(diz-me|senta-te|escuta-me|cala-te|ajuda-me|lembra-te|olha-te|levanta-te|dá-me|diga-me|chama-se|encontra-se|trata-se|refere-se|trabalho\s+de\s+equipa)\b/gi;
-        const ptPtEncliseMatches = (content.match(ptPtEncliseRegex) || []).length;
+        // 1. Gerúndio europeu inequívoco: verbo auxiliar + a + infinitivo (ex: "estou a fazer", "estava a ver")
+        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estiver|estiveres|estivermos|estiverem|esteve|estiveste|estiveram|andar|ando|andas|anda|andamos|andam|andava|andavam|ficar|fico|ficas|fica|ficamos|ficam|ficava|ficavam|ficou|continuar|continuo|continua|continuam|continuava|pos-se|puseram-se)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir|lutar|treinar|combater|proteger|fugir|esconder|seguir|ajudar|matar|salvar|destruir|ganhar|perder|jogar|descobrir|acontecer|entender|compreender|responder|comecar|acabar|terminar|voltar|viver|crescer|cair|subir|descer|gostar|precisar|querer|poder)\b/gi;
+        const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
 
-        // Vocabulário estritamente exclusivo europeu (evitando 'pá' avulso que no Brasil significa ferramenta/pá de lixo/obra)
-        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|(?:ó|epa)\s+pá\b|malta\b|rapariga|raparigas|miúdo|miúdos|miúda|miúdas|comboio|comboios|ecrã|ecrãs|telemóvel|telemóveis|autocarro|autocarros|pequeno-almoço|pequeno\s+almoço|parvalhão|casa\s+de\s+banho)\b/gi;
-        const ptPtVocabMatches = (content.match(ptPtVocabRegex) || []).length;
-
-        // NOVO: Pretérito perfeito da 2ª pessoa singular (TU) — "cortaste", "destrancaste", "fizeste", "disseste"
-        // Este padrão é INEQUÍVOCO de PT-PT: no Brasil usa-se "você cortou", "você fez", nunca "-aste/-este/-iste"
-        // Excluímos sufixos comuns em substantivos/adjetivos brasileiros (ex: "artiste", "contraste" não conta)
-        const ptPtTuPreteritoRegex = /\b[a-záéíóúàâêôãõç]{3,15}(?:aste|este|iste)\b/gi;
-        const ptPtTuPreteritoRaw = (content.match(ptPtTuPreteritoRegex) || []);
-        // Filtra falsos-positivos: palavras que existem em PT-BR como substantivos/adj (contraste, artiste, etc.)
+        // 2. Pretérito perfeito inequívoco de 2ª pessoa singular (TU) — "fizeste", "disseste", "ouviste"
+        const ptPtTuPreteritoRegex = /\b[a-z]{3,15}(?:aste|este|iste)\b/gi;
+        const ptPtTuPreteritoRaw = (norm.match(ptPtTuPreteritoRegex) || []);
         const ptPtFalsoPositivoPreterito = /^(contraste|entusiastes?|fantaste|realiste|moraliste|socialiste|capitaliste|artiste|comuniste|fasciste|pacifiste|otimiste|pessimiste|realiste|idealiste|racionalist[ae]|sensacionaliste|profissionaliste|especialiste|minimaliste|maximaliste|nacionaliste|imperialiste|colonialiste|liberaliste|globaliste|digitaliste|analiste|jornaliste|naturaliste|formaliste|universaliste|feministe|humaniste|triste|existe|insiste|persiste|consiste|resiste|assiste|subsiste)$/i;
         const ptPtTuPreteritoMatches = ptPtTuPreteritoRaw.filter(w => !ptPtFalsoPositivoPreterito.test(w)).length;
 
-        // NOVO: Pronome "tu" como sujeito direto (PT-PT) — "tu sabes", "tu és", "tu tens", "tu vais"
-        // No Brasil, "tu" é raramente usado e quando aparece é sem concordância ("tu vai" não "tu vais")
-        const ptPtTuSubjectRegex = /\btu\s+(?:és|estás|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|dás|vês|trazes|trazes|pões|traís|crês)\b/gi;
-        const ptPtTuSubjectMatches = (content.match(ptPtTuSubjectRegex) || []).length;
+        // 3. Pronome "tu" como sujeito com conjugação europeia
+        const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|das|ves|trazes|poes|eras|tinhas|ias|sabias|podias|querias|fizeste|disseste|viste|ouviste|foste|vieste)\b/gi;
+        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
 
-        // NOVO: Conjugações da 2ª pessoa singular do presente/imperfeito (típicas de PT-PT com tu)
-        // "fazes", "sabes", "podes", "tens", "vais", "queres" — quando frequentes, indicam PT-PT
-        const ptPtTuPresenteRegex = /\b(fazes|sabes|podes|queres|vens|trazes|disseste|fizeste|foste|vieste|puseste|trouxeste|soubeste|pudeste|quiseste|ouviste|viste|deste|tiveste|estiveste|fores|fares|puderes|quiseres)\b/gi;
-        const ptPtTuPresenteMatches = (content.match(ptPtTuPresenteRegex) || []).length;
+        // 4. Verbos de 2ª pessoa (tu)
+        const ptPtTuVerbRegex = /\b(fizeste|disseste|soubeste|pudeste|quiseste|trouxeste|puseste|vieste|estiveste|tiveste|ouviste|dissesses|fizesses|quiseres|puderes|souberes|tiveres|fores|sabias|querias|podias|tinhas|estavas|dizias|fazias)\b/gi;
+        const ptPtTuVerbMatches = (norm.match(ptPtTuVerbRegex) || []).length;
 
-        const ptPtScore = (ptPtGerundMatches * 5) + (ptPtEncliseMatches * 3) + (ptPtVocabMatches * 4) +
-                          (ptPtTuPreteritoMatches * 4) + (ptPtTuSubjectMatches * 5) + (ptPtTuPresenteMatches * 3);
+        // 5. Ênclise europeia típica com hífen e contrações pronominais
+        const ptPtEncliseRegex = /\b(diz-me|diga-me|escuta-me|esculte-me|ouve-me|ouca-me|ajuda-me|ajude-me|lembra-te|lembre-se|cala-te|cale-se|olha-te|levanta-te|da-me|de-me|deixa-me|mostra-me|mostre-me|espera-me|espere-me|mata-me|salva-me|chama-te|porta-te|senta-te|afasta-te|acalma-te|da-lhe|deu-lhe|disse-lhe|falou-lhe|diz-lhe|pergunta-lhe|da-mo|da-ma|diz-mo|deu-mo|da-lho|deu-lho)\b/gi;
+        const ptPtEncliseMatches = (norm.match(ptPtEncliseRegex) || []).length;
+
+        // 6. Ortografia europeia com consoantes mudas preservadas
+        const ptPtSpellingRegex = /\b(accao|accoes|activo|activa|activos|activas|actriz|actrizes|optimo|optima|optimos|optimas|exacto|exacta|exactos|exactas|exactamente|directo|directa|directos|directas|director|directora|directores|adopcao|baptismo|reaccao|reaccoes|espectador|espectadores|sector|sectores|projecto|projectos|connosco|convosco)\b/gi;
+        const ptPtSpellingMatches = (norm.match(ptPtSpellingRegex) || []).length;
+
+        // 7. Vocabulário estritamente exclusivo de Portugal
+        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|a\s+serio\?|de\s+certeza\b|com\s+certeza\b|porreiro|porreira|fita-cola)\b/gi;
+        const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
+
+        // Regras eliminatórias imediatas:
+        if (ptPtGerundMatches >= 2) return true;
+        if (ptPtTuPreteritoMatches >= 2) return true;
+        if (ptPtVocabMatches >= 2) return true;
+        if (ptPtSpellingMatches >= 2) return true;
+        if (ptPtTuSubjectMatches >= 2) return true;
+
+        const ptPtScore = (ptPtGerundMatches * 6) +
+                          (ptPtTuPreteritoMatches * 5) +
+                          (ptPtTuSubjectMatches * 6) +
+                          (ptPtTuVerbMatches * 4) +
+                          (ptPtEncliseMatches * 3) +
+                          (ptPtSpellingMatches * 5) +
+                          (ptPtVocabMatches * 5);
+
+        return ptPtScore >= 8;
+    }
+
+    isBrazilianPortugueseSubtitle(content) {
+        if (!content || typeof content !== 'string' || content.length < 150) return false;
+
+        // Se contiver evidências claras de Português de Portugal, REJEITA imediatamente
+        if (this.isEuropeanPortugueseSubtitle(content)) {
+            return false;
+        }
+
+        const norm = this.normalizeSubtitleText(content);
+
+        // 1. Padrões característicos e inequívocos de Português de Portugal (PT-PT) para pontuação fina
+        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estiver|estiveres|estivermos|estiverem|esteve|estiveste|estiveram|andar|ando|andas|anda|andamos|andam|andava|andavam|ficar|fico|ficas|fica|ficamos|ficam|ficava|ficavam|ficou|continuar|continuo|continua|continuam|continuava|pos-se|puseram-se)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir|lutar|treinar|combater|proteger|fugir|esconder|seguir|ajudar|matar|salvar|destruir|ganhar|perder|jogar|descobrir|acontecer|entender|compreender|responder|comecar|acabar|terminar|voltar|viver|crescer|cair|subir|descer|gostar|precisar|querer|poder)\b/gi;
+        const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
+
+        const ptPtTuPreteritoRegex = /\b[a-z]{3,15}(?:aste|este|iste)\b/gi;
+        const ptPtTuPreteritoRaw = (norm.match(ptPtTuPreteritoRegex) || []);
+        const ptPtFalsoPositivoPreterito = /^(contraste|entusiastes?|fantaste|realiste|moraliste|socialiste|capitaliste|artiste|comuniste|fasciste|pacifiste|otimiste|pessimiste|realiste|idealiste|racionalist[ae]|sensacionaliste|profissionaliste|especialiste|minimaliste|maximaliste|nacionaliste|imperialiste|colonialiste|liberaliste|globaliste|digitaliste|analiste|jornaliste|naturaliste|formaliste|universaliste|feministe|humaniste|triste|existe|insiste|persiste|consiste|resiste|assiste|subsiste)$/i;
+        const ptPtTuPreteritoMatches = ptPtTuPreteritoRaw.filter(w => !ptPtFalsoPositivoPreterito.test(w)).length;
+
+        const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|das|ves|trazes|poes|eras|tinhas|ias|sabias|podias|querias|fizeste|disseste|viste|ouviste|foste|vieste)\b/gi;
+        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
+
+        const ptPtTuVerbRegex = /\b(fizeste|disseste|soubeste|pudeste|quiseste|trouxeste|puseste|vieste|estiveste|tiveste|ouviste|dissesses|fizesses|quiseres|puderes|souberes|tiveres|fores|sabias|querias|podias|tinhas|estavas|dizias|fazias)\b/gi;
+        const ptPtTuVerbMatches = (norm.match(ptPtTuVerbRegex) || []).length;
+
+        const ptPtEncliseRegex = /\b(diz-me|diga-me|escuta-me|esculte-me|ouve-me|ouca-me|ajuda-me|ajude-me|lembra-te|lembre-se|cala-te|cale-se|olha-te|levanta-te|da-me|de-me|deixa-me|mostra-me|mostre-me|espera-me|espere-me|mata-me|salva-me|chama-te|porta-te|senta-te|afasta-te|acalma-te|da-lhe|deu-lhe|disse-lhe|falou-lhe|diz-lhe|pergunta-lhe|da-mo|da-ma|diz-mo|deu-mo|da-lho|deu-lho)\b/gi;
+        const ptPtEncliseMatches = (norm.match(ptPtEncliseRegex) || []).length;
+
+        const ptPtSpellingRegex = /\b(accao|accoes|activo|activa|activos|activas|actriz|actrizes|optimo|optima|optimos|optimas|exacto|exacta|exactos|exactas|exactamente|directo|directa|directos|directas|director|directora|directores|adopcao|baptismo|reaccao|reaccoes|espectador|espectadores|sector|sectores|projecto|projectos|connosco|convosco)\b/gi;
+        const ptPtSpellingMatches = (norm.match(ptPtSpellingRegex) || []).length;
+
+        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|a\s+serio\?|de\s+certeza\b|com\s+certeza\b|porreiro|porreira|fita-cola)\b/gi;
+        const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
+
+        const ptPtScore = (ptPtGerundMatches * 6) +
+                          (ptPtTuPreteritoMatches * 5) +
+                          (ptPtTuSubjectMatches * 6) +
+                          (ptPtTuVerbMatches * 4) +
+                          (ptPtEncliseMatches * 3) +
+                          (ptPtSpellingMatches * 5) +
+                          (ptPtVocabMatches * 5);
 
         // 2. Padrões característicos de Português Brasileiro (PT-BR)
-        // Gerúndios naturais abundantes no Brasil (-ando, -endo, -indo)
-        const ptBrAllGerundsRegex = /\b[a-z]{3,15}(?:ando|endo|indo)\b/gi;
-        const ptBrAllGerundsMatches = (content.match(ptBrAllGerundsRegex) || []).length;
+        const ptBrGerundRegex = /\b[a-z]{3,15}(?:ando|endo|indo)\b/gi;
+        const ptBrGerundMatches = (norm.match(ptBrGerundRegex) || []).length;
 
-        // Contrações e vocabulário típico brasileiro
-        const ptBrVocabRegex = /\b(você|vocês|tô|tá|tava|tavam|né|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|ônibus|trem\b|café\s+da\s+manhã|banheiro|garoto|garota|moço|moça|grana|droga|beleza|valeu\b)\b/gi;
-        const ptBrVocabMatches = (content.match(ptBrVocabRegex) || []).length;
+        const ptBrVocabRegex = /\b(voce|voces|to|ta|tava|tavam|ne|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|onibus|trem\b|cafe\s+da\s+manha|banheiro|garoto|garota|garotos|garotas|moco|moca|grana|droga|beleza|valeu\b|time\b|equipe\b|ruim\b|olha\s+so|tudo\s+bem|como\s+vai)\b/gi;
+        const ptBrVocabMatches = (norm.match(ptBrVocabRegex) || []).length;
 
-        // Próclise típica brasileira (me dá, te vejo, me ajuda)
-        const ptBrProcliseRegex = /\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|não\s+me|não\s+te)\b/gi;
-        const ptBrProcliseMatches = (content.match(ptBrProcliseRegex) || []).length;
+        const ptBrProcliseRegex = /\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|nao\s+me|nao\s+te)\b/gi;
+        const ptBrProcliseMatches = (norm.match(ptBrProcliseRegex) || []).length;
 
-        const ptBrScore = (ptBrAllGerundsMatches * 2) + (ptBrVocabMatches * 2) + (ptBrProcliseMatches * 2);
+        const ptBrScore = (ptBrGerundMatches * 2) + (ptBrVocabMatches * 3) + (ptBrProcliseMatches * 2);
 
-        // Palavras genéricas do português para integridade básica
-        const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
-        const genericMatches = (content.match(genericPtRegex) || []).length;
-
-        if (genericMatches < 8 && ptBrScore < 5) return false;
-
-        // Se houver indícios inequívocos e dominantes de Português de Portugal superando amplamente PT-BR, rejeita
-        if (ptPtScore >= 25 && ptPtScore > ptBrScore * 2.5) {
+        // Bloqueio rigoroso de resíduos de PT-PT sem vocabulário PT-BR claro
+        if (ptPtScore >= 4 && ptBrVocabMatches === 0 && ptBrScore < 8) {
             return false;
         }
 
-        // Limiar reduzido: bastam alguns poucos marcadores fortes de PT-PT sem contrapartida BR clara
-        if (ptPtScore >= 12 && ptBrVocabMatches === 0 && ptBrScore < 10) {
-            return false;
-        }
+        // Integridade de texto em língua portuguesa
+        const genericPtRegex = /\b(nao|esta|estao|entao|tambem|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor|para|com|como|mais|mas|pelo|pela|dos|das)\b/gi;
+        const genericMatches = (norm.match(genericPtRegex) || []).length;
 
-        // Se tiver muitos gerúndios europeus (a + inf) e quase nenhum gerúndio brasileiro natural
-        if (ptPtGerundMatches >= 6 && ptBrAllGerundsMatches < 2) {
-            return false;
-        }
-
-        // NOVO: Rejeita se tiver muitos pretéritos "tu" (-aste/-este/-iste) sem nenhum vocabulário PT-BR
-        // Caso típico: legendas YIFY do Resident Evil, Spider-Man etc. com tratamento por "tu"
-        if (ptPtTuPreteritoMatches >= 3 && ptBrVocabMatches === 0) {
-            return false;
-        }
-
-        // NOVO: Presença forte de conjugações/pronomes de 2ª pessoa (tu) sem nenhum traço PT-BR
-        if ((ptPtTuSubjectMatches >= 2 || ptPtTuPresenteMatches >= 4) && ptBrVocabMatches === 0 && ptBrScore < 8) {
+        if (genericMatches < 3 && ptBrScore < 4) {
             return false;
         }
 
@@ -951,10 +1000,12 @@ ${events.join('\n')}
     }
 
     isGenericPortugueseSubtitle(content) {
-        if (!content || typeof content !== 'string' || content.length < 200) return false;
-        const genericPtRegex = /\b(não|está|estão|então|também|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
-        const matches = (content.match(genericPtRegex) || []).length;
-        return matches >= 8;
+        if (!content || typeof content !== 'string' || content.length < 150) return false;
+        if (this.isEuropeanPortugueseSubtitle(content)) return false;
+        const norm = this.normalizeSubtitleText(content);
+        const genericPtRegex = /\b(nao|esta|estao|entao|tambem|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
+        const matches = (norm.match(genericPtRegex) || []).length;
+        return matches >= 4;
     }
 
     isPortugueseSubtitleContent(content) {
@@ -1122,16 +1173,16 @@ ${events.join('\n')}
                         const isOfficialStudioPob = ['pob', 'pt-br', 'brazilian'].includes(langTag) ||
                                                    titleTag.includes('brazil') || titleTag.includes('brasil') || titleTag.includes('pob');
 
-                        if (isOfficialStudioPob || this.isBrazilianPortugueseSubtitle(content)) {
-                            // CORREÇÃO: Não retornar direto — a legenda interna também pode estar fora de sincronia
-                            // se o vídeo tem intro de emissora (Fox, SHOWTIME, etc.) que o SRT original não esperava.
-                            // Sincronizamos via ffsubsync antes de confirmar.
+                        const isPtPt = this.isEuropeanPortugueseSubtitle(content);
+                        const isPtBr = this.isBrazilianPortugueseSubtitle(content);
+
+                        // Se contiver traços de Português de Portugal, REJEITA imediatamente mesmo se tiver tag pob/pt-br!
+                        if (!isPtPt && (isPtBr || isOfficialStudioPob)) {
                             console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada. Sincronizando contra o vídeo...`);
-                            // Guarda o caminho da legenda interna para sincronizar após construir a referência
                             info._internalPtSrtPath = srtPath;
                             break; // Sai do loop de streams PT — já temos a melhor candidata interna
                         } else {
-                            console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída continha Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
+                            console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída rejeitada: detectado Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
                             await fs.remove(srtPath).catch(() => {});
                         }
                     }
@@ -1305,7 +1356,6 @@ ${events.join('\n')}
                 if (ptSubs.length > 0) {
                     console.log(`🌐 Testando até ${ptSubs.length} legendas candidatas no OpenSubtitles...`);
 
-                    let fallbackPtCandidate = null;
                     let lastValidPtBrCandidatePath = null;
 
                     // Itera pelas legendas candidatas e tenta sincronizar até achar uma correspondência ideal
@@ -1316,15 +1366,8 @@ ${events.join('\n')}
                             if (!subRes.data || subRes.data.length < 500) continue;
 
                             const isPtBr = this.isBrazilianPortugueseSubtitle(subRes.data);
-                            const isGenericPt = this.isGenericPortugueseSubtitle(subRes.data);
-
-                            if (!isPtBr && !isGenericPt) {
-                                console.warn(`⚠️ Legenda OpenSubtitles #${idx + 1} (${sub.lang}) descartada: texto não reconhecido como Português autêntico.`);
-                                continue;
-                            }
-
-                            if (!isPtBr && isGenericPt && !fallbackPtCandidate) {
-                                fallbackPtCandidate = { sub, data: subRes.data };
+                            if (!isPtBr) {
+                                console.warn(`⚠️ Legenda OpenSubtitles #${idx + 1} (${sub.lang}) descartada: texto não validado como PT-BR autêntico (ou detectado Português de Portugal).`);
                                 continue;
                             }
 
@@ -1352,26 +1395,6 @@ ${events.join('\n')}
                         } catch (errSub) {
                             console.warn(`⚠️ Falha ao baixar/testar candidata #${idx + 1}: ${errSub.message}`);
                         }
-                    }
-
-                    // Se nenhuma das PT-BR sincronizou com o áudio/ref mas temos o fallback genérico em Português:
-                    if (fallbackPtCandidate) {
-                        try {
-                            console.log(`ℹ️ [Hardsub Fallback] Testando legenda de fallback em Português (${fallbackPtCandidate.sub.lang})...`);
-                            const fallbackSrtPath = path.join(path.dirname(inputPath), `sub_pt_fallback_${Date.now()}.srt`);
-                            await fs.writeFile(fallbackSrtPath, fallbackPtCandidate.data, 'utf8');
-
-                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_fb_${Date.now()}.srt`);
-                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, fallbackSrtPath, syncedSrtPath, { isAnime: metadata.isAnime });
-
-                            if (finalSrt && fs.existsSync(finalSrt)) {
-                                if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                                    fs.remove(refSyncTarget).catch(() => {});
-                                }
-                                fs.remove(fallbackSrtPath).catch(() => {});
-                                return finalSrt;
-                            }
-                        } catch (e) {}
                     }
 
                     // Se a sincronização VAD falhou em todas as opções mas temos a legenda PT-BR baixada,
