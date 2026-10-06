@@ -744,11 +744,13 @@ class StremioServer {
                 const user = req.user;
                 const visitorId = req.headers['x-visitor-id'] || req.body.visitorId || null;
                 const sessionId = req.headers['x-session-id'] || req.body.sessionId || null;
+                const rawTg = req.body.telegramId || req.headers['x-telegram-id'] || req.headers['x-user-token'];
+                const telegramId = user?.telegram_id || (/^\d+$/.test(String(rawTg || '')) ? Number(rawTg) : null);
 
                 await auditService.logEvent({
-                    identityType: user ? 'registered' : (req.body.telegramId ? 'telegram' : 'anonymous'),
-                    userId: user?.id,
-                    telegramId: req.body.telegramId || user?.telegram_id,
+                    identityType: user?.id ? 'registered' : (telegramId ? 'telegram' : 'anonymous'),
+                    userId: user?.id || null,
+                    telegramId,
                     visitorId,
                     eventType: req.body.eventType || req.body.event_type || 'PAGE_VIEW',
                     source: req.body.source || 'website',
@@ -774,12 +776,14 @@ class StremioServer {
                 const user = req.user;
                 const visitorId = req.headers['x-visitor-id'] || req.body.visitorId || null;
                 const sessionId = req.headers['x-session-id'] || req.body.sessionId || null;
+                const rawTg = req.body.telegramId || req.headers['x-telegram-id'] || req.headers['x-user-token'];
+                const telegramId = user?.telegram_id || (/^\d+$/.test(String(rawTg || '')) ? Number(rawTg) : null);
 
                 const result = await auditService.recordPlaybackProgress({
                     sessionId,
-                    identityType: user ? 'registered' : (req.body.telegramId ? 'telegram' : 'anonymous'),
-                    userId: user?.id,
-                    telegramId: req.body.telegramId || user?.telegram_id,
+                    identityType: user?.id ? 'registered' : (telegramId ? 'telegram' : 'anonymous'),
+                    userId: user?.id || null,
+                    telegramId,
                     visitorId,
                     mediaId: req.body.mediaId,
                     mediaType: req.body.mediaType || 'filme',
@@ -2581,18 +2585,20 @@ class StremioServer {
         });
 
         this.app.post('/api/user/favoritos/toggle', authService.userAuthMiddleware(), async (req, res) => {
-            const { itemId, itemType } = req.body;
+            const { itemId, itemType, title } = req.body;
             if (!itemId) return res.status(400).json({ error: 'ID do item é obrigatório.' });
             const result = await authService.toggleFavorite(req.user.id, itemId, itemType || 'filme');
             if (result.success) {
+                const item = (itemType === 'filme') ? this.catalogoManager?.buscarFilmePorId(itemId) : this.catalogoManager?.buscarSeriePorId(itemId);
+                const resolvedTitle = title || item?.nome || `Mídia #${itemId}`;
                 auditService.logEvent({
-                    identityType: 'registered',
-                    userId: req.user.id,
+                    identityType: req.user.id ? 'registered' : 'telegram',
+                    userId: req.user.id || null,
                     telegramId: req.user.telegram_id,
                     eventType: result.isFavorite ? 'FAVORITE_ADDED' : 'FAVORITE_REMOVED',
                     source: 'website',
                     mediaId: String(itemId),
-                    title: title || `Mídia #${itemId}`,
+                    title: resolvedTitle,
                     metadata: { itemType: itemType || 'filme' }
                 }).catch(() => {});
             }
@@ -2797,6 +2803,17 @@ class StremioServer {
                 avatarUrl: avatarUrl
             });
             if (!result.success) return res.status(400).json(result);
+
+            auditService.logEvent({
+                identityType: userId ? 'registered' : 'anonymous',
+                userId,
+                eventType: 'RATING_SUBMITTED',
+                source: 'website',
+                mediaId: String(id),
+                title: title || `${type} #${id}`,
+                metadata: { rating, type, hasComment: !!comentario }
+            }).catch(() => {});
+
             res.json(result);
         });
 
@@ -2879,6 +2896,18 @@ class StremioServer {
             const { type, id } = req.params;
             const baseUrl = this.getBaseUrl(req);
             const data = await this.stremioService.getStreams(type, id, 'public', baseUrl);
+
+            // Log auditoria Stremio público
+            const media = type === 'filme' ? this.catalogoManager?.buscarFilmePorId(id) : this.catalogoManager?.buscarSeriePorId(id);
+            auditService.logEvent({
+                identityType: 'anonymous',
+                eventType: 'TITLE_OPENED',
+                source: 'stremio',
+                mediaId: String(id),
+                title: media?.nome || `${type} #${id}`,
+                metadata: { type, client: 'stremio' }
+            }).catch(() => {});
+
             res.json(data);
         });
 
@@ -2886,6 +2915,23 @@ class StremioServer {
             const { userToken, type, id } = req.params;
             const baseUrl = this.getBaseUrl(req);
             const data = await this.stremioService.getStreams(type, id, userToken, baseUrl);
+
+            // Log auditoria Stremio com token/usuário
+            const strToken = (userToken || '').toString().trim();
+            const isTgNumeric = /^\d+$/.test(strToken);
+            const tgId = isTgNumeric ? Number(strToken) : null;
+            const media = type === 'filme' ? this.catalogoManager?.buscarFilmePorId(id) : this.catalogoManager?.buscarSeriePorId(id);
+            auditService.logEvent({
+                identityType: tgId ? 'telegram' : (strToken && strToken !== 'public' ? 'registered' : 'anonymous'),
+                telegramId: tgId,
+                visitorId: strToken !== 'public' ? strToken : null,
+                eventType: 'TITLE_OPENED',
+                source: 'stremio',
+                mediaId: String(id),
+                title: media?.nome || `${type} #${id}`,
+                metadata: { type, userToken: strToken, client: 'stremio' }
+            }).catch(() => {});
+
             res.json(data);
         });
 
@@ -3020,6 +3066,30 @@ class StremioServer {
             return res.redirect(302, cloudflareUrl);
         }
 
+        // 4. Registra sessão de reprodução na Auditoria para Stremio / TV
+        const isInitialStreamFilme = !req.headers.range || req.headers.range.startsWith('bytes=0-');
+        if (isInitialStreamFilme) {
+            const strToken = (userToken || '').toString().trim();
+            const isTgNumeric = /^\d+$/.test(strToken);
+            const tgId = isTgNumeric ? Number(strToken) : null;
+            const identityType = tgId ? 'telegram' : (strToken && strToken !== 'public' ? 'registered' : 'anonymous');
+            const sessionId = `stremio_${tgId || strToken || 'anon'}_filme_${filme.id}_${Math.floor(Date.now() / 1800000)}`;
+
+            auditService.recordPlaybackProgress({
+                sessionId,
+                identityType,
+                telegramId: tgId,
+                visitorId: strToken !== 'public' ? strToken : null,
+                mediaId: String(filme.id),
+                mediaType: 'filme',
+                title: filme.nome,
+                currentPosition: 1,
+                duration: filme.duracao ? filme.duracao * 60 : 7200,
+                platform: 'stremio',
+                device: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 100) : 'Stremio TV'
+            }).catch(() => {});
+        }
+
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
     }
 
@@ -3123,6 +3193,32 @@ class StremioServer {
             const verifiedFileId = msgInfo.docId || versaoEscolhida.fileId.trim();
             const cloudflareUrl = `${config.CLOUDFLARE_STREAM_URL.replace(/\/$/, '')}/?file_id=${encodeURIComponent(verifiedFileId)}`;
             return res.redirect(302, cloudflareUrl);
+        }
+
+        // 4. Registra sessão de reprodução na Auditoria para Stremio / TV
+        const isInitialStreamSerie = !req.headers.range || req.headers.range.startsWith('bytes=0-');
+        if (isInitialStreamSerie) {
+            const strToken = (userToken || '').toString().trim();
+            const isTgNumeric = /^\d+$/.test(strToken);
+            const tgId = isTgNumeric ? Number(strToken) : null;
+            const identityType = tgId ? 'telegram' : (strToken && strToken !== 'public' ? 'registered' : 'anonymous');
+            const sessionId = `stremio_${tgId || strToken || 'anon'}_serie_${serie.id}_s${seasonNum}e${epNum}_${Math.floor(Date.now() / 1800000)}`;
+
+            auditService.recordPlaybackProgress({
+                sessionId,
+                identityType,
+                telegramId: tgId,
+                visitorId: strToken !== 'public' ? strToken : null,
+                mediaId: String(serie.id),
+                mediaType: 'serie',
+                title: `${serie.nome} (T${seasonNum}E${epNum})`,
+                seasonNum,
+                episodeNum: epNum,
+                currentPosition: 1,
+                duration: ep.duracao ? ep.duracao * 60 : 3000,
+                platform: 'stremio',
+                device: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 100) : 'Stremio TV'
+            }).catch(() => {});
         }
 
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });

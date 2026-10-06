@@ -165,13 +165,22 @@ class AuditService {
 
     // Helper: Parse time range parameter into SQL date condition
     parseTimeRange(range = 'today', customStart = null, customEnd = null) {
-        let condition = "timestamp >= CURRENT_DATE";
-        let playbackCond = "created_at >= CURRENT_DATE";
+        let condition = "timestamp >= NOW() - INTERVAL '24 hours'";
+        let playbackCond = "created_at >= NOW() - INTERVAL '24 hours'";
 
         switch (range) {
+            case 'today':
+                condition = "timestamp >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AT TIME ZONE 'America/Sao_Paulo'";
+                playbackCond = "created_at >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AT TIME ZONE 'America/Sao_Paulo'";
+                break;
             case 'yesterday':
-                condition = "timestamp >= CURRENT_DATE - INTERVAL '1 day' AND timestamp < CURRENT_DATE";
-                playbackCond = "created_at >= CURRENT_DATE - INTERVAL '1 day' AND created_at < CURRENT_DATE";
+                condition = "timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo' AND timestamp < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AT TIME ZONE 'America/Sao_Paulo'";
+                playbackCond = "created_at >= ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo' AND created_at < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AT TIME ZONE 'America/Sao_Paulo'";
+                break;
+            case '24h':
+            case 'last_24h':
+                condition = "timestamp >= NOW() - INTERVAL '24 hours'";
+                playbackCond = "created_at >= NOW() - INTERVAL '24 hours'";
                 break;
             case '7d':
             case 'last_7_days':
@@ -183,16 +192,20 @@ class AuditService {
                 condition = "timestamp >= NOW() - INTERVAL '30 days'";
                 playbackCond = "created_at >= NOW() - INTERVAL '30 days'";
                 break;
+            case 'all':
+            case 'all_time':
+                condition = "1=1";
+                playbackCond = "1=1";
+                break;
             case 'custom':
                 if (customStart && customEnd) {
                     condition = `timestamp >= '${new Date(customStart).toISOString()}'::timestamptz AND timestamp <= '${new Date(customEnd).toISOString()}'::timestamptz`;
                     playbackCond = `created_at >= '${new Date(customStart).toISOString()}'::timestamptz AND created_at <= '${new Date(customEnd).toISOString()}'::timestamptz`;
                 }
                 break;
-            case 'today':
             default:
-                condition = "timestamp >= CURRENT_DATE";
-                playbackCond = "created_at >= CURRENT_DATE";
+                condition = "timestamp >= NOW() - INTERVAL '24 hours'";
+                playbackCond = "created_at >= NOW() - INTERVAL '24 hours'";
                 break;
         }
 
@@ -367,7 +380,7 @@ class AuditService {
                         COALESCE(e.sessions_cnt, 0) AS sessions_count,
                         COALESCE(pb.watch_sec, 0) AS watch_time_sec,
                         COALESCE(pb.plays_cnt, 0) AS plays_count,
-                        COALESCE(fav.fav_cnt, 0) AS favorites_count,
+                        COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(u.favoritos) = 'array' THEN u.favoritos ELSE '[]'::jsonb END), fav.fav_cnt, 0) AS favorites_count,
                         COALESCE(req.req_cnt, 0) AS requests_count,
                         pb_live.current_title AS current_title,
                         pb_live.current_ep AS current_ep,
@@ -799,20 +812,31 @@ class AuditService {
             // 5. Favoritos
             let favorites = [];
             if (userId) {
-                const favRes = await db.query(`
-                    SELECT f.id, f.item_id, f.tipo, f.created_at,
-                           COALESCE(flm.nome, s.nome, f.item_id::text) as title
-                    FROM favoritos f
-                    LEFT JOIN filmes flm ON f.tipo = 'filme' AND flm.id = f.item_id
-                    LEFT JOIN series s ON (f.tipo = 'serie' OR f.tipo = 'dorama' OR f.tipo = 'anime') AND s.id = f.item_id
-                    WHERE f.user_id = $1 ORDER BY f.created_at DESC
-                `, [userId]);
-                favorites = favRes.rows.map(r => ({
-                    title: r.title,
-                    type: r.tipo,
-                    addedAt: r.created_at,
-                    state: 'active'
-                }));
+                const uFavRes = await db.query(`SELECT favoritos FROM usuarios WHERE id = $1`, [userId]);
+                if (uFavRes.rows.length > 0 && Array.isArray(uFavRes.rows[0].favoritos)) {
+                    favorites = uFavRes.rows[0].favoritos.map(f => ({
+                        title: f.title || f.nome || `Mídia #${f.id}`,
+                        type: f.type || 'filme',
+                        addedAt: f.addedAt || new Date().toISOString(),
+                        state: 'active'
+                    }));
+                }
+                if (favorites.length === 0) {
+                    const favRes = await db.query(`
+                        SELECT f.id, f.item_id, f.tipo, f.created_at,
+                               COALESCE(flm.nome, s.nome, f.item_id::text) as title
+                        FROM favoritos f
+                        LEFT JOIN filmes flm ON f.tipo = 'filme' AND flm.id = f.item_id
+                        LEFT JOIN series s ON (f.tipo = 'serie' OR f.tipo = 'dorama' OR f.tipo = 'anime') AND s.id = f.item_id
+                        WHERE f.user_id = $1 ORDER BY f.created_at DESC
+                    `, [userId]);
+                    favorites = favRes.rows.map(r => ({
+                        title: r.title,
+                        type: r.tipo,
+                        addedAt: r.created_at,
+                        state: 'active'
+                    }));
+                }
             }
 
             // 6. Histórico de Buscas
