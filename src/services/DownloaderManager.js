@@ -454,14 +454,14 @@ class DownloaderManager extends EventEmitter {
 
             // Instância otimizada com QoS Residencial: Zero impacto na rede doméstica / Wi-Fi
             const isEcoMode = options.mode === 'eco' || SchedulerService.getActiveMode() === 'eco';
-            const maxPeerConns = isEcoMode ? 12 : (config.MAX_TORRENT_PEER_CONNECTIONS || 35);
-            const maxUploadBytes = isEcoMode ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 250) * 1024);
+            const maxPeerConns = isEcoMode ? (config.ECO_TORRENT_PEER_CONNECTIONS || 10) : (config.MAX_TORRENT_PEER_CONNECTIONS || 14);
+            const maxUploadBytes = isEcoMode ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 500) * 1024);
             const downloadLimitBytes = isEcoMode ? Math.round((config.ECO_DOWNLOAD_LIMIT_MB || 3.0) * 1024 * 1024) : -1;
 
-            console.log(`📡 [QoS Rede] Modo: ${isEcoMode ? '🍃 ECONÔMICO (DHT Desativado, Teto: ' + (config.ECO_DOWNLOAD_LIMIT_MB || 3.0) + ' MB/s, Max Conns: ' + maxPeerConns + ')' : '⚡ DESEMPENHO (Sem Limite)'}`);
+            console.log(`📡 [QoS Rede] Modo: ${isEcoMode ? '🍃 ECONÔMICO (DHT Desativado, Teto: ' + (config.ECO_DOWNLOAD_LIMIT_MB || 3.0) + ' MB/s, Max Conns: ' + maxPeerConns + ')' : '⚡ DESEMPENHO (Max Conns: ' + maxPeerConns + ', Sem Limite Download)'}`);
 
             const client = new WT({
-                maxConns: maxPeerConns, // Limite estrito (12 no eco para proteger a tabela NAT do roteador)
+                maxConns: maxPeerConns, // Limite estrito (10 no eco / 14 no desempenho para proteger a tabela NAT do roteador)
                 dht: isEcoMode ? false : {
                     bootstrap: [
                         'router.bittorrent.com:6881',
@@ -511,8 +511,8 @@ class DownloaderManager extends EventEmitter {
                     torrent: () => torrent,
                     updateLimits: (mode) => {
                         const isEco = mode === 'eco';
-                        const newMaxConns = isEco ? 12 : (config.MAX_TORRENT_PEER_CONNECTIONS || 35);
-                        const newMaxUploadBytes = isEco ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 250) * 1024);
+                        const newMaxConns = isEco ? (config.ECO_TORRENT_PEER_CONNECTIONS || 10) : (config.MAX_TORRENT_PEER_CONNECTIONS || 14);
+                        const newMaxUploadBytes = isEco ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 500) * 1024);
                         const newDownloadLimitBytes = isEco ? Math.round((config.ECO_DOWNLOAD_LIMIT_MB || 3.0) * 1024 * 1024) : -1;
 
                         try {

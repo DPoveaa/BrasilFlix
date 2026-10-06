@@ -62,21 +62,22 @@ module.exports = {
     ENABLE_ANIME_DIRECT: process.env.ENABLE_ANIME_DIRECT === 'true', // Desativado por padrão para evitar streams com marca d'água (ex: animesonline)
 
     // Concorrência Paralela Desacoplada (Esteira Contínua)
-    MAX_CONCURRENT_JOBS: parseInt(process.env.MAX_CONCURRENT_JOBS || '13', 10),
+    MAX_CONCURRENT_JOBS: parseInt(process.env.MAX_CONCURRENT_JOBS || '14', 10),
     MAX_CONCURRENT_DOWNLOADS: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '6', 10),
     MAX_CONCURRENT_TRANSCODES: parseInt(process.env.MAX_CONCURRENT_TRANSCODES || '4', 10),
-    MAX_CONCURRENT_UPLOADS: parseInt(process.env.MAX_CONCURRENT_UPLOADS || '3', 10),
+    MAX_CONCURRENT_UPLOADS: parseInt(process.env.MAX_CONCURRENT_UPLOADS || '4', 10),
     PERFORMANCE_MAX_DOWNLOADS: 6,
     PERFORMANCE_MAX_TRANSCODES: 4,
-    PERFORMANCE_MAX_UPLOADS: 3,
+    PERFORMANCE_MAX_UPLOADS: 4,
     MAX_TEMP_DISK_GB: parseInt(process.env.MAX_TEMP_DISK_GB || '100', 10),
     MIN_DOWNLOAD_SPEED_MB: parseFloat(process.env.MIN_DOWNLOAD_SPEED_MB || '1.5'),
     FFMPEG_THREADS_PER_JOB: parseInt(process.env.FFMPEG_THREADS_PER_JOB || '5', 10),
 
     // Otimizações de Rede, QoS e Proteção de Roteador Residencial
-    MAX_TORRENT_PEER_CONNECTIONS: parseInt(process.env.MAX_TORRENT_PEER_CONNECTIONS || '35', 10),
-    MAX_TORRENT_UPLOAD_LIMIT_KB: parseInt(process.env.MAX_TORRENT_UPLOAD_LIMIT_KB || '250', 10),
-    TELEGRAM_UPLOAD_MAX_SOCKETS: parseInt(process.env.TELEGRAM_UPLOAD_MAX_SOCKETS || '4', 10),
+    MAX_TORRENT_PEER_CONNECTIONS: parseInt(process.env.MAX_TORRENT_PEER_CONNECTIONS || '14', 10),
+    ECO_TORRENT_PEER_CONNECTIONS: parseInt(process.env.ECO_TORRENT_PEER_CONNECTIONS || '10', 10),
+    MAX_TORRENT_UPLOAD_LIMIT_KB: parseInt(process.env.MAX_TORRENT_UPLOAD_LIMIT_KB || '500', 10),
+    TELEGRAM_UPLOAD_MAX_SOCKETS: parseInt(process.env.TELEGRAM_UPLOAD_MAX_SOCKETS || '6', 10),
     ECO_DOWNLOAD_LIMIT_MB: parseFloat(process.env.ECO_DOWNLOAD_LIMIT_MB || '3.0'),
     ECO_UPLOAD_LIMIT_KB: parseInt(process.env.ECO_UPLOAD_LIMIT_KB || '30', 10),
     ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10)

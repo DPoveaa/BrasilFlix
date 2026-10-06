@@ -26,9 +26,10 @@ class SettingsService {
             MAX_CONCURRENT_DOWNLOADS: config.MAX_CONCURRENT_DOWNLOADS ?? 3,
             MAX_CONCURRENT_TRANSCODES: config.MAX_CONCURRENT_TRANSCODES ?? 2,
             MAX_CONCURRENT_UPLOADS: config.MAX_CONCURRENT_UPLOADS ?? 2,
-            MAX_TORRENT_PEER_CONNECTIONS: config.MAX_TORRENT_PEER_CONNECTIONS ?? 35,
-            MAX_TORRENT_UPLOAD_LIMIT_KB: config.MAX_TORRENT_UPLOAD_LIMIT_KB ?? 250,
-            TELEGRAM_UPLOAD_MAX_SOCKETS: config.TELEGRAM_UPLOAD_MAX_SOCKETS ?? 4,
+            MAX_TORRENT_PEER_CONNECTIONS: config.MAX_TORRENT_PEER_CONNECTIONS ?? 14,
+            ECO_TORRENT_PEER_CONNECTIONS: config.ECO_TORRENT_PEER_CONNECTIONS ?? 10,
+            MAX_TORRENT_UPLOAD_LIMIT_KB: config.MAX_TORRENT_UPLOAD_LIMIT_KB ?? 500,
+            TELEGRAM_UPLOAD_MAX_SOCKETS: config.TELEGRAM_UPLOAD_MAX_SOCKETS ?? 6,
             ECO_DOWNLOAD_LIMIT_MB: config.ECO_DOWNLOAD_LIMIT_MB ?? 3.0,
             ECO_UPLOAD_LIMIT_KB: config.ECO_UPLOAD_LIMIT_KB ?? 30,
             ECO_TELEGRAM_SOCKETS: config.ECO_TELEGRAM_SOCKETS ?? 1,
@@ -55,6 +56,7 @@ class SettingsService {
             if (newSettings.MAX_CONCURRENT_TRANSCODES !== undefined) toSave.MAX_CONCURRENT_TRANSCODES = Math.max(1, parseInt(newSettings.MAX_CONCURRENT_TRANSCODES, 10));
             if (newSettings.MAX_CONCURRENT_UPLOADS !== undefined) toSave.MAX_CONCURRENT_UPLOADS = Math.max(1, parseInt(newSettings.MAX_CONCURRENT_UPLOADS, 10));
             if (newSettings.MAX_TORRENT_PEER_CONNECTIONS !== undefined) toSave.MAX_TORRENT_PEER_CONNECTIONS = Math.max(5, parseInt(newSettings.MAX_TORRENT_PEER_CONNECTIONS, 10));
+            if (newSettings.ECO_TORRENT_PEER_CONNECTIONS !== undefined) toSave.ECO_TORRENT_PEER_CONNECTIONS = Math.max(3, parseInt(newSettings.ECO_TORRENT_PEER_CONNECTIONS, 10));
             if (newSettings.MAX_TORRENT_UPLOAD_LIMIT_KB !== undefined) toSave.MAX_TORRENT_UPLOAD_LIMIT_KB = Math.max(0, parseInt(newSettings.MAX_TORRENT_UPLOAD_LIMIT_KB, 10));
             if (newSettings.TELEGRAM_UPLOAD_MAX_SOCKETS !== undefined) toSave.TELEGRAM_UPLOAD_MAX_SOCKETS = Math.min(8, Math.max(1, parseInt(newSettings.TELEGRAM_UPLOAD_MAX_SOCKETS, 10)));
             if (newSettings.ECO_DOWNLOAD_LIMIT_MB !== undefined) toSave.ECO_DOWNLOAD_LIMIT_MB = Math.max(0.5, parseFloat(newSettings.ECO_DOWNLOAD_LIMIT_MB) || 3.0);
