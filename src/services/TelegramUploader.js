@@ -545,7 +545,7 @@ class TelegramUploader {
 
             if (process.stdout.isTTY) process.stdout.write('\n');
 
-            const sentMessage = await client.sendFile(this.storageGroupId, {
+            const sendFilePromise = client.sendFile(this.storageGroupId, {
                 file: inputFile,
                 mimeType: 'video/mp4',
                 caption: caption,
@@ -562,6 +562,14 @@ class TelegramUploader {
                 ]
             });
 
+            // Trava anti-hang: timeout de 180s aguardando confirmação do sendFile no Telegram
+            const sentMessage = await Promise.race([
+                sendFilePromise,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout de 180s aguardando confirmação do Telegram (sendFile)')), 180000)
+                )
+            ]);
+
             if (hasThumb) {
                 await fs.remove(thumbPath).catch(() => {});
             }
@@ -572,7 +580,13 @@ class TelegramUploader {
 
             // 🛡️ Verificação de Integridade Imediata no Telegram (Zero Mídia Quebrada)
             // Valida o episódio que acabou de subir: se estiver quebrado/nulo, apaga na hora e aborta
-            const [checkMsg] = await client.getMessages(this.storageGroupId, { ids: [messageId] });
+            const checkMessagesPromise = client.getMessages(this.storageGroupId, { ids: [messageId] });
+            const [checkMsg] = await Promise.race([
+                checkMessagesPromise,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout de 30s na verificação de integridade pós-upload no Telegram')), 30000)
+                )
+            ]);
             if (!checkMsg || !checkMsg.media || !checkMsg.media.document) {
                 console.error(`❌ [Upload Inválido] Telegram não indexou a mídia para MessageId ${messageId}. Removendo do storage...`);
                 await this.deleteStorageMessages([messageId]).catch(() => {});
@@ -634,7 +648,10 @@ class TelegramUploader {
         for (let i = 0; i < poolSize; i++) {
             try {
                 const sender = client._createExportedSender(dcId);
-                await client._connectSender(sender, dcId);
+                await Promise.race([
+                    client._connectSender(sender, dcId),
+                    new Promise((_, r) => setTimeout(() => r(new Error('Timeout de 10s conectando canal MTProto')), 10000))
+                ]);
                 senders.push(sender);
             } catch (err) {
                 console.warn(`⚠️ Não foi possível abrir canal TCP extra ${i + 1}: ${err.message}`);
@@ -650,12 +667,14 @@ class TelegramUploader {
         console.log(`\x1b[35m🚀 ${senders.length} canal(is) TCP ativado(s) para upload MTProto!\x1b[0m`);
 
         const totalWorkers = senders.length;
+        let lastProgressTimestamp = Date.now();
+        let isAborted = false;
 
         try {
             const worker = async (workerIndex) => {
-                const sender = senders[workerIndex % senders.length];
+                let sender = senders[workerIndex % senders.length];
 
-                while (true) {
+                while (!isAborted) {
                     const currentPart = nextPart++;
                     if (currentPart >= partCount) break;
 
@@ -665,23 +684,50 @@ class TelegramUploader {
                     await fileHandle.read(buffer, 0, length, offset);
 
                     let attempts = 0;
-                    while (true) {
+                    while (!isAborted) {
                         try {
-                            await sender.send(new Api.upload.SaveBigFilePart({
+                            const sendPromise = sender.send(new Api.upload.SaveBigFilePart({
                                 fileId: fileId,
                                 filePart: currentPart,
                                 fileTotalParts: partCount,
                                 bytes: buffer
                             }));
+
+                            // Trava anti-hang: Timeout estrito de 45s por bloco MTProto individual
+                            await Promise.race([
+                                sendPromise,
+                                new Promise((_, reject) =>
+                                    setTimeout(() => reject(new Error(`Timeout de 45s no envio da parte ${currentPart}/${partCount}`)), 45000)
+                                )
+                            ]);
                             break;
                         } catch (err) {
                             attempts++;
+                            console.warn(`⚠️ [Upload MTProto] Falha na parte ${currentPart}/${partCount} (tentativa ${attempts}/5): ${err.message}`);
                             if (attempts > 5) throw err;
-                            await new Promise(r => setTimeout(r, 600 * attempts));
+
+                            // Se o socket caiu ou travou, renova o sender do pool
+                            try {
+                                await sender.disconnect().catch(() => {});
+                                sender = client._createExportedSender(dcId);
+                                await Promise.race([
+                                    client._connectSender(sender, dcId),
+                                    new Promise((_, r) => setTimeout(() => r(new Error('Timeout reconexão canal MTProto')), 10000))
+                                ]);
+                                senders[workerIndex % senders.length] = sender;
+                            } catch (reconnErr) {
+                                try {
+                                    sender = await client.getSender(dcId);
+                                    senders[workerIndex % senders.length] = sender;
+                                } catch (e) {}
+                            }
+
+                            await new Promise(r => setTimeout(r, 800 * attempts));
                         }
                     }
 
                     uploadedCount++;
+                    lastProgressTimestamp = Date.now();
                     if (onProgress) {
                         onProgress(uploadedCount / partCount);
                     }
@@ -695,9 +741,27 @@ class TelegramUploader {
                 }
             };
 
+            // Watchdog de inatividade global do upload (aborta se passar 120s sem nenhum bloco concluído)
+            let watchdogInterval = null;
+            const watchdogPromise = new Promise((_, reject) => {
+                watchdogInterval = setInterval(() => {
+                    if (Date.now() - lastProgressTimestamp > 120000) {
+                        isAborted = true;
+                        reject(new Error('Watchdog de upload: nenhum bloco de dados foi transferido nos últimos 2 minutos (upload estagnado).'));
+                    }
+                }, 5000);
+            });
 
-            await Promise.all(Array.from({ length: totalWorkers }, (_, idx) => worker(idx)));
+            try {
+                await Promise.race([
+                    Promise.all(Array.from({ length: totalWorkers }, (_, idx) => worker(idx))),
+                    watchdogPromise
+                ]);
+            } finally {
+                if (watchdogInterval) clearInterval(watchdogInterval);
+            }
         } finally {
+            isAborted = true;
             await fileHandle.close().catch(() => {});
             // Desconectar os senders auxiliares para liberar sockets imediatamente
             for (const sender of senders) {
@@ -706,7 +770,6 @@ class TelegramUploader {
                 } catch (e) {}
             }
         }
-
 
         return new Api.InputFileBig({
             id: fileId,

@@ -1654,8 +1654,13 @@ class QueueManager extends EventEmitter {
 
     getActiveUploadsCount() {
         let count = 0;
+        const now = Date.now();
         for (const job of this.activeJobs.values()) {
             if (job.status === 'uploading') {
+                const lastProgress = job.lastUploadProgressAt || (job.updatedAt ? new Date(job.updatedAt).getTime() : 0);
+                if (lastProgress && (now - lastProgress > 10 * 60 * 1000)) {
+                    continue; // Ignora upload travado sem progresso há mais de 10m
+                }
                 count++;
             } else if (job.optimizedPath && fs.existsSync(job.optimizedPath)) {
                 count++;
@@ -1666,8 +1671,14 @@ class QueueManager extends EventEmitter {
 
     getActiveActualUploadsCount(excludeJobId = null) {
         let count = 0;
+        const now = Date.now();
         for (const job of this.activeJobs.values()) {
             if (job.id !== excludeJobId && job.status === 'uploading') {
+                const lastProgress = job.lastUploadProgressAt || (job.updatedAt ? new Date(job.updatedAt).getTime() : 0);
+                if (lastProgress && (now - lastProgress > 10 * 60 * 1000)) {
+                    console.warn(`⚠️ [QoS Upload] Job "${job.title}" (${job.id}) está em upload há mais de 10m sem atividade. Não contabilizando para evitar travar a fila.`);
+                    continue;
+                }
                 count++;
             }
         }
@@ -3286,10 +3297,30 @@ class QueueManager extends EventEmitter {
         // - Modo Econômico: 1 upload por vez (protege upstream residencial)
         // - Modo Desempenho: múltiplos uploads simultâneos (PERFORMANCE_MAX_UPLOADS)
         const maxUploadsAllowed = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || this.maxConcurrentUploads || 3);
+        const waitSlotStart = Date.now();
+        let qosWaitCounter = 0;
         while (this.getActiveActualUploadsCount(job.id) >= maxUploadsAllowed) {
             job.status = 'queued';
             job.progressDetails = 'Aguardando slot de upload livre...';
-            console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} uploads simultâneos)...`);
+            if (qosWaitCounter++ % 6 === 0) { // Log a cada 30 segundos para evitar poluir o console
+                console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} uploads simultâneos)...`);
+            }
+            // Auto-recovery: Se estiver aguardando há mais de 15 minutos, varre jobs travados para desbloquear a fila
+            if (Date.now() - waitSlotStart > 15 * 60 * 1000) {
+                console.warn(`⚠️ [QoS Upload] Job "${job.title}" aguardando slot há mais de 15 minutos. Verificando jobs travados em activeJobs...`);
+                for (const [aId, aJob] of this.activeJobs.entries()) {
+                    if (aJob.id !== job.id && aJob.status === 'uploading') {
+                        const lastProg = aJob.lastUploadProgressAt || 0;
+                        if (Date.now() - lastProg > 8 * 60 * 1000) {
+                            console.error(`🚨 [Auto-Recovery QoS] Abortando job zumbi "${aJob.title}" (${aId}) travado em upload sem progresso.`);
+                            this.activeJobs.delete(aId);
+                            aJob.status = 'failed';
+                            aJob.error = 'Upload estagnado/abortado por timeout de inatividade';
+                            this.saveJob(aJob).catch(() => {});
+                        }
+                    }
+                }
+            }
             await new Promise(r => setTimeout(r, 5000));
         }
 
@@ -3305,6 +3336,7 @@ class QueueManager extends EventEmitter {
         job.status = 'uploading';
         job.progress = 0;
         job.progressDetails = 'Iniciando envio ao Telegram...';
+        job.lastUploadProgressAt = Date.now();
         this.activeTask = job;
         await this.saveJob(job);
 
@@ -3489,9 +3521,11 @@ class QueueManager extends EventEmitter {
             episode: job.episode,
             episodioNome: job.type === 'serie' ? (metadata.episodioNome || `Episódio ${job.episode || 1}`) : ''
         };
+        job.lastUploadProgressAt = Date.now();
         const uploadResult = await this.uploader.uploadVideo(optimizedPath, uploadMetadata, (p) => {
             job.progress = p.percent;
             job.progressDetails = `Enviando Telegram: ${p.percent}% (${p.speed})`;
+            job.lastUploadProgressAt = Date.now();
             this.activeTask = job;
         });
 
