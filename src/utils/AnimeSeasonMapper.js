@@ -24,6 +24,27 @@ class AnimeSeasonMapper {
     }
 
     /**
+     * Verifica se a obra é Re:Zero
+     * O TMDB (id: 65942) agrupa as 4 temporadas em uma única Season 1 com 85 eps numerados sequencialmente.
+     * Temporadas reais: T1 (eps 1-25), T2 (eps 26-50), T3 (eps 51-66), T4 (eps 67-85)
+     */
+    isReZero(title) {
+        return /re.?zero|re:zero|rezero|starting life in another world/i.test(title || '');
+    }
+
+    /**
+     * Retorna os limites de temporada de Re:Zero (episódio absoluto TMDB → {season, episode})
+     * TMDB S1: eps 1..85 sequenciais
+     */
+    mapReZeroTmdbToCatalog(tmdbEp) {
+        const ep = parseInt(tmdbEp, 10) || 1;
+        if (ep <= 25) return { season: 1, episode: ep, arcName: 'Arc 1-3 (Temporada 1)', isCustomMapped: true };
+        if (ep <= 50) return { season: 2, episode: ep - 25, arcName: 'Arc 4 (Temporada 2)', isCustomMapped: true };
+        if (ep <= 66) return { season: 3, episode: ep - 50, arcName: 'Arc 5 (Temporada 3)', isCustomMapped: true };
+        return { season: 4, episode: ep - 66, arcName: 'Arc 6+ (Temporada 4)', isCustomMapped: true };
+    }
+
+    /**
      * Verifica se é um anime de transmissão contínua tradicional (sem temporadas reais na fonte)
      */
     isContinuousAnime(title) {
@@ -39,6 +60,13 @@ class AnimeSeasonMapper {
      * - TMDB S2.8-18 (Distrito do Entretenimento) -> Catálogo T3 (eps 1..11) [ep - 7]
      * - TMDB S3 (11 eps - Vila dos Ferreiros) -> Catálogo T4 (eps 1..11)
      * - TMDB S4 (8 eps - Treinamento dos Hashiras) -> Catálogo T5 (eps 1..8)
+     *
+     * Caso Re:Zero (TMDB id: 65942):
+     * O TMDB consolida tudo em Season 1 com 85 eps numerados sequencialmente.
+     * - TMDB S1 E1-25   -> Catálogo T1 (eps 1..25)
+     * - TMDB S1 E26-50  -> Catálogo T2 (eps 1..25) [ep - 25]
+     * - TMDB S1 E51-66  -> Catálogo T3 (eps 1..16) [ep - 50]
+     * - TMDB S1 E67-85  -> Catálogo T4 (eps 1..19) [ep - 66]
      *
      * Caso One Piece (se catálogo usar temporada única contínua):
      * - Se catalogHasSingleSeason === true ou options.forceContinuous:
@@ -76,6 +104,11 @@ class AnimeSeasonMapper {
             }
         }
 
+        // Caso Re:Zero: TMDB agrupa 4 temporadas em Season 1 (85 eps sequenciais)
+        if (this.isReZero(animeName) && s === 1) {
+            return this.mapReZeroTmdbToCatalog(ep);
+        }
+
         // Caso One Piece ou animes contínuos: se o catálogo tiver apenas Temporada 1
         if (this.isContinuousAnime(animeName) && (options.catalogHasSingleSeason || options.forceContinuous)) {
             const absEp = this.calculateAbsoluteEpisode(animeName, s, ep, options.tmdbSeasons);
@@ -103,6 +136,13 @@ class AnimeSeasonMapper {
             if (s === 3) return { tmdbSeason: 2, tmdbEpisode: ep + 7, isCustomMapped: true };
             if (s === 4) return { tmdbSeason: 3, tmdbEpisode: ep, isCustomMapped: true };
             if (s === 5) return { tmdbSeason: 4, tmdbEpisode: ep, isCustomMapped: true };
+        }
+
+        // Re:Zero: mapeia catálogo (4 temporadas) de volta para TMDB S1 (eps absolutos)
+        if (this.isReZero(animeName)) {
+            const offsets = [0, 0, 25, 50, 66]; // T1→+0, T2→+25, T3→+50, T4→+66
+            const offset = offsets[s] ?? 0;
+            return { tmdbSeason: 1, tmdbEpisode: ep + offset, isCustomMapped: true };
         }
 
         return { tmdbSeason: s, tmdbEpisode: ep, isCustomMapped: false };
@@ -180,6 +220,13 @@ class AnimeSeasonMapper {
         // One Piece
         if (this.isOnePiece(title) || this.isOnePiece(originalName)) {
             add('One Piece');
+        }
+
+        // Re:Zero
+        if (this.isReZero(title) || this.isReZero(originalName)) {
+            add('Re:Zero -Starting Life in Another World-');
+            add('Re:Zero kara Hajimeru Isekai Seikatsu');
+            add('Re Zero');
         }
 
         // Solo Leveling

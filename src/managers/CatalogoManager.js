@@ -592,7 +592,7 @@ class CatalogoManager {
 
         const generosArr = Array.isArray(s.generos) ? s.generos : (typeof s.generos === 'string' ? JSON.parse(s.generos || '[]') : []);
         const hasAnimeGenre = generosArr.some(g => String(g).toLowerCase().includes('anim'));
-        const isAnime = s.is_anime || s.isAnime || (hasAnimeGenre && (s.is_dorama || s.isDorama)) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family/i.test(s.nome);
+        const isAnime = s.is_anime || s.isAnime || (hasAnimeGenre && (s.is_dorama || s.isDorama)) || /bleach|one piece|naruto|dragon ball|attack on titan|solo leveling|demon slayer|jujutsu|spy x family|re:zero|rezero|re zero/i.test(s.nome);
         const isMicrodrama = s.subtipo === 'microdrama' || !!(s.is_microdrama || s.isMicrodrama) || s.formato === 'vertical' || generosArr.some(g => String(g).toLowerCase().includes('microdrama') || String(g).toLowerCase().includes('duanju'));
         // Séries globalmente conhecidas de origem coreana que não devem ser classificadas como Dorama
         const WESTERN_KNOWN_SERIES = /^(round 6|squid game|all of us are dead)$/i;

@@ -274,11 +274,69 @@ class TMDBService {
         }
     }
 
+    /**
+     * Mapeamento estático de séries em que o TMDB consolida múltiplas temporadas em uma única Season.
+     * Chave: tmdbId (string), Valor: array de { catalogSeason, episodeStart, episodeEnd, count }
+     */
+    _getMultiSeasonSingleTmdbMap(tmdbId) {
+        const maps = {
+            // Re:Zero (TMDB id: 65942) - 4 temporadas reais em Season 1 sequencial
+            '65942': [
+                { catalogSeason: 1, episodeStart: 1,  episodeEnd: 25, count: 25 },
+                { catalogSeason: 2, episodeStart: 26, episodeEnd: 50, count: 25 },
+                { catalogSeason: 3, episodeStart: 51, episodeEnd: 66, count: 16 },
+                { catalogSeason: 4, episodeStart: 67, episodeEnd: 85, count: 19 }
+            ]
+        };
+        return maps[String(tmdbId)] || null;
+    }
+
     async getSeasonDetails(tmdbId, seasonNumber) {
         if (!tmdbId) return null;
         const cacheKey = `tv_${tmdbId}_s_${seasonNumber}`;
         const cached = this._getFromCache(cacheKey);
         if (cached) return cached;
+
+        // Verificar se é uma série com mapeamento customizado (ex: Re:Zero)
+        const multiSeasonMap = this._getMultiSeasonSingleTmdbMap(tmdbId);
+        if (multiSeasonMap) {
+            const seasonMapping = multiSeasonMap.find(m => m.catalogSeason === seasonNumber);
+            if (seasonMapping) {
+                // Para Season 1 do TMDB, usa diretamente; para T2+ busca Season 1 como base
+                const tmdbSeason = seasonNumber === 1 ? 1 : 1; // sempre S1 no TMDB
+                try {
+                    const s1CacheKey = `tv_${tmdbId}_s_1_raw`;
+                    let s1Data = this._getFromCache(s1CacheKey);
+                    if (!s1Data) {
+                        s1Data = await this._getWithRetry(`/tv/${tmdbId}/season/1`);
+                        this._setInCache(s1CacheKey, s1Data, 2 * 60 * 60 * 1000);
+                    }
+                    if (s1Data && s1Data.episodes) {
+                        const slicedEps = s1Data.episodes
+                            .filter(ep => ep.episode_number >= seasonMapping.episodeStart && ep.episode_number <= seasonMapping.episodeEnd)
+                            .map((ep, idx) => ({
+                                numero: idx + 1, // renumera do ep 1 para cada temporada do catálogo
+                                nome: ep.name || `Episódio ${idx + 1}`,
+                                sinopse: ep.overview || '',
+                                nota: ep.vote_average || 0,
+                                dataLancamento: ep.air_date || '',
+                                stillUrl: this.getPosterUrl(ep.still_path, 'w300'),
+                                runtime: ep.runtime || 0,
+                                duracaoMinutos: ep.runtime || 0
+                            }));
+                        const formatted = {
+                            temporadaNumero: seasonNumber,
+                            nome: `Temporada ${seasonNumber}`,
+                            sinopse: '',
+                            poster: null,
+                            episodios: slicedEps
+                        };
+                        this._setInCache(cacheKey, formatted, 2 * 60 * 60 * 1000);
+                        return formatted;
+                    }
+                } catch (_) {}
+            }
+        }
 
         try {
             const data = await this._getWithRetry(`/tv/${tmdbId}/season/${seasonNumber}`);
@@ -308,12 +366,25 @@ class TMDBService {
         }
     }
 
+
+
     async getEpisodeDetails(tmdbId, seasonNumber, episodeNumber) {
         try {
-            const ep = await this._getWithRetry(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`);
+            let sNum = seasonNumber;
+            let epNum = episodeNumber;
+            const multiSeasonMap = this._getMultiSeasonSingleTmdbMap(tmdbId);
+            if (multiSeasonMap) {
+                const seasonMapping = multiSeasonMap.find(m => m.catalogSeason === seasonNumber);
+                if (seasonMapping) {
+                    sNum = 1;
+                    epNum = seasonMapping.episodeStart + (episodeNumber - 1);
+                }
+            }
+            const ep = await this._getWithRetry(`/tv/${tmdbId}/season/${sNum}/episode/${epNum}`);
+            if (!ep) return null;
             return {
-                numero: ep.episode_number,
-                nome: ep.name || `Episódio ${ep.episode_number}`,
+                numero: episodeNumber,
+                nome: ep.name || `Episódio ${episodeNumber}`,
                 sinopse: ep.overview || '',
                 nota: ep.vote_average || 0,
                 stillUrl: this.getPosterUrl(ep.still_path, 'w300'),
@@ -581,21 +652,35 @@ class TMDBService {
 
     formatTVDetails(raw) {
         const base = this.formatItem({ ...raw, media_type: 'tv' });
-        base.totalTemporadas = raw.number_of_seasons || 1;
         base.totalEpisodios = raw.number_of_episodes || 0;
         const isEnded = (raw.status === 'Ended' || raw.status === 'Canceled');
         base.statusSerie = raw.status || 'Ended';
         base.emLancamento = !isEnded || !!raw.in_production || !!raw.next_episode_to_air;
-        base.temporadas = (raw.seasons || [])
-            .filter(s => s.season_number > 0)
-            .map(s => ({
-                numero: s.season_number,
-                nome: s.name || `Temporada ${s.season_number}`,
-                episodiosContagem: s.episode_count || 0,
-                poster: this.getPosterUrl(s.poster_path)
+
+        // Verifica se é uma série com mapeamento customizado de temporadas (ex: Re:Zero)
+        const multiSeasonMap = this._getMultiSeasonSingleTmdbMap(raw.id);
+        if (multiSeasonMap) {
+            base.totalTemporadas = multiSeasonMap.length;
+            base.temporadas = multiSeasonMap.map(m => ({
+                numero: m.catalogSeason,
+                nome: `Temporada ${m.catalogSeason}`,
+                episodiosContagem: m.count,
+                poster: null
             }));
+        } else {
+            base.totalTemporadas = raw.number_of_seasons || 1;
+            base.temporadas = (raw.seasons || [])
+                .filter(s => s.season_number > 0)
+                .map(s => ({
+                    numero: s.season_number,
+                    nome: s.name || `Temporada ${s.season_number}`,
+                    episodiosContagem: s.episode_count || 0,
+                    poster: this.getPosterUrl(s.poster_path)
+                }));
+        }
         return base;
     }
+
 }
 
 module.exports = new TMDBService();
