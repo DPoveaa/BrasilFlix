@@ -7,8 +7,11 @@ Allow: /fila
 Allow: /catalogo
 Allow: /filme/
 Allow: /serie/
-Allow: /assistir
+Allow: /anime/
+Allow: /dorama/
+Allow: /assistir/
 Disallow: /api/
 Disallow: /admin
+Disallow: /stream/
 
-Sitemap: https://brasilflix.online/sitemap.xml
+Sitemap: https://brasilflix.kapsu.com.br/sitemap.xml

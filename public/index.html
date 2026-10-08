@@ -26,23 +26,19 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            margin: 28px auto;
+            margin: 20px auto;
             max-width: 760px;
             width: 100%;
-            border-radius: 16px;
-            background: rgba(9, 13, 22, 0.96);
-            border: 1.5px solid rgba(255, 255, 255, 0.1);
-            padding: 10px 14px 14px 14px;
+            border-radius: 12px;
+            background: rgba(9, 13, 22, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            padding: 8px 14px 12px 14px;
             box-sizing: border-box;
-            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
         }
 
         .bf-banner-ad-wrapper:hover {
-            border-color: rgba(255, 255, 255, 0.16);
-            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.10);
         }
 
         .bf-banner-ad-wrapper iframe {
@@ -375,11 +371,24 @@
 
         /* NATIVE WIDGET CONTAINER */
         .bf-native-ad-wrapper {
-            margin: 28px auto 16px auto;
+            margin: 0 auto 0 auto;
             max-width: 1100px;
             width: 100%;
-            padding: 0 12px;
+            padding: 0 12px 16px;
             box-sizing: border-box;
+            border-top: 1px solid rgba(255,255,255,0.055);
+        }
+        .bf-native-ad-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0 10px;
+            gap: 8px;
+        }
+        .bf-native-ad-header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         /* 1. Telas Desktop (>= 1260px): Ambas as Laterais Ativas, Simétricas (160x600) e Elegantes */
@@ -792,25 +801,38 @@
             pointer-events: none;
         }
 
-        /* Bell button & badge */
-        .header-bell-btn {
+        /* Bell & Watch Party action buttons */
+        .header-bell-btn,
+        .header-party-btn {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: #94a3b8;
             padding: 7px;
+            width: 36px;
+            height: 36px;
             border-radius: 10px;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s ease;
             position: relative;
+            flex-shrink: 0;
+            box-sizing: border-box;
         }
 
-        .header-bell-btn:hover {
+        .header-bell-btn:hover,
+        .header-party-btn:hover {
             background: rgba(255, 255, 255, 0.1);
             color: #fff;
             border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .header-party-btn.in-room {
+            background: rgba(16, 185, 129, 0.18) !important;
+            border-color: rgba(16, 185, 129, 0.5) !important;
+            color: #34d399 !important;
+            animation: party-btn-glow 2.5s ease-in-out infinite;
         }
 
         .header-bell-badge {
@@ -829,6 +851,24 @@
             justify-content: center;
             padding: 0 4px;
             box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
+
+        .header-party-badge {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            min-width: 16px;
+            height: 16px;
+            background: #10b981;
+            color: #fff;
+            font-size: 9.5px;
+            font-weight: 900;
+            border-radius: 99px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
         }
 
         /* Minimalist user profile button (NO UGLY RED) */
@@ -7906,6 +7946,106 @@
             margin-bottom: 0;
         }
 
+        /* ── EMPTY STATE PREMIUM ── */
+        .catalog-empty-state {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 24px 56px;
+            text-align: center;
+            animation: emptyStateFadeIn 0.45s ease both;
+        }
+        @keyframes emptyStateFadeIn {
+            from { opacity: 0; transform: translateY(18px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .catalog-empty-icon-wrap {
+            position: relative;
+            width: 88px;
+            height: 88px;
+            margin: 0 auto 22px;
+        }
+        .catalog-empty-icon-bg {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle at 40% 40%, rgba(99,102,241,0.22), rgba(16,185,129,0.10));
+            animation: emptyIconPulse 3s ease-in-out infinite;
+        }
+        @keyframes emptyIconPulse {
+            0%,100% { transform: scale(1);    opacity: 0.8; }
+            50%      { transform: scale(1.10); opacity: 1;   }
+        }
+        .catalog-empty-icon {
+            position: relative;
+            z-index: 1;
+            font-size: 44px;
+            line-height: 88px;
+            display: block;
+            filter: drop-shadow(0 4px 18px rgba(99,102,241,0.35));
+        }
+        .catalog-empty-title {
+            font-size: 19px;
+            font-weight: 900;
+            color: #f1f5f9;
+            margin: 0 0 10px;
+            letter-spacing: -0.3px;
+        }
+        .catalog-empty-msg {
+            font-size: 13.5px;
+            color: #94a3b8;
+            max-width: 420px;
+            line-height: 1.65;
+            margin: 0 auto 26px;
+        }
+        .catalog-empty-msg strong { color: #cbd5e1; }
+        .catalog-empty-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .catalog-empty-btn-request {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 26px;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(99,102,241,0.40);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            letter-spacing: 0.1px;
+        }
+        .catalog-empty-btn-request:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 8px 30px rgba(99,102,241,0.55);
+        }
+        .catalog-empty-btn-request svg { flex-shrink: 0; }
+        .catalog-empty-btn-clear {
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 12.5px;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            transition: color 0.15s;
+            padding: 4px 8px;
+        }
+        .catalog-empty-btn-clear:hover { color: #94a3b8; }
+        @media (max-width: 600px) {
+            .catalog-empty-state { padding: 44px 16px 40px; }
+            .catalog-empty-title { font-size: 17px; }
+            .catalog-empty-btn-request { padding: 11px 20px; font-size: 13.5px; }
+        }
+
         /* 🍿 MODAL DE PEDIR FILMES & SÉRIES COM TMDB AUTOCOMPLETE */
         .req-media-modal-box {
             background: #0d1322;
@@ -9591,19 +9731,20 @@
                     </svg>
                 </button>
 
-                <!-- BOTÃO DE SALA (WATCH PARTY) - Hidden by default -->
-                <button id="party-header-btn" onclick="onPartyHeaderBtnClick()" title="Assistir Junto"
-                    style="display:none;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
-                    <span id="party-header-btn-label">Sala</span>
-                    <span id="party-member-badge">0</span>
-                </button>
+                <!-- BOTÃO MODO GRUPO / ASSISTIR JUNTO (WATCH PARTY) -->
+                <div class="header-party-wrapper" style="position: relative;">
+                    <button class="header-party-btn" id="party-header-btn" onclick="onPartyHeaderBtnClick()"
+                        title="Modo Grupo / Assistir Junto" aria-label="Assistir Junto">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                        <span class="header-party-badge" id="party-member-badge">0</span>
+                    </button>
+                </div>
 
                 <!-- BELL NOTIFICATION BUTTON & DROPDOWN -->
                 <div class="header-bell-wrapper" style="position: relative;">
@@ -10424,6 +10565,18 @@
 
                     <!-- WIDGET NATIVO DE RECOMENDAÇÕES PATROCINADAS NO RODAPÉ -->
                     <div class="bf-native-ad-wrapper" id="bf-native-home-wrapper" style="display: none;">
+                        <div class="bf-native-ad-header">
+                            <div class="bf-native-ad-header-left">
+                                <span class="bf-ad-badge">Publicidade</span>
+                                <button type="button" class="bf-ad-info-btn" onclick="openAdTransparencyModal()" title="Por que exibimos anúncios?">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                                    </svg>
+                                    <span>Por que anúncios?</span>
+                                </button>
+                            </div>
+                            <a href="/assinar" class="bf-ad-vip-hint" title="Navegar sem anúncios">👑 Seja VIP (Sem Anúncios)</a>
+                        </div>
                         <div id="container-4120a3d13ce2b8cb6073da3984309212"></div>
                     </div>
 
@@ -10472,12 +10625,7 @@
 
                     <!-- BANNER DE ANÚNCIO DISCRETO NO CATÁLOGO (728x90) — sempre abaixo do grid/resultados -->
                     <div class="bf-banner-ad-wrapper" id="bf-catalog-bottom-ad" aria-label="Publicidade"
-                        style="border-top: 2px solid rgba(16,185,129,0.25); margin-top: 0;">
-                        <div
-                            style="width: 100%; max-width: 728px; display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
-                            <span
-                                style="font-size: 9px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(16,185,129,0.7); padding: 2px 7px; border: 1px solid rgba(16,185,129,0.3); border-radius: 4px; background: rgba(16,185,129,0.07);">ANÚNCIO</span>
-                        </div>
+                        style="border-top: 1px solid rgba(255,255,255,0.055); margin-top: 0;">
                         <div class="bf-ad-header">
                             <div class="bf-ad-header-left">
                                 <span class="bf-ad-badge">Publicidade</span>
@@ -14166,6 +14314,224 @@
                 } catch (e) { }
             }
 
+            // Sanitização imediata de parâmetros de autenticação e token da URL
+            function sanitizeUrlAuthParams() {
+                try {
+                    const urlObj = new URL(window.location.href);
+                    let shouldClean = false;
+                    const tokenParam = urlObj.searchParams.get('token') || urlObj.searchParams.get('auth_token');
+                    const jwtParam = urlObj.searchParams.get('auth_jwt') || urlObj.searchParams.get('jwt');
+
+                    if (jwtParam && jwtParam.trim()) {
+                        localStorage.setItem('bf_user_jwt', jwtParam.trim());
+                        userAuthToken = jwtParam.trim();
+                        shouldClean = true;
+                    }
+
+                    if (tokenParam && tokenParam.trim() && tokenParam.trim() !== 'public') {
+                        localStorage.setItem('bf_user_token', tokenParam.trim());
+                        if (tokenParam === '1689537480' || tokenParam === 'admin' || tokenParam === 'bf_admin') {
+                            localStorage.setItem('bf_admin_token', tokenParam.trim());
+                            adminToken = tokenParam.trim();
+                            const adminTabBtn = document.getElementById('tab-btn-admin');
+                            if (adminTabBtn) adminTabBtn.style.display = 'inline-flex';
+                        }
+                        shouldClean = true;
+                    }
+
+                    if (urlObj.searchParams.has('token') || urlObj.searchParams.has('auth_token') || urlObj.searchParams.has('jwt') || urlObj.searchParams.has('auth_jwt')) {
+                        urlObj.searchParams.delete('token');
+                        urlObj.searchParams.delete('auth_token');
+                        urlObj.searchParams.delete('jwt');
+                        urlObj.searchParams.delete('auth_jwt');
+                        shouldClean = true;
+                    }
+
+                    if (shouldClean) {
+                        const newQuery = urlObj.searchParams.toString() ? '?' + urlObj.searchParams.toString() : '';
+                        window.history.replaceState({}, document.title, urlObj.pathname + newQuery + urlObj.hash);
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro ao sanitizar parâmetros de autenticação da URL:', e);
+                }
+            }
+            sanitizeUrlAuthParams();
+
+            // Helpers de SEO, Slugs e URLs Amigáveis
+            function generateSlug(text) {
+                if (!text) return '';
+                return String(text)
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .substring(0, 90);
+            }
+
+            function getMediaSlug(item) {
+                if (!item) return '';
+                if (item.slug && item.slug.trim()) return item.slug.trim();
+                return generateSlug(item.nome || item.nomeOriginal || item.id || '');
+            }
+
+            function parseSlugOrId(str) {
+                if (!str) return { id: null, slug: null, raw: '' };
+                const raw = String(str).trim();
+                const match = raw.match(/^(\d+)(?:-(.*))?$/);
+                if (match) {
+                    return { id: match[1], slug: match[2] || null, raw };
+                }
+                if (/^\d+$/.test(raw)) {
+                    return { id: raw, slug: null, raw };
+                }
+                return { id: null, slug: raw, raw };
+            }
+
+            function findCatalogMedia(idOrSlug, type = null) {
+                if (!idOrSlug) return null;
+                const parsed = parseSlugOrId(idOrSlug);
+                const filmes = fullCatalog?.filmes || [];
+                const series = fullCatalog?.series || [];
+
+                // 1. Busca prioritária por ID numérico
+                if (parsed.id) {
+                    if (type === 'filme') {
+                        const f = filmes.find(i => String(i.id) === String(parsed.id));
+                        if (f) return { item: f, type: 'filme' };
+                    } else if (type === 'serie' || type === 'anime' || type === 'dorama') {
+                        const s = series.find(i => String(i.id) === String(parsed.id));
+                        if (s) return { item: s, type: isItemAnime(s) ? 'anime' : (isItemDorama(s) ? 'dorama' : 'serie') };
+                    } else {
+                        const f = filmes.find(i => String(i.id) === String(parsed.id));
+                        if (f) return { item: f, type: 'filme' };
+                        const s = series.find(i => String(i.id) === String(parsed.id));
+                        if (s) return { item: s, type: isItemAnime(s) ? 'anime' : (isItemDorama(s) ? 'dorama' : 'serie') };
+                    }
+                }
+
+                // 2. Busca por slug
+                const targetSlug = (parsed.slug || parsed.raw).toLowerCase();
+                if (type !== 'serie' && type !== 'anime' && type !== 'dorama') {
+                    const f = filmes.find(i => {
+                        const s = (i.slug || generateSlug(i.nome || i.nomeOriginal)).toLowerCase();
+                        return s === targetSlug || s.startsWith(targetSlug) || targetSlug.startsWith(s);
+                    });
+                    if (f) return { item: f, type: 'filme' };
+                }
+
+                if (type !== 'filme') {
+                    const s = series.find(i => {
+                        const sl = (i.slug || generateSlug(i.nome || i.nomeOriginal)).toLowerCase();
+                        return sl === targetSlug || sl.startsWith(targetSlug) || targetSlug.startsWith(sl);
+                    });
+                    if (s) return { item: s, type: isItemAnime(s) ? 'anime' : (isItemDorama(s) ? 'dorama' : 'serie') };
+                }
+
+                return null;
+            }
+
+            function getMediaCanonicalHash(item, type = null, action = null, season = null, episode = null) {
+                if (!item) return '#inicio';
+                const isSerie = (type === 'serie' || type === 'anime' || type === 'dorama') ||
+                    item.itemType === 'serie' || !!item.temporadas || (item.totalEpisodios !== undefined && item.totalEpisodios !== null);
+                const mediaType = isSerie ? 'serie' : 'filme';
+                const slug = getMediaSlug(item);
+                const param = slug ? `${item.id}-${slug}` : String(item.id);
+
+                if (action === 'assistir') {
+                    if (isSerie && season && episode) {
+                        return `#serie/${param}/temporada/${season}/episodio/${episode}`;
+                    }
+                    return `#${mediaType}/${param}/assistir`;
+                }
+                return `#${mediaType}/${param}`;
+            }
+
+            function setOrCreateMetaTag(attrName, attrVal, content) {
+                if (!content) return;
+                let el = document.querySelector(`meta[${attrName}="${attrVal}"]`);
+                if (!el) {
+                    el = document.createElement('meta');
+                    el.setAttribute(attrName, attrVal);
+                    document.head.appendChild(el);
+                }
+                el.setAttribute('content', content);
+            }
+
+            function updateSeoMetadata(item, isSerie = false, epMeta = null) {
+                if (!item) return;
+                const baseUrl = 'https://brasilflix.kapsu.com.br';
+                const canonicalHash = getMediaCanonicalHash(item, isSerie ? 'serie' : 'filme', epMeta ? 'assistir' : null, epMeta?.season, epMeta?.episode);
+                const canonicalPath = canonicalHash.replace(/^#/, '/');
+                const fullCanonicalUrl = `${baseUrl}${canonicalPath}`;
+
+                const titleText = epMeta
+                    ? `${item.nome}: T${epMeta.season}E${epMeta.episode}${epMeta.epTitle ? ` - ${epMeta.epTitle}` : ''} | BrasilFlix`
+                    : `${item.nome}${item.ano ? ` (${item.ano})` : ''} - Assistir Online em Full HD | BrasilFlix`;
+
+                document.title = titleText;
+
+                const rawDesc = item.sinopse || item.descricao || `Assista ${item.nome} online completo em full HD com áudio dublado e legendado no BrasilFlix.`;
+                const cleanDesc = rawDesc.substring(0, 160);
+                const imgUrl = item.backdropUrl || item.posterUrl || `${baseUrl}/assets/logo.png`;
+
+                setOrCreateMetaTag('name', 'description', cleanDesc);
+                setOrCreateMetaTag('property', 'og:title', titleText);
+                setOrCreateMetaTag('property', 'og:description', cleanDesc);
+                setOrCreateMetaTag('property', 'og:image', imgUrl);
+                setOrCreateMetaTag('property', 'og:url', fullCanonicalUrl);
+                setOrCreateMetaTag('property', 'og:type', isSerie ? 'video.tv_show' : 'video.movie');
+                setOrCreateMetaTag('name', 'twitter:title', titleText);
+                setOrCreateMetaTag('name', 'twitter:description', cleanDesc);
+                setOrCreateMetaTag('name', 'twitter:image', imgUrl);
+
+                let canLink = document.querySelector('link[rel="canonical"]');
+                if (!canLink) {
+                    canLink = document.createElement('link');
+                    canLink.rel = 'canonical';
+                    document.head.appendChild(canLink);
+                }
+                canLink.href = fullCanonicalUrl;
+
+                let schemaScript = document.getElementById('bf-jsonld-schema');
+                if (!schemaScript) {
+                    schemaScript = document.createElement('script');
+                    schemaScript.id = 'bf-jsonld-schema';
+                    schemaScript.type = 'application/ld+json';
+                    document.head.appendChild(schemaScript);
+                }
+                schemaScript.textContent = JSON.stringify({
+                    '@context': 'https://schema.org',
+                    '@type': isSerie ? 'TVSeries' : 'Movie',
+                    'name': item.nome,
+                    'alternateName': item.nomeOriginal || undefined,
+                    'description': cleanDesc,
+                    'image': imgUrl,
+                    'datePublished': item.ano || undefined,
+                    'aggregateRating': item.nota ? {
+                        '@type': 'AggregateRating',
+                        'ratingValue': String(item.nota),
+                        'bestRating': '10',
+                        'ratingCount': '150'
+                    } : undefined
+                });
+            }
+
+            function updateCategorySeo(category) {
+                const titles = {
+                    'inicio': 'BrasilFlix • Filmes, Séries, Animes e Doramas Online em Full HD',
+                    'filme': 'Filmes Online Grátis em Full HD • BrasilFlix',
+                    'serie': 'Séries Online Dublado e Legendado • BrasilFlix',
+                    'anime': 'Animes Online Grátis e Dublados • BrasilFlix',
+                    'dorama': 'Doramas e K-Dramas Online Dublados e Legendados • BrasilFlix',
+                    'favoritos': 'Minha Lista de Filmes e Séries • BrasilFlix'
+                };
+                if (titles[category]) {
+                    document.title = titles[category];
+                }
+            }
+
             // Evento de visita do website ao inicializar
             setTimeout(() => trackAuditEvent('WEBSITE_VISIT', { hash: window.location.hash, path: window.location.pathname }), 500);
 
@@ -14187,43 +14553,50 @@
                     const key = (parts[0] || '').toLowerCase();
 
                     // 1.1 Rota de Reprodução Dedicada de Episódio de Série
-                    // Exemplos: #serie/123/temporada/1/episodio/2 ou #serie/123/t/1/e/2 ou #assistir/serie/123/1/2
-                    if (key === 'serie' && parts.length >= 5) {
-                        const serieId = parts[1];
+                    // Exemplos: #serie/123-slug/temporada/1/episodio/2 ou #serie/123/t/1/e/2 ou #assistir/serie/123/1/2
+                    if ((key === 'serie' || key === 'anime' || key === 'dorama') && parts.length >= 5) {
+                        const serieParam = parts[1];
+                        const parsed = parseSlugOrId(serieParam);
+                        const sId = parsed.id || serieParam;
                         let seasonNum = 1;
                         let epNum = 1;
                         if ((parts[2] === 'temporada' || parts[2] === 't') && (parts[4] === 'episodio' || parts[4] === 'ep' || parts[4] === 'e')) {
                             seasonNum = parseInt(parts[3], 10) || 1;
                             epNum = parseInt(parts[5], 10) || 1;
-                            return { type: 'playback_episode', serieId, season: seasonNum, episode: epNum };
+                            return { type: 'playback_episode', serieId: sId, slugParam: serieParam, season: seasonNum, episode: epNum };
                         } else if (parts[2] === 'temporada' || parts[2] === 't') {
                             seasonNum = parseInt(parts[3], 10) || 1;
                             epNum = parseInt(parts[4], 10) || 1;
-                            return { type: 'playback_episode', serieId, season: seasonNum, episode: epNum };
+                            return { type: 'playback_episode', serieId: sId, slugParam: serieParam, season: seasonNum, episode: epNum };
                         }
                     }
 
-                    if (key === 'assistir' && parts[1] === 'serie' && parts.length >= 5) {
-                        const serieId = parts[2];
+                    if (key === 'assistir' && (parts[1] === 'serie' || parts[1] === 'anime' || parts[1] === 'dorama') && parts.length >= 5) {
+                        const serieParam = parts[2];
+                        const parsed = parseSlugOrId(serieParam);
+                        const sId = parsed.id || serieParam;
                         const seasonNum = parseInt(parts[3], 10) || 1;
                         const epNum = parseInt(parts[4], 10) || 1;
-                        return { type: 'playback_episode', serieId, season: seasonNum, episode: epNum };
+                        return { type: 'playback_episode', serieId: sId, slugParam: serieParam, season: seasonNum, episode: epNum };
                     }
 
                     // 1.2 Rota de Reprodução Dedicada de Filme
-                    // Exemplos: #filme/123/assistir ou #assistir/filme/123 ou #filme/123
+                    // Exemplos: #filme/123-slug/assistir ou #assistir/filme/123
                     if (key === 'assistir' && parts[1] === 'filme' && parts[2]) {
-                        return { type: 'playback_movie', movieId: parts[2] };
+                        const parsed = parseSlugOrId(parts[2]);
+                        return { type: 'playback_movie', movieId: parsed.id || parts[2], slugParam: parts[2] };
                     }
 
                     if (key === 'filme' && parts[1] && (parts[2] === 'assistir' || parts[2] === 'play')) {
-                        return { type: 'playback_movie', movieId: parts[1] };
+                        const parsed = parseSlugOrId(parts[1]);
+                        return { type: 'playback_movie', movieId: parsed.id || parts[1], slugParam: parts[1] };
                     }
 
-                    // 1.3 Rota de Detalhes de Mídia (ex: #filme/123 ou #serie/456 ou #dorama/789)
+                    // 1.3 Rota de Detalhes de Mídia (ex: #filme/123-slug ou #serie/456-slug ou #filme/123 antigo)
                     if (parts[1] && ['filme', 'serie', 'dorama', 'anime', 'titulo'].includes(key)) {
                         let mediaType = key === 'titulo' ? 'serie' : key;
-                        return { type: 'media_detail', mediaType: mediaType, mediaId: parts[1] };
+                        const parsed = parseSlugOrId(parts[1]);
+                        return { type: 'media_detail', mediaType: mediaType, mediaId: parsed.id || parts[1], slugParam: parts[1] };
                     }
 
                     // 1.4 Categorias de Navegação
@@ -14276,15 +14649,25 @@
                     const pathParts = pathname.split('/');
                     const pKey = (pathParts[0] || '').toLowerCase();
 
-                    if (pKey === 'serie' && pathParts.length >= 5) {
-                        const serieId = pathParts[1];
+                    // Reprodução de série via pathname
+                    if ((pKey === 'serie' || pKey === 'anime' || pKey === 'dorama') && pathParts.length >= 5) {
+                        const parsed = parseSlugOrId(pathParts[1]);
+                        const sId = parsed.id || pathParts[1];
                         const seasonNum = parseInt(pathParts[3], 10) || 1;
                         const epNum = parseInt(pathParts[5], 10) || 1;
-                        return { type: 'playback_episode', serieId, season: seasonNum, episode: epNum };
+                        return { type: 'playback_episode', serieId: sId, slugParam: pathParts[1], season: seasonNum, episode: epNum };
                     }
 
-                    if (pKey === 'filme' && pathParts[1]) {
-                        return { type: 'playback_movie', movieId: pathParts[1] };
+                    // Reprodução de filme via pathname (/filme/123-slug/assistir)
+                    if (pKey === 'filme' && pathParts[1] && (pathParts[2] === 'assistir' || pathParts[2] === 'play')) {
+                        const parsed = parseSlugOrId(pathParts[1]);
+                        return { type: 'playback_movie', movieId: parsed.id || pathParts[1], slugParam: pathParts[1] };
+                    }
+
+                    // Detalhe de mídia via pathname (/filme/123-slug ou /serie/456-slug)
+                    if (['filme', 'serie', 'anime', 'dorama'].includes(pKey) && pathParts[1]) {
+                        const parsed = parseSlugOrId(pathParts[1]);
+                        return { type: 'media_detail', mediaType: pKey, mediaId: parsed.id || pathParts[1], slugParam: pathParts[1] };
                     }
 
                     if (pKey === 'admin') {
@@ -14293,6 +14676,16 @@
 
                     if (['settings', 'configuracoes', 'perfil', 'conta'].includes(pKey)) {
                         return { type: 'tab', mainTab: 'tab-settings', settingsSection: pathParts[1] || 'profile' };
+                    }
+
+                    if (['catalogo', 'inicio', 'filmes', 'series', 'animes', 'doramas'].includes(pKey)) {
+                        let cat = pKey;
+                        if (cat === 'filmes') cat = 'filme';
+                        if (cat === 'series') cat = 'serie';
+                        if (cat === 'doramas') cat = 'dorama';
+                        if (cat === 'animes') cat = 'anime';
+                        if (cat === 'catalogo') cat = 'inicio';
+                        return { type: 'nav', category: cat };
                     }
                 }
 
@@ -15278,38 +15671,74 @@
                 }
 
                 if (allItems.length === 0) {
+                    // Detecta se é uma busca por texto
+                    const _searchQ = (document.getElementById('catalog-search')?.value || '').trim();
+                    const _headerQ = (document.getElementById('header-search-input')?.value || '').trim();
+                    const _searchTerm = _searchQ || _headerQ;
+                    const _isSearch = !!_searchTerm;
+
                     let emptyIcon = '🔍';
-                    let emptyTitle = 'Nenhum título encontrado';
-                    let emptyMsg = 'Não encontramos nenhum título com os filtros aplicados. Tente ajustar os filtros ou pesquisar outro termo.';
+                    let emptyTitle = _isSearch
+                        ? `Ops, "${_searchTerm.length > 28 ? _searchTerm.substring(0,28)+'…' : _searchTerm}" não está no catálogo ainda`
+                        : 'Nenhum título encontrado';
+                    let emptyMsg = _isSearch
+                        ? `Sentimos muito! Não encontramos <strong>"${_searchTerm.length > 40 ? _searchTerm.substring(0,40)+'…' : _searchTerm}"</strong> no nosso catálogo.<br>Mas você pode pedir que a gente adicione — é rápido e fácil!`
+                        : 'Não encontramos títulos com os filtros aplicados. Tente ajustar os filtros ou usar a busca.';
+                    let showRequestBtn = true;
+                    let requestPrefill = _searchTerm;
+                    let requestType = 'filme';
 
                     if (catalogFilters.type === 'dorama') {
                         emptyIcon = '🌸';
-                        emptyTitle = 'Nenhum Dorama no momento';
-                        emptyMsg = 'Ainda não há doramas ou K-dramas cadastrados no catálogo. Solicite novos doramas pelo Bot do Telegram para download automático!';
+                        if (!_isSearch) emptyTitle = 'Nenhum Dorama no momento';
+                        if (!_isSearch) emptyMsg = 'Ainda não temos doramas ou K-dramas neste catálogo.<br>Que tal pedir o seu favorito?';
+                        requestType = 'serie';
                     } else if (catalogFilters.type === 'anime') {
                         emptyIcon = '⛩️';
-                        emptyTitle = 'Nenhum Anime no momento';
-                        emptyMsg = 'Ainda não há animes cadastrados. Você pode solicitar novos títulos pelo Bot do Telegram!';
+                        if (!_isSearch) emptyTitle = 'Nenhum Anime encontrado';
+                        if (!_isSearch) emptyMsg = 'Ainda não temos esse anime no catálogo.<br>Solicite e adicionamos pra você!';
+                        requestType = 'serie';
                     } else if (catalogFilters.type === 'favoritos') {
-                        emptyIcon = '📌';
-                        emptyTitle = 'Sua Lista está vazia';
-                        emptyMsg = 'Adicione filmes, séries e animes aos seus favoritos clicando no botão ＋ Minha Lista!';
+                        emptyIcon = '💜';
+                        emptyTitle = 'Sua lista está vazia';
+                        emptyMsg = 'Explore o catálogo e adicione filmes e séries à sua lista com o botão <strong>♡ Minha Lista</strong>!';
+                        showRequestBtn = false;
                     } else if (catalogFilters.type === 'filme') {
                         emptyIcon = '🎬';
-                        emptyTitle = 'Nenhum Filme encontrado';
+                        if (!_isSearch) emptyTitle = 'Nenhum Filme encontrado';
+                        if (!_isSearch) emptyMsg = 'Não encontramos filmes com esses filtros.<br>Que tal pedir um título novo?';
+                        requestType = 'filme';
                     } else if (catalogFilters.type === 'serie') {
                         emptyIcon = '📺';
-                        emptyTitle = 'Nenhuma Série encontrada';
+                        if (!_isSearch) emptyTitle = 'Nenhuma Série encontrada';
+                        if (!_isSearch) emptyMsg = 'Não encontramos séries com esses filtros.<br>Quer solicitar uma série nova?';
+                        requestType = 'serie';
                     }
 
+                    const _requestBtnHtml = showRequestBtn ? `
+                        <button class="catalog-empty-btn-request" onclick="openRequestMediaModal('${requestPrefill.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${requestType}')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Pedir este título
+                        </button>` : '';
+
+                    const _clearBtnHtml = `<button class="catalog-empty-btn-clear" onclick="resetAllCatalogFilters()">Limpar filtros e voltar ao início</button>`;
+
                     grid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 50px 20px; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px dashed var(--border-color);">
-                        <div style="font-size: 42px; margin-bottom: 12px;">${emptyIcon}</div>
-                        <h3 style="font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 8px;">${emptyTitle}</h3>
-                        <p style="font-size: 13px; max-width: 440px; margin: 0 auto 18px auto; line-height: 1.5;">${emptyMsg}</p>
-                        <button class="btn-primary" style="padding: 8px 18px; font-size: 13px;" onclick="resetAllCatalogFilters()">Limpar Todos os Filtros</button>
+                    <div class="catalog-empty-state">
+                        <div class="catalog-empty-icon-wrap">
+                            <div class="catalog-empty-icon-bg"></div>
+                            <span class="catalog-empty-icon">${emptyIcon}</span>
+                        </div>
+                        <h3 class="catalog-empty-title">${emptyTitle}</h3>
+                        <p class="catalog-empty-msg">${emptyMsg}</p>
+                        <div class="catalog-empty-actions">
+                            ${_requestBtnHtml}
+                            ${_clearBtnHtml}
+                        </div>
                     </div>
-                `;
+                    `;
                     return;
                 }
 
@@ -16364,11 +16793,8 @@
                     if (railsBox) railsBox.style.display = 'none';
                     if (gridLayout) gridLayout.style.display = 'flex';
 
-                    // Mantém o tipo do currentNavMode se não for início
-                    if (currentNavMode !== 'inicio') {
-                        const typeFromNav = { filme: 'filme', serie: 'serie', anime: 'anime', dorama: 'dorama', favoritos: 'favoritos' };
-                        if (typeFromNav[currentNavMode]) catalogFilters.type = typeFromNav[currentNavMode];
-                    }
+                    // Busca global: não filtra por categoria, mostra todos os tipos
+                    catalogFilters.type = 'todos';
 
                     switchTab('tab-catalogo', false);
                     const searchInput = document.getElementById('catalog-search');
@@ -18097,7 +18523,9 @@
                 localStorage.setItem('bf_active_media_type', currentDetailType);
 
                 if (updateUrl) {
-                    const newHash = `#${currentDetailType}/${item.id}`;
+                    const _slug = getMediaSlug(item);
+                    const _slugParam = _slug ? `${item.id}-${_slug}` : String(item.id);
+                    const newHash = `#${currentDetailType}/${_slugParam}`;
                     if (window.location.hash !== newHash) {
                         history.pushState(null, '', newHash);
                     }
@@ -19541,7 +19969,10 @@
 
                 // Atualiza URL no navegador
                 if (updateUrl) {
-                    window.history.pushState({}, '', `#filme/${movie.id}/assistir`);
+                    const _mSlug = getMediaSlug(movie);
+                    const _mParam = _mSlug ? `${movie.id}-${_mSlug}` : String(movie.id);
+                    window.history.pushState({}, '', `#filme/${_mParam}/assistir`);
+                    updateSeoMetadata(movie, false);
                 }
 
                 // Atualiza elementos visuais da página
@@ -19696,7 +20127,10 @@
 
                 // Atualiza URL no navegador com a rota canônica
                 if (updateUrl) {
-                    window.history.pushState({}, '', `#serie/${serie.id}/temporada/${sNum}/episodio/${eNum}`);
+                    const _sSlug = getMediaSlug(serie);
+                    const _sParam = _sSlug ? `${serie.id}-${_sSlug}` : String(serie.id);
+                    window.history.pushState({}, '', `#serie/${_sParam}/temporada/${sNum}/episodio/${eNum}`);
+                    updateSeoMetadata(serie, true, { season: sNum, episode: eNum, epTitle: episode?.nome });
                 }
 
                 const epTitleStr = episode.nome && !episode.nome.toLowerCase().startsWith('epis') ? episode.nome : `Episódio ${eNum}`;
@@ -21380,21 +21814,26 @@
             function updatePartyHeaderState() {
                 const btn = document.getElementById('party-header-btn');
                 const badge = document.getElementById('party-member-badge');
-                const label = document.getElementById('party-header-btn-label');
                 const header = document.getElementById('main-header');
 
                 if (!btn) return;
 
                 if (currentPartyRoom) {
                     btn.classList.add('in-room');
-                    if (label) label.innerText = currentPartyRoom;
                     const memberCount = (partyRoomData?.members || []).length;
-                    if (badge) badge.innerText = memberCount;
+                    if (badge) {
+                        badge.innerText = memberCount || 1;
+                        badge.style.display = 'flex';
+                    }
+                    btn.title = `Sala Ativa: ${currentPartyRoom} (${memberCount || 1} online) - Clique para gerenciar`;
                     localStorage.setItem('bf_party_room', currentPartyRoom);
                 } else {
                     btn.classList.remove('in-room');
-                    if (label) label.innerText = 'Sala';
-                    if (badge) badge.innerText = '0';
+                    if (badge) {
+                        badge.innerText = '0';
+                        badge.style.display = 'none';
+                    }
+                    btn.title = 'Modo Grupo / Assistir Junto - Criar ou entrar em uma sala';
                     if (header) header.style.top = '';
                     localStorage.removeItem('bf_party_room');
                     const panel = document.getElementById('party-floating-panel');

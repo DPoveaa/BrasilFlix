@@ -136,6 +136,7 @@ async function createTables() {
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
 
         CREATE TABLE IF NOT EXISTS series (
             id BIGSERIAL PRIMARY KEY,
@@ -174,6 +175,10 @@ async function createTables() {
         ALTER TABLE series ADD COLUMN IF NOT EXISTS status_serie VARCHAR(50) DEFAULT 'Ended';
         ALTER TABLE series ADD COLUMN IF NOT EXISTS temporadas_meta JSONB DEFAULT '{}';
         ALTER TABLE series ADD COLUMN IF NOT EXISTS exigir_temporada_completa BOOLEAN DEFAULT true;
+        ALTER TABLE series ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
+
+        CREATE INDEX IF NOT EXISTS idx_filmes_slug ON filmes (slug);
+        CREATE INDEX IF NOT EXISTS idx_series_slug ON series (slug);
 
         CREATE TABLE IF NOT EXISTS episodios (
             id BIGSERIAL PRIMARY KEY,
@@ -802,11 +807,47 @@ async function autoDeduplicateSeries() {
     return { mergedCount };
 }
 
+function slugify(text) {
+    if (!text) return '';
+    return String(text)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 90);
+}
+
+async function migrateSlugs() {
+    try {
+        const filmesSemSlug = await query(`SELECT id, nome, nome_original FROM filmes WHERE slug IS NULL OR slug = ''`);
+        if (filmesSemSlug && filmesSemSlug.rows && filmesSemSlug.rows.length > 0) {
+            for (const f of filmesSemSlug.rows) {
+                const s = slugify(f.nome || f.nome_original || `filme-${f.id}`);
+                await query(`UPDATE filmes SET slug = $1 WHERE id = $2`, [s, f.id]);
+            }
+            console.log(`🏷️ [SEO] Gerados ${filmesSemSlug.rows.length} slugs amigáveis para filmes no banco.`);
+        }
+
+        const seriesSemSlug = await query(`SELECT id, nome, nome_original FROM series WHERE slug IS NULL OR slug = ''`);
+        if (seriesSemSlug && seriesSemSlug.rows && seriesSemSlug.rows.length > 0) {
+            for (const s of seriesSemSlug.rows) {
+                const sl = slugify(s.nome || s.nome_original || `serie-${s.id}`);
+                await query(`UPDATE series SET slug = $1 WHERE id = $2`, [sl, s.id]);
+            }
+            console.log(`🏷️ [SEO] Gerados ${seriesSemSlug.rows.length} slugs amigáveis para séries no banco.`);
+        }
+    } catch (e) {
+        console.warn('⚠️ [SEO] Erro ao sincronizar slugs amigáveis no banco:', e.message);
+    }
+}
+
 async function initDb() {
     try {
         await ensureDatabaseExists();
         await createTables();
         await migrateJsonData();
+        await migrateSlugs();
         console.log('🚀 Banco de dados PostgreSQL BrasilFlix 100% conectado e operacional!');
         return true;
     } catch (error) {
@@ -819,5 +860,7 @@ module.exports = {
     getPool,
     query,
     initDb,
-    autoDeduplicateSeries
+    autoDeduplicateSeries,
+    slugify,
+    migrateSlugs
 };

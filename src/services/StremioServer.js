@@ -2387,11 +2387,45 @@ class StremioServer {
         });
 
         this.app.get('/sitemap.xml', (req, res) => {
-            res.type('application/xml');
-            res.sendFile(path.resolve(__dirname, '../../public/sitemap.xml'));
+            try {
+                res.type('application/xml');
+                const baseUrl = config.STREMIO_BASE_URL || 'https://brasilflix.kapsu.com.br';
+                const catalogo = this.catalogoManager?.catalogo || { filmes: [], series: [] };
+                const filmes = catalogo.filmes || [];
+                const series = catalogo.series || [];
+
+                let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+                xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+
+                const staticPages = [
+                    { path: '', changefreq: 'daily', priority: '1.0' },
+                    { path: 'catalogo', changefreq: 'daily', priority: '0.9' },
+                    { path: 'assinar', changefreq: 'weekly', priority: '0.9' },
+                    { path: 'status', changefreq: 'hourly', priority: '0.7' },
+                    { path: 'fila', changefreq: 'hourly', priority: '0.7' }
+                ];
+                for (const p of staticPages) {
+                    xml += `  <url>\n    <loc>${baseUrl}/${p.path}</loc>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>\n`;
+                }
+
+                for (const f of filmes) {
+                    const slug = f.slug || (this.catalogoManager.constructor.generateSlug(f.nome || f.nomeOriginal || f.id));
+                    xml += `  <url>\n    <loc>${baseUrl}/filme/${f.id}-${slug}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+                }
+
+                for (const s of series) {
+                    const slug = s.slug || (this.catalogoManager.constructor.generateSlug(s.nome || s.nomeOriginal || s.id));
+                    xml += `  <url>\n    <loc>${baseUrl}/serie/${s.id}-${slug}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+                }
+
+                xml += '</urlset>';
+                return res.send(xml);
+            } catch (err) {
+                res.sendFile(path.resolve(__dirname, '../../public/sitemap.xml'));
+            }
         });
 
-        // 2. Dashboard Web e Rotas de Navegacao
+        // 2. Dashboard Web e Rotas de Navegacao (SEO friendly)
         this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
         this.app.get([
             '/status',
@@ -2401,8 +2435,15 @@ class StremioServer {
             '/filme/:id',
             '/filme/:id/assistir',
             '/serie/:id',
+            '/serie/:id/assistir',
             '/serie/:serieId/temporada/:season/episodio/:episode',
             '/serie/:serieId/t/:season/e/:episode',
+            '/anime/:id',
+            '/anime/:id/assistir',
+            '/anime/:serieId/temporada/:season/episodio/:episode',
+            '/dorama/:id',
+            '/dorama/:id/assistir',
+            '/dorama/:serieId/temporada/:season/episodio/:episode',
             '/assistir',
             '/assistir/*',
             '/sala/:id'
@@ -3474,11 +3515,80 @@ class StremioServer {
 
     renderLandingPage(req, res, userToken) {
         const indexPath = path.resolve(__dirname, '../../public/index.html');
-        if (fs.existsSync(indexPath)) {
-            res.sendFile(indexPath);
-        } else {
+        if (!fs.existsSync(indexPath)) {
             res.setHeader('Content-Type', 'text/html');
-            res.send('<h1>BrasilFlix Online</h1>');
+            return res.send('<h1>BrasilFlix Online</h1>');
+        }
+
+        try {
+            let html = fs.readFileSync(indexPath, 'utf8');
+            const baseUrl = config.STREMIO_BASE_URL || 'https://brasilflix.kapsu.com.br';
+
+            // Identifica rota de mídia (filme, serie, anime, dorama, assistir)
+            const filmMatch = req.path.match(/^\/(?:filme|assistir\/filme)\/([^/]+)/i);
+            const serieMatch = req.path.match(/^\/(?:serie|anime|dorama|assistir\/serie)\/([^/]+)/i);
+
+            let itemInfo = null;
+            if (filmMatch && filmMatch[1]) {
+                itemInfo = this.catalogoManager?.findItemBySlugOrId(filmMatch[1], 'filme');
+            } else if (serieMatch && serieMatch[1]) {
+                itemInfo = this.catalogoManager?.findItemBySlugOrId(serieMatch[1], 'serie');
+            }
+
+            if (itemInfo && itemInfo.item) {
+                const item = itemInfo.item;
+                const isSerie = itemInfo.type === 'serie';
+                const itemType = isSerie ? 'serie' : 'filme';
+                const CatalogoManagerClass = this.catalogoManager?.constructor;
+                const slug = item.slug || (CatalogoManagerClass?.generateSlug ? CatalogoManagerClass.generateSlug(item.nome || item.nomeOriginal || item.id) : String(item.id));
+                const canonicalUrl = `${baseUrl}/${itemType}/${item.id}-${slug}`;
+                const titleText = `${item.nome}${item.ano ? ` (${item.ano})` : ''} - Assistir Online em Full HD | BrasilFlix`;
+                const rawDesc = item.sinopse || item.descricao || `Assista ${item.nome} online completo em full HD com áudio dublado e legendado no BrasilFlix.`;
+                const cleanDesc = rawDesc.replace(/"/g, '&quot;').replace(/\n/g, ' ').substring(0, 160);
+                const imgUrl = item.backdropUrl || item.posterUrl || `${baseUrl}/assets/logo.png`;
+
+                const seoBlock = `
+    <!-- Dynamic Media SEO Generated by BrasilFlix Engine -->
+    <title>${titleText}</title>
+    <meta name="description" content="${cleanDesc}">
+    <link rel="canonical" href="${canonicalUrl}">
+    <meta property="og:site_name" content="BrasilFlix">
+    <meta property="og:type" content="${isSerie ? 'video.tv_show' : 'video.movie'}">
+    <meta property="og:title" content="${titleText}">
+    <meta property="og:description" content="${cleanDesc}">
+    <meta property="og:image" content="${imgUrl}">
+    <meta property="og:url" content="${canonicalUrl}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${titleText}">
+    <meta name="twitter:description" content="${cleanDesc}">
+    <meta name="twitter:image" content="${imgUrl}">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "${isSerie ? 'TVSeries' : 'Movie'}",
+      "name": "${(item.nome || '').replace(/"/g, '\\"')}",
+      "description": "${cleanDesc.replace(/"/g, '\\"')}",
+      "image": "${imgUrl}",
+      "datePublished": "${item.ano || '2026'}",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "${item.nota || 8.5}",
+        "bestRating": "10",
+        "ratingCount": "150"
+      }
+    }
+    </script>`;
+
+                if (html.includes('<title>')) {
+                    html = html.replace(/<title>[\s\S]*?<\/title>/i, '');
+                }
+                html = html.replace('</head>', `${seoBlock}\n</head>`);
+            }
+
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.send(html);
+        } catch (e) {
+            return res.sendFile(indexPath);
         }
     }
 

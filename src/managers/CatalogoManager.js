@@ -49,6 +49,63 @@ class CatalogoManager {
     static mediaVerificationCache = new MediaVerificationCache();
     static allowUnverifiedPlayback = config.ALLOW_UNVERIFIED_PLAYBACK;
 
+    static generateSlug(text) {
+        if (!text) return '';
+        return String(text)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 90);
+    }
+
+    findItemBySlugOrId(idOrSlug, type = null) {
+        if (!idOrSlug) return null;
+        const str = String(idOrSlug).trim();
+        const match = str.match(/^(\d+)(?:-(.*))?$/);
+        const numericId = match ? match[1] : (/^\d+$/.test(str) ? str : null);
+        const targetSlug = (match && match[2] ? match[2] : str).toLowerCase();
+
+        const filmes = this.catalogo?.filmes || [];
+        const series = this.catalogo?.series || [];
+
+        // 1. Busca prioritária por ID numérico
+        if (numericId) {
+            if (type === 'filme') {
+                const f = filmes.find(i => String(i.id) === String(numericId));
+                if (f) return { item: f, type: 'filme' };
+            } else if (type === 'serie' || type === 'anime' || type === 'dorama') {
+                const s = series.find(i => String(i.id) === String(numericId));
+                if (s) return { item: s, type: 'serie' };
+            } else {
+                const f = filmes.find(i => String(i.id) === String(numericId));
+                if (f) return { item: f, type: 'filme' };
+                const s = series.find(i => String(i.id) === String(numericId));
+                if (s) return { item: s, type: 'serie' };
+            }
+        }
+
+        // 2. Busca por slug amigável
+        if (type !== 'serie') {
+            const f = filmes.find(i => {
+                const s = (i.slug || CatalogoManager.generateSlug(i.nome || i.nomeOriginal)).toLowerCase();
+                return s === targetSlug || s.startsWith(targetSlug) || targetSlug.startsWith(s);
+            });
+            if (f) return { item: f, type: 'filme' };
+        }
+
+        if (type !== 'filme') {
+            const s = series.find(i => {
+                const sl = (i.slug || CatalogoManager.generateSlug(i.nome || i.nomeOriginal)).toLowerCase();
+                return sl === targetSlug || sl.startsWith(targetSlug) || targetSlug.startsWith(sl);
+            });
+            if (s) return { item: s, type: 'serie' };
+        }
+
+        return null;
+    }
+
     constructor() {
         this.catalogo = {
             filmes: [],
@@ -645,6 +702,7 @@ class CatalogoManager {
             temporadas: temporadas,
             todasTemporadas: temporadasObj,
             exigirTemporadaCompleta: exigirTemporadaCompleta,
+            slug: s.slug || CatalogoManager.generateSlug(s.nome || s.nome_original || s.nomeOriginal || ''),
             dataAdicionado: s.created_at || s.dataAdicionado || new Date().toISOString(),
             audioBadge: (hasDub && hasLeg) ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : ''))
         };
@@ -855,6 +913,7 @@ class CatalogoManager {
                         messageId: f.message_id ? Number(f.message_id) : null,
                         notifMessageId: f.notif_message_id ? Number(f.notif_message_id) : null,
                         fileId: f.file_id,
+                        slug: f.slug || CatalogoManager.generateSlug(f.nome || f.nome_original || ''),
                         dataAdicionado: f.created_at,
                         tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
                     };
@@ -1140,14 +1199,15 @@ class CatalogoManager {
 
         // Persistência no PostgreSQL
         let dbId = metadadosExtras.id;
+        const slugVal = CatalogoManager.generateSlug(nome.trim() || metadadosExtras.nomeOriginal || '');
         try {
             const res = await db.query(`
                 INSERT INTO filmes (
                     nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                     nota, tmdb_id, imdb_id, message_id, file_id, qualidade, audio,
-                    is_dublado, is_legendado, is_cam, versoes, created_at, updated_at
+                    is_dublado, is_legendado, is_cam, versoes, slug, created_at, updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
                 ) RETURNING id
             `, [
                 nome.trim(), metadadosExtras.nomeOriginal || nome.trim(),
@@ -1164,7 +1224,8 @@ class CatalogoManager {
                 metadadosExtras.qualidade || '1080p',
                 metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
                 isDublado, isLegendado, metadadosExtras.isCam || false,
-                JSON.stringify(versoes)
+                JSON.stringify(versoes),
+                slugVal
             ]);
             dbId = res.rows[0]?.id;
         } catch (e) {
@@ -1374,27 +1435,28 @@ class CatalogoManager {
 
         if (!serie) {
             let sId = null;
+            const slugSerie = CatalogoManager.generateSlug(cleanNome || metadados.nomeOriginal || '');
             try {
                 const insertSql = metadados.tmdbId ? `
                     INSERT INTO series (
                         nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                         nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
                         is_dublado, is_legendado, is_cam, is_microdrama, subtipo, formato, origem,
-                        plataforma_origem, trending_score, metadata_extra, created_at, updated_at
+                        plataforma_origem, trending_score, metadata_extra, slug, created_at, updated_at
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW()
                     )
                     ON CONFLICT (tmdb_id) WHERE tmdb_id IS NOT NULL
-                    DO UPDATE SET updated_at = NOW()
+                    DO UPDATE SET updated_at = NOW(), slug = EXCLUDED.slug
                     RETURNING id
                 ` : `
                     INSERT INTO series (
                         nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                         nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
                         is_dublado, is_legendado, is_cam, is_microdrama, subtipo, formato, origem,
-                        plataforma_origem, trending_score, metadata_extra, created_at, updated_at
+                        plataforma_origem, trending_score, metadata_extra, slug, created_at, updated_at
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW()
                     ) RETURNING id
                 `;
 
@@ -1408,7 +1470,8 @@ class CatalogoManager {
                     metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
                     metadados.origem || 'China', metadados.plataformaOrigem || metadados.plataforma_origem || null,
                     parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
-                    JSON.stringify(metadados.metadataExtra || metadados.metadata_extra || {})
+                    JSON.stringify(metadados.metadataExtra || metadados.metadata_extra || {}),
+                    slugSerie
                 ]);
                 sId = res.rows[0]?.id;
             } catch (e) {
@@ -2707,6 +2770,7 @@ class CatalogoManager {
         return {
             filmes: (this.catalogo.filmes || []).map(f => ({
                 id: f.id,
+                slug: f.slug || CatalogoManager.generateSlug(f.nome || f.nomeOriginal || f.id),
                 tmdbId: f.tmdbId || f.tmdb_id || null,
                 imdbId: f.imdbId || f.imdb_id || null,
                 nome: f.nome,
@@ -2727,6 +2791,7 @@ class CatalogoManager {
             })),
             series: (this.catalogo.series || []).map(s => ({
                 id: s.id,
+                slug: s.slug || CatalogoManager.generateSlug(s.nome || s.nomeOriginal || s.id),
                 tmdbId: s.tmdbId || s.tmdb_id || null,
                 imdbId: s.imdbId || s.imdb_id || null,
                 nome: s.nome,
