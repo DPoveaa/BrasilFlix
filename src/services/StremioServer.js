@@ -84,20 +84,38 @@ class StremioServer {
         });
 
         // 1. APIs Publicas Seguras (Zero dados sensiveis)
-        this.app.get('/api/status', (req, res) => {
+        this.app.get('/api/status', async (req, res) => {
+            if (this.catalogoManager?.checkAndSyncDbIfChanged) {
+                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+            }
             const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
-            const stats = this.catalogoManager.getEstatisticas();
+            const stats = this.catalogoManager ? this.catalogoManager.getEstatisticas() : {};
+            const catalogVersion = this.catalogoManager ? this.catalogoManager.getVersion() : Date.now();
             res.json({
                 online: true,
                 service: 'BrasilFlix Engine',
                 uptime: process.uptime(),
                 stats: stats,
+                catalogVersion: catalogVersion,
                 queue: queueStatus
             });
         });
 
+        this.app.get('/api/catalogo/version', async (req, res) => {
+            if (this.catalogoManager?.checkAndSyncDbIfChanged) {
+                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+            }
+            const version = this.catalogoManager ? this.catalogoManager.getVersion() : Date.now();
+            res.json({ version });
+        });
+
         this.app.get('/api/catalogo', (req, res) => {
+            const version = this.catalogoManager ? this.catalogoManager.getVersion() : Date.now();
+            res.setHeader('X-Catalog-Version', String(version));
             const catalogo = this.catalogoManager.getPublicCatalogo();
+            if (catalogo && typeof catalogo === 'object') {
+                catalogo.version = version;
+            }
             res.json(catalogo);
         });
 
@@ -808,6 +826,9 @@ class StremioServer {
         // 6. Gerenciamento do Catálogo
         this.app.get('/api/admin/catalogo', auth, async (req, res) => {
             try {
+                if (this.catalogoManager?.checkAndSyncDbIfChanged) {
+                    await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+                }
                 if (this.catalogoManager && typeof this.catalogoManager.getCatalogoDetalhado === 'function') {
                     const data = await this.catalogoManager.getCatalogoDetalhado();
                     return res.json(data);

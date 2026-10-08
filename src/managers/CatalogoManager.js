@@ -111,6 +111,7 @@ class CatalogoManager {
             filmes: [],
             series: []
         };
+        this.version = Date.now();
         this.backupDir = config.BACKUP_DIR || './data/backups';
         this.ensureDataDirectory();
 
@@ -128,6 +129,93 @@ class CatalogoManager {
                 }
             }
         } catch (e) {}
+
+        this._lastDbSignature = null;
+        this._isCheckingDbSync = false;
+        this._lastDbCheckTime = 0;
+        this._autoDbSyncInterval = null;
+        this.startAutoDbSyncWatcher();
+    }
+
+    /**
+     * Calcula uma assinatura rápida e leve do banco de dados (PostgreSQL) para verificar
+     * se houve qualquer inserção, alteração ou exclusão de filmes, séries ou episódios.
+     */
+    async getDatabaseSignature() {
+        try {
+            const res = await db.query(`
+                SELECT 
+                    (SELECT COUNT(*) FROM filmes) AS fc,
+                    (SELECT COALESCE(MAX(id), 0) FROM filmes) AS f_max_id,
+                    (SELECT COALESCE(MAX(updated_at), '1970-01-01'::timestamptz) FROM filmes) AS f_up,
+                    (SELECT COUNT(*) FROM series) AS sc,
+                    (SELECT COALESCE(MAX(id), 0) FROM series) AS s_max_id,
+                    (SELECT COALESCE(MAX(updated_at), '1970-01-01'::timestamptz) FROM series) AS s_up,
+                    (SELECT COUNT(*) FROM episodios) AS ec,
+                    (SELECT COALESCE(MAX(id), 0) FROM episodios) AS e_max_id,
+                    (SELECT COALESCE(MAX(created_at), '1970-01-01'::timestamptz) FROM episodios) AS e_up
+            `);
+            const row = res.rows[0];
+            if (!row) return null;
+            const fUpTime = row.f_up ? new Date(row.f_up).getTime() : 0;
+            const sUpTime = row.s_up ? new Date(row.s_up).getTime() : 0;
+            const eUpTime = row.e_up ? new Date(row.e_up).getTime() : 0;
+            return `${row.fc}_${row.f_max_id}_${fUpTime}__${row.sc}_${row.s_max_id}_${sUpTime}__${row.ec}_${row.e_max_id}_${eUpTime}`;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Sincronização automática e eficiente:
+     * Compara a assinatura atual do banco com a última conhecida.
+     * Se houver qualquer divergência, recarrega o catálogo silenciosamente e atualiza a versão.
+     */
+    async checkAndSyncDbIfChanged() {
+        const now = Date.now();
+        if (this._isCheckingDbSync || (now - (this._lastDbCheckTime || 0) < 2000)) {
+            return false;
+        }
+        this._isCheckingDbSync = true;
+        this._lastDbCheckTime = now;
+        try {
+            const currentSig = await this.getDatabaseSignature();
+            if (!currentSig) return false;
+
+            if (this._lastDbSignature === null) {
+                this._lastDbSignature = currentSig;
+                return false;
+            }
+
+            if (this._lastDbSignature !== currentSig) {
+                this._lastDbSignature = currentSig;
+                await this.loadCatalogo();
+                return true;
+            }
+            return false;
+        } catch (e) {
+            return false;
+        } finally {
+            this._isCheckingDbSync = false;
+        }
+    }
+
+    startAutoDbSyncWatcher() {
+        if (this._autoDbSyncInterval) return;
+        this._autoDbSyncInterval = setInterval(() => {
+            this.checkAndSyncDbIfChanged().catch(() => {});
+        }, 8000);
+        if (typeof this._autoDbSyncInterval.unref === 'function') {
+            this._autoDbSyncInterval.unref();
+        }
+    }
+
+    bumpVersion() {
+        this.version = Date.now();
+    }
+
+    getVersion() {
+        return this.version || Date.now();
     }
 
     setBot(bot) {
@@ -141,6 +229,7 @@ class CatalogoManager {
 
     saveCatalogoBackup() {
         try {
+            this.bumpVersion();
             if (this.catalogo && (this.catalogo.filmes || this.catalogo.series)) {
                 const catalogoPath = config.CATALOGO_FILE || path.resolve(__dirname, '../../data/catalogo.json');
                 fs.ensureDirSync(path.dirname(catalogoPath));
@@ -921,6 +1010,10 @@ class CatalogoManager {
 
                 this.catalogo = { filmes, series };
                 this.saveCatalogoBackup();
+                try {
+                    const currentSig = await this.getDatabaseSignature();
+                    if (currentSig) this._lastDbSignature = currentSig;
+                } catch (_) {}
                 console.log(`📦 Catálogo BrasilFlix carregado: ${filmes.length} filmes, ${series.length} séries ativas.`);
 
                 // Inicia o verificador periódico de integridade (singleton)
@@ -1045,6 +1138,7 @@ class CatalogoManager {
 
     async saveCatalogo() {
         try {
+            this.bumpVersion();
             // Salva espelho de backup em disco JSON
             const tempFile = `${config.CATALOGO_FILE}.tmp`;
             fs.writeJsonSync(tempFile, this.catalogo, { spaces: 2 });

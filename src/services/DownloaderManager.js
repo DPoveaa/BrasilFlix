@@ -461,8 +461,11 @@ class DownloaderManager extends EventEmitter {
             console.log(`📡 [QoS Rede] Modo: ${isEcoMode ? '🍃 ECONÔMICO (DHT Desativado, Teto: ' + (config.ECO_DOWNLOAD_LIMIT_MB || 3.0) + ' MB/s, Max Conns: ' + maxPeerConns + ')' : '⚡ DESEMPENHO (Max Conns: ' + maxPeerConns + ', Sem Limite Download)'}`);
 
             const client = new WT({
+                torrentPort: 0,
+                dhtPort: 0,
                 maxConns: maxPeerConns, // Limite estrito (10 no eco / 14 no desempenho para proteger a tabela NAT do roteador)
                 dht: isEcoMode ? false : {
+                    port: 0,
                     bootstrap: [
                         'router.bittorrent.com:6881',
                         'dht.transmissionbt.com:6881',
@@ -552,6 +555,8 @@ class DownloaderManager extends EventEmitter {
             client.on('error', (err) => {
                 // RTCDataChannel "Close called" é desconexão normal de peer WebRTC — não afeta o download
                 if (err?.code === 'ERR_DATA_CHANNEL' || err?.message?.includes('Close called')) return;
+                // EADDRINUSE na porta local de entrada não é crítico (o cliente continua via conexões de saída)
+                if (err?.code === 'EADDRINUSE' || err?.message?.includes('address already in use')) return;
                 console.error('⚠️ Aviso do cliente WebTorrent:', err?.message || err);
             });
 

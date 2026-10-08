@@ -9542,130 +9542,152 @@
             }
         }
 
-        /* CATÁLOGO RESPONSIVO: MODO CARDS EM TELAS MENORES OU CELULAR */
-        @media (max-width: 768px) {
+        /* CATÁLOGO RESPONSIVO UNIVERSAL (FIT 100% DA TELA SEM SCROLL LATERAL) */
+        .admin-catalog-cards-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
 
-            .admin-catalog-table,
-            .admin-catalog-table tbody {
-                display: block;
-                width: 100%;
-            }
+        .admin-catalog-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 100%;
+        }
 
-            .admin-catalog-table thead {
-                display: none !important;
-            }
+        .admin-catalog-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
 
-            .admin-catalog-table tr.catalog-item-row {
-                display: flex;
-                flex-direction: column;
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid var(--border-color);
-                border-radius: 14px;
-                padding: 12px 14px;
-                margin-bottom: 12px;
-                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-            }
+        .admin-catalog-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td {
-                display: block;
-                padding: 3px 0;
-                border: none;
-            }
+        .admin-catalog-card-media {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+            flex: 1 1 280px;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-media {
-                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-                padding-bottom: 10px;
-                margin-bottom: 8px;
-            }
+        .admin-catalog-card-poster {
+            width: 44px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-media strong {
-                max-width: 100% !important;
-                font-size: 15px !important;
-            }
+        .admin-catalog-card-title-box {
+            min-width: 0;
+            flex: 1;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-media div {
-                max-width: 100% !important;
-            }
+        .admin-catalog-card-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #fff;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            line-height: 1.3;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-cat,
-            .admin-catalog-table tr.catalog-item-row td.col-date,
-            .admin-catalog-table tr.catalog-item-row td.col-struct,
-            .admin-catalog-table tr.catalog-item-row td.col-audio,
-            .admin-catalog-table tr.catalog-item-row td.col-tg {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 3px 0;
-                font-size: 12px;
-            }
+        .admin-catalog-card-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 3px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-cat::before {
-                content: 'Categoria:';
-                color: var(--text-muted);
-                font-size: 11px;
-                font-weight: 700;
-            }
+        .admin-catalog-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-date::before {
-                content: 'Adicionado Em:';
-                color: var(--text-muted);
-                font-size: 11px;
-                font-weight: 700;
-            }
+        .admin-catalog-card-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 11px;
+            color: var(--text-muted);
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-struct::before {
-                content: 'Estrutura:';
-                color: var(--text-muted);
-                font-size: 11px;
-                font-weight: 700;
-            }
+        .admin-catalog-meta-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            color: #cbd5e1;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-audio::before {
-                content: 'Áudio & Qualidade:';
-                color: var(--text-muted);
-                font-size: 11px;
-                font-weight: 700;
-            }
+        .admin-serie-season-pill {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-tg::before {
-                content: 'Telegram:';
-                color: var(--text-muted);
-                font-size: 11px;
-                font-weight: 700;
-            }
+        .admin-serie-season-pill:hover,
+        .admin-serie-season-pill.active {
+            background: #2563eb;
+            color: #fff;
+            border-color: #3b82f6;
+            font-weight: 700;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-actions {
-                border-top: 1px solid rgba(255, 255, 255, 0.06);
-                margin-top: 8px;
-                padding-top: 10px;
-                text-align: left !important;
-            }
+        .admin-modal-episode-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            gap: 10px;
+            flex-wrap: wrap;
+            transition: background 0.15s ease;
+        }
 
-            .admin-catalog-table tr.catalog-item-row td.col-actions .actions-group {
-                display: flex !important;
-                width: 100%;
-                gap: 6px;
-                flex-wrap: wrap;
-            }
-
-            .admin-catalog-table tr.catalog-item-row td.col-actions .btn-action {
-                flex: 1 1 auto;
-                justify-content: center;
-                padding: 7px 10px !important;
-                font-size: 12px !important;
-            }
-
-            .admin-catalog-table tr.accordion-row {
-                display: block;
-                margin-top: -6px;
-                margin-bottom: 12px;
-            }
-
-            .admin-catalog-table tr.accordion-row td {
-                display: block;
-                padding: 0 !important;
-                border: none;
-            }
+        .admin-modal-episode-row:hover {
+            background: rgba(255, 255, 255, 0.06);
         }
     </style>
 </head>
@@ -9921,6 +9943,39 @@
                 <div id="adm-ep-modal-content">
                     <!-- Conteúdo gerado via JS -->
                 </div>
+            </div>
+        </div>
+    <!-- MODAL DE GERENCIAMENTO DE EPISÓDIOS DA SÉRIE (ADMIN) -->
+    <div class="modal-backdrop" id="admin-modal-serie-episodes"
+        onclick="closeAdminModalOnClick(event, 'admin-modal-serie-episodes')">
+        <div class="modal-card" style="max-width: 820px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.3);">
+                <div style="display: flex; align-items: center; gap: 14px; min-width: 0;">
+                    <img id="admin-modal-serie-poster" src="/logo.jpg" style="width: 44px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;" onerror="this.src='/logo.jpg'">
+                    <div style="min-width: 0;">
+                        <h2 style="font-size: 16px; font-weight: 800; color: #fff; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" id="admin-modal-serie-title">
+                            🎬 Episódios da Série
+                        </h2>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 3px;" id="admin-modal-serie-subtitle">
+                            Carregando episódios...
+                        </div>
+                    </div>
+                </div>
+                <button class="modal-close" style="position: static;" onclick="closeAdminModal('admin-modal-serie-episodes')">✕</button>
+            </div>
+            <!-- BARRA DE BUSCA E FILTROS DENTRO DO MODAL -->
+            <div style="padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15);">
+                <div style="flex: 1; min-width: 220px; position: relative;">
+                    <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">🔍</span>
+                    <input type="text" id="admin-modal-serie-search" placeholder="Filtrar episódios (ex: T01E03, nome)..." style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px 8px 32px; color: #fff; font-size: 13px;" oninput="filterAdminSerieModalEpisodes()">
+                </div>
+                <div id="admin-modal-serie-season-pills" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                    <!-- Preenchido via JS: Todos, T1, T2... -->
+                </div>
+            </div>
+            <!-- LISTA DE EPISÓDIOS COM SCROLL VERTICAL -->
+            <div class="modal-body" id="admin-modal-serie-episodes-list" style="padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; max-height: calc(90vh - 170px);">
+                <!-- Preenchido via JS -->
             </div>
         </div>
     </div>
@@ -11880,9 +11935,6 @@
                                                 onclick="openAdminModal('admin-modal-add-job')">
                                                 ➕ Adicionar Mídia (TMDB)
                                             </button>
-                                            <button class="btn-action" onclick="handleResyncCatalog()">
-                                                🔄 Re-sincronizar Banco
-                                            </button>
                                         </div>
                                     </div>
 
@@ -11918,9 +11970,6 @@
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             <button id="admin-removal-retry-btn" class="btn-action btn-icon-compact" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; font-size: 11px; padding: 4px 8px;" onclick="handleRetryRemovalFailures()">
                                                 🔁 Reprocessar Falhas
-                                            </button>
-                                            <button class="btn-action btn-icon-compact" style="font-size: 11px; padding: 4px 8px;" onclick="loadRemovalQueueStats()">
-                                                🔄 Atualizar
                                             </button>
                                         </div>
                                     </div>
@@ -11976,29 +12025,14 @@
                                         </select>
                                     </div>
 
-                                    <div id="admin-catalog-container">
-                                        <div class="admin-table-container">
-                                            <table class="admin-table admin-catalog-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Mídia / Título</th>
-                                                        <th>Tipo / Categoria</th>
-                                                        <th>Adicionado Em</th>
-                                                        <th>Estrutura & Faltantes</th>
-                                                        <th>Idiomas & Qualidade</th>
-                                                        <th>Status Telegram</th>
-                                                        <th style="text-align: right;">Ações</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody id="admin-catalog-tbody">
-                                                    <tr>
-                                                        <td colspan="7"
-                                                            style="text-align: center; padding: 24px; color: var(--text-muted);">
-                                                            Carregando catálogo detalhado...</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
+                                    <div id="admin-catalog-container" style="width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden;">
+                                        <div id="admin-catalog-cards-container" class="admin-catalog-cards-list">
+                                            <div style="text-align: center; padding: 36px 16px; color: var(--text-muted);">
+                                                <div class="spinner" style="margin: 0 auto 12px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                                                Carregando catálogo detalhado...
+                                            </div>
                                         </div>
+                                        <tbody id="admin-catalog-tbody" style="display: none;"></tbody>
                                     </div>
                                 </div>
 
@@ -14536,6 +14570,8 @@
             setTimeout(() => trackAuditEvent('WEBSITE_VISIT', { hash: window.location.hash, path: window.location.pathname }), 500);
 
             let fullCatalog = { filmes: [], series: [] };
+            let currentCatalogVersion = null;
+            let isSyncingCatalog = false;
             let adminCatalogData = { filmes: [], series: [] };
             let currentAdminJobs = [];
             let activeCategory = 'todos';
@@ -14958,6 +14994,14 @@
                         if (tEl) tEl.innerText = Number(data.stats.total) || (fCount + sCount);
                     }
 
+                    if (data && data.catalogVersion) {
+                        if (currentCatalogVersion !== null && String(data.catalogVersion) !== String(currentCatalogVersion)) {
+                            syncCatalogSilently(data.catalogVersion);
+                        } else if (currentCatalogVersion === null) {
+                            currentCatalogVersion = data.catalogVersion;
+                        }
+                    }
+
                     if (data && data.queue) {
                         const qCount = Number(data.queue.totalQueued) || 0;
                         const qEl = document.getElementById('stat-fila');
@@ -15117,6 +15161,13 @@
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     fullCatalog = await res.json();
 
+                    const headerVer = res.headers.get('X-Catalog-Version');
+                    if (headerVer) {
+                        currentCatalogVersion = headerVer;
+                    } else if (fullCatalog && fullCatalog.version) {
+                        currentCatalogVersion = fullCatalog.version;
+                    }
+
                     const currentRoute = getRouteStateFromUrl();
                     if (currentRoute.type === 'media_detail') {
                         openMediaDetailPage(currentRoute.mediaId, currentRoute.mediaType, false);
@@ -15166,6 +15217,77 @@
                 } catch (e) {
                     console.warn('Erro ao carregar catálogo:', e);
                 }
+            }
+
+            async function syncCatalogSilently(newVersion) {
+                if (isSyncingCatalog) return;
+                isSyncingCatalog = true;
+                try {
+                    const res = await fetch('/api/catalogo');
+                    if (!res.ok) return;
+                    const freshCatalog = await res.json();
+                    if (!freshCatalog || (!Array.isArray(freshCatalog.filmes) && !Array.isArray(freshCatalog.series))) {
+                        return;
+                    }
+
+                    fullCatalog = freshCatalog;
+                    currentCatalogVersion = newVersion || freshCatalog.version || Date.now();
+
+                    updateCatalogViewsSilently();
+                } catch (e) {
+                } finally {
+                    isSyncingCatalog = false;
+                }
+            }
+
+            function updateCatalogViewsSilently() {
+                try {
+                    // 1. Se estiver no player assistindo filme/série, NÃO interfere nem fecha
+                    const playbackPage = document.getElementById('tab-playback-page');
+                    const isPlaying = playbackPage && playbackPage.style.display !== 'none';
+                    if (isPlaying) {
+                        if (typeof currentPlaybackSerie !== 'undefined' && currentPlaybackSerie && currentPlaybackSerie.id) {
+                            const updatedSerie = (fullCatalog.series || []).find(s => String(s.id) === String(currentPlaybackSerie.id));
+                            if (updatedSerie) {
+                                currentPlaybackSerie = updatedSerie;
+                                if (typeof renderPlaybackSeasonEpisodes === 'function' && typeof currentPlaybackSeasonNum !== 'undefined') {
+                                    renderPlaybackSeasonEpisodes(currentPlaybackSerie, currentPlaybackSeasonNum, typeof currentPlaybackEpNum !== 'undefined' ? currentPlaybackEpNum : 1);
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    // 2. Se a página de detalhes da mídia estiver aberta, sincroniza episódios se mudaram
+                    const detailTab = document.getElementById('tab-media-detail');
+                    const isDetailActive = detailTab && detailTab.style.display !== 'none';
+                    if (isDetailActive && typeof currentDetailMedia !== 'undefined' && currentDetailMedia && currentDetailMedia.id) {
+                        const updated = (fullCatalog.series || []).find(i => String(i.id) === String(currentDetailMedia.id)) ||
+                                        (fullCatalog.filmes || []).find(i => String(i.id) === String(currentDetailMedia.id));
+                        if (updated) {
+                            const oldEpCount = currentDetailMedia.totalEpisodios || 0;
+                            const newEpCount = updated.totalEpisodios || 0;
+                            currentDetailMedia = updated;
+                            if (oldEpCount !== newEpCount && typeof openMediaDetailPage === 'function') {
+                                openMediaDetailPage(updated.id, typeof currentDetailType !== 'undefined' ? currentDetailType : 'serie', false);
+                            }
+                        }
+                    }
+
+                    // 3. Atualiza os trilhos e a grade do catálogo silenciosamente
+                    if (typeof renderNetflixRails === 'function') {
+                        renderNetflixRails();
+                    }
+                    if (typeof renderCatalog === 'function') {
+                        renderCatalog();
+                    }
+
+                    // 4. Se a aba de catálogo do admin estiver aberta, sincroniza os dados do admin automaticamente
+                    const adminCatalogTab = document.getElementById('admin-subtab-catalog');
+                    if (adminCatalogTab && adminCatalogTab.style.display !== 'none' && typeof loadAdminCatalog === 'function' && adminToken) {
+                        loadAdminCatalog();
+                    }
+                } catch (e) {}
             }
 
             let catalogFilters = {
@@ -16789,8 +16911,12 @@
                     const heroBox = document.getElementById('hero-billboard-container');
                     const railsBox = document.getElementById('netflix-rails-container');
                     const gridLayout = document.getElementById('catalog-layout-grid');
+                    const homeAdBox = document.getElementById('bf-home-bottom-ad');
+                    const homeNativeBox = document.getElementById('bf-native-home-wrapper');
                     if (heroBox) heroBox.style.display = 'none';
                     if (railsBox) railsBox.style.display = 'none';
+                    if (homeAdBox) homeAdBox.style.display = 'none';
+                    if (homeNativeBox) homeNativeBox.style.display = 'none';
                     if (gridLayout) gridLayout.style.display = 'flex';
 
                     // Busca global: não filtra por categoria, mostra todos os tipos
@@ -23733,6 +23859,14 @@
                     admTerminalDisconnect();
                 }
 
+                // Gerencia sincronização da fila de remoção e auto-resync do catálogo
+                if (subTabId === 'catalog') {
+                    startRemovalQueuePolling();
+                } else {
+                    stopRemovalQueuePolling();
+                    stopCatalogAutoSync();
+                }
+
                 if (subTabId === 'overview') loadAdminStats();
                 else if (subTabId === 'queue') loadAdminQueue();
                 else if (subTabId === 'scheduler') loadAdminScheduler();
@@ -25458,6 +25592,70 @@
                 }
             }
 
+            let adminRemovalPollingTimer = null;
+            let adminCatalogPollingTimer = null;
+            let adminCatalogLastVersion = null;
+
+            function startRemovalQueuePolling() {
+                if (adminRemovalPollingTimer) clearInterval(adminRemovalPollingTimer);
+                loadRemovalQueueStats();
+                adminRemovalPollingTimer = setInterval(() => {
+                    if (!document.hidden && adminToken) {
+                        const content = document.getElementById('admin-subtab-catalog');
+                        if (content && content.style.display !== 'none') {
+                            loadRemovalQueueStats();
+                        }
+                    }
+                }, 3500);
+            }
+
+            function startCatalogAutoSync() {
+                if (adminCatalogPollingTimer) clearInterval(adminCatalogPollingTimer);
+                adminCatalogPollingTimer = setInterval(async () => {
+                    if (document.hidden || !adminToken) return;
+                    const content = document.getElementById('admin-subtab-catalog');
+                    if (!content || content.style.display === 'none') return;
+                    try {
+                        const r = await fetch('/api/catalogo/version', { headers: getAuthHeaders() });
+                        if (!r.ok) return;
+                        const { version } = await r.json();
+                        if (version && adminCatalogLastVersion !== null && String(version) !== String(adminCatalogLastVersion)) {
+                            console.log('[AdminCatalog] Vers\u00e3o alterada, recarregando cat\u00e1logo automaticamente...');
+                            adminCatalogLastVersion = String(version);
+                            await loadAdminCatalogSilent();
+                        } else if (adminCatalogLastVersion === null) {
+                            adminCatalogLastVersion = String(version);
+                        }
+                    } catch (_) {}
+                }, 30000); // Verifica a cada 30s
+            }
+
+            async function loadAdminCatalogSilent() {
+                if (!adminToken) return;
+                try {
+                    const res = await fetch('/api/admin/catalogo', { headers: getAuthHeaders() });
+                    if (!res.ok) return;
+                    const newData = await res.json();
+                    adminCatalogData = newData;
+                    renderAdminCatalog();
+                    if (currentModalSerieId) renderAdminSerieModalContent();
+                } catch (_) {}
+            }
+
+            function stopRemovalQueuePolling() {
+                if (adminRemovalPollingTimer) {
+                    clearInterval(adminRemovalPollingTimer);
+                    adminRemovalPollingTimer = null;
+                }
+            }
+
+            function stopCatalogAutoSync() {
+                if (adminCatalogPollingTimer) {
+                    clearInterval(adminCatalogPollingTimer);
+                    adminCatalogPollingTimer = null;
+                }
+            }
+
             async function loadRemovalQueueStats() {
                 try {
                     const res = await fetch('/api/admin/remocoes/stats', { headers: getAuthHeaders() });
@@ -25496,29 +25694,167 @@
 
             async function loadAdminCatalog() {
                 if (!adminToken) return;
-                loadRemovalQueueStats();
-                const tbody = document.getElementById('admin-catalog-tbody');
-                if (tbody && (!adminCatalogData?.filmes?.length && !adminCatalogData?.series?.length)) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>Carregando catálogo detalhado...</td></tr>';
+                startRemovalQueuePolling();
+                startCatalogAutoSync();
+                adminCatalogLastVersion = null; // reseta versão para detectar mudanças futuras
+                const container = document.getElementById('admin-catalog-cards-container') || document.getElementById('admin-catalog-tbody');
+                if (container && (!adminCatalogData?.filmes?.length && !adminCatalogData?.series?.length)) {
+                    container.innerHTML = '<div style="text-align: center; padding: 36px 16px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 12px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>Carregando catálogo detalhado...</div>';
                 }
                 try {
                     const res = await fetch('/api/admin/catalogo', { headers: getAuthHeaders() });
                     if (!res.ok) {
                         const err = await res.json().catch(() => ({}));
-                        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Falha ao obter dados do catálogo: ${err.error || res.statusText}</td></tr>`;
+                        if (container) container.innerHTML = `<div style="text-align: center; padding: 32px 16px; color: #ef4444;">⚠️ Falha ao obter dados do catálogo: ${err.error || res.statusText}</div>`;
                         return;
                     }
                     adminCatalogData = await res.json();
                     renderAdminCatalog();
+                    if (currentModalSerieId) {
+                        renderAdminSerieModalContent();
+                    }
                 } catch (e) {
                     console.error('Erro ao carregar catálogo:', e);
-                    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Erro de conexão com o servidor ao carregar catálogo.</td></tr>`;
+                    if (container) container.innerHTML = `<div style="text-align: center; padding: 32px 16px; color: #ef4444;">⚠️ Erro de conexão com o servidor ao carregar catálogo.</div>`;
                 }
             }
 
+            let currentModalSerieId = null;
+            let currentModalSeasonFilter = 'all';
+
+            function openAdminSerieEpisodesModal(serieId) {
+                const s = (adminCatalogData.series || []).find(item => String(item.id) === String(serieId));
+                if (!s) {
+                    showToast('Série não encontrada.', 'error');
+                    return;
+                }
+                currentModalSerieId = serieId;
+                currentModalSeasonFilter = 'all';
+
+                const modal = document.getElementById('admin-modal-serie-episodes');
+                const posterEl = document.getElementById('admin-modal-serie-poster');
+                const titleEl = document.getElementById('admin-modal-serie-title');
+                const subEl = document.getElementById('admin-modal-serie-subtitle');
+                const searchInput = document.getElementById('admin-modal-serie-search');
+
+                if (posterEl) posterEl.src = s.posterUrl || '/logo.jpg';
+                if (titleEl) titleEl.innerText = s.nome;
+
+                const totalEps = (s.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
+                if (subEl) subEl.innerHTML = `${(s.temporadas || []).length} temporadas • ${totalEps} episódios cadastrados • TMDB: ${s.tmdbId || '-'}`;
+                if (searchInput) searchInput.value = '';
+
+                renderAdminSerieModalContent();
+                if (modal) modal.classList.add('active');
+            }
+
+            function setAdminModalSeasonFilter(seasonNum) {
+                currentModalSeasonFilter = String(seasonNum);
+                document.querySelectorAll('.admin-serie-season-pill').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-season') === currentModalSeasonFilter);
+                });
+                renderAdminSerieModalContent();
+            }
+
+            function filterAdminSerieModalEpisodes() {
+                renderAdminSerieModalContent();
+            }
+
+            function renderAdminSerieModalContent() {
+                const s = (adminCatalogData.series || []).find(item => String(item.id) === String(currentModalSerieId));
+                const list = document.getElementById('admin-modal-serie-episodes-list');
+                const pillsContainer = document.getElementById('admin-modal-serie-season-pills');
+                const searchInput = document.getElementById('admin-modal-serie-search');
+                if (!s || !list) {
+                    if (!s && currentModalSerieId) {
+                        closeAdminModal('admin-modal-serie-episodes');
+                    }
+                    return;
+                }
+
+                const q = (searchInput?.value || '').toLowerCase().trim();
+
+                // Monta as pills de temporadas
+                if (pillsContainer) {
+                    let pillsHtml = `<button class="admin-serie-season-pill ${currentModalSeasonFilter === 'all' ? 'active' : ''}" data-season="all" onclick="setAdminModalSeasonFilter('all')">Todas</button>`;
+                    (s.temporadas || []).forEach(t => {
+                        const count = (t.episodios || []).length;
+                        pillsHtml += `<button class="admin-serie-season-pill ${currentModalSeasonFilter === String(t.numero) ? 'active' : ''}" data-season="${t.numero}" onclick="setAdminModalSeasonFilter('${t.numero}')">T${t.numero} (${count})</button>`;
+                    });
+                    pillsContainer.innerHTML = pillsHtml;
+                }
+
+                let episodesToShow = [];
+                (s.temporadas || []).forEach(t => {
+                    if (currentModalSeasonFilter !== 'all' && String(t.numero) !== currentModalSeasonFilter) return;
+                    (t.episodios || []).forEach(e => {
+                        if (q) {
+                            const nameMatch = (e.nome || '').toLowerCase().includes(q);
+                            const numMatch = `t${t.numero}e${e.numero}`.includes(q) || `e${e.numero}` === q || String(e.numero) === q;
+                            const idMatch = String(e.id) === q || String(e.messageId) === q;
+                            if (!nameMatch && !numMatch && !idMatch) return;
+                        }
+                        episodesToShow.push({ ...e, temporadaNumero: t.numero });
+                    });
+                });
+
+                if (episodesToShow.length === 0) {
+                    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 24px;">Nenhum episódio localizado com os filtros selecionados.</div>';
+                    return;
+                }
+
+                list.innerHTML = episodesToShow.map(e => {
+                    const epDub = !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId);
+                    const epLeg = !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId);
+                    const epAudBadge = (epDub && epLeg) ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">Dual (Dub+Leg)</span>' : (epDub ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">🔊 Dublado</span>' : (epLeg ? '<span class="badge-processing" style="font-size:10px; padding:2px 6px;">💬 Legendado</span>' : ''));
+
+                    let epRebaixarBtns = '';
+                    if (epDub && epLeg) {
+                        epRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar apenas Dublado">
+                                🔄 Dub
+                            </button>
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar apenas Legendado">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else if (epLeg && !epDub) {
+                        epRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar Legendado">
+                                🔄 Leg
+                            </button>
+                        `;
+                    } else {
+                        epRebaixarBtns = `
+                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar Dublado">
+                                🔄 Dub
+                            </button>
+                        `;
+                    }
+
+                    return `
+                        <div class="admin-modal-episode-row">
+                            <div style="display:flex; align-items:center; gap:8px; overflow:hidden; flex:1; min-width:240px; flex-wrap:wrap;">
+                                <strong style="color:#fbbf24; font-size:13px; white-space:nowrap;">T${e.temporadaNumero}E${e.numero}</strong>
+                                <span style="color:#fff; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${e.nome || `Episódio ${e.numero}`}</span>
+                                ${epAudBadge}
+                                <span class="admin-catalog-meta-pill" style="color:#94a3b8;" title="Data de inclusão do episódio">🕒 ${formatCatalogDate(e.dataAdicionado || e.createdAt)}</span>
+                                <span style="font-size:11px; color:var(--text-muted); white-space:nowrap;">(Msg: ${e.messageId || '-'})</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                                ${epRebaixarBtns}
+                                <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
             function renderAdminCatalog() {
-                const tbody = document.getElementById('admin-catalog-tbody');
-                if (!tbody) return;
+                const container = document.getElementById('admin-catalog-cards-container') || document.getElementById('admin-catalog-tbody');
+                if (!container) return;
 
                 const searchEl = document.getElementById('admin-catalog-search');
                 if (searchEl && searchEl.value.trim().toLowerCase() === 'admin') {
@@ -25530,9 +25866,246 @@
                 const audioFilter = document.getElementById('admin-catalog-audio-filter')?.value || 'all';
                 const dateFilter = document.getElementById('admin-catalog-date-filter')?.value || 'all';
 
+                // SE O USUÁRIO FILTROU POR DATA: Exibe adições detalhadas por episódio e filme!
+                if (dateFilter !== 'all') {
+                    renderAdminCatalogRecentAdditions(container, { q, typeFilter, statusFilter, audioFilter, dateFilter });
+                    return;
+                }
+
+                // CASO CONTRÁRIO (Todas as datas): Exibe catálogo agrupado em cards fluidos
+                renderAdminCatalogGroupedCards(container, { q, typeFilter, statusFilter, audioFilter });
+            }
+
+            function renderAdminCatalogRecentAdditions(container, { q, typeFilter, statusFilter, audioFilter, dateFilter }) {
+                const now = new Date();
+                let cutoff = new Date(0);
+                let labelPeriodo = 'Período Selecionado';
+                if (dateFilter === 'today') {
+                    cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    labelPeriodo = 'Adicionados Hoje';
+                } else if (dateFilter === 'yesterday_today') {
+                    cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                    labelPeriodo = 'Ontem e Hoje';
+                } else if (dateFilter === '7days') {
+                    cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    labelPeriodo = 'Últimos 7 dias';
+                } else if (dateFilter === '30days') {
+                    cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    labelPeriodo = 'Últimos 30 dias';
+                }
+
+                const additions = [];
+
+                // 1. Filmes adicionados no período
+                (adminCatalogData.filmes || []).forEach(f => {
+                    const fDate = f.dataAdicionado || f.createdAt;
+                    const fTime = fDate ? new Date(fDate).getTime() : 0;
+                    if (fTime >= cutoff.getTime()) {
+                        additions.push({
+                            kind: 'filme',
+                            id: f.id,
+                            nome: f.nome,
+                            nomeOriginal: f.nomeOriginal,
+                            poster: f.posterUrl || '/logo.jpg',
+                            ano: f.ano || '2026',
+                            qualidade: f.qualidade || '1080p',
+                            dataAdicionado: fDate,
+                            timestamp: fTime,
+                            isAnime: !!f.isAnime,
+                            isDorama: !!f.isDorama,
+                            isDublado: !!(f.isDublado || f.versoes?.dublado),
+                            isLegendado: !!(f.isLegendado || f.versoes?.legendado),
+                            versoes: f.versoes || {},
+                            messageId: f.messageId || f.versoes?.dublado?.messageId || f.versoes?.legendado?.messageId || null,
+                            hasTelegramLink: !!f.hasTelegramLink
+                        });
+                    }
+                });
+
+                // 2. Episódios específicos adicionados no período
+                (adminCatalogData.series || []).forEach(s => {
+                    (s.temporadas || []).forEach(t => {
+                        (t.episodios || []).forEach(e => {
+                            const epDate = e.dataAdicionado || e.createdAt;
+                            const epTime = epDate ? new Date(epDate).getTime() : 0;
+                            if (epTime >= cutoff.getTime()) {
+                                additions.push({
+                                    kind: 'episodio',
+                                    id: e.id || e.messageId,
+                                    serieId: s.id,
+                                    serieNome: s.nome,
+                                    temporadaNum: t.numero,
+                                    episodioNum: e.numero,
+                                    episodioNome: e.nome || `Episódio ${e.numero}`,
+                                    poster: s.posterUrl || '/logo.jpg',
+                                    ano: s.ano || '2026',
+                                    qualidade: e.qualidade || s.qualidade || '1080p',
+                                    dataAdicionado: epDate,
+                                    timestamp: epTime,
+                                    isAnime: !!s.isAnime,
+                                    isDorama: !!s.isDorama,
+                                    isMicrodrama: !!s.isMicrodrama,
+                                    isDublado: !!(e.isDublado || e.versoes?.dublado),
+                                    isLegendado: !!(e.isLegendado || e.versoes?.legendado),
+                                    versoes: e.versoes || {},
+                                    messageId: e.messageId || e.versoes?.dublado?.messageId || e.versoes?.legendado?.messageId || null,
+                                    hasTelegramLink: !!e.hasTelegramLink
+                                });
+                            }
+                        });
+                    });
+                });
+
+                // Filtros adicionais
+                let filtered = additions;
+
+                if (typeFilter !== 'all') {
+                    if (typeFilter === 'filme') {
+                        filtered = filtered.filter(i => i.kind === 'filme' && !i.isAnime);
+                    } else if (typeFilter === 'serie') {
+                        filtered = filtered.filter(i => i.kind === 'episodio' && !i.isAnime && !i.isDorama && !i.isMicrodrama);
+                    } else if (typeFilter === 'anime') {
+                        filtered = filtered.filter(i => i.isAnime);
+                    } else if (typeFilter === 'dorama') {
+                        filtered = filtered.filter(i => i.isDorama);
+                    } else if (typeFilter === 'microdrama') {
+                        filtered = filtered.filter(i => i.isMicrodrama);
+                    }
+                }
+
+                if (audioFilter !== 'all') {
+                    if (audioFilter === 'dublado') {
+                        filtered = filtered.filter(i => i.isDublado);
+                    } else if (audioFilter === 'legendado') {
+                        filtered = filtered.filter(i => i.isLegendado);
+                    }
+                }
+
+                if (q) {
+                    filtered = filtered.filter(i => {
+                        if (i.kind === 'filme') {
+                            return (i.nome || '').toLowerCase().includes(q) || String(i.id) === q;
+                        } else {
+                            return (i.serieNome || '').toLowerCase().includes(q) ||
+                                (i.episodioNome || '').toLowerCase().includes(q) ||
+                                `t${i.temporadaNum}e${i.episodioNum}`.toLowerCase().includes(q) ||
+                                String(i.id) === q;
+                        }
+                    });
+                }
+
+                // Ordena pelo timestamp mais recente
+                filtered.sort((a, b) => b.timestamp - a.timestamp);
+
+                if (filtered.length === 0) {
+                    container.innerHTML = `
+                        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; font-size: 13px; color: #93c5fd; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                            <span>📅 <strong>${labelPeriodo}</strong>: Nenhum episódio ou filme novo adicionado neste período.</span>
+                            <button class="btn-action btn-icon-compact" style="font-size: 11px;" onclick="document.getElementById('admin-catalog-date-filter').value='all'; renderAdminCatalog();">Ver Catálogo Completo</button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px; padding: 12px 18px; margin-bottom: 12px; font-size: 13px; color: #93c5fd; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                        <span>📅 <strong>${labelPeriodo}</strong>: Encontrados <strong>${filtered.length}</strong> itens/episódios incluídos no catálogo recentemente.</span>
+                        <span style="font-size: 11px; color: #cbd5e1;">Ordenado pelo mais recente</span>
+                    </div>
+                `;
+
+                html += filtered.map(item => {
+                    const poster = item.poster || '/logo.jpg';
+                    const hasDub = item.isDublado;
+                    const hasLeg = item.isLegendado;
+                    const versaoBadge = (hasDub && hasLeg)
+                        ? '<span class="badge-completed">Dual (Dub+Leg)</span>'
+                        : (hasDub
+                            ? '<span class="badge-completed">🔊 Dublado</span>'
+                            : (hasLeg ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:11px;">Nacional</span>'));
+
+                    const tgBadge = item.hasTelegramLink || item.messageId
+                        ? `<span class="admin-catalog-meta-pill" style="color:#10b981;">📱 Msg #${item.messageId || 'OK'}</span>`
+                        : `<span class="admin-catalog-meta-pill" style="color:#f59e0b;">⚠️ Sem TG</span>`;
+
+                    let rebaixarBtns = '';
+                    if (item.kind === 'filme') {
+                        if (hasDub && hasLeg) {
+                            rebaixarBtns = `
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${item.id}', 'filme', true, 'dublado')" title="Rebaixar apenas Dublado">🔄 Dub</button>
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${item.id}', 'filme', true, 'legendado')" title="Rebaixar apenas Legendado">🔄 Leg</button>
+                            `;
+                        } else if (hasLeg && !hasDub) {
+                            rebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${item.id}', 'filme', true, 'legendado')" title="Rebaixar Legendado">🔄 Leg</button>`;
+                        } else {
+                            rebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${item.id}', 'filme', true, 'dublado')" title="Rebaixar Dublado">🔄 Dub</button>`;
+                        }
+                    } else {
+                        if (hasDub && hasLeg) {
+                            rebaixarBtns = `
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${item.id}', true, 'dublado')" title="Rebaixar apenas Dublado">🔄 Dub</button>
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${item.id}', true, 'legendado')" title="Rebaixar apenas Legendado">🔄 Leg</button>
+                            `;
+                        } else if (hasLeg && !hasDub) {
+                            rebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${item.id}', true, 'legendado')" title="Rebaixar Legendado">🔄 Leg</button>`;
+                        } else {
+                            rebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${item.id}', true, 'dublado')" title="Rebaixar Dublado">🔄 Dub</button>`;
+                        }
+                    }
+
+                    const deleteBtn = item.kind === 'filme'
+                        ? `<button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${item.id}', 'filme', false)" title="Excluir Filme Completo">🗑️</button>`
+                        : `<button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${item.id}', false)" title="Excluir Apenas Este Episódio">🗑️</button>`;
+
+                    const openSerieBtn = item.kind === 'episodio'
+                        ? `<button class="btn-action btn-action-primary btn-icon-compact" onclick="openAdminSerieEpisodesModal('${item.serieId}')" title="Ver todos os episódios desta série">📂 Ver Série</button>`
+                        : '';
+
+                    const titleHtml = item.kind === 'episodio'
+                        ? `<span style="color:#60a5fa; font-weight:700;">${item.serieNome}</span> <span style="color:var(--text-muted); font-size:12px;">•</span> <span style="background:rgba(59,130,246,0.18); color:#93c5fd; padding:1px 6px; border-radius:5px; font-weight:800; font-size:12px; border:1px solid rgba(59,130,246,0.35);">T${item.temporadaNum}E${item.episodioNum}</span> <span style="color:#fff; font-weight:800;">${item.episodioNome}</span>`
+                        : `<span style="color:#fff; font-weight:800;">${item.nome}</span> <span style="color:var(--text-muted); font-size:12px;">(${item.ano})</span>`;
+
+                    const tipoBadge = item.kind === 'episodio'
+                        ? `<span class="badge-processing" style="font-size:11px; padding:2px 7px;">📺 Episódio</span>`
+                        : `<span class="badge-completed" style="font-size:11px; padding:2px 7px;">🎬 Filme</span>`;
+
+                    return `
+                        <div class="admin-catalog-card">
+                            <div class="admin-catalog-card-header">
+                                <div class="admin-catalog-card-media">
+                                    <img src="${poster}" class="admin-catalog-card-poster" onerror="this.src='/logo.jpg'">
+                                    <div class="admin-catalog-card-title-box">
+                                        <div class="admin-catalog-card-title">
+                                            ${titleHtml}
+                                        </div>
+                                        <div class="admin-catalog-card-sub">
+                                            ${item.kind === 'episodio' ? `Série ID: ${item.serieId} • Ep ID: ${item.id}` : `ID: ${item.id} • ${item.nomeOriginal || item.nome}`}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="admin-catalog-card-actions">
+                                    ${openSerieBtn}
+                                    ${rebaixarBtns}
+                                    ${deleteBtn}
+                                </div>
+                            </div>
+                            <div class="admin-catalog-card-meta">
+                                ${tipoBadge}
+                                <div>${versaoBadge}</div>
+                                <span class="admin-catalog-meta-pill">⚡ ${item.qualidade}</span>
+                                <span class="admin-catalog-meta-pill" style="color:#34d399; font-weight:700;" title="Data exata de inclusão">🕒 ${formatCatalogDate(item.dataAdicionado)}</span>
+                                ${tgBadge}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = html;
+            }
+
+            function renderAdminCatalogGroupedCards(container, { q, typeFilter, statusFilter, audioFilter }) {
                 const filmes = (adminCatalogData.filmes || []).map(f => ({ ...f, itemType: 'filme' }));
                 const series = (adminCatalogData.series || []).map(s => ({ ...s, itemType: 'serie' }));
-
                 let items = [...filmes, ...series];
 
                 if (typeFilter !== 'all') {
@@ -25590,37 +26163,7 @@
                     });
                 }
 
-                if (dateFilter !== 'all') {
-                    const now = new Date();
-                    let cutoff = new Date(0);
-                    if (dateFilter === 'today') {
-                        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                    } else if (dateFilter === 'yesterday_today') {
-                        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-                    } else if (dateFilter === '7days') {
-                        cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    } else if (dateFilter === '30days') {
-                        cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    }
-
-                    items = items.filter(i => {
-                        const itemDate = i.dataAdicionado || i.createdAt;
-                        const itemTime = itemDate ? new Date(itemDate).getTime() : 0;
-                        if (itemTime >= cutoff.getTime()) return true;
-
-                        if (i.itemType === 'serie') {
-                            return (i.temporadas || []).some(t =>
-                                (t.episodios || []).some(e => {
-                                    const epDate = e.dataAdicionado || e.createdAt;
-                                    return epDate && new Date(epDate).getTime() >= cutoff.getTime();
-                                })
-                            );
-                        }
-                        return false;
-                    });
-                }
-
-                // Ordenar por data mais recente de adição (considerando episódios recentes)
+                // Ordena por data mais recente
                 items.sort((a, b) => {
                     const getLatestTime = (item) => {
                         let maxT = item.dataAdicionado || item.createdAt ? new Date(item.dataAdicionado || item.createdAt).getTime() : 0;
@@ -25638,42 +26181,18 @@
                 });
 
                 if (items.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">Nenhum título localizado com os filtros selecionados.</td></tr>';
+                    container.innerHTML = '<div style="text-align: center; padding: 36px 16px; color: var(--text-muted);">Nenhum título localizado com os filtros selecionados.</div>';
                     return;
                 }
 
-                let html = '';
-                items.forEach(i => {
+                container.innerHTML = items.map(i => {
                     const poster = i.posterUrl || '/logo.jpg';
                     const catBadge = i.isAnime ? '⛩️ Anime' : (i.isDorama ? '🌸 Dorama' : (i.isMicrodrama ? '⚡ Mini Série' : (i.itemType === 'filme' ? '🎬 Filme' : '📺 Série')));
 
-                    let audPill = '';
-                    if (i.itemType === 'serie') {
-                        const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
-                        const epsComDub = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length, 0);
-                        const epsComLeg = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length, 0);
-
-                        if (totalEps > 0 && epsComDub === totalEps && epsComLeg === totalEps) {
-                            audPill = '<span class="badge-completed">Dual (Dub+Leg 100%)</span>';
-                        } else if (totalEps > 0 && epsComDub === totalEps) {
-                            audPill = '<span class="badge-completed">🔊 Dublado (100%)</span>';
-                        } else if (totalEps > 0 && epsComLeg === totalEps && epsComDub === 0) {
-                            audPill = '<span class="badge-processing">💬 Legendado (100%)</span>';
-                        } else if (epsComDub > 0 && epsComLeg > 0) {
-                            audPill = `<span style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Dual Misto (Dub ${epsComDub}/${totalEps} • Leg ${epsComLeg}/${totalEps})</span>`;
-                        } else if (epsComDub > 0) {
-                            audPill = `<span style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Dub Parcial (${epsComDub}/${totalEps})</span>`;
-                        } else if (epsComLeg > 0) {
-                            audPill = `<span style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.4); font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600;">Leg Parcial (${epsComLeg}/${totalEps})</span>`;
-                        } else {
-                            audPill = '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>';
-                        }
-                    } else {
-                        audPill = (i.isDublado && i.isLegendado) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (i.isDublado ? '<span class="badge-completed">🔊 Dublado</span>' : (i.isLegendado ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:12px;">Nacional</span>'));
-                    }
-
                     if (i.itemType === 'filme') {
-                        const tgBadge = i.hasTelegramLink ? `<span style="color:#10b981; font-weight:700;">📱 Msg #${i.messageId || 'OK'}</span>` : `<span style="color:#f59e0b; font-weight:700;">⚠️ Sem TG</span>`;
+                        const tgBadge = i.hasTelegramLink || i.messageId
+                            ? `<span class="admin-catalog-meta-pill" style="color:#10b981;">📱 Msg #${i.messageId || 'OK'}</span>`
+                            : `<span class="admin-catalog-meta-pill" style="color:#f59e0b;">⚠️ Sem TG</span>`;
 
                         const hasDub = !!i.isDublado || !!(i.versoes?.dublado?.messageId || i.versoes?.dublado?.fileId);
                         const hasLeg = !!i.isLegendado || !!(i.versoes?.legendado?.messageId || i.versoes?.legendado?.fileId);
@@ -25681,246 +26200,150 @@
                         let rebaixarButtons = '';
                         if (hasDub && hasLeg) {
                             rebaixarButtons = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar apenas Dublado (mantém o legendado)">
-                                🔄 Dub
-                            </button>
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar apenas Legendado (mantém o dublado)">
-                                🔄 Leg
-                            </button>
-                        `;
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar apenas Dublado">🔄 Dub</button>
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar apenas Legendado">🔄 Leg</button>
+                            `;
                         } else if (hasLeg && !hasDub) {
-                            rebaixarButtons = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar Legendado">
-                                🔄 Leg
-                            </button>
-                        `;
+                            rebaixarButtons = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'legendado')" title="Rebaixar Legendado">🔄 Leg</button>`;
                         } else {
-                            rebaixarButtons = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar Dublado">
-                                🔄 Dub
-                            </button>
-                        `;
+                            rebaixarButtons = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', true, 'dublado')" title="Rebaixar Dublado">🔄 Dub</button>`;
                         }
 
-                        html += `
-                        <tr class="catalog-item-row" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                            <td class="col-media">
-                                <div style="display:flex; align-items:center; gap:10px;">
-                                    <img src="${poster}" style="width:38px; height:52px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" onerror="this.src='/logo.jpg'">
-                                    <div style="min-width:0;">
-                                        <strong style="color:#fff; font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nome}</strong>
-                                        <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
+                        const audPill = (hasDub && hasLeg) ? '<span class="badge-completed">Dual (Dub+Leg)</span>' : (hasDub ? '<span class="badge-completed">🔊 Dublado</span>' : (hasLeg ? '<span class="badge-processing">💬 Legendado</span>' : '<span style="color:var(--text-muted); font-size:11px;">Nacional</span>'));
+
+                        return `
+                            <div class="admin-catalog-card">
+                                <div class="admin-catalog-card-header">
+                                    <div class="admin-catalog-card-media">
+                                        <img src="${poster}" class="admin-catalog-card-poster" onerror="this.src='/logo.jpg'">
+                                        <div class="admin-catalog-card-title-box">
+                                            <div class="admin-catalog-card-title">
+                                                <span>${i.nome}</span>
+                                                <span style="font-size:11px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; color:#cbd5e1;">${catBadge}</span>
+                                                <span style="font-size:11px; color:var(--text-muted);">(${i.ano || '2026'})</span>
+                                            </div>
+                                            <div class="admin-catalog-card-sub">
+                                                ID: ${i.id} • ${i.nomeOriginal || i.nome} • TMDB: ${i.tmdbId || '-'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="admin-catalog-card-actions">
+                                        ${rebaixarButtons}
+                                        <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo">
+                                            🗑️
+                                        </button>
                                     </div>
                                 </div>
-                            </td>
-                            <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
-                            <td class="col-date"><span style="font-size:12px; color:var(--text-muted); white-space:nowrap;" title="Data de inclusão">${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span></td>
-                            <td class="col-struct"><span style="font-size:12px; color:var(--text-muted);">1 Filme (${i.qualidade || '1080p'})</span></td>
-                            <td class="col-audio">
-                                <div>${audPill}</div>
-                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${i.qualidade || '1080p'}</div>
-                            </td>
-                            <td class="col-tg"><span style="font-size:12px;">${tgBadge}</span></td>
-                            <td class="col-actions" style="text-align: right; white-space: nowrap;">
-                                <div class="actions-group" style="display:inline-flex; align-items:center; gap:4px;">
-                                    ${rebaixarButtons}
-                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo Definitivo">
-                                        🗑️
-                                    </button>
+                                <div class="admin-catalog-card-meta">
+                                    <div>${audPill}</div>
+                                    <span class="admin-catalog-meta-pill">⚡ ${i.qualidade || '1080p'}</span>
+                                    <span class="admin-catalog-meta-pill">🕒 ${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span>
+                                    ${tgBadge}
                                 </div>
-                            </td>
-                        </tr>
-                    `;
+                            </div>
+                        `;
                     } else {
-                        // SÉRIE com acordeão de temporadas e episódios
+                        // SÉRIE
                         const totalEps = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).length, 0);
                         const totalEpsEsperados = (i.temporadas || []).reduce((acc, t) => acc + (t.expectedEpisodios || t.episodios?.length || 0), 0);
                         const missingCount = (i.temporadas || []).reduce((acc, t) => acc + (t.episodiosFaltantes?.length || 0), 0);
                         const missingBadge = missingCount > 0
-                            ? `<span style="color: #ef4444; font-weight: 700;">⚠️ Faltam ${missingCount} ep${missingCount > 1 ? 's' : ''} (${totalEps}/${totalEpsEsperados > 0 ? totalEpsEsperados : '?'})</span>`
-                            : `<span style="color: #10b981; font-weight: 700;">✅ Completo (${totalEps} eps)</span>`;
-                        const qual = i.qualidade || '1080p Full HD';
+                            ? `<span style="color: #ef4444; font-weight: 700;">⚠️ Faltam ${missingCount} ep${missingCount > 1 ? 's' : ''}</span>`
+                            : `<span style="color: #10b981; font-weight: 700;">✅ Completo</span>`;
 
                         const epsComTelegram = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.hasTelegramLink).length, 0);
                         const tgBadge = totalEps > 0 && epsComTelegram === totalEps
-                            ? `<span style="color:#10b981; font-weight:700;">📱 ${epsComTelegram}/${totalEps} OK</span>`
+                            ? `<span class="admin-catalog-meta-pill" style="color:#10b981;">📱 ${epsComTelegram}/${totalEps} OK</span>`
                             : (epsComTelegram > 0
-                                ? `<span style="color:#f59e0b; font-weight:700;">⚠️ ${epsComTelegram}/${totalEps} TG</span>`
-                                : `<span style="color:#ef4444; font-weight:700;">❌ Sem TG</span>`);
+                                ? `<span class="admin-catalog-meta-pill" style="color:#f59e0b;">⚠️ ${epsComTelegram}/${totalEps} TG</span>`
+                                : `<span class="admin-catalog-meta-pill" style="color:#ef4444;">❌ Sem TG</span>`);
 
                         const isRegraAtiva = i.exigirTemporadaCompleta !== false;
                         const regraBtn = `
-                        <button class="btn-action btn-icon-compact" 
-                                style="${isRegraAtiva ? 'background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #34d399; font-weight: 700; font-size: 11px; padding: 4px 8px;' : 'background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171; font-weight: 700; font-size: 11px; padding: 4px 8px;'}"
+                            <button class="btn-action btn-icon-compact" 
+                                style="${isRegraAtiva ? 'background: rgba(16, 185, 129, 0.18); border-color: rgba(16, 185, 129, 0.45); color: #34d399; font-weight: 700; font-size: 11px; padding: 5px 8px;' : 'background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171; font-weight: 700; font-size: 11px; padding: 5px 8px;'}"
                                 onclick="handleToggleRegraTemporada('${i.id}', ${!isRegraAtiva})" 
-                                title="${isRegraAtiva ? 'Regra ATIVA: Temporadas incompletas naquele idioma são ocultadas no site. Clique para liberar exibição parcial.' : 'Regra DESATIVADA: Exibe episódios parciais mesmo se incompletos. Clique para ativar a regra de temporadas 100% completas.'}">
-                            ${isRegraAtiva ? '🔒 100%' : '🔓 Livre'}
-                        </button>
-                    `;
-
-                        const accordionId = `serie-eps-${i.id}`;
-
-                        const epsListHtml = (i.temporadas || []).map(t => {
-                            const expectedLabel = t.expectedEpisodios ? `${(t.episodios || []).length}/${t.expectedEpisodios}` : `${(t.episodios || []).length}`;
-                            const dubStatus = t.totalDublados !== undefined ? (t.isDubladoCompleto ? (t.isLongRunningDubbed ? '<span style="color:#10b981; font-weight:700; font-size:11px;">🔊 Dub (≥10 eps Progressivo)</span>' : '<span style="color:#10b981; font-weight:700; font-size:11px;">🔊 Dub 100%</span>') : `<span style="color:#f59e0b; font-weight:700; font-size:11px;">🔊 Dub ${t.totalDublados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
-                            const legStatus = t.totalLegendados !== undefined ? (t.isLegendadoCompleto ? (t.isLongRunningSubtitled ? '<span style="color:#10b981; font-weight:700; font-size:11px;">💬 Leg (≥10 eps Progressivo)</span>' : '<span style="color:#10b981; font-weight:700; font-size:11px;">💬 Leg 100%</span>') : `<span style="color:#38bdf8; font-weight:700; font-size:11px;">💬 Leg ${t.totalLegendados}/${t.expectedEpisodios || (t.episodios || []).length}</span>`) : '';
-                            const lancamentoBadge = i.emLancamento ? '<span style="color:#38bdf8; font-weight:800; font-size:10px; background:rgba(56,189,248,0.18); padding:2px 6px; border-radius:4px; border:1px solid rgba(56,189,248,0.4);">EM LANÇAMENTO</span>' : '';
-                            const ocultoBadge = (!i.emLancamento && isRegraAtiva && !t.isDubladoCompleto && !t.isLegendadoCompleto) ? '<span style="color:#ef4444; font-weight:800; font-size:10px; background:rgba(239,68,68,0.18); padding:2px 6px; border-radius:4px; border:1px solid rgba(239,68,68,0.4);">OCULTA NO SITE (Incompleta)</span>' : '';
-
-                            return `
-                            <div style="margin-bottom: 10px;">
-                                <div style="font-weight: 800; font-size: 12px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                        <span>Temporada ${t.numero} (${expectedLabel} episódios${t.episodiosFaltantes?.length > 0 ? ` — <span style="color:#ef4444">${t.episodiosFaltantes.length} faltando</span>` : ''})</span>
-                                        ${dubStatus}
-                                        ${legStatus}
-                                        ${lancamentoBadge}
-                                        ${ocultoBadge}
-                                    </div>
-                                    ${t.episodiosFaltantes?.length > 0 ? `<span style="color: #ef4444; font-size: 11px;">Eps faltantes: ${t.episodiosFaltantes.join(', ')}</span>` : ''}
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    ${(t.episodios || []).map(e => {
-                                const epDub = !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId);
-                                const epLeg = !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId);
-                                const epAudBadge = (epDub && epLeg) ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">Dual</span>' : (epDub ? '<span class="badge-completed" style="font-size:10px; padding:2px 6px;">Dub</span>' : (epLeg ? '<span class="badge-processing" style="font-size:10px; padding:2px 6px;">Leg</span>' : ''));
-
-                                let epRebaixarBtns = '';
-                                if (epDub && epLeg) {
-                                    epRebaixarBtns = `
-                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar apenas Dublado">
-                                                    🔄 Dub
-                                                </button>
-                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar apenas Legendado">
-                                                    🔄 Leg
-                                                </button>
-                                            `;
-                                } else if (epLeg && !epDub) {
-                                    epRebaixarBtns = `
-                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'legendado')" title="Rebaixar Legendado">
-                                                    🔄 Leg
-                                                </button>
-                                            `;
-                                } else {
-                                    epRebaixarBtns = `
-                                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', true, 'dublado')" title="Rebaixar Dublado">
-                                                    🔄 Dub
-                                                </button>
-                                            `;
-                                }
-
-                                return `
-                                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 10px; font-size: 12px; gap:8px;">
-                                                <div style="display:flex; align-items:center; gap:8px; overflow:hidden; flex-wrap:wrap;">
-                                                    <strong style="white-space:nowrap;">T${t.numero}E${e.numero}</strong>
-                                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${e.nome || `Episódio ${e.numero}`}</span>
-                                                    ${epAudBadge}
-                                                    <span style="font-size: 11px; color: #94a3b8; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); white-space:nowrap;" title="Data de inclusão do episódio">🕒 ${formatCatalogDate(e.dataAdicionado || e.createdAt)}</span>
-                                                    <span style="font-size: 10px; color: var(--text-muted); white-space:nowrap;">(Msg: ${e.messageId || '-'})</span>
-                                                </div>
-                                                <div style="display: flex; gap: 4px; flex-shrink:0;">
-                                                    ${epRebaixarBtns}
-                                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
-                                                        🗑️
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        `;
-                            }).join('')}
-                                </div>
-                            </div>
+                                title="${isRegraAtiva ? 'Regra ATIVA: Temporadas incompletas são ocultadas. Clique para liberar exibição parcial.' : 'Regra DESATIVADA: Exibe parciais. Clique para exigir 100% completas.'}">
+                                ${isRegraAtiva ? '🔒 100%' : '🔓 Livre'}
+                            </button>
                         `;
-                        }).join('');
 
                         const sDub = !!i.isDublado;
                         const sLeg = !!i.isLegendado;
                         let serieRebaixarBtns = '';
                         if (sDub && sLeg) {
                             serieRebaixarBtns = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar todos os eps Dublados">
-                                🔄 Dub
-                            </button>
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar todos os eps Legendados">
-                                🔄 Leg
-                            </button>
-                        `;
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar todos os eps Dublados">🔄 Dub</button>
+                                <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar todos os eps Legendados">🔄 Leg</button>
+                            `;
                         } else if (sLeg && !sDub) {
-                            serieRebaixarBtns = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar série Legendada">
-                                🔄 Leg
-                            </button>
-                        `;
+                            serieRebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'legendado')" title="Rebaixar série Legendada">🔄 Leg</button>`;
                         } else {
-                            serieRebaixarBtns = `
-                            <button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar série Dublada">
-                                🔄 Dub
-                            </button>
-                        `;
+                            serieRebaixarBtns = `<button class="btn-action btn-action-rebaixar btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', true, 'dublado')" title="Rebaixar série Dublada">🔄 Dub</button>`;
                         }
 
-                        html += `
-                        <tr class="catalog-item-row" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                            <td class="col-media">
-                                <div style="display:flex; align-items:center; gap:10px;">
-                                    <img src="${poster}" style="width:38px; height:52px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" onerror="this.src='/logo.jpg'">
-                                    <div style="min-width:0;">
-                                        <strong style="color:#fff; font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nome}</strong>
-                                        <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px;">${i.nomeOriginal || i.nome} (${i.ano || '2026'}) • TMDB: ${i.tmdbId || '-'}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
-                            <td class="col-date"><span style="font-size:12px; color:var(--text-muted); white-space:nowrap;" title="Data de inclusão da série">${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span></td>
-                            <td class="col-struct">
-                                <div style="font-size:12px; font-weight:600; color:#fff;">${(i.temporadas || []).length} temp • ${totalEps} eps</div>
-                                <div style="font-size:11px; margin-top:2px;">${missingBadge}</div>
-                            </td>
-                            <td class="col-audio">
-                                <div>${audPill}</div>
-                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${qual}</div>
-                            </td>
-                            <td class="col-tg"><span style="font-size:12px;">${tgBadge}</span></td>
-                            <td class="col-actions" style="text-align: right; white-space: nowrap;">
-                                <div class="actions-group" style="display:inline-flex; align-items:center; gap:4px;">
-                                    ${regraBtn}
-                                    <button class="btn-action btn-action-primary btn-icon-compact" onclick="toggleSerieEpisodes('${accordionId}', this)" title="Ver episódios">
-                                        ▶ ${totalEps}
-                                    </button>
-                                    ${serieRebaixarBtns}
-                                    <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" title="Excluir Série Completa">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr id="${accordionId}" class="accordion-row" style="display: none;">
-                            <td colspan="7" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.25);">
-                                <div class="episodes-nested-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px; margin-top: 10px;">
-                                    <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-                                        <span>🎬 Episódios de "${i.nome}"</span>
-                                        <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">${totalEps} episódios no total</span>
-                                    </div>
-                                    ${epsListHtml || '<div style="color: var(--text-muted); font-size: 12px; padding: 8px;">Nenhum episódio cadastrado.</div>'}
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                    }
-                });
+                        const epsComDub = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isDublado || !!(e.versoes?.dublado?.messageId || e.versoes?.dublado?.fileId)).length, 0);
+                        const epsComLeg = (i.temporadas || []).reduce((acc, t) => acc + (t.episodios || []).filter(e => !!e.isLegendado || !!(e.versoes?.legendado?.messageId || e.versoes?.legendado?.fileId)).length, 0);
 
-                tbody.innerHTML = html;
+                        let audPill = '';
+                        if (totalEps > 0 && epsComDub === totalEps && epsComLeg === totalEps) {
+                            audPill = '<span class="badge-completed">Dual (100%)</span>';
+                        } else if (totalEps > 0 && epsComDub === totalEps) {
+                            audPill = '<span class="badge-completed">🔊 Dub (100%)</span>';
+                        } else if (totalEps > 0 && epsComLeg === totalEps && epsComDub === 0) {
+                            audPill = '<span class="badge-processing">💬 Leg (100%)</span>';
+                        } else if (epsComDub > 0 && epsComLeg > 0) {
+                            audPill = `<span class="admin-catalog-meta-pill" style="color:#fbbf24;">Dual Misto (Dub ${epsComDub}/${totalEps} • Leg ${epsComLeg}/${totalEps})</span>`;
+                        } else if (epsComDub > 0) {
+                            audPill = `<span class="admin-catalog-meta-pill" style="color:#fbbf24;">Dub (${epsComDub}/${totalEps})</span>`;
+                        } else if (epsComLeg > 0) {
+                            audPill = `<span class="admin-catalog-meta-pill" style="color:#60a5fa;">Leg (${epsComLeg}/${totalEps})</span>`;
+                        } else {
+                            audPill = '<span style="color:var(--text-muted); font-size:11px;">Nacional</span>';
+                        }
+
+                        return `
+                            <div class="admin-catalog-card">
+                                <div class="admin-catalog-card-header">
+                                    <div class="admin-catalog-card-media">
+                                        <img src="${poster}" class="admin-catalog-card-poster" onerror="this.src='/logo.jpg'">
+                                        <div class="admin-catalog-card-title-box">
+                                            <div class="admin-catalog-card-title">
+                                                <span>${i.nome}</span>
+                                                <span style="font-size:11px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; color:#cbd5e1;">${catBadge}</span>
+                                                <span style="font-size:11px; color:var(--text-muted);">(${i.ano || '2026'})</span>
+                                            </div>
+                                            <div class="admin-catalog-card-sub">
+                                                ID: ${i.id} • ${i.nomeOriginal || i.nome} • TMDB: ${i.tmdbId || '-'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="admin-catalog-card-actions">
+                                        <button class="btn-action btn-action-primary btn-icon-compact" onclick="openAdminSerieEpisodesModal('${i.id}')" title="Abrir gerenciador de episódios da série">
+                                            📋 Episódios (${totalEps})
+                                        </button>
+                                        ${regraBtn}
+                                        ${serieRebaixarBtns}
+                                        <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'serie', false)" title="Excluir Série Completa">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="admin-catalog-card-meta">
+                                    <span class="admin-catalog-meta-pill" style="color:#fff; font-weight:700;">📺 ${(i.temporadas || []).length} temp • ${totalEps} eps</span>
+                                    <div>${missingBadge}</div>
+                                    <div>${audPill}</div>
+                                    <span class="admin-catalog-meta-pill">🕒 ${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span>
+                                    ${tgBadge}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
             }
 
             function toggleSerieEpisodes(accordionId, btn) {
-                const el = document.getElementById(accordionId);
-                if (!el) return;
-                if (el.style.display === 'none') {
-                    el.style.display = window.innerWidth <= 768 ? 'block' : 'table-row';
-                    if (btn) btn.innerText = btn.innerText.replace('▶', '▼');
-                } else {
-                    el.style.display = 'none';
-                    if (btn) btn.innerText = btn.innerText.replace('▼', '▶');
-                }
+                // Mantido para compatibilidade retroativa
             }
 
             async function handleToggleRegraTemporada(serieId, newState) {
@@ -26094,6 +26517,9 @@
             function closeAdminModal(modalId) {
                 const modal = document.getElementById(modalId);
                 if (modal) modal.classList.remove('active');
+                if (modalId === 'admin-modal-serie-episodes') {
+                    currentModalSerieId = null;
+                }
             }
 
             function closeAdminModalOnClick(e, modalId) {
@@ -26688,7 +27114,7 @@
             }
 
             function closeRequestMediaModal(e) {
-                if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-close')) return;
+                if (e && !isSafeModalBackdropClick(e, 'request-media-modal')) return;
                 const modal = document.getElementById('request-media-modal');
                 if (modal) modal.style.display = 'none';
                 const dropdown = document.getElementById('req-tmdb-dropdown');

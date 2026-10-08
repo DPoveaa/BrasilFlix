@@ -3138,7 +3138,11 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
-                const effectiveSource = bestSource || job.bestSource || (job.audioPreference === 'legendado' || metadata.isDorama ? { isLegendado: true } : {});
+                // Considera idioma original: doramas, animes e obras em idioma asiático sem dublagem PT-BR são Legendadas por natureza
+                const origLangCode = (job.idiomaOriginal || job.originalLanguage || metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language || '').toLowerCase();
+                const isOriginallyAsian = ['ko', 'ja', 'zh', 'th', 'vi'].includes(origLangCode);
+                const isLegendadoJob = job.audioPreference === 'legendado' || metadata.isDorama || metadata.isAnime || isOriginallyAsian;
+                const effectiveSource = bestSource || job.bestSource || (isLegendadoJob ? { isLegendado: true } : {});
                 langInfo = VideoProcessor.validatePortugueseContent(videoInfo, path.basename(rawFilePath), effectiveSource, metadata);
 
                 if (!langInfo.isValid) {
@@ -3151,7 +3155,7 @@ class QueueManager extends EventEmitter {
 
                     // 1. Verifica se o torrent já trouxe legenda companion PT-BR na pasta (Companion Subs do pack)
                     const companion = await VideoProcessor.findCompanionSubtitle(rawFilePath, { season: job.season || 1, episode: job.episode || 1 });
-                    if (companion && companion.ptSrtPath && !VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata) && !jaPossuiLegendado && !job.isUpgrade) {
+                    if (companion && companion.ptSrtPath && !VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata) && !job.isUpgrade) {
                         console.log(`📦 [Companion Subs] Legenda local PT-BR encontrada no pacote para "${job.title}" T${job.season || 1}E${job.episode || 1}: ${path.basename(companion.ptSrtPath)}`);
                         langInfo = {
                             isValid: true,
@@ -3177,7 +3181,13 @@ class QueueManager extends EventEmitter {
                             } catch (e) { }
                         }
                         const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
-                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado && !jaPossuiLegendado && !job.isUpgrade) {
+                        // Permite fallback para Legendado via OpenSubtitles se:
+                        // - há legendas PT-BR disponíveis no OpenSubtitles, E
+                        // - não é um upgrade e não foi explicitamente marcado como apenas-dublado
+                        // NOTA: remove bloqueio por jaPossuiLegendado para doramas/animes/conteúdo asiático
+                        //       pois o episódio anterior pode ter falhado e ficado com estado incorreto
+                        const isBlockedUpgrade = job.isUpgrade && jaPossuiLegendado;
+                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado && !isBlockedUpgrade) {
                             console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${ptSubs.length} legenda(s) PT-BR encontradas no OpenSubtitles. Processando como Legendado (PT-BR)...`);
                             langInfo = {
                                 isValid: true,
@@ -3188,7 +3198,8 @@ class QueueManager extends EventEmitter {
                             };
                             job.audioPreference = 'legendado';
                         } else {
-                            console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (ou item já possui Legendado).`);
+                            const motivo = isBlockedUpgrade ? 'já possui Legendado e é upgrade' : 'sem legendas PT-BR no OpenSubtitles';
+                            console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (${motivo}).`);
                             await DownloaderManager.cleanupFile(rawFilePath);
                             if (job.type === 'serie') {
                                 this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
