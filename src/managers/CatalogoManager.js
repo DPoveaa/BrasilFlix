@@ -2407,6 +2407,7 @@ class CatalogoManager {
                 duracao: ep.duracao,
                 formato: ep.formato,
                 createdAt: ep.created_at,
+                dataAdicionado: ep.created_at,
                 hasTelegramLink: !!(primaryMsgId || primaryFileId)
             };
 
@@ -2536,6 +2537,7 @@ class CatalogoManager {
                 emLancamento: s.em_lancamento,
                 exigirTemporadaCompleta: s.exigir_temporada_completa !== false,
                 createdAt: s.created_at,
+                dataAdicionado: s.created_at,
                 updatedAt: s.updated_at,
                 temporadasMeta: tempMeta,
                 temporadas: temporadas
@@ -2573,6 +2575,7 @@ class CatalogoManager {
                 isAnime: f.is_anime,
                 isDorama: f.is_dorama,
                 createdAt: f.created_at,
+                dataAdicionado: f.created_at,
                 updatedAt: f.updated_at,
                 hasTelegramLink: !!(primaryMsgId || primaryFileId)
             };

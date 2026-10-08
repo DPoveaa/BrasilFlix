@@ -9448,6 +9448,7 @@
             }
 
             .admin-catalog-table tr.catalog-item-row td.col-cat,
+            .admin-catalog-table tr.catalog-item-row td.col-date,
             .admin-catalog-table tr.catalog-item-row td.col-struct,
             .admin-catalog-table tr.catalog-item-row td.col-audio,
             .admin-catalog-table tr.catalog-item-row td.col-tg {
@@ -9460,6 +9461,13 @@
 
             .admin-catalog-table tr.catalog-item-row td.col-cat::before {
                 content: 'Categoria:';
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .admin-catalog-table tr.catalog-item-row td.col-date::before {
+                content: 'Adicionado Em:';
                 color: var(--text-muted);
                 font-size: 11px;
                 font-weight: 700;
@@ -11751,6 +11759,24 @@
                                         </div>
                                     </div>
 
+                                    <!-- STATUS DA FILA PERSISTENTE DE REMOÇÃO / TELEGRAM -->
+                                    <div id="admin-removal-queue-status-card"
+                                        style="display: none; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px; padding: 10px 16px; margin-bottom: 14px; font-size: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span>🧹</span>
+                                            <span style="font-weight: 700; color: #93c5fd;">Fila de Limpeza do Armazém (Telegram):</span>
+                                            <span id="admin-removal-queue-stats-text" style="color: #cbd5e1;">Carregando...</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <button id="admin-removal-retry-btn" class="btn-action btn-icon-compact" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; font-size: 11px; padding: 4px 8px;" onclick="handleRetryRemovalFailures()">
+                                                🔁 Reprocessar Falhas
+                                            </button>
+                                            <button class="btn-action btn-icon-compact" style="font-size: 11px; padding: 4px 8px;" onclick="loadRemovalQueueStats()">
+                                                🔄 Atualizar
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <!-- BARRA DE FILTROS E BUSCA AVANÇADA -->
                                     <div class="admin-catalog-filters-bar">
                                         <div class="search-box">
@@ -11790,6 +11816,16 @@
                                             <option value="dublado">🔊 Dublados (PT-BR)</option>
                                             <option value="legendado">💬 Legendados (PT-BR)</option>
                                         </select>
+
+                                        <select id="admin-catalog-date-filter" class="admin-input"
+                                            style="width: auto; min-width: 155px; padding: 10px 12px; margin-bottom: 0;"
+                                            onchange="renderAdminCatalog()">
+                                            <option value="all">📅 Todas as Datas</option>
+                                            <option value="today">📅 Adicionados Hoje</option>
+                                            <option value="yesterday_today">📅 Ontem e Hoje</option>
+                                            <option value="7days">📅 Últimos 7 dias</option>
+                                            <option value="30days">📅 Últimos 30 dias</option>
+                                        </select>
                                     </div>
 
                                     <div id="admin-catalog-container">
@@ -11799,6 +11835,7 @@
                                                     <tr>
                                                         <th>Mídia / Título</th>
                                                         <th>Tipo / Categoria</th>
+                                                        <th>Adicionado Em</th>
                                                         <th>Estrutura & Faltantes</th>
                                                         <th>Idiomas & Qualidade</th>
                                                         <th>Status Telegram</th>
@@ -11807,7 +11844,7 @@
                                                 </thead>
                                                 <tbody id="admin-catalog-tbody">
                                                     <tr>
-                                                        <td colspan="6"
+                                                        <td colspan="7"
                                                             style="text-align: center; padding: 24px; color: var(--text-muted);">
                                                             Carregando catálogo detalhado...</td>
                                                     </tr>
@@ -24965,24 +25002,78 @@
                 }
             }
 
+            function formatCatalogDate(dateStr) {
+                if (!dateStr) return '—';
+                try {
+                    const d = new Date(dateStr);
+                    if (isNaN(d.getTime())) return '—';
+                    return d.toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                } catch (e) {
+                    return '—';
+                }
+            }
+
+            async function loadRemovalQueueStats() {
+                try {
+                    const res = await fetch('/api/admin/remocoes/stats', { headers: getAuthHeaders() });
+                    if (!res.ok) return;
+                    const stats = await res.json();
+                    const card = document.getElementById('admin-removal-queue-status-card');
+                    const text = document.getElementById('admin-removal-queue-stats-text');
+                    const retryBtn = document.getElementById('admin-removal-retry-btn');
+                    if (!card || !text) return;
+
+                    const total = Number(stats.total || 0);
+                    const pendentes = Number(stats.pendentes || 0);
+                    const processando = Number(stats.processando || 0);
+                    const falhas = Number(stats.falhas || 0);
+
+                    if (total > 0 && (pendentes > 0 || processando > 0 || falhas > 0)) {
+                        card.style.display = 'flex';
+                        text.innerHTML = `<strong>${processando + pendentes}</strong> aguardando exclusão remota (${processando} em lote, ${pendentes} na fila)${falhas > 0 ? ` • <span style="color:#ef4444; font-weight:700;">${falhas} com falha</span>` : ''}`;
+                        if (retryBtn) retryBtn.style.display = falhas > 0 ? 'inline-flex' : 'none';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                } catch (_) {}
+            }
+
+            async function handleRetryRemovalFailures() {
+                try {
+                    const res = await fetch('/api/admin/remocoes/retry-failures', { method: 'POST', headers: getAuthHeaders() });
+                    const d = await res.json();
+                    showToast(d.message || 'Falhas reenfileiradas para nova tentativa.', 'info');
+                    loadRemovalQueueStats();
+                } catch (e) {
+                    showToast('Erro ao reenfileirar falhas.', 'error');
+                }
+            }
+
             async function loadAdminCatalog() {
                 if (!adminToken) return;
+                loadRemovalQueueStats();
                 const tbody = document.getElementById('admin-catalog-tbody');
                 if (tbody && (!adminCatalogData?.filmes?.length && !adminCatalogData?.series?.length)) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>Carregando catálogo detalhado...</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>Carregando catálogo detalhado...</td></tr>';
                 }
                 try {
                     const res = await fetch('/api/admin/catalogo', { headers: getAuthHeaders() });
                     if (!res.ok) {
                         const err = await res.json().catch(() => ({}));
-                        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Falha ao obter dados do catálogo: ${err.error || res.statusText}</td></tr>`;
+                        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Falha ao obter dados do catálogo: ${err.error || res.statusText}</td></tr>`;
                         return;
                     }
                     adminCatalogData = await res.json();
                     renderAdminCatalog();
                 } catch (e) {
                     console.error('Erro ao carregar catálogo:', e);
-                    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Erro de conexão com o servidor ao carregar catálogo.</td></tr>`;
+                    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: #ef4444;">⚠️ Erro de conexão com o servidor ao carregar catálogo.</td></tr>`;
                 }
             }
 
@@ -24998,6 +25089,7 @@
                 const typeFilter = document.getElementById('admin-catalog-type-filter')?.value || 'all';
                 const statusFilter = document.getElementById('admin-catalog-status-filter')?.value || 'all';
                 const audioFilter = document.getElementById('admin-catalog-audio-filter')?.value || 'all';
+                const dateFilter = document.getElementById('admin-catalog-date-filter')?.value || 'all';
 
                 const filmes = (adminCatalogData.filmes || []).map(f => ({ ...f, itemType: 'filme' }));
                 const series = (adminCatalogData.series || []).map(s => ({ ...s, itemType: 'serie' }));
@@ -25059,8 +25151,55 @@
                     });
                 }
 
+                if (dateFilter !== 'all') {
+                    const now = new Date();
+                    let cutoff = new Date(0);
+                    if (dateFilter === 'today') {
+                        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    } else if (dateFilter === 'yesterday_today') {
+                        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                    } else if (dateFilter === '7days') {
+                        cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    } else if (dateFilter === '30days') {
+                        cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    }
+
+                    items = items.filter(i => {
+                        const itemDate = i.dataAdicionado || i.createdAt;
+                        const itemTime = itemDate ? new Date(itemDate).getTime() : 0;
+                        if (itemTime >= cutoff.getTime()) return true;
+
+                        if (i.itemType === 'serie') {
+                            return (i.temporadas || []).some(t =>
+                                (t.episodios || []).some(e => {
+                                    const epDate = e.dataAdicionado || e.createdAt;
+                                    return epDate && new Date(epDate).getTime() >= cutoff.getTime();
+                                })
+                            );
+                        }
+                        return false;
+                    });
+                }
+
+                // Ordenar por data mais recente de adição (considerando episódios recentes)
+                items.sort((a, b) => {
+                    const getLatestTime = (item) => {
+                        let maxT = item.dataAdicionado || item.createdAt ? new Date(item.dataAdicionado || item.createdAt).getTime() : 0;
+                        if (item.itemType === 'serie' && item.temporadas) {
+                            for (const t of item.temporadas) {
+                                for (const e of (t.episodios || [])) {
+                                    const epT = e.dataAdicionado || e.createdAt ? new Date(e.dataAdicionado || e.createdAt).getTime() : 0;
+                                    if (epT > maxT) maxT = epT;
+                                }
+                            }
+                        }
+                        return maxT;
+                    };
+                    return getLatestTime(b) - getLatestTime(a);
+                });
+
                 if (items.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">Nenhum título localizado com os filtros selecionados.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">Nenhum título localizado com os filtros selecionados.</td></tr>';
                     return;
                 }
 
@@ -25136,6 +25275,7 @@
                                 </div>
                             </td>
                             <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td class="col-date"><span style="font-size:12px; color:var(--text-muted); white-space:nowrap;" title="Data de inclusão">${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span></td>
                             <td class="col-struct"><span style="font-size:12px; color:var(--text-muted);">1 Filme (${i.qualidade || '1080p'})</span></td>
                             <td class="col-audio">
                                 <div>${audPill}</div>
@@ -25232,10 +25372,11 @@
 
                                 return `
                                             <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 10px; font-size: 12px; gap:8px;">
-                                                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                                                <div style="display:flex; align-items:center; gap:8px; overflow:hidden; flex-wrap:wrap;">
                                                     <strong style="white-space:nowrap;">T${t.numero}E${e.numero}</strong>
                                                     <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${e.nome || `Episódio ${e.numero}`}</span>
                                                     ${epAudBadge}
+                                                    <span style="font-size: 11px; color: #94a3b8; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); white-space:nowrap;" title="Data de inclusão do episódio">🕒 ${formatCatalogDate(e.dataAdicionado || e.createdAt)}</span>
                                                     <span style="font-size: 10px; color: var(--text-muted); white-space:nowrap;">(Msg: ${e.messageId || '-'})</span>
                                                 </div>
                                                 <div style="display: flex; gap: 4px; flex-shrink:0;">
@@ -25290,6 +25431,7 @@
                                 </div>
                             </td>
                             <td class="col-cat"><span style="font-size:12px; font-weight:600;">${catBadge}</span></td>
+                            <td class="col-date"><span style="font-size:12px; color:var(--text-muted); white-space:nowrap;" title="Data de inclusão da série">${formatCatalogDate(i.dataAdicionado || i.createdAt)}</span></td>
                             <td class="col-struct">
                                 <div style="font-size:12px; font-weight:600; color:#fff;">${(i.temporadas || []).length} temp • ${totalEps} eps</div>
                                 <div style="font-size:11px; margin-top:2px;">${missingBadge}</div>
@@ -25313,7 +25455,7 @@
                             </td>
                         </tr>
                         <tr id="${accordionId}" class="accordion-row" style="display: none;">
-                            <td colspan="6" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.25);">
+                            <td colspan="7" style="padding: 0 14px 14px 14px; background: rgba(0,0,0,0.25);">
                                 <div class="episodes-nested-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px; margin-top: 10px;">
                                     <div style="font-weight: 800; font-size: 13px; color: #fff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
                                         <span>🎬 Episódios de "${i.nome}"</span>

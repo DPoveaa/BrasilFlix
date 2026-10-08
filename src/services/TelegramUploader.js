@@ -314,7 +314,14 @@ class TelegramUploader {
 
                     if (candidatePairs.length > 0) {
                         const uniqueCandidates = [...new Set(candidatePairs.map(c => c.candidateId))];
-                        const fetched = await client.getMessages(this.storageGroupId, { ids: uniqueCandidates }).catch(() => []);
+                        const fetched = [];
+                        
+                        // Busca em lotes de até 100 mensagens (limite MTProto)
+                        for (let i = 0; i < uniqueCandidates.length; i += 100) {
+                            const chunk = uniqueCandidates.slice(i, i + 100);
+                            const res = await client.getMessages(this.storageGroupId, { ids: chunk }).catch(() => []);
+                            if (Array.isArray(res)) fetched.push(...res);
+                        }
                         
                         for (const msg of fetched) {
                             if (!msg || msg.className === 'MessageEmpty') continue;
@@ -350,7 +357,33 @@ class TelegramUploader {
             }
 
             const finalIds = Array.from(allIdsToDelete);
-            await client.deleteMessages(this.storageGroupId, finalIds, { revoke: true });
+            const batchSize = 100; // Telegram RPC channels.deleteMessages aceita max 100 IDs por request
+            
+            for (let i = 0; i < finalIds.length; i += batchSize) {
+                const batch = finalIds.slice(i, i + batchSize);
+                let attempts = 0;
+                while (attempts < 3) {
+                    try {
+                        await client.deleteMessages(this.storageGroupId, batch, { revoke: true });
+                        break;
+                    } catch (delErr) {
+                        const floodSec = delErr.seconds || (delErr.message && delErr.message.match(/FLOOD_WAIT_(\d+)/)?.[1]);
+                        if (floodSec) {
+                            const waitMs = (parseInt(floodSec, 10) + 1) * 1000;
+                            console.warn(`⏳ [Storage Group] Telegram FloodWait de ${floodSec}s detectado ao deletar batch. Aguardando...`);
+                            await new Promise(r => setTimeout(r, waitMs));
+                            attempts++;
+                        } else {
+                            console.warn(`⚠️ Aviso ao excluir batch de mensagens no storage (${batch.join(', ')}):`, delErr.message);
+                            break;
+                        }
+                    }
+                }
+                if (finalIds.length > batchSize && (i + batchSize) < finalIds.length) {
+                    await new Promise(r => setTimeout(r, 400));
+                }
+            }
+
             console.log(`🗑️ [Storage Group] ${finalIds.length} mensagem(ns) excluída(s) permanentemente do grupo de armazém:`, finalIds);
             return true;
         } catch (error) {

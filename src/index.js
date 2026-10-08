@@ -5,6 +5,7 @@ const CatalogoManager = require('./managers/CatalogoManager');
 const AssinaturaManager = require('./managers/AssinaturaManager');
 const FavoritosManager = require('./managers/FavoritosManager');
 const { QueueManager } = require('./managers/QueueManager');
+const RemovalQueueManager = require('./managers/RemovalQueueManager');
 const AutoFeeder = require('./services/AutoFeeder');
 const StremioServer = require('./services/StremioServer');
 const MessageHandler = require('./handlers/MessageHandler');
@@ -22,8 +23,11 @@ class BrasilFlixBot {
         this.assinaturaManager.setBot(this.bot);
         this.favoritosManager = new FavoritosManager();
         this.queueManager = new QueueManager(this.bot, this.catalogoManager, this.pedidosManager, this.favoritosManager);
+        this.removalQueue = new RemovalQueueManager(this.catalogoManager, this.queueManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager, this.pedidosManager);
         this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager, this.queueManager, this.pedidosManager);
+        // Compartilha a instância central do RemovalQueueManager com o StremioServer
+        this.stremioServer.removalQueue = this.removalQueue;
         this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager, this.favoritosManager);
         this.messageHandler = new MessageHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.commandHandler, this.queueManager);
         
@@ -57,10 +61,16 @@ class BrasilFlixBot {
             console.warn('⚠️ Aviso ao carregar dados complementares (usando dados locais):', loadErr.message);
         }
 
-        // 4º PASSO: Com o site no ar e estável, inicia o AutoFeeder e a fila de downloads!
+        // 4º PASSO: Com o site no ar e estável, inicia o AutoFeeder, fila de downloads e fila de remoções!
         this.autoFeeder.start();
         this.queueManager.startProcessing();
-        console.log('🤖 BrasilFlix Bot + Auto-Feeder + Esteira de Downloads iniciados com sucesso!');
+
+        // Inicializa a fila persistente de remoção — recupera tarefas interrompidas (restart PM2, queda de luz)
+        this.removalQueue.setCatalogoManager(this.catalogoManager);
+        this.removalQueue.setQueueManager(this.queueManager);
+        this.removalQueue.init().catch(e => console.warn('⚠️ [RemovalQueue] Aviso ao inicializar:', e.message));
+
+        console.log('🤖 BrasilFlix Bot + Auto-Feeder + Esteira de Downloads + Fila de Remoção iniciados com sucesso!');
     }
 
     start() {

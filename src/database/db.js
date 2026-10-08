@@ -439,6 +439,29 @@ async function createTables() {
             UNIQUE(tipo, media_id, season_num, audio)
         );
 
+        -- Tabela persistente da Fila de Remoção/Reprocessamento de Mídias e Telegram
+        CREATE TABLE IF NOT EXISTS remocoes_fila (
+            id BIGSERIAL PRIMARY KEY,
+            tipo VARCHAR(50) NOT NULL,              -- 'serie', 'episodio', 'filme'
+            origem_id BIGINT,                       -- ID original do registro
+            serie_id BIGINT,                        -- ID da série (para episódios)
+            nome VARCHAR(255) NOT NULL,             -- Nome da mídia
+            temporada INTEGER,                      -- Temporada (para episódios)
+            episodio INTEGER,                       -- Episódio (para episódios)
+            versao VARCHAR(20),                     -- 'dublado', 'legendado', ou null/todas
+            rebaixar BOOLEAN DEFAULT false,         -- Se deve rebaixar / reenfileirar
+            is_anime BOOLEAN DEFAULT false,
+            message_ids JSONB DEFAULT '[]',         -- Array de message_ids do Telegram a remover
+            status VARCHAR(50) DEFAULT 'pendente',  -- 'pendente', 'processando', 'concluido', 'falha'
+            tentativas INTEGER DEFAULT 0,
+            erro TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_remocoes_fila_status ON remocoes_fila(status, id);
+        CREATE INDEX IF NOT EXISTS idx_remocoes_fila_serie ON remocoes_fila(serie_id);
+
         CREATE INDEX IF NOT EXISTS idx_watch_party_activity ON watch_party_rooms(last_activity);
         CREATE INDEX IF NOT EXISTS idx_lancamentos_media ON lancamentos_notificados(tipo, media_id);
         CREATE INDEX IF NOT EXISTS idx_comentarios_media ON avaliacoes_comentarios(media_type, media_id);

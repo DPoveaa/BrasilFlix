@@ -1142,7 +1142,7 @@ class QueueManager extends EventEmitter {
                 const pref = job.audioPreference || 'dublado';
                 // Tenta encontrar episódio em memória (incluindo todasTemporadas com fallback)
                 const epExistente = this.catalogoManager.buscarEpisodio(serieExistente.id, job.season || 1, job.episode || 1);
-                if (epExistente) {
+                if (epExistente && !job.isUpgrade && !extraData.isUpgrade) {
                     const epDub = epExistente.isDublado || !!epExistente.versoes?.dublado;
                     const epLeg = epExistente.isLegendado || !!epExistente.versoes?.legendado;
                     const audioMatches = (pref === 'dublado' && epDub) || (pref === 'legendado' && epLeg) || (epDub && epLeg);
@@ -1181,7 +1181,7 @@ class QueueManager extends EventEmitter {
                             return null;
                         }
                     }
-                } else {
+                } else if (!job.isUpgrade && !extraData.isUpgrade) {
                     // Fallback: verifica direto no banco de dados (cobre casos onde o episódio existe mas não aparece em memória)
                     try {
                         const dbSerie = await db.query(
@@ -2459,6 +2459,9 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
+                let absoluteEpisode = job.absoluteEpisode || job.extraData?.absoluteEpisode || null;
+                const titulosAlternativos = metadata.titulosAlternativos || job.titulosAlternativos || job.extraData?.titulosAlternativos || [];
+
                 if (job.customMagnet) {
                     console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
                     sources = [{
@@ -2496,11 +2499,9 @@ class QueueManager extends EventEmitter {
                         }
                     }
 
-                    let absoluteEpisode = job.absoluteEpisode || job.extraData?.absoluteEpisode || null;
                     if (!absoluteEpisode && isAnimeFlag && metadata.temporadas) {
                         absoluteEpisode = AnimeSeasonMapper.calculateAbsoluteEpisode(job.title, targetSeasonNum, job.episode || 1, metadata.temporadas);
                     }
-                    const titulosAlternativos = metadata.titulosAlternativos || job.titulosAlternativos || job.extraData?.titulosAlternativos || [];
 
                     const isMicroFlag = !!(job.isMicrodrama || metadata.isMicrodrama || job.subtipo === 'microdrama' || metadata.subtipo === 'microdrama');
                     sources = await MediaSearchService.search(job.title, job.type, {

@@ -13,6 +13,7 @@ const schedulerService = require('./SchedulerService');
 const PriorityService = require('./PriorityService');
 const ProgressManager = require('../managers/ProgressManager');
 const CatalogoManager = require('../managers/CatalogoManager');
+const RemovalQueueManager = require('../managers/RemovalQueueManager');
 const db = require('../database/db');
 const auditService = require('./AuditService');
 const logBroadcaster = require('../utils/LogBroadcaster');
@@ -26,6 +27,7 @@ class StremioServer {
         this.tmdbService = TMDBService;
         this.progressManager = new ProgressManager();
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
+        this.removalQueue = new RemovalQueueManager(catalogoManager, queueManager);
         this.port = port;
         this.app = express();
         this.setupMiddlewares();
@@ -924,41 +926,21 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/filme/:id', auth, async (req, res) => {
             try {
-                const filme = this.catalogoManager?.buscarFilmePorId(req.params.id);
+                const filmeId = Number(req.params.id) || 0;
                 const versao = (req.query.versao || req.body?.versao || '').toLowerCase().trim();
                 const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
 
-                if (versao === 'dublado' || versao === 'legendado') {
-                    await this.catalogoManager?.removerVersaoFilme({ filmeId: req.params.id, versao });
-                    if (rebaixar && filme && this.queueManager) {
-                        this.queueManager.addJob(filme.nome, 'filme', 1, {
-                            audioPreference: versao,
-                            isUpgrade: true
-                        });
-                    }
-                    return res.json({ 
-                        success: true, 
-                        message: rebaixar 
-                            ? `Versão ${versao.toUpperCase()} de "${filme?.nome || req.params.id}" excluída e reenfileirada com Prioridade 1!` 
-                            : `Versão ${versao.toUpperCase()} de "${filme?.nome || req.params.id}" removida.` 
-                    });
+                // Garante que o RemovalQueueManager tem os managers atualizados
+                this.removalQueue.setCatalogoManager(this.catalogoManager);
+                this.removalQueue.setQueueManager(this.queueManager);
+
+                const result = await this.removalQueue.removerFilme({ filmeId, versao: versao || null, rebaixar });
+
+                if (!result.success) {
+                    return res.status(404).json({ error: result.error || 'Filme não encontrado.' });
                 }
 
-                await this.catalogoManager?.removerItem(req.params.id);
-
-                if (rebaixar && filme && this.queueManager) {
-                    this.queueManager.addJob(filme.nome, 'filme', 1, {
-                        audioPreference: filme.isDublado ? 'dublado' : 'legendado',
-                        isUpgrade: true
-                    });
-                }
-
-                res.json({ 
-                    success: true, 
-                    message: rebaixar 
-                        ? `Filme "${filme?.nome || req.params.id}" excluído do Armazém e reenfileirado para download com Prioridade 1!` 
-                        : 'Filme removido do catálogo e apagado do Armazém.' 
-                });
+                res.json({ success: true, message: result.message });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -966,60 +948,25 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/serie/:id', auth, async (req, res) => {
             try {
-                const serie = this.catalogoManager?.buscarSeriePorId(req.params.id);
+                const serieId = req.params.id;
                 const versao = (req.query.versao || req.body?.versao || '').toLowerCase().trim();
                 const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
 
-                if (versao === 'dublado' || versao === 'legendado') {
-                    if (serie) {
-                        for (const temp of (serie.temporadas || [])) {
-                            for (const ep of (temp.episodios || [])) {
-                                await this.catalogoManager?.removerVersaoEpisodio({
-                                    serieId: serie.id,
-                                    temporada: temp.numero || 1,
-                                    episodio: ep.numero || 1,
-                                    versao
-                                });
-                                if (rebaixar && this.queueManager) {
-                                    this.queueManager.addJob(serie.nome, 'serie', 1, {
-                                        season: temp.numero || 1,
-                                        episode: ep.numero || 1,
-                                        audioPreference: versao,
-                                        isAnime: !!serie.isAnime
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    return res.json({
-                        success: true,
-                        message: rebaixar
-                            ? `Versão ${versao.toUpperCase()} da série "${serie?.nome || req.params.id}" excluída e episódios reenfileirados com Prioridade 1!`
-                            : `Versão ${versao.toUpperCase()} da série "${serie?.nome || req.params.id}" removida.`
-                    });
+                // Garante que o RemovalQueueManager tem os managers atualizados
+                this.removalQueue.setCatalogoManager(this.catalogoManager);
+                this.removalQueue.setQueueManager(this.queueManager);
+
+                const result = await this.removalQueue.removerSerie({ serieId, versao: versao || null, rebaixar });
+
+                if (!result.success) {
+                    return res.status(404).json({ error: result.error || 'Série não encontrada.' });
                 }
 
-                await this.catalogoManager?.removerItem(req.params.id);
-
-                if (rebaixar && serie && this.queueManager) {
-                    for (const temp of (serie.temporadas || [])) {
-                        for (const ep of (temp.episodios || [])) {
-                            this.queueManager.addJob(serie.nome, 'serie', 1, {
-                                season: temp.numero || 1,
-                                episode: ep.numero || 1,
-                                audioPreference: ep.isDublado ? 'dublado' : 'legendado',
-                                isAnime: !!serie.isAnime
-                            });
-                        }
-                    }
-                }
-
-                res.json({ 
-                    success: true, 
-                    message: rebaixar 
-                        ? `Série "${serie?.nome || req.params.id}" excluída do Armazém e episódios reenfileirados com Prioridade 1!` 
-                        : 'Série removida do catálogo e apagada do Armazém.' 
-                });
+                res.json({ success: true, message: result.message, details: {
+                    totalEpisodios: result.totalEpisodios,
+                    totalReenfileirados: result.totalReenfileirados,
+                    totalMensagensAgendadas: result.totalMensagensAgendadas
+                }});
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -1027,58 +974,47 @@ class StremioServer {
 
         this.app.delete('/api/admin/catalogo/episodio/:id', auth, async (req, res) => {
             try {
-                const epId = req.params.id;
-                const epQuery = await db.query(`
-                    SELECT e.*, s.nome as serie_nome, s.is_anime 
-                    FROM episodios e 
-                    LEFT JOIN series s ON s.id = e.serie_id 
-                    WHERE e.id = $1 OR e.message_id = $1
-                `, [Number(epId) || 0]);
-
-                const epInfo = epQuery.rows[0] || null;
+                const episodioId = Number(req.params.id) || 0;
                 const versao = (req.query.versao || req.body?.versao || '').toLowerCase().trim();
                 const rebaixar = req.query.rebaixar === 'true' || req.body?.rebaixar === true;
 
-                if ((versao === 'dublado' || versao === 'legendado') && epInfo) {
-                    await this.catalogoManager?.removerVersaoEpisodio({
-                        serieId: epInfo.serie_id,
-                        temporada: epInfo.temporada_numero,
-                        episodio: epInfo.numero,
-                        versao
-                    });
-                    if (rebaixar && this.queueManager) {
-                        this.queueManager.addJob(epInfo.serie_nome || 'Série', 'serie', 1, {
-                            season: epInfo.temporada_numero || 1,
-                            episode: epInfo.numero || 1,
-                            audioPreference: versao,
-                            isAnime: !!epInfo.is_anime
-                        });
-                    }
-                    return res.json({ 
-                        success: true, 
-                        message: rebaixar 
-                            ? `Versão ${versao.toUpperCase()} do Episódio T${epInfo.temporada_numero}E${epInfo.numero} excluída e reenfileirada com Prioridade 1!` 
-                            : `Versão ${versao.toUpperCase()} do Episódio T${epInfo.temporada_numero}E${epInfo.numero} removida.` 
-                    });
+                // Garante que o RemovalQueueManager tem os managers atualizados
+                this.removalQueue.setCatalogoManager(this.catalogoManager);
+                this.removalQueue.setQueueManager(this.queueManager);
+
+                const result = await this.removalQueue.removerEpisodio({ episodioId, versao: versao || null, rebaixar });
+
+                if (!result.success) {
+                    return res.status(404).json({ error: result.error || 'Episódio não encontrado.' });
                 }
 
-                await this.catalogoManager?.removerEpisodio(epId);
+                res.json({ success: true, message: result.message });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
 
-                if (rebaixar && epInfo && this.queueManager) {
-                    this.queueManager.addJob(epInfo.serie_nome || 'Série', 'serie', 1, {
-                        season: epInfo.temporada_numero || 1,
-                        episode: epInfo.numero || 1,
-                        audioPreference: epInfo.is_dublado ? 'dublado' : 'legendado',
-                        isAnime: !!epInfo.is_anime
-                    });
-                }
+        // Endpoint para monitorar a fila de remoção (painel admin)
+        this.app.get('/api/admin/remocoes/stats', auth, async (req, res) => {
+            try {
+                const stats = await this.removalQueue.getStats();
+                res.json({ success: true, ...stats });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
 
-                res.json({ 
-                    success: true, 
-                    message: rebaixar 
-                        ? `Episódio ${epInfo ? `T${epInfo.temporada_numero}E${epInfo.numero}` : ''} excluído do Armazém e reenfileirado para download com Prioridade 1!` 
-                        : 'Episódio removido do catálogo e apagado do Armazém.' 
-                });
+        // Endpoint para forçar reprocessamento de tarefas com falha
+        this.app.post('/api/admin/remocoes/retry-failures', auth, async (req, res) => {
+            try {
+                const updated = await db.query(`
+                    UPDATE remocoes_fila 
+                    SET status = 'pendente', tentativas = 0, updated_at = NOW() 
+                    WHERE status = 'falha'
+                    RETURNING id
+                `);
+                this.removalQueue.triggerWorker();
+                res.json({ success: true, message: `${updated.rows.length} tarefa(s) de remoção com falha reenfileiradas.` });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
