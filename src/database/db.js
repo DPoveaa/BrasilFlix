@@ -555,6 +555,15 @@ async function createTables() {
     } catch (migErr) {
         console.warn('⚠️ Aviso migração de classificação:', migErr.message);
     }
+
+    // Deduplicação automática preventiva e criação do índice UNIQUE de séries
+    try {
+        await autoDeduplicateSeries();
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_series_unique_tmdb_id ON series(tmdb_id) WHERE tmdb_id IS NOT NULL;`);
+        console.log('🔒 [AntiDuplicate] Índice exclusivo por tmdb_id e integridade de séries ativos no PostgreSQL.');
+    } catch (e) {
+        console.warn('⚠️ [AntiDuplicate] Falha ao verificar ou aplicar índice exclusivo de séries:', e.message);
+    }
 }
 
 async function migrateJsonData() {
@@ -689,6 +698,110 @@ async function migrateJsonData() {
     }
 }
 
+/**
+ * Rotina autônoma de deduplicação de séries no PostgreSQL.
+ * Identifica séries com mesmo tmdb_id ou mesmo título normalizado, reatribui
+ * todos os episódios para a série principal, deleta as duplicatas e recalcula totais.
+ */
+async function autoDeduplicateSeries() {
+    let mergedCount = 0;
+    try {
+        // 1. Busca duplicatas de séries por tmdb_id
+        const tmdbDups = await query(`
+            SELECT tmdb_id, array_agg(id ORDER BY total_episodios DESC, id ASC) as ids
+            FROM series
+            WHERE tmdb_id IS NOT NULL AND tmdb_id > 0
+            GROUP BY tmdb_id
+            HAVING COUNT(*) > 1
+        `);
+
+        for (const row of tmdbDups.rows) {
+            const targetId = Number(row.ids[0]);
+            const dupIds = row.ids.slice(1).map(Number);
+
+            for (const dupId of dupIds) {
+                const eps = await query(`SELECT id, temporada_numero, numero FROM episodios WHERE serie_id = $1`, [dupId]);
+                for (const ep of eps.rows) {
+                    const conflict = await query(
+                        `SELECT id FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3`,
+                        [targetId, ep.temporada_numero, ep.numero]
+                    );
+                    if (conflict.rows.length > 0) {
+                        await query(`DELETE FROM episodios WHERE id = $1`, [ep.id]);
+                    } else {
+                        await query(`UPDATE episodios SET serie_id = $1 WHERE id = $2`, [targetId, ep.id]);
+                    }
+                }
+
+                await query(`DELETE FROM series WHERE id = $1`, [dupId]);
+                mergedCount++;
+                console.log(`✨ [AutoDedup] Série duplicada consolidada e eliminada automaticamente: ID ${dupId} -> ID ${targetId} (TMDB: ${row.tmdb_id})`);
+            }
+
+            await query(`
+                UPDATE series SET
+                    total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                    total_episodios  = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                    is_dublado  = COALESCE((SELECT bool_or(is_dublado)   FROM episodios WHERE serie_id = $1), false),
+                    is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                    updated_at = NOW()
+                WHERE id = $1
+            `, [targetId]);
+        }
+
+        // 2. Busca duplicatas de séries por título normalizado
+        const titleDups = await query(`
+            SELECT 
+                LOWER(REGEXP_REPLACE(REGEXP_REPLACE(nome, '[×✕✖⨯]', 'x', 'g'), '[^a-zA-Z0-9]', '', 'g')) as norm_nome,
+                COALESCE(ano, '') as ano_val,
+                array_agg(id ORDER BY COALESCE(tmdb_id, 0) DESC, total_episodios DESC, id ASC) as ids
+            FROM series
+            GROUP BY norm_nome, ano_val
+            HAVING COUNT(*) > 1 AND LENGTH(LOWER(REGEXP_REPLACE(REGEXP_REPLACE(nome, '[×✕✖⨯]', 'x', 'g'), '[^a-zA-Z0-9]', '', 'g'))) > 1
+        `);
+
+        for (const row of titleDups.rows) {
+            const targetId = Number(row.ids[0]);
+            const dupIds = row.ids.slice(1).map(Number);
+
+            for (const dupId of dupIds) {
+                const checkExist = await query(`SELECT id FROM series WHERE id = $1`, [dupId]);
+                if (checkExist.rows.length === 0) continue;
+
+                const eps = await query(`SELECT id, temporada_numero, numero FROM episodios WHERE serie_id = $1`, [dupId]);
+                for (const ep of eps.rows) {
+                    const conflict = await query(
+                        `SELECT id FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3`,
+                        [targetId, ep.temporada_numero, ep.numero]
+                    );
+                    if (conflict.rows.length > 0) {
+                        await query(`DELETE FROM episodios WHERE id = $1`, [ep.id]);
+                    } else {
+                        await query(`UPDATE episodios SET serie_id = $1 WHERE id = $2`, [targetId, ep.id]);
+                    }
+                }
+
+                await query(`DELETE FROM series WHERE id = $1`, [dupId]);
+                mergedCount++;
+                console.log(`✨ [AutoDedup] Série duplicada por nome consolidada automaticamente: ID ${dupId} -> ID ${targetId} ("${row.norm_nome}")`);
+            }
+
+            await query(`
+                UPDATE series SET
+                    total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                    total_episodios  = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                    is_dublado  = COALESCE((SELECT bool_or(is_dublado)   FROM episodios WHERE serie_id = $1), false),
+                    is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                    updated_at = NOW()
+                WHERE id = $1
+            `, [targetId]);
+        }
+    } catch (e) {
+        console.warn('⚠️ [AutoDedup] Erro na rotina de deduplicação automática de séries:', e.message);
+    }
+    return { mergedCount };
+}
+
 async function initDb() {
     try {
         await ensureDatabaseExists();
@@ -705,5 +818,6 @@ async function initDb() {
 module.exports = {
     getPool,
     query,
-    initDb
+    initDb,
+    autoDeduplicateSeries
 };

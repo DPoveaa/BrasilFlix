@@ -166,7 +166,7 @@ class RemovalQueueManager {
 
         if (!isNaN(sNumId) && sNumId > 0) {
             const sRes = await db.query(
-                `SELECT id, nome, is_anime, tmdb_id, message_id, notif_message_id FROM series WHERE id = $1`,
+                `SELECT id, nome, is_anime, tmdb_id FROM series WHERE id = $1`,
                 [sNumId]
             );
             if (sRes.rows.length > 0) serieRow = sRes.rows[0];
@@ -176,7 +176,7 @@ class RemovalQueueManager {
             const memSerie = this.catalogoManager.buscarSeriePorId(serieId);
             if (memSerie?.id) {
                 const sRes = await db.query(
-                    `SELECT id, nome, is_anime, tmdb_id, message_id, notif_message_id FROM series WHERE id = $1`,
+                    `SELECT id, nome, is_anime, tmdb_id FROM series WHERE id = $1`,
                     [Number(memSerie.id)]
                 );
                 if (sRes.rows.length > 0) serieRow = sRes.rows[0];
@@ -329,27 +329,8 @@ class RemovalQueueManager {
         const totalRestante = parseInt(countRes.rows[0]?.total || '0', 10);
 
         if (totalRestante === 0) {
-            // Se não restou nenhum episódio, agenda exclusão das mensagens do card/notificação da série no Telegram
-            const serieMsgIds = [];
-            if (serieRow.message_id) serieMsgIds.push(Number(serieRow.message_id));
-            if (serieRow.notif_message_id) serieMsgIds.push(Number(serieRow.notif_message_id));
-
-            if (serieMsgIds.length > 0) {
-                await db.query(`
-                    INSERT INTO remocoes_fila (
-                        tipo, origem_id, serie_id, nome, versao, rebaixar, is_anime, message_ids, status, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pendente', NOW(), NOW())
-                `, [
-                    'serie',
-                    realSerieId,
-                    realSerieId,
-                    serieNome,
-                    null,
-                    rebaixar,
-                    isAnime,
-                    JSON.stringify(serieMsgIds)
-                ]);
-            }
+            // Se não restou nenhum episódio, exclui a série do banco
+            // (séries não possuem message_id próprio — mensagens de notificação ficam nos episódios)
             await db.query(`DELETE FROM series WHERE id = $1`, [realSerieId]);
         } else {
             // Ainda existem episódios (ex: apagou legendado e sobrou dublado)
@@ -468,27 +449,9 @@ class RemovalQueueManager {
         // Atualiza contadores da série
         if (serieId) {
             const countRes = await db.query(`SELECT COUNT(*) as total FROM episodios WHERE serie_id = $1`, [serieId]);
+            const totalRestante = parseInt(countRes.rows[0]?.total || '0', 10);
             if (totalRestante === 0) {
-                const sRow = await db.query(`SELECT message_id, notif_message_id FROM series WHERE id = $1`, [serieId]);
-                const serieMsgIds = [];
-                if (sRow.rows[0]?.message_id) serieMsgIds.push(Number(sRow.rows[0].message_id));
-                if (sRow.rows[0]?.notif_message_id) serieMsgIds.push(Number(sRow.rows[0].notif_message_id));
-                if (serieMsgIds.length > 0) {
-                    await db.query(`
-                        INSERT INTO remocoes_fila (
-                            tipo, origem_id, serie_id, nome, versao, rebaixar, is_anime, message_ids, status, created_at, updated_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pendente', NOW(), NOW())
-                    `, [
-                        'serie',
-                        serieId,
-                        serieId,
-                        serieNome,
-                        null,
-                        rebaixar,
-                        isAnime,
-                        JSON.stringify(serieMsgIds)
-                    ]);
-                }
+                // Série ficou sem episódios — remove do banco
                 await db.query(`DELETE FROM series WHERE id = $1`, [serieId]);
             } else {
                 await db.query(`

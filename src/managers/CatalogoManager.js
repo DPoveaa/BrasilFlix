@@ -4,7 +4,7 @@ const config = require('../../config');
 const db = require('../database/db');
 const TelegramUploader = require('../services/TelegramUploader');
 const TMDBService = require('../services/TMDBService');
-const { isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
+const { isSameMedia, isReleaseCompatibleWithTarget, normalizeTitle } = require('../utils/titleUtils');
 
 class MediaVerificationCache {
     constructor() {
@@ -96,7 +96,7 @@ class CatalogoManager {
 
     buscarItemExato(nome, tipo = null) {
         if (!nome || typeof nome !== 'string') return null;
-        const norm = (s) => (s || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const norm = (s) => normalizeTitle(s);
         const target = norm(nome);
 
         if (!tipo || tipo === 'filme') {
@@ -303,7 +303,19 @@ class CatalogoManager {
                 }
             }
 
-            // Se houve invalidação definitiva de mídia, reconstrói o catálogo público
+            // Auto-auditoria periódica anti-duplicata de séries
+            try {
+                const { autoDeduplicateSeries } = require('../database/db');
+                if (typeof autoDeduplicateSeries === 'function') {
+                    const dedupRes = await autoDeduplicateSeries();
+                    if (dedupRes && dedupRes.mergedCount > 0) {
+                        console.log(`✨ [Periodic Revalidation] ${dedupRes.mergedCount} série(s) duplicada(s) fundidas e limpas automaticamente.`);
+                        hasDefinitiveInvalidation = true;
+                    }
+                }
+            } catch (dedupErr) {}
+
+            // Se houve invalidação definitiva de mídia ou fusão de duplicatas, reconstrói o catálogo público
             if (hasDefinitiveInvalidation) {
                 console.log('🔄 [Periodic Revalidation] Reconstruindo catálogo público após invalidação definitiva de mídia...');
                 await this.loadCatalogo();
@@ -645,6 +657,14 @@ class CatalogoManager {
 
         this._loadingPromise = (async () => {
             try {
+                // Auto-deduplicação preventiva de séries no banco antes de carregar
+                try {
+                    const { autoDeduplicateSeries } = require('../database/db');
+                    if (typeof autoDeduplicateSeries === 'function') {
+                        await autoDeduplicateSeries();
+                    }
+                } catch (e) {}
+
                 // Limpa registros orfãos e sem mídia para manter integridade
                 try {
                     await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL)`);
@@ -1255,6 +1275,9 @@ class CatalogoManager {
     }
 
     async adicionarEpisodioSerie(serieNome, temporadaNum, episodioNum, messageId, fileId = null, metadados = {}) {
+        const cleanNome = (serieNome || '').trim();
+        const normTarget = normalizeTitle(cleanNome);
+
         let serie = null;
         if (metadados.tmdbId) {
             serie = this.catalogo.series.find(s => s.tmdbId && Number(s.tmdbId) === Number(metadados.tmdbId));
@@ -1262,16 +1285,16 @@ class CatalogoManager {
         if (!serie) {
             serie = this.catalogo.series.find(s => {
                 if (s.tmdbId && metadados.tmdbId && Number(s.tmdbId) !== Number(metadados.tmdbId)) return false;
-                return s.nome.toLowerCase() === serieNome.toLowerCase() || isSameMedia(s.nome, serieNome);
+                return normalizeTitle(s.nome) === normTarget || normalizeTitle(s.nomeOriginal) === normTarget || isSameMedia(s.nome, cleanNome);
             });
         }
 
         // Se metadados de poster ou TMDB estiverem ausentes, busca no TMDB proativamente
         if (!metadados.posterUrl || !metadados.tmdbId) {
             try {
-                const tmdbRes = await TMDBService.searchTV(serieNome);
+                const tmdbRes = await TMDBService.searchTV(cleanNome);
                 if (tmdbRes && tmdbRes.length > 0) {
-                    const matchTmdb = tmdbRes.find(r => isSameMedia(r.nome, serieNome) || isSameMedia(r.nomeOriginal, serieNome)) || tmdbRes[0];
+                    const matchTmdb = tmdbRes.find(r => isSameMedia(r.nome, cleanNome) || isSameMedia(r.nomeOriginal, cleanNome)) || tmdbRes[0];
                     const det = (await TMDBService.getTVDetails(matchTmdb.tmdbId)) || matchTmdb;
                     metadados.tmdbId = metadados.tmdbId || det.tmdbId;
                     metadados.posterUrl = metadados.posterUrl || det.posterUrl;
@@ -1282,6 +1305,11 @@ class CatalogoManager {
                     metadados.nomeOriginal = metadados.nomeOriginal || det.nomeOriginal;
                 }
             } catch (e) {}
+        }
+
+        // Se o TMDB retornou tmdbId agora, reavalia se a série já está em memória
+        if (!serie && metadados.tmdbId) {
+            serie = this.catalogo.series.find(s => s.tmdbId && Number(s.tmdbId) === Number(metadados.tmdbId));
         }
 
         const isDub = metadados.isDublado ?? (metadados.audio ? !metadados.audio.toLowerCase().includes('legendado') : true);
@@ -1295,42 +1323,49 @@ class CatalogoManager {
             try {
                 let dbCheck = null;
                 if (metadados.tmdbId) {
-                    dbCheck = await db.query(`SELECT * FROM series WHERE tmdb_id = $1 LIMIT 1`, [metadados.tmdbId]);
+                    dbCheck = await db.query(`SELECT * FROM series WHERE tmdb_id = $1 LIMIT 1`, [Number(metadados.tmdbId)]);
                 }
-                if ((!dbCheck || dbCheck.rows.length === 0) && !metadados.tmdbId) {
-                    dbCheck = await db.query(`SELECT * FROM series WHERE LOWER(nome) = LOWER($1) LIMIT 1`, [serieNome.trim()]);
+                if (!dbCheck || dbCheck.rows.length === 0) {
+                    dbCheck = await db.query(`
+                        SELECT * FROM series 
+                        WHERE LOWER(REGEXP_REPLACE(REGEXP_REPLACE(nome, '[×✕✖⨯]', 'x', 'g'), '[^a-zA-Z0-9]', '', 'g')) = $1
+                        LIMIT 1
+                    `, [normTarget]);
                 }
                 if (dbCheck && dbCheck.rows.length > 0) {
                     const row = dbCheck.rows[0];
-                    serie = {
-                        id: row.id,
-                        tmdbId: row.tmdb_id,
-                        imdbId: row.imdb_id,
-                        nome: row.nome,
-                        nomeOriginal: row.nome_original || '',
-                        descricao: row.sinopse || '',
-                        sinopse: row.sinopse || '',
-                        posterUrl: row.poster_url,
-                        backdropUrl: row.backdrop_url,
-                        ano: row.ano || '',
-                        nota: parseFloat(row.nota || 8.0),
-                        generos: typeof row.generos === 'string' ? JSON.parse(row.generos || '[]') : (row.generos || []),
-                        isDorama: !!row.is_dorama,
-                        isAnime: !!row.is_anime,
-                        isMicrodrama: !!row.is_microdrama,
-                        subtipo: row.subtipo || 'serie',
-                        formato: row.formato || 'horizontal',
-                        origem: row.origem || 'China',
-                        plataformaOrigem: row.plataforma_origem || null,
-                        trendingScore: parseFloat(row.trending_score || 0.0),
-                        isDublado: !!row.is_dublado,
-                        isLegendado: !!row.is_legendado,
-                        tipo: row.is_microdrama ? 'dorama' : (row.is_anime ? 'anime' : (row.is_dorama ? 'dorama' : 'serie')),
-                        temporadas: [],
-                        dataAdicionado: row.created_at || new Date().toISOString(),
-                        tags: this.extrairTags(row.nome)
-                    };
-                    this.catalogo.series.push(serie);
+                    serie = this.catalogo.series.find(s => Number(s.id) === Number(row.id));
+                    if (!serie) {
+                        serie = {
+                            id: row.id,
+                            tmdbId: row.tmdb_id,
+                            imdbId: row.imdb_id,
+                            nome: row.nome,
+                            nomeOriginal: row.nome_original || '',
+                            descricao: row.sinopse || '',
+                            sinopse: row.sinopse || '',
+                            posterUrl: row.poster_url,
+                            backdropUrl: row.backdrop_url,
+                            ano: row.ano || '',
+                            nota: parseFloat(row.nota || 8.0),
+                            generos: typeof row.generos === 'string' ? JSON.parse(row.generos || '[]') : (row.generos || []),
+                            isDorama: !!row.is_dorama,
+                            isAnime: !!row.is_anime,
+                            isMicrodrama: !!row.is_microdrama,
+                            subtipo: row.subtipo || 'serie',
+                            formato: row.formato || 'horizontal',
+                            origem: row.origem || 'China',
+                            plataformaOrigem: row.plataforma_origem || null,
+                            trendingScore: parseFloat(row.trending_score || 0.0),
+                            isDublado: !!row.is_dublado,
+                            isLegendado: !!row.is_legendado,
+                            tipo: row.is_microdrama ? 'dorama' : (row.is_anime ? 'anime' : (row.is_dorama ? 'dorama' : 'serie')),
+                            temporadas: [],
+                            dataAdicionado: row.created_at || new Date().toISOString(),
+                            tags: this.extrairTags(row.nome)
+                        };
+                        this.catalogo.series.push(serie);
+                    }
                 }
             } catch (errDbCheck) {
                 console.warn('⚠️ Erro ao verificar série existente no banco PostgreSQL:', errDbCheck.message);
@@ -1340,7 +1375,19 @@ class CatalogoManager {
         if (!serie) {
             let sId = null;
             try {
-                const res = await db.query(`
+                const insertSql = metadados.tmdbId ? `
+                    INSERT INTO series (
+                        nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
+                        nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
+                        is_dublado, is_legendado, is_cam, is_microdrama, subtipo, formato, origem,
+                        plataforma_origem, trending_score, metadata_extra, created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
+                    )
+                    ON CONFLICT (tmdb_id) WHERE tmdb_id IS NOT NULL
+                    DO UPDATE SET updated_at = NOW()
+                    RETURNING id
+                ` : `
                     INSERT INTO series (
                         nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                         nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
@@ -1349,11 +1396,13 @@ class CatalogoManager {
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
                     ) RETURNING id
-                `, [
-                    serieNome.trim(), metadados.nomeOriginal || serieNome.trim(), metadados.ano || '',
+                `;
+
+                const res = await db.query(insertSql, [
+                    cleanNome, metadados.nomeOriginal || cleanNome, metadados.ano || '',
                     JSON.stringify(metadados.generos || []), metadados.sinopse || '',
                     metadados.posterUrl || null, metadados.backdropUrl || null,
-                    metadados.nota || 8.0, metadados.tmdbId || null, metadados.imdbId || null,
+                    metadados.nota || 8.0, metadados.tmdbId ? Number(metadados.tmdbId) : null, metadados.imdbId || null,
                     1, 1, isDorama, isDub, isLeg, metadados.isCam || false,
                     isMicro, metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
                     metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
@@ -1364,36 +1413,49 @@ class CatalogoManager {
                 sId = res.rows[0]?.id;
             } catch (e) {
                 console.warn('⚠️ Erro ao inserir série no PostgreSQL:', e.message);
+                if (metadados.tmdbId) {
+                    const fallbackRow = await db.query(`SELECT id FROM series WHERE tmdb_id = $1 LIMIT 1`, [Number(metadados.tmdbId)]).catch(() => null);
+                    if (fallbackRow?.rows?.[0]?.id) {
+                        sId = fallbackRow.rows[0].id;
+                    }
+                }
             }
 
-            serie = {
-                id: sId || Date.now(),
-                tmdbId: metadados.tmdbId || null,
-                imdbId: metadados.imdbId || null,
-                nome: serieNome.trim(),
-                nomeOriginal: metadados.nomeOriginal || '',
-                descricao: metadados.sinopse || metadados.descricao || '',
-                sinopse: metadados.sinopse || '',
-                posterUrl: metadados.posterUrl || null,
-                backdropUrl: metadados.backdropUrl || null,
-                ano: metadados.ano || '',
-                nota: metadados.nota || 8.0,
-                generos: metadados.generos || [],
-                isDorama: isDorama,
-                isMicrodrama: isMicro,
-                subtipo: metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
-                formato: metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
-                origem: metadados.origem || 'China',
-                plataformaOrigem: metadados.plataformaOrigem || metadados.plataforma_origem || null,
-                trendingScore: parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
-                isDublado: isDub,
-                isLegendado: isLeg,
-                tipo: isMicro ? 'dorama' : 'serie',
-                temporadas: [],
-                dataAdicionado: new Date().toISOString(),
-                tags: this.extrairTags(serieNome + ' ' + (metadados.generos ? metadados.generos.join(' ') : ''))
-            };
-            this.catalogo.series.push(serie);
+            if (sId) {
+                serie = this.catalogo.series.find(s => Number(s.id) === Number(sId));
+            }
+
+            if (!serie) {
+                serie = {
+                    id: sId || Date.now(),
+                    tmdbId: metadados.tmdbId ? Number(metadados.tmdbId) : null,
+                    imdbId: metadados.imdbId || null,
+                    nome: cleanNome,
+                    nomeOriginal: metadados.nomeOriginal || '',
+                    descricao: metadados.sinopse || metadados.descricao || '',
+                    sinopse: metadados.sinopse || '',
+                    posterUrl: metadados.posterUrl || null,
+                    backdropUrl: metadados.backdropUrl || null,
+                    ano: metadados.ano || '',
+                    nota: metadados.nota || 8.0,
+                    generos: metadados.generos || [],
+                    isDorama: isDorama,
+                    isAnime: !!(metadados.isAnime || metadados.is_anime || /anime/i.test((metadados.generos || []).join(' '))),
+                    isMicrodrama: isMicro,
+                    subtipo: metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                    formato: metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
+                    origem: metadados.origem || 'China',
+                    plataformaOrigem: metadados.plataformaOrigem || metadados.plataforma_origem || null,
+                    trendingScore: parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
+                    isDublado: isDub,
+                    isLegendado: isLeg,
+                    tipo: isMicro ? 'dorama' : 'serie',
+                    temporadas: [],
+                    dataAdicionado: new Date().toISOString(),
+                    tags: this.extrairTags(cleanNome + ' ' + (metadados.generos ? metadados.generos.join(' ') : ''))
+                };
+                this.catalogo.series.push(serie);
+            }
         } else {
             if (isDub) serie.isDublado = true;
             if (isLeg) serie.isLegendado = true;

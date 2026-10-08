@@ -11,6 +11,7 @@ function normalizeTitle(title) {
     if (!title) return '';
     return String(title)
         .toLowerCase()
+        .replace(/[×✕✖⨯]/g, 'x') // Converte símbolos de multiplicação unicode em 'x' (ex: SPY×FAMILY -> spyxfamily)
         .replace(/\s*\(\d{4}\)|\b\d{4}\b/g, '') // remove anos como (2018), 2023
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
         .replace(/[^a-z0-9]/g, '') // remove pontuacao e espacos

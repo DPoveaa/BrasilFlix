@@ -1029,6 +1029,70 @@ class StremioServer {
             }
         });
 
+        // Merge de séries duplicadas: move todos os episódios de sourceId para targetId e deleta sourceId
+        this.app.post('/api/admin/catalogo/serie/merge-duplicate', auth, async (req, res) => {
+            try {
+                const { sourceId, targetId } = req.body;
+                if (!sourceId || !targetId) return res.status(400).json({ error: 'sourceId e targetId são obrigatórios.' });
+                if (String(sourceId) === String(targetId)) return res.status(400).json({ error: 'sourceId e targetId não podem ser iguais.' });
+
+                const sNum = Number(sourceId);
+                const tNum = Number(targetId);
+
+                const srcRes = await db.query(`SELECT id, nome FROM series WHERE id = $1`, [sNum]);
+                const tgtRes = await db.query(`SELECT id, nome FROM series WHERE id = $1`, [tNum]);
+                if (!srcRes.rows.length) return res.status(404).json({ error: `Série de origem (id=${sNum}) não encontrada.` });
+                if (!tgtRes.rows.length) return res.status(404).json({ error: `Série de destino (id=${tNum}) não encontrada.` });
+
+                // Reassocia episódios da duplicata para a série principal,
+                // evitando conflitos de chave única (serie_id, temporada_numero, numero)
+                // Se já existir o mesmo T+E na série destino, mantém o existente e remove o da fonte
+                const eps = await db.query(`SELECT id, temporada_numero, numero FROM episodios WHERE serie_id = $1`, [sNum]);
+                let moved = 0, skipped = 0;
+                for (const ep of eps.rows) {
+                    const conflict = await db.query(
+                        `SELECT id FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3`,
+                        [tNum, ep.temporada_numero, ep.numero]
+                    );
+                    if (conflict.rows.length > 0) {
+                        // Conflito: deleta o da fonte (o da série principal tem precedência)
+                        await db.query(`DELETE FROM episodios WHERE id = $1`, [ep.id]);
+                        skipped++;
+                    } else {
+                        await db.query(`UPDATE episodios SET serie_id = $1 WHERE id = $2`, [tNum, ep.id]);
+                        moved++;
+                    }
+                }
+
+                // Atualiza contadores da série principal
+                await db.query(`
+                    UPDATE series SET
+                        total_temporadas = (SELECT COUNT(DISTINCT temporada_numero) FROM episodios WHERE serie_id = $1),
+                        total_episodios  = (SELECT COUNT(*) FROM episodios WHERE serie_id = $1),
+                        is_dublado  = COALESCE((SELECT bool_or(is_dublado)   FROM episodios WHERE serie_id = $1), false),
+                        is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
+                        updated_at = NOW()
+                    WHERE id = $1
+                `, [tNum]);
+
+                // Remove a série duplicada
+                await db.query(`DELETE FROM series WHERE id = $1`, [sNum]);
+
+                // Recarrega catálogo em memória
+                await this.catalogoManager?.loadCatalogo();
+
+                res.json({
+                    success: true,
+                    moved,
+                    skipped,
+                    message: `${moved} episódio(s) movidos para a série principal (id=${tNum}). ${skipped} conflito(s) ignorados. Duplicata (id=${sNum}) excluída.`
+                });
+            } catch (e) {
+                console.error('❌ [MergeDuplicate]', e.message);
+                res.status(500).json({ error: e.message });
+            }
+        });
+
         // 7. TMDB Live Search & Detalhes
         this.app.get('/api/admin/tmdb/search', auth, async (req, res) => {
             try {

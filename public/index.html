@@ -25506,6 +25506,44 @@
                 }
             }
 
+            async function handleMergeSeriesDuplicate(sourceId, sourceNome) {
+                const srcSerie = adminCatalogData?.series?.find(s => String(s.id) === String(sourceId));
+                const nomeOrigem = sourceNome || (srcSerie ? srcSerie.nome : `Série #${sourceId}`);
+                const targetIdStr = prompt(
+                    `🔗 FUNDIR DUPLICATA\n\nVocê vai mover todos os episódios de "${nomeOrigem}" (ID: ${sourceId}) para outra série.\n\nDigite o ID da série PRINCIPAL (destino) onde os episódios devem ficar:`
+                );
+                if (!targetIdStr || !targetIdStr.trim()) return;
+                const targetId = Number(targetIdStr.trim());
+                if (isNaN(targetId) || targetId <= 0) {
+                    showToast('ID inválido. Digite apenas o número do ID da série destino.', 'error');
+                    return;
+                }
+                if (String(targetId) === String(sourceId)) {
+                    showToast('A série de destino não pode ser a mesma que a de origem.', 'error');
+                    return;
+                }
+
+                const targetSerie = adminCatalogData?.series?.find(s => String(s.id) === String(targetId));
+                const targetNome = targetSerie ? `"${targetSerie.nome}"` : `ID ${targetId}`;
+
+                if (!confirm(`Confirmar:\n\nMover todos os episódios de "${nomeOrigem}" (ID: ${sourceId}) para ${targetNome} (ID: ${targetId}) e excluir a duplicata?\n\nEsta operação não pode ser desfeita.`)) return;
+
+                try {
+                    const res = await fetch('/api/admin/catalogo/serie/merge-duplicate', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ sourceId, targetId })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Erro ao fundir séries.');
+                    showToast(data.message || 'Séries fundidas com sucesso!', 'success');
+                    loadAdminCatalog();
+                    loadCatalog();
+                } catch (e) {
+                    showToast(e.message || 'Erro ao fundir séries duplicadas.', 'error');
+                }
+            }
+
             async function handleDeleteCatalogItem(id, type, rebaixar = false, versao = null) {
                 let actionText = '';
                 if (rebaixar) {
