@@ -204,66 +204,82 @@ function isSameMedia(titleA, titleB) {
 const DISTINCT_FRANCHISE_GROUPS = [
     {
         name: 'Bleach: Thousand-Year Blood War',
+        parents: ['bleach'],
         keys: ['thousandyear', 'bloodwar', 'tybw', 'sennenkessen', 'sennen', 'kessen', 'rebirthofsouls']
     },
     {
         name: 'Dragon Ball Super',
+        parents: ['dragonball', 'db'],
         keys: ['dbsuper', 'super']
     },
     {
         name: 'Dragon Ball GT',
+        parents: ['dragonball', 'db'],
         keys: ['dbgt', 'gt']
     },
     {
         name: 'Dragon Ball Kai',
+        parents: ['dragonball', 'db'],
         keys: ['dbkai', 'kai']
     },
     {
         name: 'Dragon Ball Daima',
+        parents: ['dragonball', 'db'],
         keys: ['daima']
     },
     {
         name: 'Naruto Shippuden',
+        parents: ['naruto'],
         keys: ['shippuden', 'shippuuden']
     },
     {
         name: 'Boruto',
+        parents: ['naruto', 'boruto'],
         keys: ['boruto']
     },
     {
         name: 'Pokémon Horizons',
+        parents: ['pokemon', 'pocketmonsters'],
         keys: ['horizons', 'horizontes']
     },
     {
         name: 'Pokémon Chronicles',
+        parents: ['pokemon', 'pocketmonsters'],
         keys: ['chronicles', 'cronicas']
     },
     {
         name: 'Pokémon Origins',
+        parents: ['pokemon', 'pocketmonsters'],
         keys: ['origins', 'origens']
     },
     {
         name: 'Pokémon Generations',
+        parents: ['pokemon', 'pocketmonsters'],
         keys: ['generations', 'geracoes']
     },
     {
         name: 'Pokémon Concierge',
+        parents: ['pokemon', 'pocketmonsters'],
         keys: ['concierge']
     },
     {
         name: 'One Piece Live Action',
+        parents: ['onepiece'],
         keys: ['liveaction', 'aserie']
     },
     {
         name: 'Fullmetal Alchemist: Brotherhood',
+        parents: ['fullmetalalchemist', 'fma'],
         keys: ['brotherhood']
     },
     {
         name: 'Sword Art Online: Alicization',
+        parents: ['swordartonline', 'sao'],
         keys: ['alicization']
     },
     {
         name: 'Sword Art Online: Progressive',
+        parents: ['swordartonline', 'sao'],
         keys: ['progressive']
     }
 ];
@@ -286,6 +302,12 @@ function isReleaseCompatibleWithTarget(releaseTitle, targetTitle, originalName =
 
     // 1. Grupos de franquia distinta (Pokémon Horizons vs 1997, Bleach TYBW vs 2004, etc.)
     for (const group of DISTINCT_FRANCHISE_GROUPS) {
+        // Só valida se o target ou o release pertencer à franquia pai do grupo
+        if (group.parents && group.parents.length > 0) {
+            const isRelevant = group.parents.some(p => normRel.includes(p) || normTarget.includes(p) || normOrig.includes(p));
+            if (!isRelevant) continue;
+        }
+
         const inRelease = group.keys.some(k => normRel.includes(k));
         const inTarget = group.keys.some(k => normTarget.includes(k) || normOrig.includes(k));
 

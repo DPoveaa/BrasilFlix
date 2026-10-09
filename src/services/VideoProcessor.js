@@ -882,51 +882,48 @@ ${events.join('\n')}
         const norm = this.normalizeSubtitleText(content);
 
         // 1. Gerúndio europeu inequívoco: verbo auxiliar + a + infinitivo (ex: "estou a fazer", "estava a ver")
-        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estiver|estiveres|estivermos|estiverem|esteve|estiveste|estiveram|andar|ando|andas|anda|andamos|andam|andava|andavam|ficar|fico|ficas|fica|ficamos|ficam|ficava|ficavam|ficou|continuar|continuo|continua|continuam|continuava|pos-se|puseram-se)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir|lutar|treinar|combater|proteger|fugir|esconder|seguir|ajudar|matar|salvar|destruir|ganhar|perder|jogar|descobrir|acontecer|entender|compreender|responder|comecar|acabar|terminar|voltar|viver|crescer|cair|subir|descer|gostar|precisar|querer|poder)\b/gi;
+        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estiver|estiveres|estivermos|estiverem|esteve|estiveste|estiveram|andar|ando|andas|anda|andamos|andam|andava|andavam|ficar|fico|ficas|fica|ficamos|ficam|ficava|ficavam|ficou|pos-se|puseram-se)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir|lutar|treinar|combater|proteger|fugir|esconder|seguir|ajudar|matar|salvar|destruir|ganhar|perder|jogar|descobrir|acontecer|entender|compreender|responder|comecar|acabar|terminar|voltar|viver|crescer|cair|subir|descer|gostar|precisar|querer|poder|apanhar|perceber)\b/gi;
         const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
 
-        // 2. Pretérito perfeito inequívoco de 2ª pessoa singular (TU) — "fizeste", "disseste", "ouviste"
-        const ptPtTuPreteritoRegex = /\b[a-z]{3,15}(?:aste|este|iste)\b/gi;
-        const ptPtTuPreteritoRaw = (norm.match(ptPtTuPreteritoRegex) || []);
-        const ptPtFalsoPositivoPreterito = /^(contraste|entusiastes?|fantaste|realiste|moraliste|socialiste|capitaliste|artiste|comuniste|fasciste|pacifiste|otimiste|pessimiste|realiste|idealiste|racionalist[ae]|sensacionaliste|profissionaliste|especialiste|minimaliste|maximaliste|nacionaliste|imperialiste|colonialiste|liberaliste|globaliste|digitaliste|analiste|jornaliste|naturaliste|formaliste|universaliste|feministe|humaniste|triste|existe|insiste|persiste|consiste|resiste|assiste|subsiste)$/i;
-        const ptPtTuPreteritoMatches = ptPtTuPreteritoRaw.filter(w => !ptPtFalsoPositivoPreterito.test(w)).length;
-
-        // 3. Pronome "tu" como sujeito com conjugação europeia
+        // 2. Pronome "tu" como sujeito com conjugação europeia de 2ª pessoa
         const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|das|ves|trazes|poes|eras|tinhas|ias|sabias|podias|querias|fizeste|disseste|viste|ouviste|foste|vieste)\b/gi;
         const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
 
-        // 4. Verbos de 2ª pessoa (tu)
-        const ptPtTuVerbRegex = /\b(fizeste|disseste|soubeste|pudeste|quiseste|trouxeste|puseste|vieste|estiveste|tiveste|ouviste|dissesses|fizesses|quiseres|puderes|souberes|tiveres|fores|sabias|querias|podias|tinhas|estavas|dizias|fazias)\b/gi;
+        // 3. Verbos de 2ª pessoa (tu) no pretérito e outros tempos típicos de Portugal
+        const ptPtTuVerbRegex = /\b(fizeste|disseste|soubeste|pudeste|quiseste|trouxeste|puseste|vieste|estiveste|tiveste|ouviste|dissesses|fizesses|quiseres|puderes|souberes|tiveres|fores|sabias|querias|podias|tinhas|estavas|dizias|fazias|falaste|comeste|partiste|pediste|andaste|ficaste|escutaste|olhaste|lembraste|deixaste|ganhaste|perdeste)\b/gi;
         const ptPtTuVerbMatches = (norm.match(ptPtTuVerbRegex) || []).length;
 
-        // 5. Ênclise europeia típica com hífen e contrações pronominais
-        const ptPtEncliseRegex = /\b(diz-me|diga-me|escuta-me|esculte-me|ouve-me|ouca-me|ajuda-me|ajude-me|lembra-te|lembre-se|cala-te|cale-se|olha-te|levanta-te|da-me|de-me|deixa-me|mostra-me|mostre-me|espera-me|espere-me|mata-me|salva-me|chama-te|porta-te|senta-te|afasta-te|acalma-te|da-lhe|deu-lhe|disse-lhe|falou-lhe|diz-lhe|pergunta-lhe|da-mo|da-ma|diz-mo|deu-mo|da-lho|deu-lho)\b/gi;
+        // 4. Ênclise europeia e contrações pronominais típicas de Portugal
+        const ptPtEncliseRegex = /\b(da-mo|da-ma|diz-mo|deu-mo|da-lho|deu-lho|disse-mo|porta-te|cala-te|lembra-te)\b/gi;
         const ptPtEncliseMatches = (norm.match(ptPtEncliseRegex) || []).length;
 
-        // 6. Ortografia europeia com consoantes mudas preservadas
-        const ptPtSpellingRegex = /\b(accao|accoes|activo|activa|activos|activas|actriz|actrizes|optimo|optima|optimos|optimas|exacto|exacta|exactos|exactas|exactamente|directo|directa|directos|directas|director|directora|directores|adopcao|baptismo|reaccao|reaccoes|espectador|espectadores|sector|sectores|projecto|projectos|connosco|convosco)\b/gi;
+        // 5. Ortografia europeia com consoantes mudas preservadas
+        const ptPtSpellingRegex = /\b(accao|accoes|activo|activa|activos|activas|actriz|actrizes|optimo|optima|optimos|optimas|exacto|exacta|exactos|exactas|exactamente|directo|directa|directos|directas|adopcao|baptismo|reaccao|reaccoes|espectador|espectadores|sector|sectores|projecto|projectos|connosco|convosco)\b/gi;
         const ptPtSpellingMatches = (norm.match(ptPtSpellingRegex) || []).length;
 
-        // 7. Vocabulário estritamente exclusivo de Portugal
-        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|a\s+serio\?|de\s+certeza\b|com\s+certeza\b|porreiro|porreira|fita-cola)\b/gi;
+        // 6. Vocabulário estritamente exclusivo de Portugal (SEM falsos positivos comuns do Brasil como "com certeza", "pois bem")
+        const ptPtVocabRegex = /\b(ora\s+pois|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|porreiro|porreira|fita-cola|fato\s+de\s+banho|camioneta|guichet|perceber\?|apanhar\s+o|apanhar\s+a)\b/gi;
         const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
 
-        // Regras eliminatórias imediatas:
-        if (ptPtGerundMatches >= 2) return true;
-        if (ptPtTuPreteritoMatches >= 2) return true;
-        if (ptPtVocabMatches >= 2) return true;
-        if (ptPtSpellingMatches >= 2) return true;
-        if (ptPtTuSubjectMatches >= 2) return true;
-
         const ptPtScore = (ptPtGerundMatches * 6) +
-                          (ptPtTuPreteritoMatches * 5) +
                           (ptPtTuSubjectMatches * 6) +
                           (ptPtTuVerbMatches * 4) +
                           (ptPtEncliseMatches * 3) +
                           (ptPtSpellingMatches * 5) +
                           (ptPtVocabMatches * 5);
 
-        return ptPtScore >= 8;
+        // Pontuação de marcas de Português Brasileiro para contrabalançar
+        const ptBrGerundMatches = (norm.match(/\b[a-z]{3,15}(?:ando|endo|indo)\b/gi) || []).length;
+        const ptBrVocabMatches = (norm.match(/\b(voce|voces|to|ta|tava|tavam|ne|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|celulares|onibus|trem\b|cafe\s+da\s+manha|banheiro|banheiros|garoto|garota|garotos|garotas|moco|moca|grana|droga|beleza|valeu\b|time\b|equipe\b|ruim\b|olha\s+so|tudo\s+bem|como\s+vai|falou\b|com\s+certeza\b|partiu\b|fala\s+serio)\b/gi) || []).length;
+        const ptBrProcliseMatches = (norm.match(/\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|nao\s+me|nao\s+te|se\s+lembra|me\s+da|me\s+diz|te\s+amo|te\s+vejo)\b/gi) || []).length;
+        const ptBrScore = (ptBrGerundMatches * 2) + (ptBrVocabMatches * 3) + (ptBrProcliseMatches * 2);
+
+        // Se contiver marcas nítidas de Portugal e ausência de PT-BR predominante:
+        if (ptPtScore >= 8 && (ptBrScore < 10 || ptPtScore >= ptBrScore * 1.5)) return true;
+        if (ptPtVocabMatches >= 2 && ptBrScore < 8) return true;
+        if (ptPtGerundMatches >= 2 && ptBrScore < 8) return true;
+
+        return false;
     }
 
     isBrazilianPortugueseSubtitle(content) {
@@ -939,54 +936,12 @@ ${events.join('\n')}
 
         const norm = this.normalizeSubtitleText(content);
 
-        // 1. Padrões característicos e inequívocos de Português de Portugal (PT-PT) para pontuação fina
-        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estiver|estiveres|estivermos|estiverem|esteve|estiveste|estiveram|andar|ando|andas|anda|andamos|andam|andava|andavam|ficar|fico|ficas|fica|ficamos|ficam|ficava|ficavam|ficou|continuar|continuo|continua|continuam|continuava|pos-se|puseram-se)\s+a\s+(?:fazer|dizer|falar|pensar|ouvir|ver|dormir|morrer|tentar|olhar|pedir|comer|correr|sentir|explicar|trabalhar|conversar|esperar|partir|sair|chegar|rir|chorar|brincar|gritar|abrir|fechar|levar|passar|procurar|lembrar|esquecer|deixar|tomar|dar|ir|lutar|treinar|combater|proteger|fugir|esconder|seguir|ajudar|matar|salvar|destruir|ganhar|perder|jogar|descobrir|acontecer|entender|compreender|responder|comecar|acabar|terminar|voltar|viver|crescer|cair|subir|descer|gostar|precisar|querer|poder)\b/gi;
-        const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
-
-        const ptPtTuPreteritoRegex = /\b[a-z]{3,15}(?:aste|este|iste)\b/gi;
-        const ptPtTuPreteritoRaw = (norm.match(ptPtTuPreteritoRegex) || []);
-        const ptPtFalsoPositivoPreterito = /^(contraste|entusiastes?|fantaste|realiste|moraliste|socialiste|capitaliste|artiste|comuniste|fasciste|pacifiste|otimiste|pessimiste|realiste|idealiste|racionalist[ae]|sensacionaliste|profissionaliste|especialiste|minimaliste|maximaliste|nacionaliste|imperialiste|colonialiste|liberaliste|globaliste|digitaliste|analiste|jornaliste|naturaliste|formaliste|universaliste|feministe|humaniste|triste|existe|insiste|persiste|consiste|resiste|assiste|subsiste)$/i;
-        const ptPtTuPreteritoMatches = ptPtTuPreteritoRaw.filter(w => !ptPtFalsoPositivoPreterito.test(w)).length;
-
-        const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|das|ves|trazes|poes|eras|tinhas|ias|sabias|podias|querias|fizeste|disseste|viste|ouviste|foste|vieste)\b/gi;
-        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
-
-        const ptPtTuVerbRegex = /\b(fizeste|disseste|soubeste|pudeste|quiseste|trouxeste|puseste|vieste|estiveste|tiveste|ouviste|dissesses|fizesses|quiseres|puderes|souberes|tiveres|fores|sabias|querias|podias|tinhas|estavas|dizias|fazias)\b/gi;
-        const ptPtTuVerbMatches = (norm.match(ptPtTuVerbRegex) || []).length;
-
-        const ptPtEncliseRegex = /\b(diz-me|diga-me|escuta-me|esculte-me|ouve-me|ouca-me|ajuda-me|ajude-me|lembra-te|lembre-se|cala-te|cale-se|olha-te|levanta-te|da-me|de-me|deixa-me|mostra-me|mostre-me|espera-me|espere-me|mata-me|salva-me|chama-te|porta-te|senta-te|afasta-te|acalma-te|da-lhe|deu-lhe|disse-lhe|falou-lhe|diz-lhe|pergunta-lhe|da-mo|da-ma|diz-mo|deu-mo|da-lho|deu-lho)\b/gi;
-        const ptPtEncliseMatches = (norm.match(ptPtEncliseRegex) || []).length;
-
-        const ptPtSpellingRegex = /\b(accao|accoes|activo|activa|activos|activas|actriz|actrizes|optimo|optima|optimos|optimas|exacto|exacta|exactos|exactas|exactamente|directo|directa|directos|directas|director|directora|directores|adopcao|baptismo|reaccao|reaccoes|espectador|espectadores|sector|sectores|projecto|projectos|connosco|convosco)\b/gi;
-        const ptPtSpellingMatches = (norm.match(ptPtSpellingRegex) || []).length;
-
-        const ptPtVocabRegex = /\b(ora\s+bem|pois\s+bem|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|a\s+serio\?|de\s+certeza\b|com\s+certeza\b|porreiro|porreira|fita-cola)\b/gi;
-        const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
-
-        const ptPtScore = (ptPtGerundMatches * 6) +
-                          (ptPtTuPreteritoMatches * 5) +
-                          (ptPtTuSubjectMatches * 6) +
-                          (ptPtTuVerbMatches * 4) +
-                          (ptPtEncliseMatches * 3) +
-                          (ptPtSpellingMatches * 5) +
-                          (ptPtVocabMatches * 5);
-
-        // 2. Padrões característicos de Português Brasileiro (PT-BR)
-        const ptBrGerundRegex = /\b[a-z]{3,15}(?:ando|endo|indo)\b/gi;
-        const ptBrGerundMatches = (norm.match(ptBrGerundRegex) || []).length;
-
-        const ptBrVocabRegex = /\b(voce|voces|to|ta|tava|tavam|ne|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|onibus|trem\b|cafe\s+da\s+manha|banheiro|garoto|garota|garotos|garotas|moco|moca|grana|droga|beleza|valeu\b|time\b|equipe\b|ruim\b|olha\s+so|tudo\s+bem|como\s+vai)\b/gi;
-        const ptBrVocabMatches = (norm.match(ptBrVocabRegex) || []).length;
-
-        const ptBrProcliseRegex = /\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|nao\s+me|nao\s+te)\b/gi;
-        const ptBrProcliseMatches = (norm.match(ptBrProcliseRegex) || []).length;
+        // Padrões característicos de Português Brasileiro (PT-BR)
+        const ptBrGerundMatches = (norm.match(/\b[a-z]{3,15}(?:ando|endo|indo)\b/gi) || []).length;
+        const ptBrVocabMatches = (norm.match(/\b(voce|voces|to|ta|tava|tavam|ne|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|celulares|onibus|trem\b|cafe\s+da\s+manha|banheiro|banheiros|garoto|garota|garotos|garotas|moco|moca|grana|droga|beleza|valeu\b|time\b|equipe\b|ruim\b|olha\s+so|tudo\s+bem|como\s+vai|falou\b|com\s+certeza\b|partiu\b|fala\s+serio)\b/gi) || []).length;
+        const ptBrProcliseMatches = (norm.match(/\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|nao\s+me|nao\s+te|se\s+lembra|me\s+da|me\s+diz|te\s+amo|te\s+vejo)\b/gi) || []).length;
 
         const ptBrScore = (ptBrGerundMatches * 2) + (ptBrVocabMatches * 3) + (ptBrProcliseMatches * 2);
-
-        // Bloqueio rigoroso de resíduos de PT-PT sem vocabulário PT-BR claro
-        if (ptPtScore >= 4 && ptBrVocabMatches === 0 && ptBrScore < 8) {
-            return false;
-        }
 
         // Integridade de texto em língua portuguesa
         const genericPtRegex = /\b(nao|esta|estao|entao|tambem|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor|para|com|como|mais|mas|pelo|pela|dos|das)\b/gi;
@@ -996,7 +951,7 @@ ${events.join('\n')}
             return false;
         }
 
-        return true;
+        return ptBrScore >= 4 || genericMatches >= 5;
     }
 
     isGenericPortugueseSubtitle(content) {

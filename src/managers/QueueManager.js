@@ -2777,9 +2777,17 @@ class QueueManager extends EventEmitter {
                             });
 
                         } else if (currentSource.url) {
+                            const safeTitle = (job.title || metadata.nome || 'video')
+                                .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+                                .trim()
+                                .replace(/\s+/g, '_');
+                            const epSuffix = job.type === 'serie' && job.season && job.episode
+                                ? `_S${String(job.season).padStart(2, '0')}E${String(job.episode).padStart(2, '0')}`
+                                : '';
                             const cleanUrlPath = currentSource.url.split('?')[0];
-                            const baseName = path.basename(cleanUrlPath) || 'video.mp4';
-                            const fileName = `${Date.now()}_${baseName.endsWith('.mp4') || baseName.endsWith('.mkv') ? baseName : `${baseName}.mp4`}`;
+                            const baseExt = path.extname(cleanUrlPath);
+                            const finalExt = (baseExt === '.mp4' || baseExt === '.mkv') ? baseExt : '.mp4';
+                            const fileName = `${safeTitle}${epSuffix}_${Date.now()}${finalExt}`;
 
                             downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
                                 job.progress = progress.percent;
@@ -3545,6 +3553,7 @@ class QueueManager extends EventEmitter {
         // Previne que torrents falsos/renomeados (ex: "The Shadow Men 1997" entregue como "Resident Evil")
         // sejam silenciosamente cadastrados no catálogo com o nome errado.
         if (uploadResult.fileName) {
+            const isDirectDownload = !!(bestSource && !bestSource.magnet && (bestSource.url || bestSource.isDirect));
             const normalize = (s) => (s || '').toLowerCase()
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove acentos
                 .replace(/[^a-z0-9\s]/g, ' ')
@@ -3572,7 +3581,7 @@ class QueueManager extends EventEmitter {
                 throw new Error(errMsg);
             }
 
-            // 2. Validação de palavras-chave do título ou título original
+            // 2. Validação de palavras-chave do título ou título original (apenas para fontes torrent/P2P)
             const jobTitleNorm = normalize(targetTitle);
             const origTitleNorm = normalize(targetOrig);
             const fileNameNorm = normalize(uploadResult.fileName.replace(/\.\w{2,4}$/, '')); // remove extensão
@@ -3585,7 +3594,7 @@ class QueueManager extends EventEmitter {
 
             const matchCount = [...targetWords].filter(w => fileWords.has(w)).length;
 
-            if (targetWords.size >= 1 && matchCount === 0) {
+            if (!isDirectDownload && targetWords.size >= 1 && matchCount === 0) {
                 // Nenhuma palavra do título ou título original bateu com o arquivo — torrent falso!
                 const errMsg = `🚫 [TORRENT FALSO DETECTADO PÓS-UPLOAD] Job "${job.title}" recebeu arquivo com nome completamente diferente: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
                 console.error(errMsg);
