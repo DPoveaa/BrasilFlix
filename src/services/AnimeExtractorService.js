@@ -60,6 +60,19 @@ class AnimeExtractorService {
             score -= 35;
         }
 
+        // Blindagem estrita para Pokémon: impede contaminação por XY/XYZ/Horizons se a busca não os solicitou
+        const queryHasXY = /\b(xy|xyz|kalos)\b/i.test(query);
+        const itemHasXY = /\b(xy|xyz|kalos)\b/i.test(itemTitle) || /\b(xy|xyz|kalos)\b/i.test(itemUrl);
+        if (!queryHasXY && itemHasXY) {
+            score -= 100;
+        }
+
+        const queryHasHorizons = /\b(horizons|horizontes)\b/i.test(query);
+        const itemHasHorizons = /\b(horizons|horizontes)\b/i.test(itemTitle) || /\b(horizons|horizontes)\b/i.test(itemUrl);
+        if (!queryHasHorizons && itemHasHorizons) {
+            score -= 100;
+        }
+
         return score;
     }
 

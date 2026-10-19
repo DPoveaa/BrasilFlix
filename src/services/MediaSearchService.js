@@ -403,7 +403,7 @@ class MediaSearchService {
             }
 
             // 8. Blindagem Estrita de Título e Franquia (impede mistura de versões como Pokémon Horizons vs 1997, Bleach TYBW vs 2004, etc.)
-            if (!isReleaseCompatibleWithTarget(r.title, cleanQuery, originalName, { ano, tipo, isAnime, isLiveActionExplicit })) {
+            if (!isReleaseCompatibleWithTarget(r.title, cleanQuery, originalName, { ano, tipo, isAnime, isLiveActionExplicit, season: options.season || options.temporada })) {
                 return false;
             }
 
@@ -560,7 +560,7 @@ class MediaSearchService {
                 const title = lines[0] || '';
 
                 // Bloqueia releases de séries/spin-offs diferentes (ex: Pokémon Horizons vs Pokémon 1997, Bleach TYBW vs 2004, etc.)
-                if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit, season: opts.season || opts.temporada })) {
                     continue;
                 }
 
@@ -710,7 +710,7 @@ class MediaSearchService {
                     }
 
                     // 5. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
-                    if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                    if (!isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit, season: opts.season || opts.temporada })) {
                         continue;
                     }
                 }
@@ -888,7 +888,7 @@ class MediaSearchService {
                 }
 
                 // 3. Blindagem Estrita de Título e Franquia (impede mistura de versões/spin-offs)
-                if (opts.query && !isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit })) {
+                if (opts.query && !isReleaseCompatibleWithTarget(title, opts.query, opts.originalName, { ano: opts.ano, tipo, isAnime: opts.isAnime, isLiveActionExplicit: opts.isLiveActionExplicit, season: opts.season || opts.temporada })) {
                     continue;
                 }
 

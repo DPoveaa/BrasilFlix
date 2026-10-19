@@ -1269,8 +1269,8 @@ class CatalogoManager {
             } catch (e) {}
         }
 
-        const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? !metadadosExtras.audio.toLowerCase().includes('legendado') : true);
-        const isLegendado = metadadosExtras.isLegendado ?? (metadadosExtras.audio ? metadadosExtras.audio.toLowerCase().includes('legendado') : false);
+        const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? (/\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(metadadosExtras.audio)) : false);
+        const isLegendado = metadadosExtras.isLegendado ?? (metadadosExtras.audio ? (/\b(legendado|dual|sub|leg)\b/i.test(metadadosExtras.audio)) : false);
 
         if (existente && !forcarAdicao) {
             console.log(`⚠️ ${tipo} já existe no catálogo: ${nome}. Atualizando versões de áudio...`);
@@ -1316,7 +1316,7 @@ class CatalogoManager {
                 messageId || null,
                 metadadosExtras.fileId || null,
                 metadadosExtras.qualidade || '1080p',
-                metadadosExtras.audio || (isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)'),
+                metadadosExtras.audio || (isDublado && isLegendado ? 'Dub/Leg (Dublado + Legendado)' : (isDublado ? 'Dublado (Áudio PT-BR)' : (isLegendado ? 'Legendado (PT-BR)' : 'Indisponível'))),
                 isDublado, isLegendado, metadadosExtras.isCam || false,
                 JSON.stringify(versoes),
                 slugVal
@@ -1353,8 +1353,8 @@ class CatalogoManager {
 
         if (!filme) return false;
 
-        const isNovaDub = novaMidia.isDublado ?? (novaMidia.audio ? !novaMidia.audio.toLowerCase().includes('legendado') : false);
-        const isNovaLeg = novaMidia.isLegendado ?? (novaMidia.audio ? novaMidia.audio.toLowerCase().includes('legendado') : false);
+        const isNovaDub = novaMidia.isDublado ?? (novaMidia.audio ? (/\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(novaMidia.audio)) : false);
+        const isNovaLeg = novaMidia.isLegendado ?? (novaMidia.audio ? (/\b(legendado|dual|sub|leg)\b/i.test(novaMidia.audio)) : false);
 
         if (!filme.versoes) filme.versoes = {};
 
@@ -1369,11 +1369,10 @@ class CatalogoManager {
         }
 
         if (isNovaDub) {
-            filme.isDublado = true;
             filme.versoes.dublado = {
-                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.dublado?.messageId || filme.messageId,
+                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : (filme.versoes?.dublado?.messageId || null),
                 notifMessageId: novaMidia.notifMessageId || filme.versoes?.dublado?.notifMessageId || null,
-                fileId: novaMidia.fileId || filme.versoes?.dublado?.fileId || filme.fileId,
+                fileId: novaMidia.fileId || (filme.versoes?.dublado?.fileId || null),
                 qualidade: novaMidia.qualidade || filme.qualidade,
                 isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
             };
@@ -1384,23 +1383,26 @@ class CatalogoManager {
         }
 
         if (isNovaLeg) {
-            filme.isLegendado = true;
             filme.versoes.legendado = {
-                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : filme.versoes?.legendado?.messageId || filme.messageId,
+                messageId: novaMidia.messageId ? Number(novaMidia.messageId) : (filme.versoes?.legendado?.messageId || null),
                 notifMessageId: novaMidia.notifMessageId || filme.versoes?.legendado?.notifMessageId || null,
-                fileId: novaMidia.fileId || filme.versoes?.legendado?.fileId || filme.fileId,
+                fileId: novaMidia.fileId || (filme.versoes?.legendado?.fileId || null),
                 qualidade: novaMidia.qualidade || filme.qualidade,
                 isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
             };
-            if (!filme.isDublado) {
+            if (!filme.versoes?.dublado?.messageId) {
                 filme.messageId = novaMidia.messageId || filme.messageId;
                 filme.fileId = novaMidia.fileId || filme.fileId;
             }
         }
 
+        // Sincroniza flags reais com a existência efetiva das mídias
+        filme.isDublado = !!(filme.versoes?.dublado && (filme.versoes.dublado.messageId || filme.versoes.dublado.fileId));
+        filme.isLegendado = !!(filme.versoes?.legendado && (filme.versoes.legendado.messageId || filme.versoes.legendado.fileId));
+
         const audioTexto = (filme.isDublado && filme.isLegendado)
             ? 'Dub/Leg (Dublado + Legendado)'
-            : (filme.isDublado ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)');
+            : (filme.isDublado ? 'Dublado (Áudio PT-BR)' : (filme.isLegendado ? 'Legendado (PT-BR)' : 'Indisponível'));
         filme.audio = audioTexto;
 
         try {
@@ -2880,6 +2882,8 @@ class CatalogoManager {
                 isDorama: f.isDorama || false,
                 isDublado: f.isDublado,
                 isLegendado: f.isLegendado,
+                versoes: f.versoes || {},
+                audio: f.audio || null,
                 isCam: f.isCam,
                 audioBadge: this.getAudioBadge(f)
             })),

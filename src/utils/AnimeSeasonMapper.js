@@ -45,6 +45,26 @@ class AnimeSeasonMapper {
     }
 
     /**
+     * Verifica se a obra é Pokémon XY
+     */
+    isPokemonXY(title) {
+        return /\b(pok[eé]mon|pocket\s*monsters)\b/i.test(title || '') && /\b(xy|kalos)\b/i.test(title || '');
+    }
+
+    /**
+     * Mapeia numeração contínua de Pokémon XY para as temporadas e episódios correspondentes no TMDB / Catálogo
+     * Temporada 17 (XY): eps 1..48
+     * Temporada 18 (XY Kalos Quest): eps 49..93 (eps 1..45 da S18)
+     * Temporada 19 (XYZ): eps 94..140 (eps 1..47 da S19)
+     */
+    mapPokemonXYContinuous(epNum) {
+        const ep = parseInt(epNum, 10) || 1;
+        if (ep <= 48) return { season: 17, episode: ep, arcName: 'Pokémon: A Série XY', isCustomMapped: true };
+        if (ep <= 93) return { season: 18, episode: ep - 48, arcName: 'Pokémon: Desafio em Kalos', isCustomMapped: true };
+        return { season: 19, episode: ep - 93, arcName: 'Pokémon: A Série XYZ', isCustomMapped: true };
+    }
+
+    /**
      * Verifica se é um anime de transmissão contínua tradicional (sem temporadas reais na fonte)
      */
     isContinuousAnime(title) {
@@ -107,6 +127,11 @@ class AnimeSeasonMapper {
         // Caso Re:Zero: TMDB agrupa 4 temporadas em Season 1 (85 eps sequenciais)
         if (this.isReZero(animeName) && s === 1) {
             return this.mapReZeroTmdbToCatalog(ep);
+        }
+
+        // Caso Pokémon XY contínuo: mapeia numeração contínua (eps 1..140) para Seasons 17, 18, 19
+        if (this.isPokemonXY(animeName) && (s === 1 || options.forceContinuous) && ep > 48) {
+            return this.mapPokemonXYContinuous(ep);
         }
 
         // Caso One Piece ou animes contínuos: se o catálogo tiver apenas Temporada 1

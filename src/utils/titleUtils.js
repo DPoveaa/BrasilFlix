@@ -263,6 +263,18 @@ const DISTINCT_FRANCHISE_GROUPS = [
         keys: ['concierge']
     },
     {
+        name: 'Pokémon XY',
+        parents: ['pokemon', 'pocketmonsters'],
+        keys: ['kalosquest', 'desafioemkalos'],
+        matchFn: (title) => /\b(pok[eé]mon|pocket\s*monsters)\b/i.test(title || '') && /\b(xy|kalos)\b/i.test(title || '') && !/\b(xyz|xy&z|xy\s*&\s*z|xy\s+and\s+z)\b/i.test(title || '')
+    },
+    {
+        name: 'Pokémon XYZ',
+        parents: ['pokemon', 'pocketmonsters'],
+        keys: ['xyz', 'xyandz', 'xyandz'],
+        matchFn: (title) => /\b(pok[eé]mon|pocket\s*monsters)\b/i.test(title || '') && /\b(xyz|xy&z|xy\s*&\s*z|xy\s+and\s+z)\b/i.test(title || '')
+    },
+    {
         name: 'One Piece Live Action',
         parents: ['onepiece'],
         keys: ['liveaction', 'aserie']
@@ -291,7 +303,7 @@ const DISTINCT_FRANCHISE_GROUPS = [
  * @param {string} releaseTitle - Título bruto do torrent/release/arquivo (ex: "Pokemon Horizons (Season 1)...")
  * @param {string} targetTitle - Título da série alvo (ex: "Pokémon" ou "Bleach")
  * @param {string|null} originalName - Nome original da série alvo (ex: "Pocket Monsters" ou "BLEACH")
- * @param {object} options - Opções adicionais ({ ano, isAnime, tipo, isLiveActionExplicit })
+ * @param {object} options - Opções adicionais ({ ano, isAnime, tipo, isLiveActionExplicit, season, temporada })
  * @returns {boolean} true se compatível, false se pertencer a série/spin-off diferente
  */
 function isReleaseCompatibleWithTarget(releaseTitle, targetTitle, originalName = null, options = {}) {
@@ -308,11 +320,22 @@ function isReleaseCompatibleWithTarget(releaseTitle, targetTitle, originalName =
             if (!isRelevant) continue;
         }
 
-        const inRelease = group.keys.some(k => normRel.includes(k));
-        const inTarget = group.keys.some(k => normTarget.includes(k) || normOrig.includes(k));
+        const inRelease = group.matchFn ? group.matchFn(releaseTitle) : group.keys.some(k => normRel.includes(k));
+        const inTarget = group.matchFn ? (group.matchFn(targetTitle) || (originalName && group.matchFn(originalName))) : group.keys.some(k => normTarget.includes(k) || normOrig.includes(k));
 
         // Se o release tem a marca distintiva mas o target NÃO tem -> REJEITA (ex: release é Horizons mas target é Pokémon)
         if (inRelease && !inTarget) {
+            // Exceção estrita de modelo de temporadas TMDB Pokémon:
+            // No TMDB (id: 60572), a série chama-se apenas "Pokémon" e Seasons 17/18 cobrem XY, e Season 19 cobre XYZ.
+            // Se o alvo for "Pokémon" e o número da temporada solicitado for correspondente, permite.
+            // Se a temporada for qualquer outra (1..16, 20..25) ou não especificada, REJEITA.
+            const sNum = parseInt(options.season || options.temporada, 10);
+            if (group.name === 'Pokémon XY' && (sNum === 17 || sNum === 18)) {
+                continue;
+            }
+            if (group.name === 'Pokémon XYZ' && sNum === 19) {
+                continue;
+            }
             return false;
         }
 

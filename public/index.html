@@ -11476,11 +11476,11 @@
 
                             <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
                                 <label class="admin-label">Usuário</label>
-                                <input type="text" id="login-username" class="admin-input"
+                                <input type="text" id="admin-login-username" class="admin-input"
                                     placeholder="Usuário do painel" required autocomplete="username">
 
                                 <label class="admin-label">Senha</label>
-                                <input type="password" id="login-password" class="admin-input"
+                                <input type="password" id="admin-login-password" class="admin-input"
                                     placeholder="••••••••••••" required autocomplete="current-password">
 
                                 <button type="submit" class="btn-modal btn-modal-primary"
@@ -13874,7 +13874,7 @@
                                 placeholder="seuemail@exemplo.com ou usuario" required autocomplete="username">
 
                             <label class="admin-label">Senha</label>
-                            <input type="password" id="login-password" class="admin-input" placeholder="Sua senha"
+                            <input type="password" id="user-login-password" class="admin-input" placeholder="Sua senha"
                                 required autocomplete="current-password">
 
                             <button type="submit" class="btn-modal btn-modal-primary"
@@ -17721,8 +17721,8 @@
 
             async function handleUserLogin(e) {
                 e.preventDefault();
-                const identifier = document.getElementById('login-identifier').value;
-                const password = document.getElementById('login-password').value;
+                const identifier = (document.getElementById('login-identifier')?.value || '').trim();
+                const password = (document.getElementById('user-login-password') || document.getElementById('login-password'))?.value || '';
 
                 try {
                     const res = await fetch('/api/user/login', {
@@ -23643,8 +23643,8 @@
 
             async function handleAdminLogin(e) {
                 e.preventDefault();
-                const u = document.getElementById('login-username').value;
-                const p = document.getElementById('login-password').value;
+                const u = (document.getElementById('admin-login-username') || document.getElementById('login-username'))?.value?.trim() || '';
+                const p = (document.getElementById('admin-login-password') || document.getElementById('login-password'))?.value || '';
 
                 try {
                     const res = await fetch('/api/admin/login', {
