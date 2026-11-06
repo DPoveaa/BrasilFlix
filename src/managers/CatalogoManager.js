@@ -1041,30 +1041,33 @@ class CatalogoManager {
                     .filter(id => !isNaN(id) && id > 0 && !CatalogoManager.mediaVerificationCache.get(id));
 
                 if (unverifiedIds.length > 0) {
-                    try {
-                        const TelegramUploader = require('../services/TelegramUploader');
-                        const uploader = TelegramUploader.getInstance();
-                        const tgResults = await uploader.getStorageMessages(unverifiedIds);
-                        for (const [mid, info] of tgResults.entries()) {
-                            if (info.status === 'FOUND') {
-                                CatalogoManager.mediaVerificationCache.set(mid, 'VERIFIED_PLAYABLE', {
-                                    docId: info.docId,
-                                    docSize: info.docSize,
-                                    isVideo: info.isVideo,
-                                    duration: info.duration,
-                                    fileName: info.fileName
-                                });
-                            } else if (info.status === 'NOT_FOUND') {
-                                CatalogoManager.mediaVerificationCache.set(mid, 'MISSING', { error: 'MessageEmpty' });
-                            } else if (info.status === 'INVALID_MEDIA') {
-                                CatalogoManager.mediaVerificationCache.set(mid, 'INVALID_MEDIA', { error: info.error });
-                            } else if (info.status === 'ERROR') {
-                                CatalogoManager.mediaVerificationCache.set(mid, 'UNVERIFIED', { error: info.error });
+                    // Executa a verificação preventiva em segundo plano sem travar o boot nem o início da fila
+                    setImmediate(async () => {
+                        try {
+                            const TelegramUploader = require('../services/TelegramUploader');
+                            const uploader = TelegramUploader.getInstance();
+                            const tgResults = await uploader.getStorageMessages(unverifiedIds);
+                            for (const [mid, info] of tgResults.entries()) {
+                                if (info.status === 'FOUND') {
+                                    CatalogoManager.mediaVerificationCache.set(mid, 'VERIFIED_PLAYABLE', {
+                                        docId: info.docId,
+                                        docSize: info.docSize,
+                                        isVideo: info.isVideo,
+                                        duration: info.duration,
+                                        fileName: info.fileName
+                                    });
+                                } else if (info.status === 'NOT_FOUND') {
+                                    CatalogoManager.mediaVerificationCache.set(mid, 'MISSING', { error: 'MessageEmpty' });
+                                } else if (info.status === 'INVALID_MEDIA') {
+                                    CatalogoManager.mediaVerificationCache.set(mid, 'INVALID_MEDIA', { error: info.error });
+                                } else if (info.status === 'ERROR') {
+                                    CatalogoManager.mediaVerificationCache.set(mid, 'UNVERIFIED', { error: info.error });
+                                }
                             }
+                        } catch (tgErr) {
+                            console.warn('⚠️ Aviso ao verificar status das mídias no Telegram durante carga do catálogo:', tgErr.message);
                         }
-                    } catch (tgErr) {
-                        console.warn('⚠️ Aviso ao verificar status das mídias no Telegram durante carga do catálogo:', tgErr.message);
-                    }
+                    });
                 }
 
                 // Mapeia episódios por série e temporada (com o cache de mídias já atualizado)
