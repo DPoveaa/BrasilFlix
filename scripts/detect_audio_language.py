@@ -57,3 +57,4 @@ if __name__ == "__main__":
     
     result = detect(audio_file, model_name)
     print(json.dumps(result, ensure_ascii=False))
+

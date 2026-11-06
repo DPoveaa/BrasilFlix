@@ -263,3 +263,4 @@ class HardsubDetectorService {
 }
 
 module.exports = new HardsubDetectorService();
+

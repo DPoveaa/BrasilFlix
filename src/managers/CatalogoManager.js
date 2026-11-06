@@ -128,7 +128,7 @@ class CatalogoManager {
                     };
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         this._lastDbSignature = null;
         this._isCheckingDbSync = false;
@@ -203,7 +203,7 @@ class CatalogoManager {
     startAutoDbSyncWatcher() {
         if (this._autoDbSyncInterval) return;
         this._autoDbSyncInterval = setInterval(() => {
-            this.checkAndSyncDbIfChanged().catch(() => {});
+            this.checkAndSyncDbIfChanged().catch(() => { });
         }, 8000);
         if (typeof this._autoDbSyncInterval.unref === 'function') {
             this._autoDbSyncInterval.unref();
@@ -455,7 +455,7 @@ class CatalogoManager {
                         hasDefinitiveInvalidation = true;
                     }
                 }
-            } catch (dedupErr) {}
+            } catch (dedupErr) { }
 
             // Se houve invalidação definitiva de mídia ou fusão de duplicatas, reconstrói o catálogo público
             if (hasDefinitiveInvalidation) {
@@ -741,8 +741,8 @@ class CatalogoManager {
         // Ponto de Entrada Obrigatório: Episódio 1 DEVE ter mídia real
         if (maxAnySeq === 0) return null;
 
-        const expectedEps = tMeta 
-            ? (typeof tMeta === 'object' ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : (parseInt(tMeta, 10) || 0)) 
+        const expectedEps = tMeta
+            ? (typeof tMeta === 'object' ? (tMeta.totalEps || tMeta.totalEpisodios || tMeta.episodiosContagem || 0) : (parseInt(tMeta, 10) || 0))
             : 0;
 
         // --- Teto efetivo de completude ---
@@ -809,20 +809,20 @@ class CatalogoManager {
                 const dubObj = ep.versoes?.dublado;
                 const msgId = dubObj?.messageId || (dubObj?.fileId ? null : (ep.messageId || ep.message_id || null));
                 const fId = dubObj?.fileId || (dubObj?.messageId ? null : (ep.fileId || ep.file_id || null));
-                versoesFiltradas.dublado = { 
-                    messageId: msgId ? Number(msgId) : null, 
-                    fileId: fId || null, 
-                    qualidade: dubObj?.qualidade || ep.qualidade || '1080p' 
+                versoesFiltradas.dublado = {
+                    messageId: msgId ? Number(msgId) : null,
+                    fileId: fId || null,
+                    qualidade: dubObj?.qualidade || ep.qualidade || '1080p'
                 };
             }
             if (hasLeg) {
                 const legObj = ep.versoes?.legendado;
                 const msgId = legObj?.messageId || (legObj?.fileId ? null : (ep.messageId || ep.message_id || null));
                 const fId = legObj?.fileId || (legObj?.messageId ? null : (ep.fileId || ep.file_id || null));
-                versoesFiltradas.legendado = { 
-                    messageId: msgId ? Number(msgId) : null, 
-                    fileId: fId || null, 
-                    qualidade: legObj?.qualidade || ep.qualidade || '1080p' 
+                versoesFiltradas.legendado = {
+                    messageId: msgId ? Number(msgId) : null,
+                    fileId: fId || null,
+                    qualidade: legObj?.qualidade || ep.qualidade || '1080p'
                 };
             }
 
@@ -1001,14 +1001,14 @@ class CatalogoManager {
                     if (typeof autoDeduplicateSeries === 'function') {
                         await autoDeduplicateSeries();
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 // Limpa registros orfãos e sem mídia para manter integridade
                 try {
                     await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL)`);
                     await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb)`);
                     await db.query(`DELETE FROM episodios WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb OR ((versoes->'dublado' IS NULL OR (versoes->'dublado'->>'messageId' IS NULL AND versoes->'dublado'->>'fileId' IS NULL)) AND (versoes->'legendado' IS NULL OR (versoes->'legendado'->>'messageId' IS NULL AND versoes->'legendado'->>'fileId' IS NULL))))`);
-                } catch (e) {}
+                } catch (e) { }
 
                 // Carrega Filmes do PostgreSQL (Mais recentes adicionados primeiro)
                 const filmesRes = await db.query(`SELECT * FROM filmes ORDER BY id DESC`);
@@ -1207,7 +1207,7 @@ class CatalogoManager {
                 try {
                     const currentSig = await this.getDatabaseSignature();
                     if (currentSig) this._lastDbSignature = currentSig;
-                } catch (_) {}
+                } catch (_) { }
                 console.log(`📦 Catálogo BrasilFlix carregado: ${filmes.length} filmes, ${series.length} séries ativas.`);
 
                 // Inicia o verificador periódico de integridade (singleton)
@@ -1218,8 +1218,8 @@ class CatalogoManager {
                 if (!this._lastEnrichTimestamp || (now - this._lastEnrichTimestamp > 4 * 60 * 60 * 1000)) {
                     this._lastEnrichTimestamp = now;
                     setTimeout(() => {
-                        this.autoEnrichMissingMetadata().catch(() => {});
-                        this.enriquecerEpisodiosPendentes().catch(() => {});
+                        this.autoEnrichMissingMetadata().catch(() => { });
+                        this.enriquecerEpisodiosPendentes().catch(() => { });
                     }, 5000);
                 }
             } catch (error) {
@@ -1227,7 +1227,7 @@ class CatalogoManager {
                 if (fs.existsSync(config.CATALOGO_FILE)) {
                     try {
                         this.catalogo = fs.readJsonSync(config.CATALOGO_FILE);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             } finally {
                 this._loadingPromise = null;
@@ -1337,7 +1337,7 @@ class CatalogoManager {
             const tempFile = `${config.CATALOGO_FILE}.tmp`;
             fs.writeJsonSync(tempFile, this.catalogo, { spaces: 2 });
             fs.moveSync(tempFile, config.CATALOGO_FILE, { overwrite: true });
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Recarrega o catálogo completo do PostgreSQL para a memória
@@ -1460,7 +1460,7 @@ class CatalogoManager {
                     metadadosExtras.generos = metadadosExtras.generos || det.generos;
                     metadadosExtras.nomeOriginal = metadadosExtras.nomeOriginal || det.nomeOriginal;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? (/\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(metadadosExtras.audio)) : false);
@@ -1533,14 +1533,14 @@ class CatalogoManager {
         };
 
         console.log(`✅ Filme adicionado ao catálogo: ${nome} [ID: ${item.id}, Qualidade: ${item.qualidade}] (MessageId: ${messageId})`);
-        this.notificarUsuariosPedidoConcluido(nome, 'filme', item.id).catch(() => {});
-        this.notificarPublicoLancamento('filme', item).catch(() => {});
+        this.notificarUsuariosPedidoConcluido(nome, 'filme', item.id).catch(() => { });
+        this.notificarPublicoLancamento('filme', item).catch(() => { });
         return { success: true, item: item };
     }
 
     async atualizarMidiaFilme(idOuNome, novaMidia = {}) {
-        const filme = (this.catalogo.filmes || []).find(f => 
-            f.id === idOuNome || 
+        const filme = (this.catalogo.filmes || []).find(f =>
+            f.id === idOuNome ||
             f.nome.toLowerCase() === idOuNome.toString().toLowerCase() ||
             (f.tmdbId && novaMidia.tmdbId && f.tmdbId === novaMidia.tmdbId)
         );
@@ -1615,13 +1615,13 @@ class CatalogoManager {
         }
 
         if (oldMsgIdsToDelete.length > 0) {
-            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => { });
         }
 
         filme.dataAtualizado = new Date().toISOString();
         this.saveCatalogo();
         console.log(`🔄 Filme atualizado com sucesso no catálogo: "${filme.nome}" [Dublado: ${filme.isDublado}, Legendado: ${filme.isLegendado}]`);
-        this.notificarPublicoLancamento('filme', filme).catch(() => {});
+        this.notificarPublicoLancamento('filme', filme).catch(() => { });
         return true;
     }
 
@@ -1655,7 +1655,7 @@ class CatalogoManager {
                     metadados.generos = metadados.generos || det.generos;
                     metadados.nomeOriginal = metadados.nomeOriginal || det.nomeOriginal;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         // Se o TMDB retornou tmdbId agora, reavalia se a série já está em memória
@@ -1828,7 +1828,7 @@ class CatalogoManager {
                 serie.generos = metadados.generos || serie.generos;
                 db.query(`UPDATE series SET poster_url = $1, backdrop_url = $2, tmdb_id = $3, sinopse = $4, ano = $5, generos = $6, updated_at = NOW() WHERE id = $7`, [
                     serie.posterUrl, serie.backdropUrl, serie.tmdbId, serie.sinopse, serie.ano, JSON.stringify(serie.generos || []), serie.id
-                ]).catch(() => {});
+                ]).catch(() => { });
             }
         }
 
@@ -1846,7 +1846,7 @@ class CatalogoManager {
 
         const existingEp = temporada.episodios.find(e => e.numero === episodioNum);
         const existingVersoes = existingEp?.versoes || {};
-        
+
         // Se uma versão de mesmo áudio já existia com outro messageId, apaga a versão antiga do Telegram
         const oldMsgIdsToDelete = [];
         if (isDub && existingVersoes.dublado?.messageId && existingVersoes.dublado.messageId !== Number(messageId)) {
@@ -1889,7 +1889,7 @@ class CatalogoManager {
                         metadados.duracao = epTmdb.duracaoMinutos || epTmdb.runtime;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         // Persistência do Episódio no PostgreSQL
@@ -1941,7 +1941,7 @@ class CatalogoManager {
 
         // Apaga mensagens do Telegram apenas após sucesso na persistência do PostgreSQL
         if (oldMsgIdsToDelete.length > 0) {
-            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => {});
+            this.deleteStorageMessages(oldMsgIdsToDelete).catch(() => { });
         }
 
         // Recarrega o catálogo em memória usando a regra estrita de continuidade
@@ -1964,8 +1964,8 @@ class CatalogoManager {
         };
 
         console.log(`✅ Episódio catalogado: ${serieNome} T${temporadaNum}E${episodioNum} [Dub: ${finalIsDub}, Leg: ${finalIsLeg}] (Msg: ${primaryMessageId})`);
-        this.notificarUsuariosPedidoConcluido(serieNome, 'serie', serie.id, temporadaNum, episodioNum).catch(() => {});
-        this.verificarENotificarTemporadaCompleta(serie, temporadaNum).catch(() => {});
+        this.notificarUsuariosPedidoConcluido(serieNome, 'serie', serie.id, temporadaNum, episodioNum).catch(() => { });
+        this.verificarENotificarTemporadaCompleta(serie, temporadaNum).catch(() => { });
         return { success: true, item: epData, serieId: serie.id };
     }
 
@@ -1981,7 +1981,7 @@ class CatalogoManager {
                 try {
                     const dbRes = await db.query(`SELECT nome FROM series WHERE id = $1`, [serieIdOuNome]);
                     if (dbRes.rows.length > 0) serieNome = dbRes.rows[0].nome;
-                } catch (e) {}
+                } catch (e) { }
             }
         }
         if (!serieNome) serieNome = metadados.nome || metadados.serieNome || `Série ${serieIdOuNome}`;
@@ -2451,8 +2451,8 @@ class CatalogoManager {
         if (!id) return null;
         const numId = Number(id);
         const strId = String(id).toLowerCase();
-        const filme = (this.catalogo.filmes || []).find(f => 
-            (numId && f.id === numId) || 
+        const filme = (this.catalogo.filmes || []).find(f =>
+            (numId && f.id === numId) ||
             String(f.id) === String(id) ||
             f.imdbId === id ||
             (f.tmdbId && (f.tmdbId === numId || `tmdb:${f.tmdbId}` === strId)) ||
@@ -2460,8 +2460,8 @@ class CatalogoManager {
         );
         if (filme) return { ...filme, tipo: 'filme' };
 
-        const serie = (this.catalogo.series || []).find(s => 
-            (numId && s.id === numId) || 
+        const serie = (this.catalogo.series || []).find(s =>
+            (numId && s.id === numId) ||
             String(s.id) === String(id) ||
             s.imdbId === id ||
             (s.tmdbId && (s.tmdbId === numId || `tmdb:${s.tmdbId}` === strId)) ||
@@ -2476,8 +2476,8 @@ class CatalogoManager {
         if (!id) return null;
         const numId = Number(id);
         const strId = String(id).toLowerCase();
-        return (this.catalogo.series || []).find(s => 
-            (numId && Number(s.id) === numId) || 
+        return (this.catalogo.series || []).find(s =>
+            (numId && Number(s.id) === numId) ||
             String(s.id) === String(id) ||
             s.imdbId === id ||
             (s.tmdbId && (Number(s.tmdbId) === numId || `tmdb:${s.tmdbId}` === strId)) ||
@@ -2514,8 +2514,8 @@ class CatalogoManager {
         if (!id) return null;
         const numId = Number(id);
         const strId = String(id).toLowerCase();
-        return (this.catalogo.filmes || []).find(f => 
-            (numId && f.id === numId) || 
+        return (this.catalogo.filmes || []).find(f =>
+            (numId && f.id === numId) ||
             String(f.id) === String(id) ||
             f.imdbId === id ||
             (f.tmdbId && (f.tmdbId === numId || `tmdb:${f.tmdbId}` === strId)) ||
@@ -2651,7 +2651,7 @@ class CatalogoManager {
                     return itensTMDB;
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         return [];
     }
@@ -2660,7 +2660,7 @@ class CatalogoManager {
         if (!termo && !tmdbId && !imdbId) return null;
         const normTermo = termo ? this.normalizarTexto(termo) : '';
 
-        const lista = tipo === 'serie' 
+        const lista = tipo === 'serie'
             ? (this.catalogo.series || [])
             : (tipo === 'filme' ? (this.catalogo.filmes || []) : [...(this.catalogo.filmes || []), ...(this.catalogo.series || [])]);
 
@@ -2886,8 +2886,8 @@ class CatalogoManager {
                 // - Séries em lançamento (Bug 2): futuros eps ainda não lançados NÃO contam como faltantes (apenas lacunas internas até maxEpNum)
                 // - Séries longas liberadas progressivamente (Bug 3): apenas lacunas internas até maxEpNum
                 // - Séries finalizadas normais: compara lacunas até expectedEpsTotal
-                const ceilEp = (isEmLancamento || isLongRunningDub || isLongRunningLeg) 
-                    ? maxEpNum 
+                const ceilEp = (isEmLancamento || isLongRunningDub || isLongRunningLeg)
+                    ? maxEpNum
                     : (expectedEpsTotal > 0 ? expectedEpsTotal : maxEpNum);
 
                 const missingEpNums = [];
@@ -2901,11 +2901,11 @@ class CatalogoManager {
                 // - Em lançamento: qualquer áudio a partir do Ep 1 já é considerado completo/disponível
                 // - Série longa: atingir 10 eps libera a exibição progressiva
                 // - Série finalizada: atinge o total esperado ou o total de eps da temporada
-                const dubCompleto = isEmLancamento 
-                    ? (totalDub > 0) 
+                const dubCompleto = isEmLancamento
+                    ? (totalDub > 0)
                     : (isLongRunningDub || (expectedEpsTotal > 0 ? (totalDub >= expectedEpsTotal) : (totalDub > 0 && totalDub >= seasonEps.length)));
-                const legCompleto = isEmLancamento 
-                    ? (totalLeg > 0) 
+                const legCompleto = isEmLancamento
+                    ? (totalLeg > 0)
                     : (isLongRunningLeg || (expectedEpsTotal > 0 ? (totalLeg >= expectedEpsTotal) : (totalLeg > 0 && totalLeg >= seasonEps.length)));
 
                 temporadas.push({
@@ -3153,10 +3153,10 @@ class CatalogoManager {
 
     getItemsPorGenero(generoNome) {
         const gBusca = generoNome.toLowerCase().trim();
-        const filmes = (this.catalogo.filmes || []).filter(f => 
+        const filmes = (this.catalogo.filmes || []).filter(f =>
             (f.generos || []).some(g => g.toLowerCase().trim() === gBusca)
         );
-        const series = (this.catalogo.series || []).filter(s => 
+        const series = (this.catalogo.series || []).filter(s =>
             (s.generos || []).some(g => g.toLowerCase().trim() === gBusca)
         );
         return [...filmes, ...series];
@@ -3257,7 +3257,7 @@ class CatalogoManager {
         try {
             if (tipo === 'filme') {
                 const audioKey = (item.isDublado && item.isLegendado) ? 'dual' : (item.isDublado ? 'dublado' : 'legendado');
-                
+
                 // Evita notificação duplicada
                 const exists = await db.query(
                     `SELECT id FROM lancamentos_notificados WHERE tipo = 'filme' AND media_id = $1 AND audio = $2`,
@@ -3380,7 +3380,7 @@ class CatalogoManager {
                 const rawMeta = serie.temporadas_meta[String(tNum)] || serie.temporadas_meta[tNum];
                 expectedCount = typeof rawMeta === 'object' ? (rawMeta.totalEps || rawMeta.totalEpisodios || 0) : parseInt(rawMeta, 10);
             }
-            
+
             const tmdbId = serie.tmdbId || serie.tmdb_id;
             if (expectedCount <= 0 && tmdbId) {
                 const sDetails = await TMDBService.getSeasonDetails(tmdbId, tNum);
@@ -3388,7 +3388,7 @@ class CatalogoManager {
                     expectedCount = sDetails.episodios.length;
                     const currentMeta = serie.temporadas_meta || {};
                     currentMeta[String(tNum)] = expectedCount;
-                    await db.query(`UPDATE series SET temporadas_meta = $1 WHERE id = $2`, [JSON.stringify(currentMeta), serie.id]).catch(() => {});
+                    await db.query(`UPDATE series SET temporadas_meta = $1 WHERE id = $2`, [JSON.stringify(currentMeta), serie.id]).catch(() => { });
                     serie.temporadas_meta = currentMeta;
                 }
             } else if (expectedCount <= 0 && serie.nome) {
@@ -3400,12 +3400,12 @@ class CatalogoManager {
                             expectedCount = sDetails.episodios.length;
                             const currentMeta = serie.temporadas_meta || {};
                             currentMeta[String(tNum)] = expectedCount;
-                            await db.query(`UPDATE series SET tmdb_id = $1, temporadas_meta = $2 WHERE id = $3`, [searchRes[0].tmdbId, JSON.stringify(currentMeta), serie.id]).catch(() => {});
+                            await db.query(`UPDATE series SET tmdb_id = $1, temporadas_meta = $2 WHERE id = $3`, [searchRes[0].tmdbId, JSON.stringify(currentMeta), serie.id]).catch(() => { });
                             serie.tmdbId = searchRes[0].tmdbId;
                             serie.temporadas_meta = currentMeta;
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             // Se a contagem total oficial de episódios da temporada ainda for desconhecida, NUNCA anuncia como completa
