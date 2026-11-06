@@ -314,34 +314,30 @@ class CatalogoManager {
 
     /**
      * Verifica se a referência de mídia possui identificador verificado e reproduzível.
-     * Mídias com status MISSING, INVALID_MEDIA, FILE_ID_MISMATCH ou UNVERIFIED (sem messageId verificado)
+     * Mídias confirmadas com status definitivo MISSING, INVALID_MEDIA ou FILE_ID_MISMATCH
      * NÃO são expostas como reproduzíveis no catálogo público.
+     * Mídias válidas no banco de dados com messageId ou fileId são tratadas como reproduzíveis por padrão.
      */
     static hasPlayableMedia(mediaObj) {
         if (!mediaObj) return false;
         const msgId = mediaObj.messageId ?? mediaObj.message_id;
-        if (msgId === null || msgId === undefined || msgId === '') {
-            return CatalogoManager.allowUnverifiedPlayback &&
-                typeof (mediaObj.fileId || mediaObj.file_id) === 'string' &&
-                (mediaObj.fileId || mediaObj.file_id).trim().length > 0;
-        }
-        const num = Number(msgId);
-        if (isNaN(num) || num <= 0) return false;
+        const fileId = mediaObj.fileId ?? mediaObj.file_id;
 
-        const state = CatalogoManager.getMediaVerificationState(num, mediaObj.fileId || mediaObj.file_id);
-        if (state === 'VERIFIED_PLAYABLE') {
-            return true;
-        }
-        if (state === 'MISSING' || state === 'INVALID_MEDIA' || state === 'FILE_ID_MISMATCH') {
-            return false;
-        }
+        const hasValidMsg = msgId !== null && msgId !== undefined && msgId !== '' && !isNaN(Number(msgId)) && Number(msgId) > 0;
+        const hasValidFile = typeof fileId === 'string' && fileId.trim().length > 0;
 
-        // Se o cache estiver desabilitado/unverified permitido (apenas em cenários explícitos)
-        if (CatalogoManager.allowUnverifiedPlayback) {
+        if (!hasValidMsg && !hasValidFile) return false;
+
+        if (hasValidMsg) {
+            const num = Number(msgId);
+            const state = CatalogoManager.getMediaVerificationState(num, fileId);
+            if (state === 'MISSING' || state === 'INVALID_MEDIA' || state === 'FILE_ID_MISMATCH') {
+                return false;
+            }
             return true;
         }
 
-        return false;
+        return true;
     }
 
     static _periodicRevalidationTimer = null;
