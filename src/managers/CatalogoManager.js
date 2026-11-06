@@ -471,38 +471,233 @@ class CatalogoManager {
         }
     }
 
+    static parsePedidoAudioRequirements(idiomaStr) {
+        const raw = (idiomaStr || '').toLowerCase().trim();
+        if (!raw) {
+            return { isDual: false, needsDublado: true, needsLegendado: false, isUnspecified: true };
+        }
+        const hasDub = /\b(dublado|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(raw);
+        const hasLeg = /\b(legendado|legendas?|leg[-_]?pt|sub[-_]?pt|sub)\b/i.test(raw);
+        const hasDual = /\b(dual|ambos|dub\s*[\+\/e]\s*leg)\b/i.test(raw) || (hasDub && hasLeg);
+
+        if (hasDual) {
+            return { isDual: true, needsDublado: true, needsLegendado: true, isUnspecified: false };
+        }
+        if (hasLeg && !hasDub) {
+            return { isDual: false, needsDublado: false, needsLegendado: true, isUnspecified: false };
+        }
+        if (hasDub && !hasLeg) {
+            return { isDual: false, needsDublado: true, needsLegendado: false, isUnspecified: false };
+        }
+        return { isDual: false, needsDublado: true, needsLegendado: false, isUnspecified: true };
+    }
+
     /**
-     * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Dublada.
+     * Verifica se o item (filme ou episódio) possui arquivo de mídia real e reproduzível para a versão Dublada.
      * Regra estrita: se versoes.dublado existe explicitamente, APENAS ele determina a disponibilidade
      * e NUNCA faz fallback para o messageId de outra versão.
      */
     static hasValidDubbedMedia(ep) {
         if (!ep) return false;
-        if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'dublado')) {
-            return CatalogoManager.hasPlayableMedia(ep.versoes.dublado);
+        let versoes = ep.versoes;
+        if (typeof versoes === 'string') {
+            try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+        }
+        if (versoes && Object.prototype.hasOwnProperty.call(versoes, 'dublado')) {
+            const v = versoes.dublado;
+            if (!v || !CatalogoManager.isValidMediaIdentifier(v.messageId, v.fileId)) return false;
+            return CatalogoManager.hasPlayableMedia(v);
         }
         const isDub = !!(ep.isDublado || ep.is_dublado);
-        if (isDub) {
-            return CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id });
+        const msgId = ep.messageId || ep.message_id;
+        const fId = ep.fileId || ep.file_id;
+        if (isDub && CatalogoManager.isValidMediaIdentifier(msgId, fId)) {
+            return CatalogoManager.hasPlayableMedia({ messageId: msgId, fileId: fId });
         }
         return false;
     }
 
     /**
-     * Verifica se o episódio possui arquivo de mídia real e reproduzível para a versão Legendada.
+     * Verifica se o item (filme ou episódio) possui arquivo de mídia real e reproduzível para a versão Legendada.
      * Regra estrita: se versoes.legendado existe explicitamente, APENAS ele determina a disponibilidade
      * e NUNCA faz fallback para o messageId de outra versão.
      */
     static hasValidSubtitledMedia(ep) {
         if (!ep) return false;
-        if (ep.versoes && Object.prototype.hasOwnProperty.call(ep.versoes, 'legendado')) {
-            return CatalogoManager.hasPlayableMedia(ep.versoes.legendado);
+        let versoes = ep.versoes;
+        if (typeof versoes === 'string') {
+            try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
+        }
+        if (versoes && Object.prototype.hasOwnProperty.call(versoes, 'legendado')) {
+            const v = versoes.legendado;
+            if (!v || !CatalogoManager.isValidMediaIdentifier(v.messageId, v.fileId)) return false;
+            return CatalogoManager.hasPlayableMedia(v);
         }
         const isLeg = !!(ep.isLegendado || ep.is_legendado);
-        if (isLeg) {
-            return CatalogoManager.hasPlayableMedia({ messageId: ep.messageId || ep.message_id, fileId: ep.fileId || ep.file_id });
+        const msgId = ep.messageId || ep.message_id;
+        const fId = ep.fileId || ep.file_id;
+        if (isLeg && CatalogoManager.isValidMediaIdentifier(msgId, fId)) {
+            return CatalogoManager.hasPlayableMedia({ messageId: msgId, fileId: fId });
         }
         return false;
+    }
+
+    /**
+     * Verifica de forma estrita e centralizada se um pedido de usuário foi genuinamente atendido no catálogo.
+     * Considera tipo, identidade confiável, escopo de temporadas/episódios e presença real e reproduzível
+     * das versões de áudio solicitadas (Dublado, Legendado ou ambos/Dual Áudio).
+     */
+    verificarAtendimentoPedido(pedido) {
+        if (!pedido || !pedido.nome) {
+            return { fulfilled: false, reason: 'Pedido sem título', hasDublado: false, hasLegendado: false, missingAudio: 'ambos' };
+        }
+
+        const tipo = (pedido.tipo || 'filme').toLowerCase();
+        const isSerie = tipo === 'serie' || tipo === 'anime' || tipo === 'dorama';
+
+        // 1. Localização estrita e confiável do item no catálogo
+        let item = null;
+        if (pedido.tmdbId) {
+            item = isSerie ? this.buscarSeriePorTmdb(pedido.tmdbId) : this.buscarFilmePorTmdb(pedido.tmdbId);
+        }
+        if (!item) {
+            item = this.buscarItemExato(pedido.nome, isSerie ? 'serie' : 'filme', pedido.tmdbId);
+        }
+        if (!item) {
+            const pool = isSerie ? (this.catalogo?.series || []) : (this.catalogo?.filmes || []);
+            item = pool.find(i => isSameMedia(i.nome, pedido.nome) || (i.nomeOriginal && isSameMedia(i.nomeOriginal, pedido.nome))) || null;
+        }
+
+        if (!item) {
+            return {
+                fulfilled: false,
+                item: null,
+                reason: `Item "${pedido.nome}" não localizado no catálogo (${tipo})`,
+                hasDublado: false,
+                hasLegendado: false,
+                missingAudio: 'ambos'
+            };
+        }
+
+        const reqAudio = CatalogoManager.parsePedidoAudioRequirements(pedido.idioma);
+
+        if (!isSerie) {
+            // Validação estrita para Filmes
+            const hasDub = CatalogoManager.hasValidDubbedMedia(item);
+            const hasLeg = CatalogoManager.hasValidSubtitledMedia(item);
+
+            let fulfilled = false;
+            let missingAudio = null;
+
+            if (reqAudio.isDual) {
+                fulfilled = hasDub && hasLeg;
+                if (!fulfilled) {
+                    if (!hasDub && !hasLeg) missingAudio = 'ambos';
+                    else if (!hasDub) missingAudio = 'dublado';
+                    else missingAudio = 'legendado';
+                }
+            } else if (reqAudio.needsLegendado && !reqAudio.needsDublado) {
+                fulfilled = hasLeg;
+                if (!fulfilled) missingAudio = 'legendado';
+            } else if (reqAudio.needsDublado && !reqAudio.needsLegendado) {
+                fulfilled = hasDub;
+                if (!fulfilled) missingAudio = 'dublado';
+            } else {
+                // Não especificado: aceita dublado ou legendado com mídia válida
+                fulfilled = hasDub || hasLeg;
+                if (!fulfilled) missingAudio = 'dublado';
+            }
+
+            return {
+                fulfilled,
+                item,
+                hasDublado: hasDub,
+                hasLegendado: hasLeg,
+                missingAudio,
+                reqAudio,
+                reason: fulfilled
+                    ? 'Versões solicitadas disponíveis e reproduzíveis no catálogo'
+                    : `Falta versão de áudio: ${missingAudio || 'solicitada'} (Disponível: ${hasDub ? 'Dublado' : ''}${hasDub && hasLeg ? ' + ' : ''}${hasLeg ? 'Legendado' : ''})`.trim()
+            };
+        } else {
+            // Validação estrita para Séries
+            const temporadas = item.temporadas || [];
+            if (temporadas.length === 0) {
+                return { fulfilled: false, item, reason: 'Série sem temporadas catalogadas', hasDublado: false, hasLegendado: false, missingAudio: 'ambos' };
+            }
+
+            const tempReq = (pedido.temporada || '').toLowerCase().trim();
+            let targetTemps = temporadas;
+            const tempMatch = tempReq.match(/(?:temporada|temp|t)?\s*(\d+)/i);
+            if (tempMatch && !tempReq.includes('todas')) {
+                const numT = parseInt(tempMatch[1], 10);
+                targetTemps = temporadas.filter(t => t.numero === numT);
+                if (targetTemps.length === 0) {
+                    return { fulfilled: false, item, reason: `Temporada ${numT} não encontrada no catálogo`, hasDublado: false, hasLegendado: false, missingAudio: 'ambos' };
+                }
+            }
+
+            let allEpisodesFulfilled = true;
+            let totalEpsChecked = 0;
+            let missingAudio = null;
+            let anyDub = false;
+            let anyLeg = false;
+
+            for (const t of targetTemps) {
+                const eps = t.episodios || [];
+                if (eps.length === 0) {
+                    allEpisodesFulfilled = false;
+                    missingAudio = 'ambos';
+                    break;
+                }
+                for (const ep of eps) {
+                    totalEpsChecked++;
+                    const hasDub = CatalogoManager.hasValidDubbedMedia(ep);
+                    const hasLeg = CatalogoManager.hasValidSubtitledMedia(ep);
+                    if (hasDub) anyDub = true;
+                    if (hasLeg) anyLeg = true;
+
+                    let epOk = false;
+                    if (reqAudio.isDual) {
+                        epOk = hasDub && hasLeg;
+                        if (!epOk && !missingAudio) {
+                            missingAudio = !hasDub ? 'dublado' : 'legendado';
+                        }
+                    } else if (reqAudio.needsLegendado && !reqAudio.needsDublado) {
+                        epOk = hasLeg;
+                        if (!epOk && !missingAudio) missingAudio = 'legendado';
+                    } else if (reqAudio.needsDublado && !reqAudio.needsLegendado) {
+                        epOk = hasDub;
+                        if (!epOk && !missingAudio) missingAudio = 'dublado';
+                    } else {
+                        epOk = hasDub || hasLeg;
+                        if (!epOk && !missingAudio) missingAudio = 'dublado';
+                    }
+
+                    if (!epOk) {
+                        allEpisodesFulfilled = false;
+                        break;
+                    }
+                }
+                if (!allEpisodesFulfilled) break;
+            }
+
+            if (totalEpsChecked === 0) {
+                allEpisodesFulfilled = false;
+            }
+
+            return {
+                fulfilled: allEpisodesFulfilled,
+                item,
+                hasDublado: anyDub,
+                hasLegendado: anyLeg,
+                missingAudio,
+                reqAudio,
+                reason: allEpisodesFulfilled
+                    ? 'Todos os episódios do escopo possuem as versões solicitadas'
+                    : `Existem episódios pendentes da versão: ${missingAudio || 'solicitada'}`
+            };
+        }
     }
 
     /**

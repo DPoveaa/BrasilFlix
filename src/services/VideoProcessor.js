@@ -262,9 +262,27 @@ class VideoProcessor {
         if (!stream || !langCode) return false;
         const langMap = this.getLanguageKeywordMap();
         const keywords = langMap[langCode] || [langCode];
-        const sLang = (stream.language || '').toLowerCase();
-        const sTitle = (stream.title || '').toLowerCase();
-        return keywords.some(k => sLang === k || sLang.startsWith(k + '-') || sTitle.includes(k));
+        const sLang = (stream.language || '').toLowerCase().trim();
+        const sTitle = (stream.title || '').toLowerCase().trim();
+
+        // 1. Tag de idioma do stream (ffprobe tags.language): prioridade máxima
+        const normalizedLang = this.normalizeLanguageCode(sLang);
+        if (normalizedLang && normalizedLang === langCode) return true;
+        if (keywords.some(k => sLang === k || sLang.startsWith(k + '-') || sLang.startsWith(k + '_'))) return true;
+
+        // 2. Título da faixa: exige word boundary para códigos curtos (ex: 'en', 'pt', 'es')
+        // Evita falsos positivos bizarros como "GalaxyTV - small excellence!" casando com 'en' por causa de "excellence"!
+        if (sTitle) {
+            for (const k of keywords) {
+                if (k.length <= 3) {
+                    const wordRegex = new RegExp(`(^|[^a-z0-9])${k}([^a-z0-9]|$)`, 'i');
+                    if (wordRegex.test(sTitle)) return true;
+                } else {
+                    if (sTitle.includes(k)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     isCommentaryOrDescriptiveTrack(stream) {
@@ -1447,11 +1465,20 @@ ${events.join('\n')}
                 if (alt !== -1) {
                     console.warn(`⚠️ [Áudio] Fallback dual-áudio: usando trilha não-inglesa ${alt} para original ${originalLang}`);
                     metadata._forcedAudioIndex = alt;
+                } else if (info.audioStreams.length === 1 && !this.streamMatchesLanguage(finalStream, 'pt')) {
+                    // Arquivo com apenas 1 trilha de áudio: se houver legenda PT-BR garantida para hardsub, permite prosseguir
+                    console.warn(`⚠️ [Áudio] Release de trilha única estrangeira para "${optTitle}". Prosseguindo pois haverá legenda PT-BR garantida.`);
+                    metadata._forcedAudioIndex = 0;
                 } else {
                     throw new Error(`Seleção de áudio inválida para "${optTitle}": ${audioValidation.reason}`);
                 }
             } else if (!recheck.ok) {
-                throw new Error(`Seleção de áudio inválida para "${optTitle}": ${audioValidation.reason}`);
+                if (metadata.isLegendado && info.audioStreams.length === 1 && !this.streamMatchesLanguage(finalStream, 'pt')) {
+                    console.warn(`⚠️ [Áudio] Release de trilha única estrangeira para "${optTitle}". Prosseguindo pois haverá legenda PT-BR garantida.`);
+                    metadata._forcedAudioIndex = 0;
+                } else {
+                    throw new Error(`Seleção de áudio inválida para "${optTitle}": ${audioValidation.reason}`);
+                }
             } else {
                 metadata._forcedAudioIndex = finalIdx;
             }

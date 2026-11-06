@@ -239,6 +239,65 @@ class PedidosManager {
 
         return mensagem;
     }
+
+    /**
+     * Reavalia de forma segura pedidos marcados como concluídos/atendidos contra o estado real do catálogo.
+     * Caso os entregáveis solicitados não estejam genuinamente disponíveis (ex: Stitch com pedido Dual Áudio,
+     * onde apenas a versão Legendada existe), reabre o pedido com status 'em_processamento', preservando
+     * rigorosamente ID, usuário solicitante e histórico.
+     *
+     * @param {Object} catalogoManager
+     * @param {Object} options { pedidoId = null }
+     * @returns {Promise<{ success: boolean, totalAvaliados: number, reabertos: Array }>}
+     */
+    async reavaliarPedidosAtendidos(catalogoManager, { pedidoId = null } = {}) {
+        if (!catalogoManager) {
+            return { success: false, error: 'catalogoManager não fornecido' };
+        }
+
+        const candidatos = this.pedidos.filter(p => {
+            if (pedidoId && String(p.id) !== String(pedidoId)) return false;
+            return p.status === 'adicionado' || p.processado;
+        });
+
+        const reabertos = [];
+
+        for (const p of candidatos) {
+            const check = catalogoManager.verificarAtendimentoPedido(p);
+            if (!check.fulfilled) {
+                console.log(`🔄 [REABRIR PEDIDO] Pedido "${p.nome}" (ID: ${p.id}) [${p.idioma || 'padrão'}] reaberto: ${check.reason}`);
+                p.status = 'em_processamento';
+                p.processado = false;
+                delete p.dataAdicionado;
+                this.pedidosPendentes.set(p.id, p);
+
+                try {
+                    await db.query(`UPDATE pedidos SET status = 'em_processamento', processado = false WHERE id = $1`, [p.id]);
+                } catch (e) {
+                    console.warn(`⚠️ Erro ao atualizar status do pedido ${p.id} no PostgreSQL:`, e.message);
+                }
+
+                reabertos.push({
+                    id: p.id,
+                    nome: p.nome,
+                    idioma: p.idioma,
+                    motivo: check.reason,
+                    missingAudio: check.missingAudio
+                });
+            }
+        }
+
+        if (reabertos.length > 0) {
+            this.savePedidos();
+        }
+
+        return {
+            success: true,
+            totalAvaliados: candidatos.length,
+            totalReabertos: reabertos.length,
+            reabertos
+        };
+    }
 }
 
 module.exports = PedidosManager;

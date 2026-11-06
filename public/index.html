@@ -11892,9 +11892,14 @@
                                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
                                         <h3 style="font-size: 16px; font-weight: 800; color: #fff;">🍿 Pedidos
                                             Solicitados pelos Usuários</h3>
-                                        <button class="btn-action" onclick="loadAdminRequests()">
-                                            🔄 Atualizar
-                                        </button>
+                                        <div style="display: flex; gap: 8px;">
+                                            <button class="btn-action" onclick="loadAdminRequests()">
+                                                🔄 Atualizar
+                                            </button>
+                                            <button class="btn-action" onclick="handleAdminReavaliarPedidos()" title="Verifica se os pedidos atendidos realmente possuem todas as versões de áudio solicitadas no catálogo">
+                                                🔍 Sincronizar com Catálogo
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="admin-table-container">
@@ -27591,6 +27596,7 @@
                                 <button class="btn-action" onclick="handleAdminSetPedidoStatus('${p.id}', '${isProc ? 'pendente' : 'adicionado'}')" title="Alternar status">
                                     ${isProc ? '🔄 Reabrir' : '✅ Concluir'}
                                 </button>
+                                ${isProc ? `<button class="btn-action" onclick="handleAdminReavaliarPedidos('${p.id}')" title="Reavaliar entregáveis contra o catálogo">🔍 Auditar</button>` : ''}
                                 <button class="btn-action btn-action-danger" onclick="handleDeleteRequest('${p.id}')" title="Excluir pedido">✕</button>
                             </td>
                         </tr>
@@ -27598,6 +27604,31 @@
                     }).join('');
                 } catch (e) {
                     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar pedidos.</td></tr>';
+                }
+            }
+
+            async function handleAdminReavaliarPedidos(pedidoId = null) {
+                try {
+                    showToast('Verificando integridade de pedidos no catálogo...', 'info');
+                    const url = pedidoId ? `/api/admin/pedidos/${pedidoId}/reavaliar` : '/api/admin/pedidos/reavaliar';
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ pedidoId })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        if (data.totalReabertos > 0) {
+                            showToast(`${data.totalReabertos} pedido(s) reaberto(s) por falta de entregáveis solicitados.`, 'warning');
+                        } else {
+                            showToast('Todos os pedidos atendidos possuem as versões solicitadas no catálogo.', 'success');
+                        }
+                        loadAdminRequests();
+                    } else {
+                        showToast(data.error || 'Falha ao reavaliar pedidos.', 'error');
+                    }
+                } catch (e) {
+                    showToast('Erro ao reavaliar pedidos.', 'error');
                 }
             }
 

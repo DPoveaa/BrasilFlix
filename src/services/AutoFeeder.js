@@ -291,6 +291,10 @@ class AutoFeeder {
                 );
                 if (inQueue) continue;
 
+                if (this.queueManager.isSkippedRecently && this.queueManager.isSkippedRecently(md.nome, 1, 1)) {
+                    continue;
+                }
+
                 console.log(`📱 [AutoFeeder Duanju] Enfileirando microdrama em alta: "${md.nome}" (${md.plataformaOrigem || 'Duanju'}) [Prioridade: ${PRIORITIES.MICRODRAMA}]`);
                 this.queueManager.addJob(md.nome, 'serie', PRIORITIES.MICRODRAMA, {
                     tmdbId: null,
@@ -374,21 +378,38 @@ class AutoFeeder {
                     }
                 } catch (e) {}
 
-                // 1. Verifica se já existe COMPLETAMENTE no catálogo
-                if (!isSerie) {
-                    const filmeExistente = this.catalogoManager.buscarItemExato(title, 'filme');
-                    if (filmeExistente) {
-                        console.log(`✅ [PEDIDO] Filme "${title}" já está disponível no catálogo!`);
-                        await this.pedidosManager.marcarComoProcessado(pedido.id);
-                        continue;
-                    }
-                } else {
-                    const serieExistente = this.catalogoManager.buscarItemExato(title, 'serie')
-                        || (tmdbId ? this.catalogoManager.buscarSeriePorTmdb(tmdbId) : null);
+                // 1. Verifica se os entregáveis solicitados já constam genuinamente disponíveis e reproduzíveis no catálogo
+                const fulfillment = this.catalogoManager.verificarAtendimentoPedido
+                    ? this.catalogoManager.verificarAtendimentoPedido(pedido)
+                    : { fulfilled: false, reason: 'Verificador indisponível' };
 
-                    let startSeason = 1;
-                    let startEp = 1;
-                    let isFullyCataloged = false;
+                if (fulfillment.fulfilled) {
+                    console.log(`✅ [PEDIDO ATENDIDO] "${title}" (${tipo}) já está 100% disponível no catálogo com as versões solicitadas!`);
+                    await this.pedidosManager.marcarComoProcessado(pedido.id);
+                    continue;
+                }
+
+                // Determina áudio alvo para download com base no que está faltando
+                const reqAudio = fulfillment.reqAudio || (CatalogoManager.parsePedidoAudioRequirements ? CatalogoManager.parsePedidoAudioRequirements(pedido.idioma) : { isDual: false, needsDublado: true, needsLegendado: false });
+                let targetAudioPref = 'dublado';
+                if (reqAudio.isDual) {
+                    if (fulfillment.missingAudio === 'legendado') {
+                        targetAudioPref = 'legendado';
+                    } else {
+                        targetAudioPref = 'dublado';
+                    }
+                } else if (reqAudio.needsLegendado && !reqAudio.needsDublado) {
+                    targetAudioPref = 'legendado';
+                } else {
+                    targetAudioPref = 'dublado';
+                }
+
+                let startSeason = 1;
+                let startEp = 1;
+
+                if (isSerie) {
+                    const serieExistente = fulfillment.item || this.catalogoManager.buscarItemExato(title, 'serie')
+                        || (tmdbId ? this.catalogoManager.buscarSeriePorTmdb(tmdbId) : null);
 
                     if (serieExistente && tmdbId) {
                         try {
@@ -403,43 +424,47 @@ class AutoFeeder {
                                 const releasedEps = (sDetails?.episodios || []).filter(ep => !ep.dataLancamento || ep.dataLancamento <= nowStr);
 
                                 const catSeason = (serieExistente.temporadas || []).find(t => t.numero === sNum);
-                                const epsNoCat = new Set((catSeason?.episodios || []).map(e => e.numero));
+                                const catEps = catSeason?.episodios || [];
 
-                                const missingEp = releasedEps.find(ep => !epsNoCat.has(ep.numero));
-                                if (missingEp) {
-                                    startSeason = sNum;
-                                    startEp = missingEp.numero;
-                                    missingFound = true;
-                                    break;
+                                for (const rep of releasedEps) {
+                                    const epNoCat = catEps.find(e => e.numero === rep.numero);
+                                    let epSatisfied = false;
+                                    if (epNoCat) {
+                                        const hasDub = CatalogoManager.hasValidDubbedMedia ? CatalogoManager.hasValidDubbedMedia(epNoCat) : (epNoCat.isDublado || !!epNoCat.versoes?.dublado);
+                                        const hasLeg = CatalogoManager.hasValidSubtitledMedia ? CatalogoManager.hasValidSubtitledMedia(epNoCat) : (epNoCat.isLegendado || !!epNoCat.versoes?.legendado);
+                                        if (targetAudioPref === 'legendado') epSatisfied = hasLeg;
+                                        else epSatisfied = hasDub;
+                                    }
+                                    if (!epSatisfied) {
+                                        startSeason = sNum;
+                                        startEp = rep.numero;
+                                        missingFound = true;
+                                        break;
+                                    }
                                 }
-                            }
-
-                            if (!missingFound && releasedSeasons.length > 0) {
-                                isFullyCataloged = true;
+                                if (missingFound) break;
                             }
                         } catch (e) {}
                     }
 
-                    if (isFullyCataloged) {
-                        console.log(`✅ [PEDIDO] Série "${title}" já está 100% completa e em dia no catálogo!`);
-                        await this.pedidosManager.marcarComoProcessado(pedido.id);
-                        continue;
-                    }
-
-                    // Se a série já existe mas faltam episódios/temporadas, garantimos que começará do primeiro episódio faltante
-                    if (serieExistente && !isFullyCataloged) {
-                        console.log(`📺 [PEDIDO SÉRIE] "${title}" já possui episódios, continuando a partir de T${startSeason}E${startEp}...`);
+                    if (serieExistente) {
+                        console.log(`📺 [PEDIDO SÉRIE] "${title}" buscando a partir de T${startSeason}E${startEp} [Áudio: ${targetAudioPref}]...`);
                     }
                 }
 
                 // 2. Verifica se já está em processamento na fila
                 const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
-                const inQueue = this.queueManager.queue.some(j =>
-                    isSameMedia(j.title, title) && j.status !== 'failed'
+                const allActive = this.queueManager.activeJobs ? Array.from(this.queueManager.activeJobs.values()) : [];
+                const inQueue = [...this.queueManager.queue, ...allActive].some(j =>
+                    (isSameMedia(j.title, title) || (tmdbId && j.tmdbId && String(j.tmdbId) === String(tmdbId))) &&
+                    j.type === tipo &&
+                    j.status !== 'failed' &&
+                    (!isSerie || ((j.season ?? 1) === (startSeason || 1) && (j.episode ?? 1) === (startEp || 1))) &&
+                    (j.audioPreference === targetAudioPref || j.audioPreference === 'dual')
                 );
 
                 if (!inQueue) {
-                    console.log(`🚀 [PEDIDO PENDENTE] Enfileirando pedido prioritário de cliente: "${title}" (${tipo}) [Prioridade: ${priority}]`);
+                    console.log(`🚀 [PEDIDO PENDENTE] Enfileirando pedido prioritário de cliente: "${title}" (${tipo}) [Áudio Alvo: ${targetAudioPref}, Prioridade: ${priority}]`);
                     this.queueManager.addJob(title, tipo, priority, {
                         userId: pedido.userId,
                         username: pedido.username,
@@ -451,7 +476,7 @@ class AutoFeeder {
                         episode: isSerie ? (startEp || 1) : null,
                         isAnime,
                         isDorama,
-                        audioPreference: (pedido.idioma && pedido.idioma.toLowerCase().includes('legendado') && !pedido.idioma.toLowerCase().includes('dublado')) ? 'legendado' : 'dublado'
+                        audioPreference: targetAudioPref
                     });
                 }
 
@@ -981,6 +1006,10 @@ class AutoFeeder {
         );
 
         if (inQueue) {
+            return;
+        }
+
+        if (this.queueManager.isSkippedRecently && this.queueManager.isSkippedRecently(title, tipo === 'serie' ? 1 : null, tipo === 'serie' ? 1 : null)) {
             return;
         }
 

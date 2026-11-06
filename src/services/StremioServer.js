@@ -640,6 +640,20 @@ class StremioServer {
                 const isDorama = pedido.tipo === 'dorama';
                 const isSerie = pedido.tipo === 'serie' || isAnime || isDorama;
 
+                const fulfillment = this.catalogoManager?.verificarAtendimentoPedido
+                    ? this.catalogoManager.verificarAtendimentoPedido(pedido)
+                    : null;
+                const reqAudio = CatalogoManager.parsePedidoAudioRequirements ? CatalogoManager.parsePedidoAudioRequirements(pedido.idioma) : {};
+                let targetAudioPref = 'dublado';
+                if (reqAudio.isDual) {
+                    if (fulfillment?.missingAudio === 'legendado') targetAudioPref = 'legendado';
+                    else targetAudioPref = 'dublado';
+                } else if (reqAudio.needsLegendado && !reqAudio.needsDublado) {
+                    targetAudioPref = 'legendado';
+                } else {
+                    targetAudioPref = 'dublado';
+                }
+
                 this.queueManager.addJob(pedido.nome, isSerie ? 'serie' : (pedido.tipo || 'filme'), parseInt(priority, 10), {
                     userId: pedido.userId,
                     username: pedido.username,
@@ -650,11 +664,30 @@ class StremioServer {
                     episode: isSerie ? 1 : null,
                     isAnime,
                     isDorama,
-                    audioPreference: (pedido.idioma && pedido.idioma.toLowerCase().includes('legendado') && !pedido.idioma.toLowerCase().includes('dublado')) ? 'legendado' : 'dublado'
+                    audioPreference: targetAudioPref
                 });
 
                 await this.pedidosManager.atualizarStatus(pedido.id, 'em_processamento');
-                res.json({ success: true, message: `Pedido "${pedido.nome}" enviado para a fila!` });
+                res.json({ success: true, message: `Pedido "${pedido.nome}" enviado para a fila (Áudio Alvo: ${targetAudioPref})!` });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/pedidos/reavaliar', auth, async (req, res) => {
+            try {
+                const { pedidoId } = req.body || {};
+                const resultado = await this.pedidosManager?.reavaliarPedidosAtendidos(this.catalogoManager, { pedidoId });
+                res.json(resultado || { success: false, error: 'PedidosManager não inicializado' });
+            } catch (e) {
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.post('/api/admin/pedidos/:id/reavaliar', auth, async (req, res) => {
+            try {
+                const resultado = await this.pedidosManager?.reavaliarPedidosAtendidos(this.catalogoManager, { pedidoId: req.params.id });
+                res.json(resultado || { success: false, error: 'PedidosManager não inicializado' });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }

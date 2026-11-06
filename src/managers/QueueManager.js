@@ -196,19 +196,31 @@ class QueueManager extends EventEmitter {
     }
 
     isEpisodeSkippedRecently(title, season, episode) {
-        const key = `${(title || '').toLowerCase()}_S${season}_E${episode}`;
+        return this.isSkippedRecently(title, season, episode);
+    }
+
+    recordSkippedEpisode(title, season, episode) {
+        this.recordSkippedMedia(title, season, episode);
+    }
+
+    isSkippedRecently(title, season = null, episode = null) {
+        const key = (season !== null && episode !== null)
+            ? `${(title || '').toLowerCase()}_S${season}_E${episode}`
+            : `${(title || '').toLowerCase()}_media`;
         const lastSkipped = this.skippedEpisodes.get(key);
         if (!lastSkipped) return false;
-        // Expira após 3 horas para permitir nova tentativa futura
-        if (Date.now() - lastSkipped > 3 * 60 * 60 * 1000) {
+        // Expira após 24 horas para permitir nova tentativa futura sem travar a esteira
+        if (Date.now() - lastSkipped > 24 * 60 * 60 * 1000) {
             this.skippedEpisodes.delete(key);
             return false;
         }
         return true;
     }
 
-    recordSkippedEpisode(title, season, episode) {
-        const key = `${(title || '').toLowerCase()}_S${season}_E${episode}`;
+    recordSkippedMedia(title, season = null, episode = null) {
+        const key = (season !== null && episode !== null)
+            ? `${(title || '').toLowerCase()}_S${season}_E${episode}`
+            : `${(title || '').toLowerCase()}_media`;
         this.skippedEpisodes.set(key, Date.now());
     }
 
@@ -421,13 +433,27 @@ class QueueManager extends EventEmitter {
 
         // 3. Concluído no Catálogo / Banco de Dados
         if (!job.isUpgrade && !job.extraData?.isUpgrade) {
+            let isDualPedido = (reqPref === 'dual' || reqPref === 'dual_audio');
+            if (!isDualPedido && job.pedidoId && this.pedidosManager) {
+                const ped = this.pedidosManager.getPedidoPorId(job.pedidoId);
+                if (ped) {
+                    const reqAud = CatalogoManager.parsePedidoAudioRequirements ? CatalogoManager.parsePedidoAudioRequirements(ped.idioma) : {};
+                    if (reqAud.isDual) isDualPedido = true;
+                }
+            }
+
             if (job.type === 'filme') {
                 const filmeMem = this.catalogoManager.buscarItemExato(job.title, 'filme', job.tmdbId) || 
                                  this.catalogoManager.buscarFilmePorTmdb(job.tmdbId);
                 if (filmeMem && !filmeMem.isCam) {
-                    const hasDub = filmeMem.isDublado || !!filmeMem.versoes?.dublado;
-                    const hasLeg = filmeMem.isLegendado || !!filmeMem.versoes?.legendado;
-                    if ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg) || (!job.userId && (hasDub || hasLeg))) {
+                    const hasDub = CatalogoManager.hasValidDubbedMedia ? CatalogoManager.hasValidDubbedMedia(filmeMem) : (filmeMem.isDublado || !!filmeMem.versoes?.dublado);
+                    const hasLeg = CatalogoManager.hasValidSubtitledMedia ? CatalogoManager.hasValidSubtitledMedia(filmeMem) : (filmeMem.isLegendado || !!filmeMem.versoes?.legendado);
+                    
+                    const isCompleted = isDualPedido
+                        ? (hasDub && hasLeg)
+                        : ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg) || (!job.userId && !job.pedidoId && (hasDub || hasLeg)));
+
+                    if (isCompleted) {
                         return {
                             alreadyCompleted: true,
                             inProgress: false,
@@ -435,7 +461,7 @@ class QueueManager extends EventEmitter {
                             inProgressJobId: null,
                             hasLocalFile: false,
                             localFilePath: null,
-                            reason: `Filme já catalogado (${hasDub ? 'Dublado' : 'Legendado'})`
+                            reason: `Filme já catalogado (${hasDub ? 'Dublado' : ''}${hasDub && hasLeg ? ' + ' : ''}${hasLeg ? 'Legendado' : ''})`.trim()
                         };
                     }
                 }
@@ -453,7 +479,10 @@ class QueueManager extends EventEmitter {
                         const hasDub = r.is_dublado || !!(v.dublado?.messageId || v.dublado?.fileId);
                         const hasLeg = r.is_legendado || !!(v.legendado?.messageId || v.legendado?.fileId);
                         if (!isCam) {
-                            if ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg) || (!job.userId && (hasDub || hasLeg))) {
+                            const isDbCompleted = isDualPedido
+                                ? (hasDub && hasLeg)
+                                : ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg) || (!job.userId && !job.pedidoId && (hasDub || hasLeg)));
+                            if (isDbCompleted) {
                                 return {
                                     alreadyCompleted: true,
                                     inProgress: false,
@@ -461,7 +490,7 @@ class QueueManager extends EventEmitter {
                                     inProgressJobId: null,
                                     hasLocalFile: false,
                                     localFilePath: null,
-                                    reason: `Filme já no banco PostgreSQL (${hasDub ? 'Dublado' : 'Legendado'})`
+                                    reason: `Filme já no banco PostgreSQL (${hasDub ? 'Dublado' : ''}${hasDub && hasLeg ? ' + ' : ''}${hasLeg ? 'Legendado' : ''})`.trim()
                                 };
                             }
                         }
@@ -473,9 +502,12 @@ class QueueManager extends EventEmitter {
                 if (serieMem) {
                     const epMem = this.catalogoManager.buscarEpisodio(serieMem.id, s, e);
                     if (epMem) {
-                        const hasDub = epMem.isDublado || !!epMem.versoes?.dublado;
-                        const hasLeg = epMem.isLegendado || !!epMem.versoes?.legendado;
-                        if ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg)) {
+                        const hasDub = CatalogoManager.hasValidDubbedMedia ? CatalogoManager.hasValidDubbedMedia(epMem) : (epMem.isDublado || !!epMem.versoes?.dublado);
+                        const hasLeg = CatalogoManager.hasValidSubtitledMedia ? CatalogoManager.hasValidSubtitledMedia(epMem) : (epMem.isLegendado || !!epMem.versoes?.legendado);
+                        const isEpCompleted = isDualPedido
+                            ? (hasDub && hasLeg)
+                            : ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg));
+                        if (isEpCompleted) {
                             return {
                                 alreadyCompleted: true,
                                 inProgress: false,
@@ -483,7 +515,7 @@ class QueueManager extends EventEmitter {
                                 inProgressJobId: null,
                                 hasLocalFile: false,
                                 localFilePath: null,
-                                reason: `Episódio T${s}E${e} já catalogado (${hasDub ? 'Dublado' : 'Legendado'})`
+                                reason: `Episódio T${s}E${e} já catalogado (${hasDub ? 'Dublado' : ''}${hasDub && hasLeg ? ' + ' : ''}${hasLeg ? 'Legendado' : ''})`.trim()
                             };
                         }
                     }
@@ -503,7 +535,10 @@ class QueueManager extends EventEmitter {
                         const v = typeof r.versoes === 'string' ? JSON.parse(r.versoes || '{}') : (r.versoes || {});
                         const hasDub = r.is_dublado || !!(v.dublado?.messageId || v.dublado?.fileId);
                         const hasLeg = r.is_legendado || !!(v.legendado?.messageId || v.legendado?.fileId);
-                        if ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg)) {
+                        const isDbEpCompleted = isDualPedido
+                            ? (hasDub && hasLeg)
+                            : ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg));
+                        if (isDbEpCompleted) {
                             return {
                                 alreadyCompleted: true,
                                 inProgress: false,
@@ -511,7 +546,7 @@ class QueueManager extends EventEmitter {
                                 inProgressJobId: null,
                                 hasLocalFile: false,
                                 localFilePath: null,
-                                reason: `Episódio T${s}E${e} já no banco PostgreSQL (${hasDub ? 'Dublado' : 'Legendado'})`
+                                reason: `Episódio T${s}E${e} já no banco PostgreSQL (${hasDub ? 'Dublado' : ''}${hasDub && hasLeg ? ' + ' : ''}${hasLeg ? 'Legendado' : ''})`.trim()
                             };
                         }
                     }
@@ -620,17 +655,24 @@ class QueueManager extends EventEmitter {
         try {
             console.log('🔍 [AuditQueue] Iniciando auditoria automática da fila...');
 
-            // Resgata periodicamente jobs que possam ter ficado com status 'failed' para nunca deixá-los esquecidos
+            // Descarta definitivamente jobs que atingiram o limite de 3 tentativas com falha
+            await db.query(
+                `UPDATE queue_jobs 
+                 SET status = 'cancelled', progress_details = 'Descartado automaticamente: atingiu limite de 3 tentativas com falha', updated_at = NOW()
+                 WHERE status IN ('queued', 'failed') AND attempt_count >= 3`
+            );
+
+            // Resgata periodicamente apenas jobs em 'failed' que ainda tenham menos de 3 tentativas
             await db.query(
                 `UPDATE queue_jobs 
                  SET status = 'queued', progress = 0, retry_after = NOW() + INTERVAL '5 minutes',
                      progress_details = 'Recuperado para nova tentativa periódica'
-                 WHERE status = 'failed'`
+                 WHERE status = 'failed' AND (attempt_count IS NULL OR attempt_count < 3)`
             );
 
             // Carrega todos os jobs não-finalizados do banco
             const res = await db.query(
-                `SELECT id, title, type, season, episode, status, audio_preference, progress, progress_details, retry_after, updated_at
+                `SELECT id, title, type, season, episode, status, audio_preference, progress, progress_details, retry_after, updated_at, attempt_count
                  FROM queue_jobs
                  WHERE status NOT IN ('completed', 'cancelled')
                  ORDER BY created_at ASC`
@@ -638,6 +680,15 @@ class QueueManager extends EventEmitter {
             const jobs = res.rows;
             const toCancel = new Set();
             const reasons = {};
+
+            // ── 0. LIMITE DE 3 TENTATIVAS ───────────────────────────────────────────
+            for (const job of jobs) {
+                if (this.activeJobs.has(job.id)) continue;
+                if ((job.attempt_count || 0) >= this.MAX_JOB_ATTEMPTS) {
+                    toCancel.add(job.id);
+                    reasons[job.id] = `Excedeu limite de ${this.MAX_JOB_ATTEMPTS} tentativas com falha (${job.attempt_count} tentativas)`;
+                }
+            }
 
             // ── 1. DUPLICATAS ────────────────────────────────────────────────────────
             const seen = new Map();
@@ -867,12 +918,17 @@ class QueueManager extends EventEmitter {
                 `UPDATE queue_jobs SET status = 'queued', progress = 0
                  WHERE status IN ('processing', 'downloading', 'uploading')`
             );
-            // Resgata jobs 'failed' para NUNCA ficarem esquecidos para sempre (cooldown inicial suave de 2 min)
+            // Descarta definitivamente jobs travados ou falhos que já atingiram o limite de 3 tentativas
+            await db.query(
+                `UPDATE queue_jobs SET status = 'cancelled', progress_details = 'Descartado no boot: atingiu limite de 3 tentativas com falha', updated_at = NOW()
+                 WHERE status IN ('failed', 'queued') AND attempt_count >= 3`
+            );
+            // Resgata jobs 'failed' apenas se tiverem menos de 3 tentativas (cooldown inicial suave de 2 min)
             const failedRes = await db.query(
                 `UPDATE queue_jobs 
                  SET status = 'queued', progress = 0, retry_after = NOW() + INTERVAL '2 minutes',
                      progress_details = 'Recuperado da falha para nova tentativa com cooldown'
-                 WHERE status = 'failed' RETURNING id`
+                 WHERE status = 'failed' AND (attempt_count IS NULL OR attempt_count < 3) RETURNING id`
             );
             if (failedRes.rows && failedRes.rows.length > 0) {
                 console.log(`🔄 [QueueManager] Resgatados ${failedRes.rows.length} job(s) anteriormente em 'failed' para nova tentativa com cooldown.`);
@@ -1050,6 +1106,13 @@ class QueueManager extends EventEmitter {
         const newEpisode = type === 'serie' ? (job.episode || 1) : null;
         const newTmdbId = extraData.tmdbId || null;
 
+        // Se for adição automática (não for pedido manual nem VIP de usuário) e o conteúdo foi descartado recentemente por falhas repetidas, não re-adiciona
+        const isUserRequest = !!(extraData.userId || extraData.isManualAdd || extraData.pedidoId);
+        if (!isUserRequest && this.isSkippedRecently(title, newSeason, newEpisode)) {
+            console.log(`⏭️ [Fila Anti-Loop] "${title}" ${type === 'serie' ? `T${newSeason}E${newEpisode}` : ''} descartado recentemente após falhas consecutivas. Pulando re-adição automática.`);
+            return null;
+        }
+
         const allCurrentJobs = [...this.queue, ...Array.from(this.activeJobs.values())];
         const existing = allCurrentJobs.find(j => {
             if (j.type !== type) return false;
@@ -1225,31 +1288,65 @@ class QueueManager extends EventEmitter {
         return job;
     }
 
-    async marcarPedidosAtendidos(titulo, userId = null, tipo = 'filme') {
+    async marcarPedidosAtendidos(titulo, userId = null, tipo = 'filme', tmdbId = null) {
         if (!this.pedidosManager) return;
         try {
             const cleanTitle = (titulo || '').toLowerCase().trim();
             if (!cleanTitle) return;
 
             const pedidos = this.pedidosManager.getPedidos() || [];
+            const targetIsSerie = tipo === 'serie' || tipo === 'anime' || tipo === 'dorama';
+
             const correspondentes = pedidos.filter(p => {
                 if (p.processado || p.status === 'adicionado') return false;
-                const pNome = (p.nome || '').toLowerCase().trim();
-                return isSameMedia(p.nome, titulo) || pNome === cleanTitle || cleanTitle.includes(pNome) || pNome.includes(cleanTitle);
+                const pIsSerie = p.tipo === 'serie' || p.tipo === 'anime' || p.tipo === 'dorama';
+                if (pIsSerie !== targetIsSerie) return false;
+
+                if (tmdbId && p.tmdbId && Number(tmdbId) === Number(p.tmdbId)) {
+                    return true;
+                }
+
+                // Matching estrito e seguro via isSameMedia (nunca substring solta)
+                return isSameMedia(p.nome, titulo);
             });
 
             for (const p of correspondentes) {
+                // Valida os entregáveis genuínos no catálogo antes de cumprir o pedido
+                const fulfillment = this.catalogoManager?.verificarAtendimentoPedido
+                    ? this.catalogoManager.verificarAtendimentoPedido(p)
+                    : { fulfilled: true };
+
+                if (!fulfillment.fulfilled) {
+                    console.log(`⏳ [PEDIDOS] Pedido de @${p.username || p.userId} ("${p.nome}") [${p.idioma || 'padrão'}] ainda NÃO está 100% atendido (${fulfillment.reason}). Mantendo pendente/em processamento.`);
+                    if (p.status !== 'em_processamento') {
+                        await this.pedidosManager.atualizarStatus(p.id, 'em_processamento');
+                    }
+                    continue;
+                }
+
                 console.log(`📝 [PEDIDOS] Marcando pedido de @${p.username || p.userId} ("${p.nome}") como ATENDIDO no histórico!`);
                 await this.pedidosManager.marcarComoProcessado(p.id);
 
                 if (this.bot && p.userId && p.userId !== config.ADMIN_ID) {
-                    const itemSalvo = this.catalogoManager.buscarItemExato(p.nome, p.tipo || tipo);
+                    const itemSalvo = fulfillment.item || this.catalogoManager?.buscarItemExato(p.nome, p.tipo || tipo);
                     const sId = itemSalvo?.id || '';
-                    const callbackAssistir = (p.tipo === 'serie' || tipo === 'serie' || p.tipo === 'anime' || p.tipo === 'dorama') ? `info_serie_${sId}` : `info_filme_${sId}`;
+                    const callbackAssistir = targetIsSerie ? `info_serie_${sId}` : `info_filme_${sId}`;
+
+                    let versaoDesc = 'Disponível';
+                    if (fulfillment.hasDublado && fulfillment.hasLegendado) {
+                        versaoDesc = 'Dual Áudio (Dublado + Legendado)';
+                    } else if (fulfillment.hasDublado) {
+                        versaoDesc = 'Dublado (Áudio PT-BR)';
+                    } else if (fulfillment.hasLegendado) {
+                        versaoDesc = 'Legendado (PT-BR)';
+                    } else if (itemSalvo?.audio) {
+                        versaoDesc = itemSalvo.audio;
+                    }
+
                     const msgPedido = `🎉 *Seu Pedido Chegou no BrasilFlix!*\n\n` +
                         `🎬 *${p.nome}*\n` +
                         `✨ *Qualidade:* 1080p Full HD\n` +
-                        `🔊 *Versão:* Dublado / Legendado\n\n` +
+                        `🔊 *Versão:* ${versaoDesc}\n\n` +
                         `O título que você pediu já está disponível no catálogo para assistir! 🍿`;
 
                     this.bot.sendMessage(p.userId, msgPedido, {
@@ -1858,38 +1955,23 @@ class QueueManager extends EventEmitter {
                 }
                 this.sortQueue();
             } else {
-                // Atingiu 3 tentativas ou mais. NENHUMA SÉRIE, TEMPORADA OU FILME É DESCARTADO!
-                // Entra em COOLDOWN inteligente (30 a 60 minutos) e será tentado novamente após esse tempo.
-                const cooldownMinutes = nextJob.attemptCount >= 6 ? 60 : 30;
-                const retryAfter = new Date(Date.now() + cooldownMinutes * 60 * 1000);
-                const horaRetry = retryAfter.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                // Atingiu 3 tentativas com falha: DESCARTA DEFINITIVAMENTE O JOB PARA LIBERAR A FILA
+                console.warn(`🛑 [DESCARTE DEFINITIVO ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}] "${nextJob.title}" atingiu o limite de ${this.MAX_JOB_ATTEMPTS} tentativas com falha (${error.message}). Descartando da esteira para liberar espaço.`);
 
-                console.warn(`⏸️ [COOLDOWN] "${nextJob.title}" atingiu ${nextJob.attemptCount} tentativas com falha (${error.message}). Entrando em cooldown de ${cooldownMinutes}m (tentará novamente às ${horaRetry}). NENHUM conteúdo é descartado.`);
+                this.recordSkippedMedia(nextJob.title, nextJob.season, nextJob.episode);
 
-                if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
-                    this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
-                }
-
-                nextJob.status = 'queued';
+                nextJob.status = 'cancelled';
                 nextJob.progress = 0;
-                nextJob.retryAfter = retryAfter.toISOString();
-                nextJob.error = `Tentativa ${nextJob.attemptCount}: ${error.message}`;
-                nextJob.progressDetails = `⏸️ Cooldown até ${horaRetry} (${cooldownMinutes} min). Retentará automaticamente.`;
-
-                const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 500;
-                nextJob.queueOrder = maxOrder;
+                nextJob.error = `Descartado após ${nextJob.attemptCount} tentativas: ${error.message}`;
+                nextJob.progressDetails = `Descartado após atingir o limite de ${this.MAX_JOB_ATTEMPTS} tentativas com falha`;
 
                 await db.query(
-                    `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6, retry_after = $7, updated_at = NOW() WHERE id = $8`,
-                    ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, retryAfter, nextJob.id]
-                ).catch(e => console.error('Erro ao salvar cooldown no PostgreSQL:', e.message));
+                    `UPDATE queue_jobs SET status = 'cancelled', progress = 0, error = $1, progress_details = $2, attempt_count = $3, updated_at = NOW() WHERE id = $4`,
+                    [nextJob.error, nextJob.progressDetails, nextJob.attemptCount, nextJob.id]
+                ).catch(e => console.error('Erro ao salvar descarte no PostgreSQL:', e.message));
 
-                const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
-                if (memIdx >= 0) {
-                    this.queue[memIdx] = nextJob;
-                } else {
-                    this.queue.push(nextJob);
-                }
+                // Remove imediatamente da fila em memória para dar lugar a novos conteúdos
+                this.queue = this.queue.filter(j => j.id !== nextJob.id);
                 this.sortQueue();
             }
         } finally {
@@ -1978,14 +2060,27 @@ class QueueManager extends EventEmitter {
                 this.catalogoManager.buscarItemExato(job.title, 'filme');
             if (filmeExistente) {
                 const pref = job.audioPreference || 'dublado';
-                const temDublado = filmeExistente.isDublado || !!filmeExistente.versoes?.dublado;
-                const temLegendado = filmeExistente.isLegendado || !!filmeExistente.versoes?.legendado;
+                const temDublado = CatalogoManager.hasValidDubbedMedia ? CatalogoManager.hasValidDubbedMedia(filmeExistente) : (filmeExistente.isDublado || !!filmeExistente.versoes?.dublado);
+                const temLegendado = CatalogoManager.hasValidSubtitledMedia ? CatalogoManager.hasValidSubtitledMedia(filmeExistente) : (filmeExistente.isLegendado || !!filmeExistente.versoes?.legendado);
+
+                let isDualPedido = (pref === 'dual' || pref === 'dual_audio');
+                if (!isDualPedido && job.pedidoId && this.pedidosManager) {
+                    const ped = this.pedidosManager.getPedidoPorId(job.pedidoId);
+                    if (ped) {
+                        const reqAud = CatalogoManager.parsePedidoAudioRequirements ? CatalogoManager.parsePedidoAudioRequirements(ped.idioma) : {};
+                        if (reqAud.isDual) isDualPedido = true;
+                    }
+                }
 
                 // Se já temos a versão oficial 1080p (não-CAM), nunca rebaixa
                 if (!filmeExistente.isCam) {
-                    if ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (temDublado && !job.userId)) {
-                        console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : 'Legendado'}). Ignorando download duplicado.`);
-                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                    const satisfeito = isDualPedido
+                        ? (temDublado && temLegendado)
+                        : ((pref === 'dublado' && temDublado) || (pref === 'legendado' && temLegendado) || (!job.userId && !job.pedidoId && (temDublado || temLegendado)));
+
+                    if (satisfeito) {
+                        console.log(`✅ [FILME] "${job.title}" já está no catálogo em 1080p oficial (${temDublado ? 'Dublado' : ''}${temDublado && temLegendado ? ' + ' : ''}${temLegendado ? 'Legendado' : ''}). Ignorando download duplicado.`);
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme', metadata.tmdbId || job.tmdbId);
                         return;
                     }
                 } else {
@@ -2531,7 +2626,6 @@ class QueueManager extends EventEmitter {
                             sources = nonCamSources;
                         } else if (jaTemCam) {
                             console.log(`ℹ️ [UPGRADE CHECK] "${job.title}" já possui versão CAM no catálogo e todas as fontes disponíveis no momento ainda são gravações de Cinema/CAM. Mantendo versão atual.`);
-                            await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
                             return;
                         }
                     }
@@ -3778,8 +3872,14 @@ class QueueManager extends EventEmitter {
             const itemId = itemSalvo?.id;
             const callbackAssistir = job.type === 'filme' ? `info_filme_${itemId}` : `info_serie_${itemId}`;
 
-            // Notifica usuário solicitante (somente se não for a conta de admin para evitar spam)
-            if (job.type === 'filme' && job.userId && job.userId !== config.ADMIN_ID && this.bot) {
+            // Notifica usuário solicitante apenas se NÃO for um pedido em andamento (pedidos são notificados estritamente por marcarPedidosAtendidos)
+            const matchingPedido = job.userId && this.pedidosManager?.getPedidos()?.find(p => 
+                Number(p.userId) === Number(job.userId) &&
+                !p.processado && p.status !== 'adicionado' &&
+                (isSameMedia(p.nome, metadata.nome || job.title) || (job.tmdbId && p.tmdbId && Number(job.tmdbId) === Number(p.tmdbId)))
+            );
+
+            if (!matchingPedido && job.type === 'filme' && job.userId && job.userId !== config.ADMIN_ID && this.bot) {
                 const mensagem = `🎉 *Seu pedido chegou no BrasilFlix!*\n\n` +
                     `🎬 *${metadata.nome}*\n` +
                     `✨ *Qualidade:* 1080p Full HD\n` +
@@ -3798,9 +3898,43 @@ class QueueManager extends EventEmitter {
                 }).catch(() => { });
             }
 
-            // Para filmes: marca o pedido como atendido no catálogo (para séries, marca apenas ao completar a temporada)
+            // Para filmes: marca o pedido como atendido no catálogo se os entregáveis estiverem 100% satisfeitos
             if (job.type === 'filme') {
-                await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme');
+                await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'filme', metadata.tmdbId || job.tmdbId);
+
+                // Se houver pedidos pendentes de dual áudio que acabaram de receber uma versão mas ainda necessitam da outra, enfileira a busca da versão faltante
+                if (this.pedidosManager) {
+                    const pedidosPendentes = this.pedidosManager.getPedidos()?.filter(p =>
+                        (!p.processado && p.status !== 'adicionado') &&
+                        (isSameMedia(p.nome, metadata.nome || job.title) || (job.tmdbId && p.tmdbId && Number(job.tmdbId) === Number(p.tmdbId)))
+                    );
+                    for (const p of (pedidosPendentes || [])) {
+                        const fCheck = this.catalogoManager?.verificarAtendimentoPedido
+                            ? this.catalogoManager.verificarAtendimentoPedido(p)
+                            : null;
+                        if (fCheck && !fCheck.fulfilled && fCheck.missingAudio && fCheck.missingAudio !== 'ambos') {
+                            const targetMissing = fCheck.missingAudio;
+                            const allActive = this.activeJobs ? Array.from(this.activeJobs.values()) : [];
+                            const inQ = [...this.queue, ...allActive].some(j =>
+                                j.type === 'filme' &&
+                                (isSameMedia(j.title, p.nome) || (p.tmdbId && j.tmdbId && Number(j.tmdbId) === Number(p.tmdbId))) &&
+                                j.status !== 'failed' &&
+                                j.audioPreference === targetMissing
+                            );
+                            if (!inQ) {
+                                console.log(`🚀 [DUAL ÁUDIO UPGRADE] Enfileirando busca da versão faltante (${targetMissing}) para o pedido de "${p.nome}"...`);
+                                this.addJob(p.nome, 'filme', p.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER, {
+                                    tmdbId: p.tmdbId || metadata.tmdbId || job.tmdbId,
+                                    userId: p.userId,
+                                    username: p.username,
+                                    pedidoId: p.id,
+                                    isPedido: true,
+                                    audioPreference: targetMissing
+                                });
+                            }
+                        }
+                    }
+                }
             }
 
             // Notificação para quem favoritou a série quando sai novo episódio
