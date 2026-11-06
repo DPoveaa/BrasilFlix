@@ -1,6 +1,7 @@
 # 🛡️ Validação Inteligente Pré-FFmpeg (Áudio Real & Legenda Fixa)
 
 > **Data de Início:** 06/11/2026  
+> **Status:** ✅ Concluído e Operacional em Produção  
 > **Objetivo:** Implementar pipeline de validação pré-conversão para garantir qualidade máxima e evitar desperdício de CPU/GPU com releases incorretos:
 > 1. **Detecção de Idioma Falado Real (Speech Language ID)**: Identificação em amostra de áudio (25s em PCM 16kHz) via `faster-whisper` (tiny int8 no CPU) para garantir que áudios marcados como dublado são realmente em Português (e não espanhol/russo/coreano).
 > 2. **Detecção Visual de Legenda Fixa (Hardsub OCR multi-ponto)**: Amostragem de frames nos 22% inferiores em 5 pontos do vídeo com `tesseract-ocr` para detectar e rejeitar vídeos com legendas estrangeiras gravadas na imagem (ex: cirílico/russo, asiático/chinês/coreano) antes de processar.
@@ -11,12 +12,17 @@
 
 - [x] **Etapa 1:** Diagnóstico e planejamento de arquitetura (sem impacto de performance).
 - [x] **Etapa 2:** Criar serviço de Detecção de Legenda Fixa (`HardsubDetectorService.js`) com amostragem multi-ponto (20%, 35%, 50%, 65%, 80%) e OCR via Tesseract com suporte a português, inglês, russo, chinês e coreano.
-- [x] **Etapa 3:** Criar script helper Python (`scripts/detect_audio_language.py`) e serviço Node.js (`SpeechLanguageService.js`) com extração de 25s de áudio via FFmpeg e Language ID ultraleve (< 1s de execução).
+- [x] **Etapa 3:** Criar script helper Python (`scripts/detect_audio_language.py`) e serviço Node.js (`SpeechLanguageService.js`) com extração de 25s de áudio via FFmpeg e Language ID ultraleve (~2s de execução).
 - [x] **Etapa 4:** Integrar os dois validadores no pipeline de pré-processamento do `VideoProcessor.js` em `optimizeForTelegram` (executado antes de qualquer Remux ou Full Transcode, com suporte a troca automática para trilha PT válida quando disponível).
-- [x] **Etapa 5:** Instalação das dependências necessárias no servidor Ubuntu via SSH (`tesseract-ocr`, `tesseract-ocr-por`, `tesseract-ocr-rus`, `tesseract-ocr-chi-sim`, `tesseract-ocr-kor`, `faster-whisper`).
-- [ ] **Etapa 6:** Commit e push para GitHub (`origin/main`).
-- [ ] **Etapa 7:** `git pull` no servidor remoto (`/mnt/ssd500/projetos/BrasilFlix`) e reinicialização do PM2 (`pm2 restart brasilflix`).
-- [ ] **Etapa 8:** Acompanhamento dos logs e validação em execução real no servidor.
+- [x] **Etapa 5:** Instalação das dependências necessárias no servidor Ubuntu via SSH (`tesseract-ocr`, `tesseract-ocr-por`, `tesseract-ocr-rus`, `tesseract-ocr-chi-sim`, `tesseract-ocr-kor`, `faster-whisper`, `av==13.1.0`).
+- [x] **Etapa 6:** Commit e push para GitHub (`origin/main`).
+- [x] **Etapa 7:** `git pull` no servidor remoto (`/mnt/ssd500/projetos/BrasilFlix`) e reinicialização do PM2 (`pm2 restart brasilflix`).
+- [x] **Etapa 8:** Validação em execução real no servidor:
+  - Speech Language ID testado com sucesso via faster-whisper.
+  - Detecção de hardsub testada com sucesso via Tesseract OCR em 5 pontos (4.1s).
+  - Limite de 3 tentativas descartando jobs permanentemente sem travar a esteira.
+  - Vincenzo (E3) processado com áudio coreano + legenda PT-BR embutida e enviado para o Telegram.
+  - Catálogo carregado de forma assíncrona, eliminando gargalos de boot.
 
 ---
 
