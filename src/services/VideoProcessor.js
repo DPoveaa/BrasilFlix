@@ -4,6 +4,8 @@ const os = require('os');
 const fs = require('fs-extra');
 const config = require('../../config');
 const SubtitleSync = require('./SubtitleSync');
+const SpeechLanguageService = require('./SpeechLanguageService');
+const HardsubDetectorService = require('./HardsubDetectorService');
 
 let activeTranscodes = 0;
 const transcodeWaiters = [];
@@ -1484,8 +1486,8 @@ ${events.join('\n')}
             }
         }
 
-        const effectiveAudioIndex = metadata._forcedAudioIndex !== undefined ? metadata._forcedAudioIndex : targetAudioIndex;
-        const effectiveAudioStream = info.audioStreams[effectiveAudioIndex] || selectedAudioStream;
+        let effectiveAudioIndex = metadata._forcedAudioIndex !== undefined ? metadata._forcedAudioIndex : targetAudioIndex;
+        let effectiveAudioStream = info.audioStreams[effectiveAudioIndex] || selectedAudioStream;
         const resolvedOriginalLang = this.resolveOriginalLanguage(metadata, info.audioStreams);
         metadata.idiomaOriginal = metadata.idiomaOriginal || metadata.originalLanguage || resolvedOriginalLang || null;
         metadata.originalLanguage = metadata.idiomaOriginal;
@@ -1539,6 +1541,108 @@ ${events.join('\n')}
             metadata.srtPath = null;
             srtPath = null;
             console.log(`🇧🇷 [${optTitle}] Áudio PT-BR confirmado → processando como Dublado SEM legendas (softsubs/hardsub removidos).`);
+        }
+
+        // =========================================================================
+        // 🛡️ PRÉ-VALIDAÇÃO DE QUALIDADE (ÁUDIO FALADO & HARDSUB VISUAL)
+        // Executada ANTES do Remux ou Transcode para descartar releases inválidos
+        // =========================================================================
+
+        // 1. Verificação do Idioma Falado Real (Speech Language ID com faster-whisper)
+        try {
+            const isDub = isConfirmedDublado;
+            const targetSpoken = isDub ? 'pt' : (resolvedOriginalLang || metadata.idiomaOriginal || 'und');
+
+            if (isDub) {
+                // Filmes/Séries Dublados: DEVEM falar Português
+                console.log(`🎙️ [Validação de Áudio] Verificando se áudio selecionado (trilha ${effectiveAudioIndex}) fala Português...`);
+                let speechCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, effectiveAudioIndex, info.duration, 'pt');
+
+                if (speechCheck.verified && !speechCheck.isMatch && speechCheck.probability >= 0.70) {
+                    console.warn(`⚠️ [Alerta de Dublagem Falsa] Trilha ${effectiveAudioIndex} identificada como "${speechCheck.detectedLanguage.toUpperCase()}" (${(speechCheck.probability * 100).toFixed(0)}%). Testando outras trilhas disponíveis...`);
+                    
+                    // Se for multi-áudio, testa se alguma outra trilha fala Português
+                    let foundValidPtTrack = false;
+                    for (let altIdx = 0; altIdx < info.audioStreams.length; altIdx++) {
+                        if (altIdx === effectiveAudioIndex) continue;
+                        const altCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, altIdx, info.duration, 'pt');
+                        if (altCheck.verified && altCheck.isMatch && altCheck.probability >= 0.60) {
+                            console.log(`✅ [Correção de Áudio] Trilha alternativa ${altIdx} confirmada como Português! Corrigindo seleção de áudio.`);
+                            effectiveAudioIndex = altIdx;
+                            effectiveAudioStream = info.audioStreams[altIdx];
+                            metadata._forcedAudioIndex = altIdx;
+                            foundValidPtTrack = true;
+                            break;
+                        }
+                    }
+
+                    if (!foundValidPtTrack) {
+                        throw new Error(`Áudio dublado falso detectado para "${optTitle}": idioma falado é ${speechCheck.detectedLanguage.toUpperCase()} (confiança ${(speechCheck.probability * 100).toFixed(0)}%), esperado PT-BR.`);
+                    }
+                }
+            } else if (targetSpoken && targetSpoken !== 'und' && targetSpoken !== 'pt') {
+                // Legendado: se o idioma original da obra for bem definido (ex: en, ko, ja, es, it)
+                const speechCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, effectiveAudioIndex, info.duration, targetSpoken);
+                if (speechCheck.verified && !speechCheck.isMatch && speechCheck.probability >= 0.75) {
+                    console.warn(`🚨 [Alerta de Áudio Original Divergente] Esperava-se ${targetSpoken.toUpperCase()}, mas o falado real é ${speechCheck.detectedLanguage.toUpperCase()} (${(speechCheck.probability * 100).toFixed(0)}%).`);
+                    
+                    let foundTarget = false;
+                    for (let altIdx = 0; altIdx < info.audioStreams.length; altIdx++) {
+                        if (altIdx === effectiveAudioIndex) continue;
+                        const altCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, altIdx, info.duration, targetSpoken);
+                        if (altCheck.verified && altCheck.isMatch) {
+                            console.log(`✅ [Correção de Áudio Original] Trilha alternativa ${altIdx} confirmada como ${targetSpoken.toUpperCase()}!`);
+                            effectiveAudioIndex = altIdx;
+                            effectiveAudioStream = info.audioStreams[altIdx];
+                            metadata._forcedAudioIndex = altIdx;
+                            foundTarget = true;
+                            break;
+                        }
+                    }
+                    if (!foundTarget && (targetSpoken === 'en' || targetSpoken === 'ko' || targetSpoken === 'ja')) {
+                        throw new Error(`Áudio em idioma incorreto para "${optTitle}": falado real é ${speechCheck.detectedLanguage.toUpperCase()} (esperado ${targetSpoken.toUpperCase()}).`);
+                    }
+                }
+            }
+        } catch (speechErr) {
+            if (speechErr.message && (speechErr.message.includes('Áudio dublado falso detectado') || speechErr.message.includes('Áudio em idioma incorreto'))) {
+                throw speechErr;
+            }
+            console.warn(`⚠️ [SpeechLanguage] Verificação não-bloqueante ignorada por exceção: ${speechErr.message}`);
+        }
+
+        // 2. Verificação de Hardsub Visual na Imagem (OCR Multiponto)
+        try {
+            console.log(`🔍 [Validação de Hardsub] Verificando imagem em 5 pontos para detectar legendas fixas indesejadas...`);
+            const hardsubCheck = await HardsubDetectorService.detectHardsub(inputPath, info.duration);
+
+            if (hardsubCheck.checked) {
+                if (isConfirmedDublado) {
+                    // Filme Dublado:
+                    // Se tiver legenda fixa estrangeira (russo, asiático, etc.) -> REJEITA
+                    if (hardsubCheck.isForeignHardsub) {
+                        throw new Error(`Legenda fixa estrangeira (${hardsubCheck.detectedScript}) detectada na imagem de vídeo dublado para "${optTitle}": ${hardsubCheck.textSamples}`);
+                    }
+                    // Se tiver texto latino persistente em quase todos os pontos (>= 4 de 5) -> REJEITA
+                    if (hardsubCheck.latinHits >= 4) {
+                        throw new Error(`Legenda fixa persistente detectada na imagem de vídeo dublado para "${optTitle}": ${hardsubCheck.textSamples}`);
+                    }
+                    if (hardsubCheck.latinHits > 0) {
+                        console.log(`ℹ️ [Hardsub Check] Texto pontual na tela aceito em dublado (${hardsubCheck.latinHits}/5 amostras). Provavelmente título ou letreiro.`);
+                    }
+                } else if (srtPath) {
+                    // Filme Legendado onde vamos queimar legenda PT-BR:
+                    // Se já existir hardsub na imagem, queimar PT-BR vai gerar sobreposição ilegível (double subtitle)
+                    if (hardsubCheck.hasHardsub) {
+                        throw new Error(`Vídeo já possui legenda fixa (${hardsubCheck.detectedScript}) na imagem para "${optTitle}". Queimar legenda PT-BR causaria sobreposição: ${hardsubCheck.textSamples}`);
+                    }
+                }
+            }
+        } catch (ocrErr) {
+            if (ocrErr.message && (ocrErr.message.includes('Legenda fixa') || ocrErr.message.includes('Vídeo já possui legenda fixa'))) {
+                throw ocrErr;
+            }
+            console.warn(`⚠️ [HardsubDetector] Verificação ignorada por exceção: ${ocrErr.message}`);
         }
 
         let finalPath;
