@@ -11,6 +11,7 @@ const TelegramUploader = require('../services/TelegramUploader');
 const DiskCleaner = require('../services/DiskCleaner');
 const SwarmWatcher = require('../services/SwarmWatcher');
 const SchedulerService = require('../services/SchedulerService');
+const CatalogoManager = require('./CatalogoManager');
 
 const PriorityService = require('../services/PriorityService');
 
