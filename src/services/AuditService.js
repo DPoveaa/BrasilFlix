@@ -81,8 +81,8 @@ class AuditService {
             const identityType = this.determineIdentityType(data);
             const userId = data.userId ? parseInt(data.userId, 10) : null;
             const telegramId = data.telegramId ? parseInt(data.telegramId, 10) : null;
-            const visitorId = data.visitorId || null;
-            const mediaId = String(data.mediaId || '');
+            const visitorId = data.visitorId ? String(data.visitorId).slice(0, 100) : null;
+            const mediaId = String(data.mediaId || '').slice(0, 100);
             const mediaType = String(data.mediaType || 'filme');
             const title = String(data.title || 'Mídia sem título');
             const seasonNum = parseInt(data.seasonNum || data.season || 0, 10);
@@ -90,9 +90,9 @@ class AuditService {
             const currentPosition = parseFloat(data.currentPosition || data.currentTime || 0);
             const duration = parseFloat(data.duration || 0);
             const isCompleted = Boolean(data.completed || (duration > 60 && currentPosition >= duration * 0.9));
-            const platform = String(data.platform || 'website');
-            const device = data.device ? String(data.device) : null;
-            const ipAddress = data.ipAddress ? String(data.ipAddress) : null;
+            const platform = String(data.platform || 'website').slice(0, 50);
+            const device = data.device ? String(data.device).slice(0, 100) : null;
+            const ipAddress = data.ipAddress ? String(data.ipAddress).slice(0, 100) : null;
 
             // Busca sessão existente para calcular tempo assistido
             const existingRes = await db.query(

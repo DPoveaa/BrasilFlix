@@ -6,6 +6,7 @@ const config = require('../../config');
 const SubtitleSync = require('./SubtitleSync');
 const SpeechLanguageService = require('./SpeechLanguageService');
 const HardsubDetectorService = require('./HardsubDetectorService');
+const BetWatermarkDetectorService = require('./BetWatermarkDetectorService');
 
 let activeTranscodes = 0;
 const transcodeWaiters = [];
@@ -1643,6 +1644,20 @@ ${events.join('\n')}
                 throw ocrErr;
             }
             console.warn(`⚠️ [HardsubDetector] Verificação ignorada por exceção: ${ocrErr.message}`);
+        }
+
+        // 3. Verificação Visual Antifraude (Marcas d'Água / Banners da 1xBet e Casas de Apostas)
+        try {
+            console.log(`🛡️ [Validação Visual Antifraude] Analisando frames da cena inteira (início e miolo) contra marcas da 1xBet e apostas...`);
+            const betCheck = await BetWatermarkDetectorService.detectBetWatermark(inputPath, info.duration);
+            if (betCheck.checked && betCheck.detected) {
+                throw new Error(`Vídeo com propaganda/marca d'água de casa de apostas detectado para "${optTitle}": ${betCheck.details}`);
+            }
+        } catch (betErr) {
+            if (betErr.message && betErr.message.includes('Vídeo com propaganda/marca d\'água de casa de apostas')) {
+                throw betErr;
+            }
+            console.warn(`⚠️ [BetWatermarkDetector] Verificação ignorada por exceção: ${betErr.message}`);
         }
 
         let finalPath;

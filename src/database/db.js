@@ -520,7 +520,7 @@ async function createTables() {
             watch_time NUMERIC DEFAULT 0,
             completed BOOLEAN DEFAULT false,
             platform VARCHAR(50) DEFAULT 'website',
-            device VARCHAR(100),
+            device TEXT,
             ip_address VARCHAR(100),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -542,6 +542,9 @@ async function createTables() {
     `);
 
     console.log('✅ Esquemas e tabelas PostgreSQL prontos com chaves BIGINT!');
+
+    // Migração de colunas
+    await query(`ALTER TABLE audit_playback_sessions ALTER COLUMN device TYPE TEXT;`).catch(() => {});
 
     // Migração de reclassificação automática de animes e doramas (executa após criação das tabelas)
     try {

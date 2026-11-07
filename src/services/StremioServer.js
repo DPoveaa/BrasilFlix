@@ -847,7 +847,7 @@ class StremioServer {
                     duration: req.body.duration,
                     completed: req.body.completed,
                     platform: req.body.platform || 'website',
-                    device: req.body.device || req.headers['user-agent']
+                    device: req.body.device ? String(req.body.device).slice(0, 100) : (req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 100) : 'Web')
                 });
 
                 res.json(result);
