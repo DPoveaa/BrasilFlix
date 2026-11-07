@@ -3,6 +3,7 @@ const config = require('../../config');
 const TMDBService = require('./TMDBService');
 const NyaaSearchService = require('./NyaaSearchService');
 const AnimeExtractorService = require('./AnimeExtractorService');
+const ProwlarrSearchService = require('./ProwlarrSearchService');
 const { isReleaseCompatibleWithTarget, isSameMedia } = require('../utils/titleUtils');
 
 class MediaSearchService {
@@ -197,6 +198,37 @@ class MediaSearchService {
             } catch (e) {
                 console.warn('⚠️ Falha temporária ao consultar Torrentio:', e.message);
             }
+        }
+
+        // 3.1 BUSCA AGREGADA NO PROWLARR (Multi-Tracker: LimeTorrents, YTS, The Pirate Bay, Nyaa)
+        try {
+            const sPad = (season || 1).toString().padStart(2, '0');
+            const ePad = (episode || 1).toString().padStart(2, '0');
+            const prowlarrQuery = tipo === 'serie'
+                ? `${originalName || cleanQuery} S${sPad}E${ePad}`
+                : `${originalName || cleanQuery} ${ano || ''}`.trim();
+
+            const prowlarrResults = await ProwlarrSearchService.search(prowlarrQuery, tipo, {
+                query: cleanQuery,
+                originalName,
+                ano,
+                season,
+                episode,
+                audioPreference: pref,
+                allowOriginalAudio: pref === 'legendado' || options.allowOriginalAudio
+            });
+
+            for (const item of prowlarrResults) {
+                if (this.matchesMovieTitle(item.title, cleanQuery, originalName, ano) && !seenHashes.has(item.infoHash || item.magnet)) {
+                    seenHashes.add(item.infoHash || item.magnet);
+                    allResults.push(item);
+                }
+            }
+            if (prowlarrResults.length > 0) {
+                console.log(`📡 [Prowlarr] ${prowlarrResults.length} release(s) obtido(s) via indexadores agregados.`);
+            }
+        } catch (eProwlarr) {
+            console.warn('⚠️ Falha ao consultar Prowlarr:', eProwlarr.message);
         }
 
         // 3. BUSCA COMPLEMENTAR NO THE PIRATE BAY / APIBAY
@@ -1069,7 +1101,13 @@ class MediaSearchService {
         const qTokens = cTarget.split(' ').filter(Boolean);
 
         if (qTokens.length > 0 && qTokens.every(q => tTokens.includes(q))) {
-            return 0.95;
+            // Se o alvo tem 1 ou 2 palavras mas o torrent tem 2+ palavras não relacionadas (ex: "The Bear" vs "The Yogi Bear Show"),
+            // não assume 0.95 cegamente e deixa o cálculo Jaccard/Levenshtein validar
+            if (tTokens.length > qTokens.length + 1 && qTokens.length <= 2) {
+                // Deixa passar para o cálculo balanceado abaixo
+            } else {
+                return 0.95;
+            }
         }
 
         let intersection = 0;

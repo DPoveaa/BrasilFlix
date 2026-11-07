@@ -1155,6 +1155,7 @@ class DownloaderManager extends EventEmitter {
             let lastBytes = 0;
             let lastBytesChangeTime = Date.now();
             let slowStartTime = null;
+            const speedHistory = []; // Amostras para cálculo da média móvel na janela deslizante de 5 minutos
 
             watchdogInterval = setInterval(() => {
                 if (finished || !torrent) return;
@@ -1188,6 +1189,13 @@ class DownloaderManager extends EventEmitter {
                 if (currentBytes !== lastBytes) {
                     lastBytes = currentBytes;
                     lastBytesChangeTime = now;
+                }
+
+                // Amostras para cálculo da janela móvel de velocidade (5 minutos)
+                speedHistory.push({ time: now, bytes: currentBytes });
+                const windowCutoff = now - (6 * 60 * 1000);
+                while (speedHistory.length > 0 && speedHistory[0].time < windowCutoff) {
+                    speedHistory.shift();
                 }
 
                 const stalledMs = now - lastBytesChangeTime;
@@ -1318,53 +1326,74 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Download sem tração inicial (${this.formatBytes(curDownloaded)} baixados em ${Math.floor(elapsedSec / 60)} min).`));
                 }
 
-                // 4. CORTE RÁPIDO POR VELOCIDADE MÉDIA ZUMBI (Early Abort após 6 minutos):
-                // Só aplica enquanto o download estiver abaixo de 20% — acima disso, stall detection cuida.
-                if (elapsedSec >= 360 && fileProg < 0.20) {
-                    const isZombieSpeed = (avgSpeedMB < 0.20 && remainingSec > 7200) || (avgSpeedMB < 0.10);
-                    if (isZombieSpeed) {
-                        process.stdout.write('\n');
-                        if (hasMoreSources) {
-                            console.log(`⚡ [EARLY ABORT] Velocidade média insuficiente após ${Math.floor(elapsedSec / 60)} min (${avgSpeedMB.toFixed(2)} MB/s médio, baixados: ${this.formatBytes(curDownloaded)} de ${this.formatBytes(curTotal)}). Pulando para próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
-                            finished = true;
-                            safeCleanup();
-                            return reject(new Error(`Velocidade média insuficiente (${avgSpeedMB.toFixed(2)} MB/s médio após ${Math.floor(elapsedSec / 60)} min). Pulando para próxima fonte.`));
-                        } else if (elapsedSec >= 480 && avgSpeedMB < 0.12) {
-                            console.log(`⚡ [EARLY ABORT] Fonte única com velocidade média inviável (${avgSpeedMB.toFixed(2)} MB/s médio após ${Math.floor(elapsedSec / 60)} min). Movendo para Swarm Watcher...`);
-                            finished = true;
-                            safeCleanup();
-                            return reject(new Error(`Fonte com velocidade média inviável (${avgSpeedMB.toFixed(2)} MB/s médio).`));
+                // 4. TIMEOUT POR VELOCIDADE MÉDIA EM JANELA MÓVEL DE 5 MINUTOS (Rolling Window Watchdog):
+                // - Avalia a média real de bytes transferidos nos últimos 5 minutos (300 segundos).
+                // - Quedas momentâneas de velocidade NÃO cancelam o download (a integral da janela de 5m suaviza variações transitórias).
+                // - Se o progresso já estiver avançado (>= 80%), NUNCA cancela por velocidade (deixa concluir; apenas stall completo de 30m cancelaria).
+                // - Entre 50% e 80%: apenas cancela se a média for criticamente rastejante (< 80 KB/s sustentados por 5 min inteiros) e houver alternativas.
+                // - Abaixo de 50%: cancela se a média móvel for < 150 KB/s durante os 5 min inteiros e houver outras fontes.
+                if (elapsedSec >= 300 && speedHistory.length >= 10) {
+                    const sample5m = speedHistory.find(s => (now - s.time) >= 270000);
+                    if (sample5m) {
+                        const windowDurationSec = (now - sample5m.time) / 1000;
+                        const windowBytes = Math.max(0, currentBytes - sample5m.bytes);
+                        const rollingSpeedMB = (windowBytes / (1024 * 1024)) / windowDurationSec;
+
+                        // Imunidade para downloads perto de concluir (>= 80%)
+                        if (fileProg >= 0.80) {
+                            // Protegido! Permite a finalização natural mesmo com variações de velocidade.
+                        } else if (fileProg >= 0.50 && fileProg < 0.80) {
+                            // Entre 50% e 80%: altamente tolerante, só aborta se rastejar criticamente por 5 minutos inteiros
+                            const isCriticallySlow = rollingSpeedMB < 0.08 && remainingSec > 5400;
+                            if (isCriticallySlow && hasMoreSources) {
+                                process.stdout.write('\n');
+                                console.log(`⚡ [TIMEOUT JANELA 5M] Download a ${(fileProg * 100).toFixed(1)}% com velocidade média insuficiente nos últimos 5 min (${rollingSpeedMB.toFixed(2)} MB/s, ETA: ${Math.floor(remainingSec / 60)}m). Tentando próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                                
+                                // Harvesting de Season Pack se houver episódios prontos
+                                if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
+                                    const harvestedMap = {};
+                                    for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
+                                        const epFullPath = path.join(this.downloadDir, f.path);
+                                        if (fs.existsSync(epFullPath)) {
+                                            const epStat = fs.statSync(epFullPath);
+                                            const expSize = f.length || 0;
+                                            if ((expSize > 0 ? epStat.size >= expSize * 0.95 : epStat.size > minRequiredBytes) && epStat.size > 20 * 1024 * 1024) {
+                                                harvestedMap[parseInt(epStr, 10)] = { filePath: epFullPath, fileName: f.name, sizeBytes: epStat.size };
+                                            }
+                                        }
+                                    }
+                                    const hCount = Object.keys(harvestedMap).length;
+                                    if (hCount > 0) {
+                                        console.log(`🌾 [SEASON PACK HARVEST] Resgatando ${hCount} episódio(s) prontos antes de trocar de fonte!`);
+                                        const primaryEp = (options.episode && harvestedMap[options.episode]) ? harvestedMap[options.episode] : Object.values(harvestedMap)[0];
+                                        finished = true;
+                                        safeCleanup();
+                                        return resolve({ filePath: primaryEp.filePath, fileName: primaryEp.fileName, sizeBytes: primaryEp.sizeBytes, totalTorrentFiles: torrent.files.length, episodeMap: harvestedMap, isPack: hCount > 1, isPartialHarvest: true });
+                                    }
+                                }
+
+                                finished = true;
+                                safeCleanup();
+                                return reject(new Error(`Velocidade média em 5 min (${rollingSpeedMB.toFixed(2)} MB/s) abaixo do limite para progresso ${(fileProg * 100).toFixed(1)}%.`));
+                            }
+                        } else if (fileProg < 0.50) {
+                            // Abaixo de 50%: cancela se a média dos 5 minutos for inferior a 150 KB/s (0.15 MB/s)
+                            if (rollingSpeedMB < 0.15) {
+                                process.stdout.write('\n');
+                                if (hasMoreSources) {
+                                    console.log(`⚡ [TIMEOUT JANELA 5M] Velocidade média insuficiente na janela de 5 min (${rollingSpeedMB.toFixed(2)} MB/s, progresso: ${(fileProg * 100).toFixed(1)}%). Pulando para próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
+                                    finished = true;
+                                    safeCleanup();
+                                    return reject(new Error(`Velocidade média em 5 min (${rollingSpeedMB.toFixed(2)} MB/s) insuficiente com ${(fileProg * 100).toFixed(1)}% baixado. Tentando alternativa.`));
+                                } else if (rollingSpeedMB < 0.08 && remainingSec > 7200) {
+                                    console.log(`⚡ [TIMEOUT JANELA 5M] Última fonte com velocidade média inviável em 5 min (${rollingSpeedMB.toFixed(2)} MB/s). Movendo para Swarm Watcher...`);
+                                    finished = true;
+                                    safeCleanup();
+                                    return reject(new Error(`Fonte única com velocidade média inviável em 5 min (${rollingSpeedMB.toFixed(2)} MB/s).`));
+                                }
+                            }
                         }
                     }
-                }
-
-                // 5. Watchdog de lentidão persistente — APENAS para downloads abaixo de 20%.
-                // Acima de 20%, o stall detection (regra 2) é suficiente: se bytes chegam devagar mas chegam, o download continua.
-                const isSlow = fileProg < 0.20 && ((speedMB < 0.15 && remainingSec > 5400) || (speedMB < 0.08));
-                if (isSlow) {
-                    if (!slowStartTime) {
-                        slowStartTime = now;
-                    }
-                    const slowDurationSec = Math.floor((now - slowStartTime) / 1000);
-                    const slowTimeoutSec = 8 * 60; // 8 minutos de lentidão sustentada
-
-                    if (slowDurationSec >= slowTimeoutSec) {
-                        process.stdout.write('\n');
-                        if (hasMoreSources) {
-                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Velocidade rastejante persistente por > 8m (${speedMB.toFixed(2)} MB/s atual, ${avgSpeedMB.toFixed(2)} MB/s médio). Abortando para tentar próxima fonte (${options.attemptIndex + 2}/${options.totalAttempts})...`);
-                            finished = true;
-                            safeCleanup();
-                            return reject(new Error(`Velocidade rastejante persistente por > 8m (${speedMB.toFixed(2)} MB/s).`));
-                        } else {
-                            console.log(`⚠️ [WATCHDOG VELOCIDADE] Última fonte com velocidade rastejante mantida por > 8m (${speedMB.toFixed(2)} MB/s). Movendo para Swarm Watcher...`);
-                            finished = true;
-                            safeCleanup();
-                            return reject(new Error(`Torrent com velocidade insuficiente mantida por > 8m (${speedMB.toFixed(2)} MB/s).`));
-                        }
-                    }
-                } else if (speedMB >= 0.35 || fileProg >= 0.20) {
-                    // Reseta o cronômetro de lentidão se a velocidade se recuperou ou o download passou de 20%
-                    slowStartTime = null;
                 }
             }, 4000);
         });

@@ -80,5 +80,10 @@ module.exports = {
     TELEGRAM_UPLOAD_MAX_SOCKETS: parseInt(process.env.TELEGRAM_UPLOAD_MAX_SOCKETS || '6', 10),
     ECO_DOWNLOAD_LIMIT_MB: parseFloat(process.env.ECO_DOWNLOAD_LIMIT_MB || '3.0'),
     ECO_UPLOAD_LIMIT_KB: parseInt(process.env.ECO_UPLOAD_LIMIT_KB || '30', 10),
-    ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10)
+    ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10),
+
+    // Integração Prowlarr (Agregador de Indexers e Trackers Públicos/Privados)
+    PROWLARR_ENABLED: process.env.PROWLARR_ENABLED !== 'false',
+    PROWLARR_URL: process.env.PROWLARR_URL || 'http://127.0.0.1:9696',
+    PROWLARR_API_KEY: process.env.PROWLARR_API_KEY || '481557c9a7c241a48163642c2d246fef'
 };
