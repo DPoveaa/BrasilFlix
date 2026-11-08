@@ -127,9 +127,10 @@ class MediaSearchService {
         if (isAnime) {
             const titulosAlt = options.titulosAlternativos || tmdbDetails?.titulosAlternativos || [];
             const absEp = options.absoluteEpisode || null;
+            let nyaaResults = [];
 
             try {
-                const nyaaResults = await NyaaSearchService.searchAnime(cleanQuery, tipo, {
+                nyaaResults = await NyaaSearchService.searchAnime(cleanQuery, tipo, {
                     originalName,
                     season,
                     episode,
