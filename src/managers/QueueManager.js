@@ -1428,6 +1428,9 @@ class QueueManager extends EventEmitter {
             if (j.retryAfter && new Date(j.retryAfter).getTime() > now) {
                 continue;
             }
+            if (this.isSkippedRecently(j.title, j.season, j.episode)) {
+                continue;
+            }
             const normTitle = normalizeTitle(j.title);
             const hasRaw = !!(j.rawFilePath && fs.existsSync(j.rawFilePath));
             const hasOpt = !!(j.optimizedPath && fs.existsSync(j.optimizedPath));
@@ -1730,7 +1733,9 @@ class QueueManager extends EventEmitter {
     getActiveDownloadsCount() {
         let count = 0;
         for (const job of this.activeJobs.values()) {
-            if (job.status === 'downloading') {
+            const hasRaw = !!(job.rawFilePath && fs.existsSync(job.rawFilePath));
+            const hasOpt = !!(job.optimizedPath && fs.existsSync(job.optimizedPath));
+            if (job.status === 'downloading' || (!hasRaw && !hasOpt)) {
                 count++;
             }
         }
@@ -2461,18 +2466,6 @@ class QueueManager extends EventEmitter {
                     await this.saveJob(job);
                     return;
                 }
-                while (!this.acquireDownloadSlot(job.id)) {
-                    console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
-                    await new Promise(r => setTimeout(r, 5000));
-                    // Se a janela fechou ou o modo mudou enquanto esperava, sai do loop
-                    if (!SchedulerService.isAllowedToRun()) {
-                        job.status = 'queued';
-                        job.progress = 0;
-                        job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
-                        await this.saveJob(job);
-                        return;
-                    }
-                }
             }
 
             try {
@@ -2641,6 +2634,9 @@ class QueueManager extends EventEmitter {
                         sources = sources.filter(s => s.isDublado);
                         if (sources.length === 0) {
                             console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                            if (job.type === 'serie') {
+                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                            }
                             job.status = 'completed';
                             job.progress = 100;
                             job.progressDetails = 'Mantida versão Legendada existente (sem fonte Dublada no momento)';
@@ -2655,6 +2651,9 @@ class QueueManager extends EventEmitter {
                         sources = sources.filter(s => s.isLegendado);
                         if (sources.length === 0) {
                             console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Dublada no catálogo e nenhuma fonte Legendada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
+                            if (job.type === 'serie') {
+                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                            }
                             job.status = 'completed';
                             job.progress = 100;
                             job.progressDetails = 'Mantida versão Dublada existente (sem fonte Legendada no momento)';
@@ -2846,6 +2845,22 @@ class QueueManager extends EventEmitter {
 
                 let lastError = null;
                 const maxAttempts = downloadedMedia?.filePath ? 0 : Math.min(8, sources.length);
+
+                // No Modo Econômico, garante reserva atômica de slot único APENAS quando o download real for iniciar
+                if (maxAttempts > 0 && !downloadedMedia?.filePath && SchedulerService.getActiveMode() === 'eco') {
+                    while (!this.acquireDownloadSlot(job.id)) {
+                        console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
+                        await new Promise(r => setTimeout(r, 5000));
+                        if (!SchedulerService.isAllowedToRun()) {
+                            job.status = 'queued';
+                            job.progress = 0;
+                            job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
+                            await this.saveJob(job);
+                            return;
+                        }
+                    }
+                }
+
                 for (let i = 0; i < maxAttempts; i++) {
                     const currentSource = sources[i];
                     console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio || 'PT-BR'})`);

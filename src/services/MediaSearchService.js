@@ -9,6 +9,7 @@ const { isReleaseCompatibleWithTarget, isSameMedia } = require('../utils/titleUt
 class MediaSearchService {
     constructor() {
         this.timeout = 7000;
+        this.negativeCache = new Map();
     }
 
     getMinAllowedSizeMB(tipo, options = {}) {
@@ -64,6 +65,14 @@ class MediaSearchService {
                       /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery));
 
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
+
+        const cacheKey = `${tipo}_${cleanQuery}_s${season}_e${episode}_${pref}_${ano}`.toLowerCase();
+        const cachedNegative = this.negativeCache.get(cacheKey);
+        if (cachedNegative && (Date.now() - cachedNegative < 30 * 60 * 1000)) {
+            console.log(`⚡ [Cache Negativo] "${cleanQuery}" ${tipo === 'serie' ? `(T${season}E${episode})` : ''} sem fontes recentes (${prefTexto}). Retornando busca vazia.`);
+            return [];
+        }
+
         console.log(`\n🔍 Buscando fontes ${prefTexto} para: "${cleanQuery}" ${originalName ? `(${originalName})` : ''} ${tipo === 'serie' ? `(T${season}E${episode})` : ''}...`);
 
         const allResults = [];
@@ -147,23 +156,29 @@ class MediaSearchService {
             }
 
             // 2.1 Fallback Web Direct (AnimesDigital CDN m3u8) para episódios dublados/legendados de animes
-            try {
-                const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
-                    season,
-                    episode,
-                    audioPreference: pref,
-                    tmdbSeasonName: options.tmdbSeasonName || null,
-                    absoluteEpisode: absEp
-                });
+            // Apenas se Nyaa não tiver retornado fontes saudáveis (>= 2 seeders)
+            const nyaaTemSeeds = (nyaaResults || []).some(item => (item.seeders || 0) >= 2);
+            if (!nyaaTemSeeds) {
+                try {
+                    const animeDirectResults = await AnimeExtractorService.searchAnime(cleanQuery, tipo, {
+                        season,
+                        episode,
+                        audioPreference: pref,
+                        tmdbSeasonName: options.tmdbSeasonName || null,
+                        absoluteEpisode: absEp
+                    });
 
-                for (const item of animeDirectResults) {
-                    allResults.push(item);
+                    for (const item of animeDirectResults) {
+                        allResults.push(item);
+                    }
+                    if (animeDirectResults.length > 0) {
+                        console.log(`⛩️ [AnimeExtractor] ${animeDirectResults.length} stream(s) Web Direct adicionados.`);
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Falha ao consultar AnimeExtractorService:', e.message);
                 }
-                if (animeDirectResults.length > 0) {
-                    console.log(`⛩️ [AnimeExtractor] ${animeDirectResults.length} stream(s) Web Direct adicionados.`);
-                }
-            } catch (e) {
-                console.warn('⚠️ Falha ao consultar AnimeExtractorService:', e.message);
+            } else {
+                console.log(`⚡ [Nyaa.si] Fontes P2P saudáveis encontradas. Dispensando busca Web Direct.`);
             }
         }
 
@@ -175,11 +190,19 @@ class MediaSearchService {
             } catch (e) {}
         }
 
-        // 3. BUSCA NO TORRENTIO / STREMIO MULTI-PROVIDER (ComandoTorrents, BluDV, CineGAVETA, TorrentGalaxy, etc.)
+        // 3. BUSCA CONCORRENTE: TORRENTIO & PROWLARR (Multi-Tracker: YTS, The Pirate Bay, Nyaa)
+        const sPad = (season || 1).toString().padStart(2, '0');
+        const ePad = (episode || 1).toString().padStart(2, '0');
+        const prowlarrQuery = tipo === 'serie'
+            ? `${originalName || cleanQuery} S${sPad}E${ePad}`
+            : `${originalName || cleanQuery} ${ano || ''}`.trim();
+
+        const searchPromises = [];
+
         if (imdbId) {
-            try {
-                console.log(`🌐 Consultando catálogo Stremio/Torrentio para IMDb: ${imdbId} ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
-                const torrentioResults = await this.searchTorrentio(imdbId, tipo, { 
+            console.log(`🌐 Consultando catálogo Stremio/Torrentio para IMDb: ${imdbId} ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
+            searchPromises.push(
+                this.searchTorrentio(imdbId, tipo, { 
                     forcarNaoCam, 
                     query: cleanQuery, 
                     originalName, 
@@ -188,27 +211,21 @@ class MediaSearchService {
                     episode, 
                     isTheatricalOnly,
                     audioPreference: pref
-                });
-                for (const item of torrentioResults) {
-                    if (item.isPtBr && !seenHashes.has(item.infoHash)) {
-                        seenHashes.add(item.infoHash);
-                        allResults.push(item);
+                }).catch(e => {
+                    if (e.response?.status === 429) {
+                        console.warn('⚠️ Torrentio com limite de requisições (429). Alternando para Prowlarr/TPB.');
+                    } else {
+                        console.warn('⚠️ Falha temporária ao consultar Torrentio:', e.message);
                     }
-                }
-            } catch (e) {
-                console.warn('⚠️ Falha temporária ao consultar Torrentio:', e.message);
-            }
+                    return [];
+                })
+            );
+        } else {
+            searchPromises.push(Promise.resolve([]));
         }
 
-        // 3.1 BUSCA AGREGADA NO PROWLARR (Multi-Tracker: LimeTorrents, YTS, The Pirate Bay, Nyaa)
-        try {
-            const sPad = (season || 1).toString().padStart(2, '0');
-            const ePad = (episode || 1).toString().padStart(2, '0');
-            const prowlarrQuery = tipo === 'serie'
-                ? `${originalName || cleanQuery} S${sPad}E${ePad}`
-                : `${originalName || cleanQuery} ${ano || ''}`.trim();
-
-            const prowlarrResults = await ProwlarrSearchService.search(prowlarrQuery, tipo, {
+        searchPromises.push(
+            ProwlarrSearchService.search(prowlarrQuery, tipo, {
                 query: cleanQuery,
                 originalName,
                 ano,
@@ -216,142 +233,163 @@ class MediaSearchService {
                 episode,
                 audioPreference: pref,
                 allowOriginalAudio: pref === 'legendado' || options.allowOriginalAudio
-            });
+            }).catch(eProwlarr => {
+                console.warn('⚠️ Falha ao consultar Prowlarr:', eProwlarr.message);
+                return [];
+            })
+        );
 
-            for (const item of prowlarrResults) {
-                if (this.matchesMovieTitle(item.title, cleanQuery, originalName, ano) && !seenHashes.has(item.infoHash || item.magnet)) {
-                    seenHashes.add(item.infoHash || item.magnet);
-                    allResults.push(item);
-                }
+        const [torrentioResults, prowlarrResults] = await Promise.all(searchPromises);
+
+        for (const item of (torrentioResults || [])) {
+            if (item.isPtBr && !seenHashes.has(item.infoHash)) {
+                seenHashes.add(item.infoHash);
+                allResults.push(item);
             }
-            if (prowlarrResults.length > 0) {
-                console.log(`📡 [Prowlarr] ${prowlarrResults.length} release(s) obtido(s) via indexadores agregados.`);
-            }
-        } catch (eProwlarr) {
-            console.warn('⚠️ Falha ao consultar Prowlarr:', eProwlarr.message);
         }
 
-        // 3. BUSCA COMPLEMENTAR NO THE PIRATE BAY / APIBAY
-        const sPadded = season.toString().padStart(2, '0');
-        const ePadded = episode.toString().padStart(2, '0');
-        const variations = [];
-
-        if (isMicrodrama) {
-            variations.push(
-                `${cleanQuery} legendado`,
-                `${cleanQuery} duanju`,
-                `${cleanQuery} short drama`,
-                `${cleanQuery} dramabox`,
-                `${cleanQuery} reelshort`,
-                `${cleanQuery} shortmax`,
-                `${cleanQuery}`
-            );
-            if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
-                variations.push(
-                    `${originalName} duanju`,
-                    `${originalName} short drama`,
-                    `${originalName} legendado`,
-                    `${originalName}`
-                );
+        for (const item of (prowlarrResults || [])) {
+            if (this.matchesMovieTitle(item.title, cleanQuery, originalName, ano) && !seenHashes.has(item.infoHash || item.magnet)) {
+                seenHashes.add(item.infoHash || item.magnet);
+                allResults.push(item);
             }
-        } else if (tipo === 'serie') {
-            if (pref === 'legendado') {
+        }
+        if (prowlarrResults && prowlarrResults.length > 0) {
+            console.log(`📡 [Prowlarr] ${prowlarrResults.length} release(s) obtido(s) via indexadores agregados.`);
+        }
+
+        // Se Torrentio ou Prowlarr já encontraram releases com sementes ativas suficientes, pula o TPB loop
+        const dubComSeedsPre = allResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
+        const legComSeedsPre = allResults.filter(r => r.isLegendado && (r.seeders || 0) >= 3);
+        const hasEnoughSources = pref === 'legendado' 
+            ? legComSeedsPre.length >= 2 
+            : (pref === 'dublado' ? dubComSeedsPre.length >= 2 : (dubComSeedsPre.length + legComSeedsPre.length) >= 2);
+
+        if (!hasEnoughSources) {
+            // 3.1 BUSCA COMPLEMENTAR NO THE PIRATE BAY / APIBAY (Apenas se faltarem fontes saudáveis)
+            const sPadded = season.toString().padStart(2, '0');
+            const ePadded = episode.toString().padStart(2, '0');
+            const variations = [];
+
+            if (isMicrodrama) {
                 variations.push(
-                    `${cleanQuery} S${sPadded} complete`,
-                    `${cleanQuery} S${sPadded} legendado`,
-                    `${cleanQuery} temporada ${season} completa legendado`,
-                    `${cleanQuery} season ${season} complete`,
-                    `${cleanQuery} S${sPadded}E${ePadded} legendado`,
-                    `${cleanQuery} S${sPadded}E${ePadded}`
+                    `${cleanQuery} legendado`,
+                    `${cleanQuery} duanju`,
+                    `${cleanQuery} short drama`,
+                    `${cleanQuery} dramabox`,
+                    `${cleanQuery} reelshort`,
+                    `${cleanQuery} shortmax`,
+                    `${cleanQuery}`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
-                        `${originalName} S${sPadded} complete`,
-                        `${originalName} S${sPadded} season ${season}`,
-                        `${originalName} S${sPadded}E${ePadded}`,
-                        `${originalName} S${sPadded} legendado`,
-                        `${originalName} season ${season}`
+                        `${originalName} duanju`,
+                        `${originalName} short drama`,
+                        `${originalName} legendado`,
+                        `${originalName}`
                     );
+                }
+            } else if (tipo === 'serie') {
+                if (pref === 'legendado') {
+                    variations.push(
+                        `${cleanQuery} S${sPadded} complete`,
+                        `${cleanQuery} S${sPadded} legendado`,
+                        `${cleanQuery} temporada ${season} completa legendado`,
+                        `${cleanQuery} season ${season} complete`,
+                        `${cleanQuery} S${sPadded}E${ePadded} legendado`,
+                        `${cleanQuery} S${sPadded}E${ePadded}`
+                    );
+                    if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+                        variations.push(
+                            `${originalName} S${sPadded} complete`,
+                            `${originalName} S${sPadded} season ${season}`,
+                            `${originalName} S${sPadded}E${ePadded}`,
+                            `${originalName} S${sPadded} legendado`,
+                            `${originalName} season ${season}`
+                        );
+                    }
+                } else {
+                    variations.push(
+                        `${cleanQuery} S${sPadded}E${ePadded} dual`,
+                        `${cleanQuery} S${sPadded}E${ePadded} dublado`,
+                        `${cleanQuery} S${sPadded}E${ePadded}`,
+                        `${cleanQuery} S${sPadded} dual`,
+                        `${cleanQuery} S${sPadded} dublado`,
+                        `${cleanQuery} S${sPadded} complete`,
+                        `${cleanQuery} temporada ${season} dual`,
+                        `${cleanQuery} temporada ${season} dublado`,
+                        `${cleanQuery} temporada ${season} completa`,
+                        `${cleanQuery} season ${season} dual`,
+                        `${cleanQuery} S${sPadded} 1080p dual`
+                    );
+                    if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
+                        variations.push(
+                            `${originalName} S${sPadded}E${ePadded} dual`,
+                            `${originalName} S${sPadded}E${ePadded} dublado`,
+                            `${originalName} S${sPadded}E${ePadded}`,
+                            `${originalName} S${sPadded} dual`,
+                            `${originalName} S${sPadded} dublado`,
+                            `${originalName} S${sPadded} complete`,
+                            `${originalName} season ${season} dual`
+                        );
+                    }
                 }
             } else {
                 variations.push(
-                    `${cleanQuery} S${sPadded}E${ePadded} dual`,
-                    `${cleanQuery} S${sPadded}E${ePadded} dublado`,
-                    `${cleanQuery} S${sPadded}E${ePadded}`,
-                    `${cleanQuery} S${sPadded} dual`,
-                    `${cleanQuery} S${sPadded} dublado`,
-                    `${cleanQuery} S${sPadded} complete`,
-                    `${cleanQuery} temporada ${season} dual`,
-                    `${cleanQuery} temporada ${season} dublado`,
-                    `${cleanQuery} temporada ${season} completa`,
-                    `${cleanQuery} season ${season} dual`,
-                    `${cleanQuery} S${sPadded} 1080p dual`
+                    `${cleanQuery} 1080p dual`,
+                    `${cleanQuery} 1080p dublado`,
+                    `${cleanQuery} dual audio`,
+                    `${cleanQuery} dublado`,
+                    `${cleanQuery} nacional`,
+                    `${cleanQuery} 1080p legendado`,
+                    `${cleanQuery} legendado`
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
-                        `${originalName} S${sPadded}E${ePadded} dual`,
-                        `${originalName} S${sPadded}E${ePadded} dublado`,
-                        `${originalName} S${sPadded}E${ePadded}`,
-                        `${originalName} S${sPadded} dual`,
-                        `${originalName} S${sPadded} dublado`,
-                        `${originalName} S${sPadded} complete`,
-                        `${originalName} season ${season} dual`
+                        `${originalName} 1080p dual`,
+                        `${originalName} 1080p dublado`,
+                        `${originalName} dual`,
+                        `${originalName} dublado`,
+                        `${originalName} 1080p legendado`
                     );
-                }
-            }
-        } else {
-            variations.push(
-                `${cleanQuery} 1080p dual`,
-                `${cleanQuery} 1080p dublado`,
-                `${cleanQuery} dual audio`,
-                `${cleanQuery} dublado`,
-                `${cleanQuery} nacional`,
-                `${cleanQuery} 1080p legendado`,
-                `${cleanQuery} legendado`
-            );
-            if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
-                variations.push(
-                    `${originalName} 1080p dual`,
-                    `${originalName} 1080p dublado`,
-                    `${originalName} dual`,
-                    `${originalName} dublado`,
-                    `${originalName} 1080p legendado`
-                );
-                if (ano) {
-                    variations.push(
-                        `${originalName} ${ano} dual`,
-                        `${originalName} ${ano} dublado`,
-                        `${originalName} ${ano} legendado`
-                    );
-                }
-            }
-        }
-
-        // Executa as buscas de variações em lotes paralelos de 3 para resposta instantânea
-        const batchSize = 3;
-        for (let i = 0; i < variations.length; i += batchSize) {
-            const batch = variations.slice(i, i + batchSize);
-            const batchPromises = batch.map(q => 
-                this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode, isTheatricalOnly })
-                    .catch(() => [])
-            );
-
-            const batchResults = await Promise.all(batchPromises);
-            for (const apiResults of batchResults) {
-                for (const item of apiResults) {
-                    if (item.isPtBr && !seenHashes.has(item.infoHash)) {
-                        seenHashes.add(item.infoHash);
-                        allResults.push(item);
+                    if (ano) {
+                        variations.push(
+                            `${originalName} ${ano} dual`,
+                            `${originalName} ${ano} dublado`,
+                            `${originalName} ${ano} legendado`
+                        );
                     }
                 }
             }
 
-            // Para cedo se já encontrou fontes saudáveis suficientes do tipo preferido
-            const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders >= 3);
-            const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 3);
-            const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
-            if (targetCount >= 3) break;
-            await new Promise(r => setTimeout(r, 100));
+            // Executa as buscas de variações em lotes paralelos de 3 para resposta instantânea
+            const batchSize = 3;
+            for (let i = 0; i < variations.length; i += batchSize) {
+                const batch = variations.slice(i, i + batchSize);
+                const batchPromises = batch.map(q => 
+                    this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode, isTheatricalOnly })
+                        .catch(() => [])
+                );
+
+                const batchResults = await Promise.all(batchPromises);
+                for (const apiResults of batchResults) {
+                    for (const item of apiResults) {
+                        if (item.isPtBr && !seenHashes.has(item.infoHash)) {
+                            seenHashes.add(item.infoHash);
+                            allResults.push(item);
+                        }
+                    }
+                }
+
+                // Para cedo se já encontrou fontes saudáveis suficientes do tipo preferido
+                const dubladosComSeeds = allResults.filter(r => r.isDublado && r.seeders >= 3);
+                const legendadosComSeeds = allResults.filter(r => r.isLegendado && r.seeders >= 3);
+                const targetCount = pref === 'legendado' ? legendadosComSeeds.length : dubladosComSeeds.length;
+                if (targetCount >= 3) break;
+                await new Promise(r => setTimeout(r, 100));
+            }
+        } else {
+            console.log(`⚡ [Busca Otimizada] Fontes suficientes já encontradas via Torrentio/Prowlarr. Dispensando consultas ao TPB.`);
         }
 
 
@@ -512,7 +550,14 @@ class MediaSearchService {
         if (ptBrResults.length === 0) {
             const descFalta = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublada ou Legendada)');
             console.log(`⚠️ Nenhuma versão 1080p/720p ${descFalta} encontrada para "${cleanQuery}".`);
+            this.negativeCache.set(cacheKey, Date.now());
+            if (this.negativeCache.size > 2000) {
+                const oldest = this.negativeCache.keys().next().value;
+                this.negativeCache.delete(oldest);
+            }
             return [];
+        } else {
+            this.negativeCache.delete(cacheKey);
         }
 
         const dublados = ptBrResults.filter(r => r.isDublado);

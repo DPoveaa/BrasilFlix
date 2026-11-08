@@ -3,7 +3,7 @@ const axios = require('axios');
 class AnimeExtractorService {
     constructor() {
         this.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        this.timeout = 12000;
+        this.timeout = 4000;
     }
 
     normalizeText(text) {
@@ -236,7 +236,7 @@ class AnimeExtractorService {
         try {
             const res = await axios.get('https://topanimes.net/', {
                 headers: { 'User-Agent': this.userAgent },
-                timeout: 8000
+                timeout: 4000
             });
             const m = res.data.match(/["']nonce["'][^'"]*["']([a-f0-9]{8,12})["']/i)
                 || res.data.match(/nonce["':\s]+["']([a-f0-9]{8,12})["']/i);
@@ -325,7 +325,7 @@ class AnimeExtractorService {
                             'User-Agent': this.userAgent,
                             'Referer': targetEp.url
                         },
-                        timeout: 10000
+                        timeout: 4000
                     });
 
                     if (apiRes.data && apiRes.data.status === 'success' && apiRes.data.midias && apiRes.data.midias.length > 0) {
@@ -352,7 +352,7 @@ class AnimeExtractorService {
             if (antivMatch) {
                 const antivRes = await axios.get(antivMatch[1], {
                     headers: { 'User-Agent': this.userAgent, 'Referer': targetEp.url },
-                    timeout: 10000
+                    timeout: 4000
                 });
                 const antivHtml = typeof antivRes.data === 'string' ? antivRes.data : '';
                 const m3u8M = antivHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)['"]/);
