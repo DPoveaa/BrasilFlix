@@ -2241,8 +2241,13 @@ class QueueManager extends EventEmitter {
                     }
                 } else {
                     const epDet = await TMDBService.getEpisodeDetails(metadata.tmdbId, job.season || 1, job.episode || 1);
-                    if (epDet && epDet.duracaoMinutos) {
-                        tmdbExpectedDurationMin = epDet.duracaoMinutos;
+                    if (epDet) {
+                        if (epDet.duracaoMinutos) tmdbExpectedDurationMin = epDet.duracaoMinutos;
+                        if (epDet.nome && !epDet.nome.startsWith('Episódio ')) {
+                            metadata.episodioNome = epDet.nome;
+                        }
+                        if (epDet.sinopse) metadata.episodioSinopse = epDet.sinopse;
+                        if (epDet.stillUrl) metadata.stillUrl = epDet.stillUrl;
                     } else if (metadata.duracaoMinutos) {
                         tmdbExpectedDurationMin = metadata.duracaoMinutos;
                     }
@@ -3463,7 +3468,9 @@ class QueueManager extends EventEmitter {
             tipo: job.type,
             season: job.season,
             episode: job.episode,
-            episodioNome: job.type === 'serie' ? `Episódio ${job.episode || 1}` : ''
+            episodioNome: job.type === 'serie'
+                ? ((metadata.episodioNome && !metadata.episodioNome.startsWith('Episódio ')) ? metadata.episodioNome : `Episódio ${job.episode || 1}`)
+                : ''
         };
 
         // Detecção ultra robusta e infalível de Cinema/CAM vs Master Digital (WEB-DL / Blu-ray)

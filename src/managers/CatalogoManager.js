@@ -1222,6 +1222,12 @@ class CatalogoManager {
                         this.enriquecerEpisodiosPendentes().catch(() => { });
                     }, 5000);
                 }
+
+                if (!this._enrichInterval) {
+                    this._enrichInterval = setInterval(() => {
+                        this.enriquecerEpisodiosPendentes().catch(() => { });
+                    }, 2 * 60 * 60 * 1000);
+                }
             } catch (error) {
                 console.error('❌ Erro ao carregar catálogo do PostgreSQL:', error.message);
                 if (fs.existsSync(config.CATALOGO_FILE)) {
@@ -1881,7 +1887,7 @@ class CatalogoManager {
             try {
                 const epTmdb = await TMDBService.getEpisodeDetails(serie.tmdbId || metadados.tmdbId, temporadaNum, episodioNum);
                 if (epTmdb) {
-                    if (epTmdb.nome) metadados.episodioNome = epTmdb.nome;
+                    if (epTmdb.nome && !epTmdb.nome.startsWith('Episódio ')) metadados.episodioNome = epTmdb.nome;
                     if (epTmdb.sinopse) metadados.episodioSinopse = epTmdb.sinopse;
                     if (epTmdb.stillUrl) metadados.stillUrl = epTmdb.stillUrl;
                     // Só usa duração TMDB se a duração real do arquivo ainda não foi medida
@@ -1901,7 +1907,11 @@ class CatalogoManager {
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
                 ) ON CONFLICT (serie_id, temporada_numero, numero) DO UPDATE SET
-                    nome = COALESCE(NULLIF(EXCLUDED.nome, ''), episodios.nome),
+                    nome = CASE
+                        WHEN EXCLUDED.nome IS NOT NULL AND EXCLUDED.nome != '' AND EXCLUDED.nome NOT LIKE 'Episódio %' THEN EXCLUDED.nome
+                        WHEN episodios.nome IS NOT NULL AND episodios.nome != '' AND episodios.nome NOT LIKE 'Episódio %' THEN episodios.nome
+                        ELSE COALESCE(NULLIF(EXCLUDED.nome, ''), episodios.nome)
+                    END,
                     sinopse = COALESCE(NULLIF(EXCLUDED.sinopse, ''), episodios.sinopse),
                     still_url = COALESCE(EXCLUDED.still_url, episodios.still_url),
                     duracao = COALESCE(EXCLUDED.duracao, episodios.duracao),
@@ -3496,29 +3506,62 @@ class CatalogoManager {
                         const seasonDetails = await TMDBService.getSeasonDetails(s.tmdb_id, tNum);
                         if (!seasonDetails || !seasonDetails.episodios) continue;
 
-                        for (const epTmdb of seasonDetails.episodios) {
-                            if (!epTmdb.numero) continue;
+                        for (let idx = 0; idx < seasonDetails.episodios.length; idx++) {
+                            const epTmdb = seasonDetails.episodios[idx];
+                            if (!epTmdb || !epTmdb.numero) continue;
+                            const relativeEpNum = idx + 1;
+                            const hasRealName = epTmdb.nome && !epTmdb.nome.startsWith('Episódio ');
+                            const nomeVal = hasRealName ? epTmdb.nome : null;
+
                             await db.query(`
                                 UPDATE episodios 
                                 SET 
-                                    nome = CASE WHEN nome IS NULL OR nome LIKE 'Episódio %' THEN $1 ELSE nome END,
+                                    nome = CASE 
+                                        WHEN $1 IS NOT NULL AND (nome IS NULL OR nome LIKE 'Episódio %') THEN $1 
+                                        ELSE nome 
+                                    END,
                                     sinopse = CASE WHEN sinopse IS NULL OR sinopse = '' THEN $2 ELSE sinopse END,
                                     still_url = COALESCE(still_url, $3),
                                     duracao = COALESCE(duracao, $4)
-                                WHERE serie_id = $5 AND temporada_numero = $6 AND numero = $7
+                                WHERE serie_id = $5 AND temporada_numero = $6 AND (numero = $7 OR numero = $8)
                             `, [
-                                epTmdb.nome || `Episódio ${epTmdb.numero}`,
+                                nomeVal,
                                 epTmdb.sinopse || '',
                                 epTmdb.stillUrl || null,
                                 epTmdb.duracaoMinutos || null,
                                 s.id,
                                 tNum,
-                                epTmdb.numero
+                                epTmdb.numero,
+                                relativeEpNum
                             ]);
                         }
                     } catch (err) {
                         console.warn(`[ENRICH-EPS] Erro na temporada ${tNum} de ${s.nome}:`, err.message);
                     }
+                }
+
+                // Sincroniza cache em memória para a série
+                const serieMem = this.catalogo.series.find(sm => Number(sm.id) === Number(s.id));
+                if (serieMem && serieMem.temporadas) {
+                    try {
+                        const epsDb = await db.query(`
+                            SELECT temporada_numero, numero, nome, sinopse, still_url, duracao 
+                            FROM episodios 
+                            WHERE serie_id = $1
+                        `, [s.id]);
+                        for (const row of epsDb.rows) {
+                            const tempMem = serieMem.temporadas.find(t => t.numero === row.temporada_numero);
+                            if (tempMem && tempMem.episodios) {
+                                const epMem = tempMem.episodios.find(e => e.numero === row.numero);
+                                if (epMem) {
+                                    if (row.nome && !row.nome.startsWith('Episódio ')) epMem.nome = row.nome;
+                                    if (row.sinopse) epMem.sinopse = row.sinopse;
+                                    if (row.still_url) epMem.stillUrl = row.still_url;
+                                    if (row.duracao) epMem.duracao = row.duracao;
+                                }
+                            }
+                        }
+                    } catch (memErr) { }
                 }
             }
 

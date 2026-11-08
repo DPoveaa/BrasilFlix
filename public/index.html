@@ -10937,9 +10937,9 @@
                                     </div>
                                 </div>
 
-                                <button class="speed-badge-btn" onclick="togglePlayerFullscreen()"
+                                <button class="speed-badge-btn" id="player-fullscreen-btn" onclick="togglePlayerFullscreen()"
                                     title="Tela Cheia (F)">
-                                    <span class="btn-icon">⛶</span><span class="footer-btn-label"> Tela Cheia</span>
+                                    <span class="btn-icon" id="player-fullscreen-icon">⛶</span><span class="footer-btn-label" id="player-fullscreen-label"> Tela Cheia</span>
                                 </button>
                             </div>
                         </div>
@@ -21393,13 +21393,31 @@
 
             function isPlayerInFullscreen() {
                 const video = document.getElementById('html5-video-player');
-                return !!getActiveFullscreenElement() || (video && video.webkitDisplayingFullscreen);
+                return !!getActiveFullscreenElement() || !!(video && video.webkitDisplayingFullscreen);
+            }
+
+            function syncFullscreenState() {
+                const isFs = isPlayerInFullscreen();
+                const btn = document.getElementById('player-fullscreen-btn');
+                const label = document.getElementById('player-fullscreen-label');
+                const icon = document.getElementById('player-fullscreen-icon');
+                if (label) label.textContent = isFs ? ' Sair da Tela Cheia' : ' Tela Cheia';
+                if (icon) icon.textContent = isFs ? '🗗' : '⛶';
+                if (btn) btn.title = isFs ? 'Sair da Tela Cheia (F)' : 'Tela Cheia (F)';
+            }
+
+            if (!window._fullscreenListenersBound) {
+                window._fullscreenListenersBound = true;
+                ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
+                    document.addEventListener(evt, syncFullscreenState);
+                });
             }
 
             async function togglePlayerFullscreen() {
-                const card = document.getElementById('player-card-container');
                 const video = document.getElementById('html5-video-player');
-                if (!card && !video) return;
+                const card = document.getElementById('player-card-container');
+                const target = video || card;
+                if (!target) return;
 
                 try {
                     if (getActiveFullscreenElement()) {
@@ -21413,7 +21431,6 @@
                             await document.msExitFullscreen();
                         }
                     } else {
-                        const target = card || video;
                         if (target.requestFullscreen) {
                             await target.requestFullscreen();
                         } else if (target.webkitRequestFullscreen) {
