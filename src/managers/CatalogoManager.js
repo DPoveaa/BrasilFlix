@@ -3517,12 +3517,12 @@ class CatalogoManager {
                                 UPDATE episodios 
                                 SET 
                                     nome = CASE 
-                                        WHEN $1 IS NOT NULL AND (nome IS NULL OR nome LIKE 'Episódio %') THEN $1 
+                                        WHEN $1::text IS NOT NULL AND (nome IS NULL OR nome LIKE 'Episódio %') THEN $1::text 
                                         ELSE nome 
                                     END,
-                                    sinopse = CASE WHEN sinopse IS NULL OR sinopse = '' THEN $2 ELSE sinopse END,
-                                    still_url = COALESCE(still_url, $3),
-                                    duracao = COALESCE(duracao, $4)
+                                    sinopse = CASE WHEN sinopse IS NULL OR sinopse = '' THEN $2::text ELSE sinopse END,
+                                    still_url = COALESCE(still_url, $3::text),
+                                    duracao = COALESCE(duracao, $4::integer)
                                 WHERE serie_id = $5 AND temporada_numero = $6 AND (numero = $7 OR numero = $8)
                             `, [
                                 nomeVal,
