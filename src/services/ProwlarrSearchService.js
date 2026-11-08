@@ -40,7 +40,7 @@ class ProwlarrSearchService {
 
             const res = await axios.get(url, {
                 headers: { 'X-Api-Key': this.apiKey },
-                timeout: 25000
+                timeout: 15000
             });
 
             if (!Array.isArray(res.data)) return [];

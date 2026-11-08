@@ -458,14 +458,13 @@ class DownloaderManager extends EventEmitter {
             const maxUploadBytes = isEcoMode ? ((config.ECO_UPLOAD_LIMIT_KB || 30) * 1024) : ((config.MAX_TORRENT_UPLOAD_LIMIT_KB || 500) * 1024);
             const downloadLimitBytes = isEcoMode ? Math.round((config.ECO_DOWNLOAD_LIMIT_MB || 3.0) * 1024 * 1024) : -1;
 
-            console.log(`📡 [QoS Rede] Modo: ${isEcoMode ? '🍃 ECONÔMICO (DHT Desativado, Teto: ' + (config.ECO_DOWNLOAD_LIMIT_MB || 3.0) + ' MB/s, Max Conns: ' + maxPeerConns + ')' : '⚡ DESEMPENHO (Max Conns: ' + maxPeerConns + ', Sem Limite Download)'}`);
+            console.log(`📡 [QoS Rede] Modo: ${isEcoMode ? '🍃 ECONÔMICO (Teto: ' + (config.ECO_DOWNLOAD_LIMIT_MB || 3.0) + ' MB/s, Max Conns: ' + maxPeerConns + ')' : '⚡ DESEMPENHO (Max Conns: ' + maxPeerConns + ', Sem Limite Download)'}`);
 
             const client = new WT({
                 torrentPort: 0,
                 dhtPort: 0,
                 maxConns: maxPeerConns, // Limite estrito (10 no eco / 14 no desempenho para proteger a tabela NAT do roteador)
-                dht: isEcoMode ? false : {
-                    port: 0,
+                dht: {
                     bootstrap: [
                         'router.bittorrent.com:6881',
                         'dht.transmissionbt.com:6881',

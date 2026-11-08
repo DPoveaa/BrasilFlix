@@ -115,10 +115,18 @@ class SwarmWatcher {
         this.isChecking = true;
 
         try {
-            // Em modo eco, verifica apenas 1 item por ciclo para economizar requisições e sockets
+            // Backoff inteligente para evitar checar repetidamente torrents sem seeders reais:
+            // - Menos de 5 checagens: a cada 15 minutos
+            // - Entre 5 e 20 checagens: a cada 2 horas
+            // - Mais de 20 checagens: a cada 12 horas
             const res = await db.query(`
                 SELECT * FROM swarm_watchlist 
-                WHERE (last_checked IS NULL OR last_checked < NOW() - INTERVAL '3 minutes')
+                WHERE (
+                    last_checked IS NULL 
+                    OR (check_count < 5 AND last_checked < NOW() - INTERVAL '15 minutes')
+                    OR (check_count >= 5 AND check_count < 20 AND last_checked < NOW() - INTERVAL '2 hours')
+                    OR (check_count >= 20 AND last_checked < NOW() - INTERVAL '12 hours')
+                )
                 ORDER BY 
                     CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END,
                     last_checked ASC NULLS FIRST 
@@ -216,7 +224,7 @@ class SwarmWatcher {
 
                         await db.query(
                             `UPDATE swarm_watchlist
-                             SET last_checked = NOW(), check_count = check_count + 1
+                             SET last_checked = NOW() + INTERVAL '2 hours', check_count = check_count + 1
                              WHERE id = $1`,
                             [it.id]
                         );
