@@ -245,7 +245,7 @@ class QueueManager extends EventEmitter {
                 if (audioPref === 'legendado') return epLeg;
                 return epDub || epLeg;
             }
-        } catch (e) {}
+        } catch (e) { }
         return false;
     }
 
@@ -313,11 +313,11 @@ class QueueManager extends EventEmitter {
                             } else if (type === 'filme') {
                                 return subFullPath;
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }
             }
-        } catch (err) {}
+        } catch (err) { }
         return null;
     }
 
@@ -331,7 +331,7 @@ class QueueManager extends EventEmitter {
             if (active.id === job.id) continue;
             if (active.type !== job.type) continue;
 
-            const sameTitle = isSameMedia(active.title, job.title) || 
+            const sameTitle = isSameMedia(active.title, job.title) ||
                 (active.tmdbId && job.tmdbId && active.tmdbId === job.tmdbId);
             if (!sameTitle) continue;
 
@@ -342,9 +342,9 @@ class QueueManager extends EventEmitter {
             }
 
             const stage = active.status === 'uploading' ? 'upload'
-                        : (active.status === 'processing' ? 'remux/otimização'
-                        : (active.status === 'downloading' ? 'download' : active.status || 'processamento'));
-            
+                : (active.status === 'processing' ? 'remux/otimização'
+                    : (active.status === 'downloading' ? 'download' : active.status || 'processamento'));
+
             return {
                 alreadyCompleted: false,
                 inProgress: true,
@@ -371,7 +371,7 @@ class QueueManager extends EventEmitter {
                         reason: 'Arquivo bruto já disponível localmente'
                     };
                 }
-            } catch (err) {}
+            } catch (err) { }
         }
 
         if (job.optimizedPath && fs.existsSync(job.optimizedPath)) {
@@ -388,7 +388,7 @@ class QueueManager extends EventEmitter {
                         reason: 'Arquivo otimizado já pronto para envio'
                     };
                 }
-            } catch (err) {}
+            } catch (err) { }
         }
 
         // Verifica outros jobs na fila com arquivo baixado
@@ -414,7 +414,7 @@ class QueueManager extends EventEmitter {
                             reason: `Arquivo baixado encontrado na fila (Job ${q.id})`
                         };
                     }
-                } catch (err) {}
+                } catch (err) { }
             }
         }
 
@@ -444,12 +444,12 @@ class QueueManager extends EventEmitter {
             }
 
             if (job.type === 'filme') {
-                const filmeMem = this.catalogoManager.buscarItemExato(job.title, 'filme', job.tmdbId) || 
-                                 this.catalogoManager.buscarFilmePorTmdb(job.tmdbId);
+                const filmeMem = this.catalogoManager.buscarItemExato(job.title, 'filme', job.tmdbId) ||
+                    this.catalogoManager.buscarFilmePorTmdb(job.tmdbId);
                 if (filmeMem && !filmeMem.isCam) {
                     const hasDub = CatalogoManager.hasValidDubbedMedia ? CatalogoManager.hasValidDubbedMedia(filmeMem) : (filmeMem.isDublado || !!filmeMem.versoes?.dublado);
                     const hasLeg = CatalogoManager.hasValidSubtitledMedia ? CatalogoManager.hasValidSubtitledMedia(filmeMem) : (filmeMem.isLegendado || !!filmeMem.versoes?.legendado);
-                    
+
                     const isCompleted = isDualPedido
                         ? (hasDub && hasLeg)
                         : ((reqPref === 'dublado' && hasDub) || (reqPref === 'legendado' && hasLeg) || (hasDub && hasLeg) || (!job.userId && !job.pedidoId && (hasDub || hasLeg)));
@@ -496,10 +496,10 @@ class QueueManager extends EventEmitter {
                             }
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             } else {
-                const serieMem = this.catalogoManager.buscarItemExato(job.title, 'serie', job.tmdbId) || 
-                                 this.catalogoManager.buscarSeriePorTmdb(job.tmdbId);
+                const serieMem = this.catalogoManager.buscarItemExato(job.title, 'serie', job.tmdbId) ||
+                    this.catalogoManager.buscarSeriePorTmdb(job.tmdbId);
                 if (serieMem) {
                     const epMem = this.catalogoManager.buscarEpisodio(serieMem.id, s, e);
                     if (epMem) {
@@ -551,7 +551,7 @@ class QueueManager extends EventEmitter {
                             };
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
         }
 
@@ -638,9 +638,18 @@ class QueueManager extends EventEmitter {
         console.log(`🚀 [QueueManager] Servidor Web no ar. Iniciando esteira de processamento e downloads em ${delayMs}ms...`);
         setTimeout(async () => {
             if (this._initPromise) {
-                await this._initPromise.catch(() => {});
+                await this._initPromise.catch(() => { });
             }
             this.processNext();
+
+            // Heartbeat de segurança da fila: a cada 60s acorda a esteira caso
+            // todos os workers tenham terminado enquanto o scheduler estava ocioso
+            // ou sem eventos de reentrada, garantindo que a fila nunca estagne.
+            if (!this._heartbeatInterval) {
+                this._heartbeatInterval = setInterval(() => {
+                    this.processNext();
+                }, 60000);
+            }
         }, delayMs);
     }
 
@@ -1382,9 +1391,9 @@ class QueueManager extends EventEmitter {
     findNextJobToProcess(capacity = { canDownload: true, canTranscode: true, canUpload: true }) {
         if (this.queue.length === 0) return null;
 
-        // Inclui jobs em queued e também jobs em processing/downloading/uploading que ficaram órfãos (sem worker ativo)
+        // Inclui jobs em queued, pending e também jobs em processing/downloading/uploading que ficaram órfãos (sem worker ativo)
         const queuedJobs = this.queue.filter(j =>
-            (j.status === 'queued' || j.status === 'processing' || j.status === 'downloading' || j.status === 'uploading') &&
+            (j.status === 'queued' || j.status === 'pending' || j.status === 'processing' || j.status === 'downloading' || j.status === 'uploading') &&
             !this.activeJobs.has(j.id)
         );
         if (queuedJobs.length === 0) return null;
@@ -1903,7 +1912,7 @@ class QueueManager extends EventEmitter {
             nextJob.status = 'completed';
             nextJob.progress = 100;
             nextJob.progressDetails = initialState.reason;
-            await this.saveJob(nextJob).catch(() => {});
+            await this.saveJob(nextJob).catch(() => { });
             setImmediate(() => this.processNext());
             return;
         }
@@ -1951,7 +1960,7 @@ class QueueManager extends EventEmitter {
                 await db.query(
                     `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6, retry_after = $7 WHERE id = $8`,
                     ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, nextJob.retryAfter, nextJob.id]
-                ).catch(() => {});
+                ).catch(() => { });
 
                 // Garante que está na fila em memória (pode ter sido removida por race condition)
                 const memIdx = this.queue.findIndex(j => j.id === nextJob.id);
@@ -2204,17 +2213,17 @@ class QueueManager extends EventEmitter {
                     }
 
                     if (nextTargetSeason !== null && nextTargetEp !== null) {
-                    if (job.season !== nextTargetSeason || job.episode !== nextTargetEp) {
-                        console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente/upgrade na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
-                        job.season = nextTargetSeason;
-                        job.episode = nextTargetEp;
-                        await this.saveJob(job);
+                        if (job.season !== nextTargetSeason || job.episode !== nextTargetEp) {
+                            console.log(`📺 [SÉRIE CRONOLÓGICA] Ajustando esteira para baixar o próximo episódio pendente/upgrade na ordem: "${metadata.nome || job.title}" - T${nextTargetSeason}E${nextTargetEp}`);
+                            job.season = nextTargetSeason;
+                            job.episode = nextTargetEp;
+                            await this.saveJob(job);
+                        }
+                    } else {
+                        console.log(`🎉 [SÉRIE COMPLETA] Todos os episódios de todas as ${totalTemporadas} temporadas de "${job.title}" já estão 100% catalogados ou em processamento ativo!`);
+                        await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
+                        return;
                     }
-                } else {
-                    console.log(`🎉 [SÉRIE COMPLETA] Todos os episódios de todas as ${totalTemporadas} temporadas de "${job.title}" já estão 100% catalogados ou em processamento ativo!`);
-                    await this.marcarPedidosAtendidos(metadata.nome || job.title, job.userId, 'serie');
-                    return;
-                }
                 }
             } else if (requestedEp > 1) {
                 console.log(`⚠️ [ORDEM CRONOLÓGICA] Série "${job.title}" não possui cadastro no catálogo. Iniciando a partir do Episódio 1 (T${seasonNum}E1)!`);
@@ -2294,7 +2303,7 @@ class QueueManager extends EventEmitter {
                                 sourceDurationSec = rawProbe.duration;
                                 requiredOptDurationSec = sourceDurationSec * 0.95;
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                     if (!requiredOptDurationSec) {
                         const baseExpectedMin = tmdbExpectedDurationMin > 0 ? tmdbExpectedDurationMin : (metadata.duracaoMinutos || (job.type === 'filme' ? 90 : 45));
@@ -2539,9 +2548,9 @@ class QueueManager extends EventEmitter {
                 if (!job.isUpgrade && !job.extraData?.isUpgrade) {
                     const reqPref = job.audioPreference || 'dublado';
                     const jaTemEssaVersao = (reqPref === 'dublado' && jaPossuiDublado) ||
-                                            (reqPref === 'legendado' && jaPossuiLegendado) ||
-                                            (jaPossuiDublado && jaPossuiLegendado) ||
-                                            (reqPref === 'geral' && (jaPossuiDublado || jaPossuiLegendado));
+                        (reqPref === 'legendado' && jaPossuiLegendado) ||
+                        (jaPossuiDublado && jaPossuiLegendado) ||
+                        (reqPref === 'geral' && (jaPossuiDublado || jaPossuiLegendado));
                     if (jaTemEssaVersao) {
                         console.log(`✅ [Anti-Duplicata: Pré-Download] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já existe com áudio "${reqPref}" no catálogo/banco. Cancelando busca e download redundante.`);
                         job.status = 'completed';
@@ -3166,7 +3175,7 @@ class QueueManager extends EventEmitter {
                         job.season,
                         job.episode,
                         job.audioPreference || 'dublado'
-                    ).catch(() => {});
+                    ).catch(() => { });
                 }
 
                 // Validação de tamanho físico do arquivo
@@ -3357,7 +3366,7 @@ class QueueManager extends EventEmitter {
             // Limpa qualquer arquivo temporário remanescente (.tmp.mp4) de encodes interrompidos anteriormente
             const tempOptPath = `${optimizedPath}.tmp.mp4`;
             if (fs.existsSync(tempOptPath)) {
-                try { fs.unlinkSync(tempOptPath); } catch (_) {}
+                try { fs.unlinkSync(tempOptPath); } catch (_) { }
             }
             await this.saveJob(job);
 
@@ -3454,7 +3463,7 @@ class QueueManager extends EventEmitter {
                             this.activeJobs.delete(aId);
                             aJob.status = 'failed';
                             aJob.error = 'Upload estagnado/abortado por timeout de inatividade';
-                            this.saveJob(aJob).catch(() => {});
+                            this.saveJob(aJob).catch(() => { });
                         }
                     }
                 }
@@ -3642,6 +3651,11 @@ class QueueManager extends EventEmitter {
 
             if (jaTemEssaVersao) {
                 console.log(`🛡️ [Upload Pre-Check] "${metadata.nome || job.title}" T${seasonNumCheck}E${epNumCheck} já possui versão ${metadata.isDublado ? 'Dublada' : 'Legendada'} cadastrada com mídia válida. Upload descartado para evitar duplicata.`);
+                // Se foi uma tentativa de upgrade que resultou na mesma versão existente, marca como pulado no anti-loop
+                // para que o AutoFeeder não volte a tentar baixar o mesmo arquivo em loop infinito
+                if (job.isUpgrade || job.extraData?.isUpgrade) {
+                    this.recordSkippedEpisode(metadata.nome || job.title, seasonNumCheck, epNumCheck);
+                }
                 try { if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath); } catch (e) { }
                 try { if (rawFilePath && fs.existsSync(rawFilePath) && !rawFilePath.includes('downloaded_media')) fs.unlinkSync(rawFilePath); } catch (e) { }
                 job.status = 'completed';
@@ -3678,11 +3692,11 @@ class QueueManager extends EventEmitter {
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove acentos
                 .replace(/[^a-z0-9\s]/g, ' ')
                 .replace(/\s+/g, ' ').trim();
-            const STOPWORDS = new Set(['the','a','an','o','a','os','as','de','da','do','das','dos','e','em','um','uma',
-                'no','na','nos','nas','por','para','com','sem','seu','sua','sus','ano','part','complete',
-                's01','s02','s03','s04','s1','s2','s3','s4','e01','e02','720p','1080p','hevc','x265',
-                'x264','web','dl','bluray','webrip','hdtv','cam','hd','full','br','pt','ptbr','dub',
-                'dub','leg','legendado','dublado','audio','multi','dual','aac','h264','h265','mkv','mp4']);
+            const STOPWORDS = new Set(['the', 'a', 'an', 'o', 'a', 'os', 'as', 'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'um', 'uma',
+                'no', 'na', 'nos', 'nas', 'por', 'para', 'com', 'sem', 'seu', 'sua', 'sus', 'ano', 'part', 'complete',
+                's01', 's02', 's03', 's04', 's1', 's2', 's3', 's4', 'e01', 'e02', '720p', '1080p', 'hevc', 'x265',
+                'x264', 'web', 'dl', 'bluray', 'webrip', 'hdtv', 'cam', 'hd', 'full', 'br', 'pt', 'ptbr', 'dub',
+                'dub', 'leg', 'legendado', 'dublado', 'audio', 'multi', 'dual', 'aac', 'h264', 'h265', 'mkv', 'mp4']);
 
             const targetTitle = job.title || metadata.nome || '';
             const targetOrig = metadata.nomeOriginal || job.originalTitle || '';
@@ -3697,7 +3711,7 @@ class QueueManager extends EventEmitter {
             if (!isCompat) {
                 const errMsg = `🚫 [TORRENT INCOMPATÍVEL PÓS-UPLOAD] Job "${job.title}" recebeu arquivo incompatível: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
                 console.error(errMsg);
-                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => {});
+                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => { });
                 throw new Error(errMsg);
             }
 
@@ -3719,7 +3733,7 @@ class QueueManager extends EventEmitter {
                 const errMsg = `🚫 [TORRENT FALSO DETECTADO PÓS-UPLOAD] Job "${job.title}" recebeu arquivo com nome completamente diferente: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
                 console.error(errMsg);
                 // Apaga o arquivo falso do Telegram imediatamente
-                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => {});
+                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => { });
                 throw new Error(errMsg);
             }
         }
@@ -3899,7 +3913,7 @@ class QueueManager extends EventEmitter {
             const callbackAssistir = job.type === 'filme' ? `info_filme_${itemId}` : `info_serie_${itemId}`;
 
             // Notifica usuário solicitante apenas se NÃO for um pedido em andamento (pedidos são notificados estritamente por marcarPedidosAtendidos)
-            const matchingPedido = job.userId && this.pedidosManager?.getPedidos()?.find(p => 
+            const matchingPedido = job.userId && this.pedidosManager?.getPedidos()?.find(p =>
                 Number(p.userId) === Number(job.userId) &&
                 !p.processado && p.status !== 'adicionado' &&
                 (isSameMedia(p.nome, metadata.nome || job.title) || (job.tmdbId && p.tmdbId && Number(job.tmdbId) === Number(p.tmdbId)))

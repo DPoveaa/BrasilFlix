@@ -744,7 +744,8 @@ class MediaSearchService {
                 // Par estrangeiro sem PT-BR: bloqueia somente se não houver indicador explícito de áudio PT-BR
                 const hasForeignAudioPair = hasForeignPairInTitle && !isPtBrExplicit && !isBrazilianGroup && !/\b(dublado|nacional|pt[-_]?br|ptbr|brasileiro|brazilian)\b/i.test(rawTitle);
 
-                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(title);
+                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(title) ||
+                    (/\b(multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(title) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR|PTBR|DUBLADO)\b)/i.test(rawTitle)));
                 const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Multi[- ]?Dub|Multi[- ]?Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
                 const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
 
@@ -1271,7 +1272,8 @@ class MediaSearchService {
             if (isSpanishOrLatino) return;
 
             const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && /\b(pt[-_]?pt|pt_pt|ptpt|dobrado|european[._ -]?portuguese)\b/i.test(name);
-            const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(name);
+            const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt)\b/i.test(name) ||
+                (/\b(multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(name) && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR|PTBR|DUBLADO)\b)/i.test(name)));
             const isDualPtInTitle = /\b(dual)\b/i.test(name) && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
 
             const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
