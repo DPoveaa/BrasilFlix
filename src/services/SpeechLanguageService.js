@@ -5,37 +5,18 @@ const { spawn } = require('child_process');
 
 class SpeechLanguageService {
     /**
-     * Extrai uma amostra de áudio (25s em PCM 16kHz) e identifica o idioma real falado.
-     * 
-     * @param {string} videoPath Caminho do arquivo de vídeo local
-     * @param {number} audioIndex Índice da trilha de áudio (0:a:index)
-     * @param {number} totalDurationSec Duração total do vídeo em segundos
-     * @param {string} expectedLanguage Código esperado (ex: 'pt', 'en', 'ko', 'ja')
-     * @returns {Promise<{ verified: boolean, detectedLanguage: string|null, probability: number, isMatch: boolean, sampleText: string, reason: string }>}
+     * Extrai uma amostra de áudio (25s em PCM 16kHz) de um offset específico e executa Language ID.
      */
-    static async verifySpokenLanguage(videoPath, audioIndex = 0, totalDurationSec = 3600, expectedLanguage = 'pt') {
-        if (!videoPath || !fs.existsSync(videoPath)) {
-            return { verified: false, detectedLanguage: null, probability: 0, isMatch: false, sampleText: '', reason: 'Arquivo de vídeo não existe' };
-        }
-
-        const safeIndex = parseInt(audioIndex, 10) || 0;
-        const dur = Math.max(60, Number(totalDurationSec) || 3600);
-        // Busca um ponto com diálogo ativo: 15% do filme (evita logos e introdução)
-        // Se o filme tem 120min, pula para 18min. Se episódio tem 24min, pula para 3.6min.
-        const seekSec = Math.floor(Math.min(dur * 0.15, 1200));
-        const sampleDuration = 25; // 25 segundos é o sweet spot para Voice Activity Detection
-
+    static async _sampleAtOffset(videoPath, audioIndex, seekSec, sampleDuration = 25) {
         const tempWav = path.join(os.tmpdir(), `spoken_lang_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.wav`);
-
         try {
-            // 1. Extração ultra-rápida do trecho de áudio via FFmpeg
             const extractSuccess = await new Promise((resolve) => {
                 const args = [
                     '-nostdin',
                     '-y',
                     '-ss', `${seekSec}`,
                     '-i', videoPath,
-                    '-map', `0:a:${safeIndex}`,
+                    '-map', `0:a:${audioIndex}`,
                     '-t', `${sampleDuration}`,
                     '-ar', '16000',
                     '-ac', '1',
@@ -60,24 +41,22 @@ class SpeechLanguageService {
             });
 
             if (!extractSuccess) {
-                return { verified: false, detectedLanguage: null, probability: 0, isMatch: true, sampleText: '', reason: 'Falha ao extrair amostra de áudio via FFmpeg' };
+                return { error: 'Falha ao extrair amostra via FFmpeg' };
             }
 
-            // 2. Chama o script Python helper para Language ID com faster-whisper
             const pythonScript = path.resolve(__dirname, '../../scripts/detect_audio_language.py');
             if (!fs.existsSync(pythonScript)) {
-                return { verified: false, detectedLanguage: null, probability: 0, isMatch: true, sampleText: '', reason: 'Script Python de detecção não encontrado' };
+                return { error: 'Script Python detect_audio_language.py não encontrado' };
             }
 
-            const pyResult = await new Promise((resolve) => {
-                // Tenta python3 do sistema
+            return await new Promise((resolve) => {
                 const pyProc = spawn('python3', [pythonScript, tempWav, 'tiny'], { stdio: ['ignore', 'pipe', 'pipe'] });
                 let stdout = '';
                 let stderr = '';
 
                 const timer = setTimeout(() => {
                     pyProc.kill('SIGKILL');
-                    resolve({ error: 'Timeout de 20s ao executar Speech Language ID' });
+                    resolve({ error: 'Timeout de 20s no Speech Language ID' });
                 }, 20000);
 
                 pyProc.stdout.on('data', d => { stdout += d.toString(); });
@@ -102,58 +81,144 @@ class SpeechLanguageService {
                     resolve({ error: `Falha ao iniciar python3: ${err.message}` });
                 });
             });
-
-            if (pyResult.error) {
-                console.warn(`⚠️ [SpeechLanguage] Detecção de idioma indisponível: ${pyResult.error}. Prosseguindo sem bloqueio.`);
-                return { verified: false, detectedLanguage: null, probability: 0, isMatch: true, sampleText: '', reason: pyResult.error };
-            }
-
-            const detected = (pyResult.language || '').toLowerCase().trim();
-            const prob = parseFloat(pyResult.probability) || 0;
-            const exp = (expectedLanguage || '').toLowerCase().trim();
-
-            // Mapeamentos de equivalência (ex: pt / pt-br)
-            const isPortuguese = (lang) => ['pt', 'pt-br', 'por'].includes(lang);
-            const isEnglish = (lang) => ['en', 'eng'].includes(lang);
-            const isSpanish = (lang) => ['es', 'spa'].includes(lang);
-
-            let isMatch = true;
-            if (exp) {
-                if (isPortuguese(exp)) {
-                    isMatch = isPortuguese(detected);
-                } else if (isEnglish(exp)) {
-                    isMatch = isEnglish(detected);
-                } else {
-                    isMatch = (detected === exp || detected.startsWith(exp) || exp.startsWith(detected));
-                }
-            }
-
-            const sampleSnippet = pyResult.sample_text ? ` ("${pyResult.sample_text.substring(0, 60)}...")` : '';
-            if (!isMatch && prob >= 0.65) {
-                console.warn(`🚨 [SpeechLanguage DIVERGÊNCIA] Esperado: "${exp.toUpperCase()}", mas falado real é: "${detected.toUpperCase()}" (Confiança: ${(prob * 100).toFixed(1)}%)${sampleSnippet}`);
-            } else {
-                console.log(`🎙️ [SpeechLanguage OK] Idioma falado verificado: "${detected.toUpperCase()}" (Esperado: "${exp.toUpperCase()}", Confiança: ${(prob * 100).toFixed(1)}%)${sampleSnippet}`);
-            }
-
-            return {
-                verified: true,
-                detectedLanguage: detected,
-                probability: prob,
-                isMatch: isMatch,
-                sampleText: pyResult.sample_text || '',
-                reason: isMatch ? 'Idioma conferido com sucesso' : `Divergência: falado é ${detected.toUpperCase()}`
-            };
-
-        } catch (err) {
-            console.warn(`⚠️ [SpeechLanguage] Erro inesperado: ${err.message}`);
-            return { verified: false, detectedLanguage: null, probability: 0, isMatch: true, sampleText: '', reason: err.message };
         } finally {
             if (fs.existsSync(tempWav)) {
                 fs.remove(tempWav).catch(() => {});
             }
         }
     }
+
+    /**
+     * Extrai amostras de áudio e identifica o idioma real falado, com fallback multi-ponto
+     * para evitar falsos positivos causados por silêncio, música de introdução ou pequenas interjeições.
+     * 
+     * @param {string} videoPath Caminho do arquivo de vídeo local
+     * @param {number} audioIndex Índice da trilha de áudio (0:a:index)
+     * @param {number} totalDurationSec Duração total do vídeo em segundos
+     * @param {string} expectedLanguage Código esperado (ex: 'pt', 'en', 'ko', 'ja')
+     * @returns {Promise<{ verified: boolean, detectedLanguage: string|null, probability: number, isMatch: boolean, sampleText: string, reason: string }>}
+     */
+    static async verifySpokenLanguage(videoPath, audioIndex = 0, totalDurationSec = 3600, expectedLanguage = 'pt') {
+        if (!videoPath || !fs.existsSync(videoPath)) {
+            return { verified: false, detectedLanguage: null, probability: 0, isMatch: false, sampleText: '', reason: 'Arquivo de vídeo não existe' };
+        }
+
+        const safeIndex = parseInt(audioIndex, 10) || 0;
+        const dur = Math.max(60, Number(totalDurationSec) || 3600);
+        const exp = (expectedLanguage || '').toLowerCase().trim();
+
+        // Mapeamentos de equivalência
+        const isPortuguese = (lang) => ['pt', 'pt-br', 'por'].includes(lang);
+        const isEnglish = (lang) => ['en', 'eng'].includes(lang);
+        const isSpanish = (lang) => ['es', 'spa'].includes(lang);
+        const isJapanese = (lang) => ['ja', 'jpn', 'jp'].includes(lang);
+        const isKorean = (lang) => ['ko', 'kor'].includes(lang);
+
+        const checkMatch = (detected, expected) => {
+            if (!expected || !detected) return false;
+            if (isPortuguese(expected)) return isPortuguese(detected);
+            if (isEnglish(expected)) return isEnglish(detected);
+            if (isSpanish(expected)) return isSpanish(detected);
+            if (isJapanese(expected)) return isJapanese(detected);
+            if (isKorean(expected)) return isKorean(detected);
+            return (detected === expected || detected.startsWith(expected) || expected.startsWith(detected));
+        };
+
+        // Amostras estratégicas: 15% (início após abertura), 35% (desenvolvimento do diálogo) e 55% (meio)
+        const sampleOffsets = [
+            Math.floor(Math.min(dur * 0.15, 1200)),
+            Math.floor(Math.min(dur * 0.35, 2400)),
+            Math.floor(Math.min(dur * 0.55, 3600))
+        ];
+
+        let bestResult = null;
+        let lastResult = null;
+
+        for (let i = 0; i < sampleOffsets.length; i++) {
+            const seekSec = sampleOffsets[i];
+            const pyResult = await this._sampleAtOffset(videoPath, safeIndex, seekSec, 25);
+
+            if (!pyResult || pyResult.error) {
+                continue;
+            }
+
+            const detected = (pyResult.language || '').toLowerCase().trim();
+            const prob = parseFloat(pyResult.probability) || 0;
+            const text = (pyResult.sample_text || '').trim();
+            const words = text.split(/\s+/).filter(Boolean);
+            const isSubstantive = text.length >= 12 && words.length >= 2;
+            const isMatch = checkMatch(detected, exp);
+
+            lastResult = { detected, prob, text, isMatch, isSubstantive };
+
+            // Se bateu com o idioma esperado e tem alguma substância (ou alta confiança), aceita imediatamente!
+            if (isMatch && (isSubstantive || prob >= 0.85)) {
+                console.log(`🎙️ [SpeechLanguage OK] Idioma falado verificado: "${detected.toUpperCase()}" (Esperado: "${exp.toUpperCase()}", Confiança: ${(prob * 100).toFixed(1)}%)${text ? ` ("${text.substring(0, 60)}...")` : ''}`);
+                return {
+                    verified: true,
+                    detectedLanguage: detected,
+                    probability: prob,
+                    isMatch: true,
+                    sampleText: text,
+                    reason: 'Idioma conferido com sucesso'
+                };
+            }
+
+            // Se é substancial, salva como melhor candidato de divergência
+            if (isSubstantive) {
+                if (!bestResult || prob > bestResult.prob) {
+                    bestResult = { detected, prob, text, isMatch };
+                }
+            }
+
+            // Se não bateu mas o texto é curtíssimo (ex: "Okay." ou ruído), tenta o próximo offset antes de concluir divergência
+            if (!isSubstantive && i < sampleOffsets.length - 1) {
+                continue;
+            }
+        }
+
+        // Se após testar os pontos não encontramos diálogo substancial
+        if (!bestResult) {
+            // Se houve algum resultado mesmo com pouca fala
+            if (lastResult && lastResult.isMatch) {
+                return {
+                    verified: true,
+                    detectedLanguage: lastResult.detected,
+                    probability: lastResult.prob,
+                    isMatch: true,
+                    sampleText: lastResult.text,
+                    reason: 'Idioma compatível verificado em amostra curta'
+                };
+            }
+            // Pouco diálogo/música: não bloqueia nem aborta
+            console.log(`🎙️ [SpeechLanguage Neutro] Diálogo insuficiente nas amostras para confirmar idioma. Mantendo tags do arquivo.`);
+            return {
+                verified: false,
+                detectedLanguage: null,
+                probability: 0,
+                isMatch: true,
+                sampleText: '',
+                reason: 'Diálogo insuficiente nas amostras'
+            };
+        }
+
+        // Se temos um resultado com fala substancial
+        const sampleSnippet = bestResult.text ? ` ("${bestResult.text.substring(0, 60)}...")` : '';
+        if (!bestResult.isMatch && bestResult.prob >= 0.70) {
+            console.warn(`🚨 [SpeechLanguage DIVERGÊNCIA] Esperado: "${exp.toUpperCase()}", mas falado real é: "${bestResult.detected.toUpperCase()}" (Confiança: ${(bestResult.prob * 100).toFixed(1)}%)${sampleSnippet}`);
+        } else {
+            console.log(`🎙️ [SpeechLanguage OK] Idioma falado verificado: "${bestResult.detected.toUpperCase()}" (Esperado: "${exp.toUpperCase()}", Confiança: ${(bestResult.prob * 100).toFixed(1)}%)${sampleSnippet}`);
+        }
+
+        return {
+            verified: true,
+            detectedLanguage: bestResult.detected,
+            probability: bestResult.prob,
+            isMatch: bestResult.isMatch,
+            sampleText: bestResult.text,
+            reason: bestResult.isMatch ? 'Idioma conferido com sucesso' : `Divergência: falado é ${bestResult.detected.toUpperCase()}`
+        };
+    }
 }
 
 module.exports = SpeechLanguageService;
-

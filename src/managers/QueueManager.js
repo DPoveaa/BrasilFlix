@@ -196,33 +196,47 @@ class QueueManager extends EventEmitter {
         return files;
     }
 
-    isEpisodeSkippedRecently(title, season, episode) {
-        return this.isSkippedRecently(title, season, episode);
+    isEpisodeSkippedRecently(title, season, episode, audioPref = null) {
+        return this.isSkippedRecently(title, season, episode, audioPref);
     }
 
-    recordSkippedEpisode(title, season, episode) {
-        this.recordSkippedMedia(title, season, episode);
+    recordSkippedEpisode(title, season, episode, audioPref = null) {
+        this.recordSkippedMedia(title, season, episode, audioPref);
     }
 
-    isSkippedRecently(title, season = null, episode = null) {
-        const key = (season !== null && episode !== null)
-            ? `${(title || '').toLowerCase()}_S${season}_E${episode}`
-            : `${(title || '').toLowerCase()}_media`;
-        const lastSkipped = this.skippedEpisodes.get(key);
-        if (!lastSkipped) return false;
-        // Expira após 24 horas para permitir nova tentativa futura sem travar a esteira
-        if (Date.now() - lastSkipped > 24 * 60 * 60 * 1000) {
-            this.skippedEpisodes.delete(key);
-            return false;
+    isSkippedRecently(title, season = null, episode = null, audioPref = null) {
+        const normTitle = (title || '').toLowerCase().trim();
+        const baseKey = (season !== null && episode !== null)
+            ? `${normTitle}_S${season}_E${episode}`
+            : `${normTitle}_media`;
+
+        const checkKey = (k) => {
+            const lastSkipped = this.skippedEpisodes.get(k);
+            if (!lastSkipped) return false;
+            if (Date.now() - lastSkipped > 24 * 60 * 60 * 1000) {
+                this.skippedEpisodes.delete(k);
+                return false;
+            }
+            return true;
+        };
+
+        if (audioPref) {
+            return checkKey(`${baseKey}_${audioPref}`) || checkKey(`${baseKey}_any`);
         }
-        return true;
+
+        if (checkKey(`${baseKey}_any`)) return true;
+        if (checkKey(`${baseKey}_dublado`) && checkKey(`${baseKey}_legendado`)) return true;
+        return checkKey(baseKey);
     }
 
-    recordSkippedMedia(title, season = null, episode = null) {
-        const key = (season !== null && episode !== null)
-            ? `${(title || '').toLowerCase()}_S${season}_E${episode}`
-            : `${(title || '').toLowerCase()}_media`;
+    recordSkippedMedia(title, season = null, episode = null, audioPref = null) {
+        const normTitle = (title || '').toLowerCase().trim();
+        const baseKey = (season !== null && episode !== null)
+            ? `${normTitle}_S${season}_E${episode}`
+            : `${normTitle}_media`;
+        const key = audioPref ? `${baseKey}_${audioPref}` : `${baseKey}_any`;
         this.skippedEpisodes.set(key, Date.now());
+        if (!audioPref) this.skippedEpisodes.set(baseKey, Date.now());
     }
 
     async isEpisodeInDatabase(title, tmdbId, season, episode, audioPref = null) {
@@ -1118,7 +1132,7 @@ class QueueManager extends EventEmitter {
 
         // Se for adição automática (não for pedido manual nem VIP de usuário) e o conteúdo foi descartado recentemente por falhas repetidas, não re-adiciona
         const isUserRequest = !!(extraData.userId || extraData.isManualAdd || extraData.pedidoId);
-        if (!isUserRequest && this.isSkippedRecently(title, newSeason, newEpisode)) {
+        if (!isUserRequest && this.isSkippedRecently(title, newSeason, newEpisode, audioPreference)) {
             console.log(`⏭️ [Fila Anti-Loop] "${title}" ${type === 'serie' ? `T${newSeason}E${newEpisode}` : ''} descartado recentemente após falhas consecutivas. Pulando re-adição automática.`);
             return null;
         }
@@ -1437,7 +1451,7 @@ class QueueManager extends EventEmitter {
             if (j.retryAfter && new Date(j.retryAfter).getTime() > now) {
                 continue;
             }
-            if (this.isSkippedRecently(j.title, j.season, j.episode)) {
+            if (this.isSkippedRecently(j.title, j.season, j.episode, j.audioPreference)) {
                 continue;
             }
             const normTitle = normalizeTitle(j.title);
@@ -1943,7 +1957,7 @@ class QueueManager extends EventEmitter {
                 // Registra o episódio no skippedEpisodes para evitar que o AutoFeeder re-adicione
                 // o mesmo episódio enquanto ele já está aguardando no final da fila
                 if (nextJob.type === 'serie' && nextJob.season && nextJob.episode) {
-                    this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode);
+                    this.recordSkippedEpisode(nextJob.title, nextJob.season, nextJob.episode, nextJob.audioPreference);
                 }
 
                 nextJob.status = 'queued';
@@ -2645,7 +2659,7 @@ class QueueManager extends EventEmitter {
                         if (sources.length === 0) {
                             console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
                             if (job.type === 'serie') {
-                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
                             }
                             job.status = 'completed';
                             job.progress = 100;
@@ -2662,7 +2676,7 @@ class QueueManager extends EventEmitter {
                         if (sources.length === 0) {
                             console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Dublada no catálogo e nenhuma fonte Legendada foi encontrada no momento. Mantendo versão atual e passando para o próximo.`);
                             if (job.type === 'serie') {
-                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'legendado');
                             }
                             job.status = 'completed';
                             job.progress = 100;
@@ -2723,7 +2737,7 @@ class QueueManager extends EventEmitter {
 
                     if (sources.length === 0) {
                         if (job.type === 'serie') {
-                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, job.audioPreference || 'any');
                         }
                         throw new Error(`Nenhuma fonte em Português encontrada para "${job.title}".`);
                     }
@@ -2967,7 +2981,7 @@ class QueueManager extends EventEmitter {
                         console.log(`ℹ️ [UPGRADE DUBLADO] "${job.title}" ${job.type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já possui versão Legendada no catálogo e nenhuma fonte Dublada com seeders foi encontrada no momento. Mantendo versão atual.`);
                         // Registra o episódio no skippedEpisodes para evitar redetecção pelo feeder por 24h
                         if (job.type === 'serie') {
-                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                            this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
                         }
                         job.status = 'completed';
                         job.progress = 100;
@@ -3052,7 +3066,7 @@ class QueueManager extends EventEmitter {
 
                 if (!downloadedMedia || !bestSource) {
                     if (job.type === 'serie') {
-                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                        this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'any');
                         console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Adicionando ao Swarm Watcher...`);
                     }
                     // Registra na watchlist persistente para baixar assim que houver sementes ativas
@@ -3337,7 +3351,7 @@ class QueueManager extends EventEmitter {
                             console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (${motivo}).`);
                             await DownloaderManager.cleanupFile(rawFilePath);
                             if (job.type === 'serie') {
-                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
+                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
                             }
                             throw new Error(`O arquivo baixado não contém áudio dublado em Português.`);
                         }
@@ -3654,7 +3668,7 @@ class QueueManager extends EventEmitter {
                 // Se foi uma tentativa de upgrade que resultou na mesma versão existente, marca como pulado no anti-loop
                 // para que o AutoFeeder não volte a tentar baixar o mesmo arquivo em loop infinito
                 if (job.isUpgrade || job.extraData?.isUpgrade) {
-                    this.recordSkippedEpisode(metadata.nome || job.title, seasonNumCheck, epNumCheck);
+                    this.recordSkippedEpisode(metadata.nome || job.title, seasonNumCheck, epNumCheck, metadata.isDublado ? 'dublado' : 'legendado');
                 }
                 try { if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath); } catch (e) { }
                 try { if (rawFilePath && fs.existsSync(rawFilePath) && !rawFilePath.includes('downloaded_media')) fs.unlinkSync(rawFilePath); } catch (e) { }
