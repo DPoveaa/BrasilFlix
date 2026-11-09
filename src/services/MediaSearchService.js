@@ -45,7 +45,7 @@ class MediaSearchService {
             if (!options.originalLanguage) options.originalLanguage = 'zh';
         }
         const cleanQuery = this.cleanQuery(query);
-        const originalName = options.nomeOriginal ? this.cleanQuery(options.nomeOriginal) : null;
+        const originalName = (options.nomeOriginal || options.originalName) ? this.cleanQuery(options.nomeOriginal || options.originalName) : null;
         const ano = options.ano || options.year || '';
         const forcarNaoCam = options.onlyWebDl || options.forcarNaoCam || false;
         let imdbId = options.imdbId || null;
