@@ -178,8 +178,12 @@ class SubtitleSync {
         try {
             await fs.ensureDir(path.dirname(srtOutputPath));
 
-            // Permite correção de framerate (23.976 vs 25 fps PAL) por padrão, exceto se expressamente desabilitado
-            const fixFramerateArg = options.noFixFramerate ? ["'--no-fix-framerate',"] : [];
+            // No alinhamento via VAD de áudio (!isRefSubtitle), a correção de framerate é desabilitada por padrão
+            // para evitar que tiros, ruídos de ação e trilhas sonoras distorçam a velocidade da legenda,
+            // fazendo com que as falas durem muito tempo na tela ou se desloquem progressivamente.
+            // No Sub-to-Sub (legenda com legenda de referência), o alinhamento textual é seguro.
+            const shouldDisableFramerateFix = options.noFixFramerate || (!isRefSubtitle && !options.fixFramerate);
+            const fixFramerateArg = shouldDisableFramerateFix ? ["'--no-fix-framerate',"] : [];
 
             const pythonCode = `
 import sys

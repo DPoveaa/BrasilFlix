@@ -535,17 +535,39 @@ class MediaSearchService {
                             .filter(t => t.length > 2);
 
                         const streamTokens = tokenize(streamTitle);
+                        const streamLower = (streamTitle || '').toLowerCase();
+                        const isStream1080p = /\b(1080p|fhd)\b/i.test(streamLower);
+                        const isStream720p = /\b(720p|hd)\b/i.test(streamLower);
+                        const isStream4k = /\b(2160p|4k|uhd)\b/i.test(streamLower);
+                        const isStreamWeb = /\b(web-dl|webrip|web|amzn|nf|dsnp)\b/i.test(streamLower);
 
-                        // Pontua cada legenda por quantos tokens do stream ela compartilha
+                        // Pontua cada legenda por compatibilidade com o stream
                         const scored = subs.map(sub => {
-                            const relName = (sub.movieReleaseName || sub.releaseName || '');
+                            const relName = (sub.movieReleaseName || sub.releaseName || '').toLowerCase();
                             const subTokens = tokenize(relName);
                             const common = subTokens.filter(t => streamTokens.includes(t)).length;
-                            // Bônus por qualidade declarada OpenSubtitles
-                            const gScore = parseInt(sub.g || 0);
-                            // Bônus por ser pob/pt-br
-                            const langBonus = ['pob', 'pt-br', 'brazilian'].includes((sub.lang || '').toLowerCase()) ? 5 : 0;
-                            return { sub, score: common * 2 + gScore + langBonus };
+                            let score = common * 3;
+
+                            const isSub4k = /\b(2160p|4k|uhd)\b/i.test(relName);
+                            const isSub1080p = /\b(1080p|fhd)\b/i.test(relName);
+                            const isSub720p = /\b(720p|hd)\b/i.test(relName);
+                            const isSubWeb = /\b(web-dl|webrip|web|amzn|nf|dsnp)\b/i.test(relName);
+
+                            // Bônus/penalidade de resolução:
+                            if (isStream1080p && isSub1080p) score += 6;
+                            if (isStream720p && isSub720p) score += 6;
+                            if (isStream1080p && isSub4k) score -= 12; // Rejeita legenda 4K para stream 1080p
+                            if (!isStream4k && isSub4k) score -= 10;
+                            if (isStreamWeb && isSubWeb) score += 3;
+
+                            // Bônus por qualidade declarada OpenSubtitles (campo g)
+                            score += parseInt(sub.g || 0);
+
+                            // Bônus moderado por pob/pt-br
+                            if (['pob', 'pt-br', 'brazilian'].includes((sub.lang || '').toLowerCase())) {
+                                score += 3;
+                            }
+                            return { sub, score };
                         });
 
                         scored.sort((a, b) => b.score - a.score);
