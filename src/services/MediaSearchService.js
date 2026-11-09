@@ -194,8 +194,9 @@ class MediaSearchService {
         // 3. BUSCA CONCORRENTE: TORRENTIO & PROWLARR (Multi-Tracker: YTS, The Pirate Bay, Nyaa)
         const sPad = (season || 1).toString().padStart(2, '0');
         const ePad = (episode || 1).toString().padStart(2, '0');
+        const absEp = options.absoluteEpisode || (episode > 30 ? episode : null);
         const prowlarrQuery = tipo === 'serie'
-            ? `${originalName || cleanQuery} S${sPad}E${ePad}`
+            ? (isAnime && absEp ? `${originalName || cleanQuery} ${absEp}` : `${originalName || cleanQuery} S${sPad}E${ePad}`)
             : `${originalName || cleanQuery} ${ano || ''}`.trim();
 
         const searchPromises = [];
@@ -232,6 +233,8 @@ class MediaSearchService {
                 ano,
                 season,
                 episode,
+                isAnime,
+                absoluteEpisode: absEp,
                 audioPreference: pref,
                 allowOriginalAudio: pref === 'legendado' || options.allowOriginalAudio
             }).catch(eProwlarr => {
@@ -250,7 +253,11 @@ class MediaSearchService {
         }
 
         for (const item of (prowlarrResults || [])) {
-            if (this.matchesMovieTitle(item.title, cleanQuery, originalName, ano) && !seenHashes.has(item.infoHash || item.magnet)) {
+            const isMatch = tipo === 'serie'
+                ? isReleaseCompatibleWithTarget(item.title, cleanQuery, originalName, { ano, tipo, season, isAnime })
+                : this.matchesMovieTitle(item.title, cleanQuery, originalName, ano);
+
+            if (isMatch && !seenHashes.has(item.infoHash || item.magnet)) {
                 seenHashes.add(item.infoHash || item.magnet);
                 allResults.push(item);
             }

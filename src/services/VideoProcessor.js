@@ -1585,23 +1585,34 @@ ${events.join('\n')}
                 // Legendado: se o idioma original da obra for bem definido (ex: en, ko, ja, es, it)
                 const speechCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, effectiveAudioIndex, info.duration, targetSpoken);
                 if (speechCheck.verified && !speechCheck.isMatch && speechCheck.probability >= 0.75) {
-                    console.warn(`🚨 [Alerta de Áudio Original Divergente] Esperava-se ${targetSpoken.toUpperCase()}, mas o falado real é ${speechCheck.detectedLanguage.toUpperCase()} (${(speechCheck.probability * 100).toFixed(0)}%).`);
-                    
-                    let foundTarget = false;
-                    for (let altIdx = 0; altIdx < info.audioStreams.length; altIdx++) {
-                        if (altIdx === effectiveAudioIndex) continue;
-                        const altCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, altIdx, info.duration, targetSpoken);
-                        if (altCheck.verified && altCheck.isMatch) {
-                            console.log(`✅ [Correção de Áudio Original] Trilha alternativa ${altIdx} confirmada como ${targetSpoken.toUpperCase()}!`);
-                            effectiveAudioIndex = altIdx;
-                            effectiveAudioStream = info.audioStreams[altIdx];
-                            metadata._forcedAudioIndex = altIdx;
-                            foundTarget = true;
-                            break;
+                    const detectedLang = (speechCheck.detectedLanguage || '').toLowerCase();
+                    if (['pt', 'pt-br', 'por'].includes(detectedLang)) {
+                        console.log(`🇧🇷 [Auto-Correção] Áudio falado real é PORTUGUÊS (${(speechCheck.probability * 100).toFixed(0)}%)! Convertendo release para Dublado automaticamente.`);
+                        metadata.isDublado = true;
+                        metadata.isLegendado = false;
+                        metadata.audioPreference = 'dublado';
+                        isConfirmedDublado = true;
+                        metadata.srtPath = null;
+                        srtPath = null;
+                    } else {
+                        console.warn(`🚨 [Alerta de Áudio Original Divergente] Esperava-se ${targetSpoken.toUpperCase()}, mas o falado real é ${speechCheck.detectedLanguage.toUpperCase()} (${(speechCheck.probability * 100).toFixed(0)}%).`);
+                        
+                        let foundTarget = false;
+                        for (let altIdx = 0; altIdx < info.audioStreams.length; altIdx++) {
+                            if (altIdx === effectiveAudioIndex) continue;
+                            const altCheck = await SpeechLanguageService.verifySpokenLanguage(inputPath, altIdx, info.duration, targetSpoken);
+                            if (altCheck.verified && altCheck.isMatch) {
+                                console.log(`✅ [Correção de Áudio Original] Trilha alternativa ${altIdx} confirmada como ${targetSpoken.toUpperCase()}!`);
+                                effectiveAudioIndex = altIdx;
+                                effectiveAudioStream = info.audioStreams[altIdx];
+                                metadata._forcedAudioIndex = altIdx;
+                                foundTarget = true;
+                                break;
+                            }
                         }
-                    }
-                    if (!foundTarget && (targetSpoken === 'en' || targetSpoken === 'ko' || targetSpoken === 'ja')) {
-                        throw new Error(`Áudio em idioma incorreto para "${optTitle}": falado real é ${speechCheck.detectedLanguage.toUpperCase()} (esperado ${targetSpoken.toUpperCase()}).`);
+                        if (!foundTarget && (targetSpoken === 'en' || targetSpoken === 'ko' || targetSpoken === 'ja')) {
+                            throw new Error(`Áudio em idioma incorreto para "${optTitle}": falado real é ${speechCheck.detectedLanguage.toUpperCase()} (esperado ${targetSpoken.toUpperCase()}).`);
+                        }
                     }
                 }
             }

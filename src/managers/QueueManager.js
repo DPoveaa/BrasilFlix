@@ -1939,6 +1939,7 @@ class QueueManager extends EventEmitter {
 
                 nextJob.status = 'queued';
                 nextJob.progress = 0;
+                nextJob.retryAfter = new Date(Date.now() + 45 * 60 * 1000).toISOString();
                 nextJob.error = `Tentativa ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}: ${error.message}`;
                 nextJob.progressDetails = `Aguardando nova tentativa (${attemptsLeft} restante(s))...`;
 
@@ -1946,10 +1947,10 @@ class QueueManager extends EventEmitter {
                 const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 100;
                 nextJob.queueOrder = maxOrder;
 
-                // Atualiza no banco e na fila em memória
+                // Atualiza no banco e na fila em memória com cooldown para não travar a esteira
                 await db.query(
-                    `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6 WHERE id = $7`,
-                    ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, nextJob.id]
+                    `UPDATE queue_jobs SET status = $1, progress = $2, error = $3, progress_details = $4, attempt_count = $5, queue_order = $6, retry_after = $7 WHERE id = $8`,
+                    ['queued', 0, nextJob.error, nextJob.progressDetails, nextJob.attemptCount, maxOrder, nextJob.retryAfter, nextJob.id]
                 ).catch(() => {});
 
                 // Garante que está na fila em memória (pode ter sido removida por race condition)

@@ -117,19 +117,25 @@ class ProwlarrSearchService {
                     }
 
                     if (opts.episode) {
-                        const epMatch = name.match(/s\d{1,2}[._ -]?e0*(\d{1,3})/i) ||
-                                        name.match(/\b\d{1,2}x0*(\d{1,3})\b/i) ||
-                                        name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\b/i);
-                        const rangeMatch = name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,3})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,3})\b/i);
-                        const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes|s\d{1,2}(?![._ -]?e\d+))\b/i.test(name) && !epMatch && !rangeMatch;
+                        const targetEpNum = opts.absoluteEpisode || opts.episode;
+                        const epMatch = name.match(/s\d{1,2}[._ -]?e0*(\d{1,4})/i) ||
+                                        name.match(/\b\d{1,2}x0*(\d{1,4})\b/i) ||
+                                        name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,4})\b/i);
+                        const rangeMatch = name.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,4})\b/i);
+                        const animeEpMatch = (opts.isAnime || targetEpNum > 30)
+                            ? name.match(new RegExp(`(?:-\\s*|\\s|^|\\[)0*${targetEpNum}(?:v\\d+)?(?:[\\s\\.\\[\\(-]|$)`, 'i'))
+                            : null;
+                        const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes|s\d{1,2}(?![._ -]?e\d+))\b/i.test(name) && !epMatch && !rangeMatch && !animeEpMatch;
 
                         if (rangeMatch) {
                             const startEp = parseInt(rangeMatch[1], 10);
                             const endEp = parseInt(rangeMatch[2], 10);
-                            if (opts.episode < startEp || opts.episode > endEp) continue;
+                            if (targetEpNum < startEp || targetEpNum > endEp) continue;
                         } else if (epMatch) {
                             const foundEp = parseInt(epMatch[1], 10);
-                            if (foundEp !== opts.episode) continue;
+                            if (foundEp !== targetEpNum && foundEp !== opts.episode) continue;
+                        } else if (animeEpMatch) {
+                            // Encontrado número de episódio absoluto/anime direto
                         } else if (!isPack) {
                             continue;
                         }
