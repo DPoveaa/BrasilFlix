@@ -21411,6 +21411,7 @@
                 ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
                     document.addEventListener(evt, syncFullscreenState);
                 });
+                window.addEventListener('resize', syncFullscreenState);
             }
 
             async function togglePlayerFullscreen() {
@@ -21420,15 +21421,21 @@
                 if (!target) return;
 
                 try {
-                    if (getActiveFullscreenElement()) {
+                    const activeFs = getActiveFullscreenElement();
+                    const isVideoFs = !!(video && video.webkitDisplayingFullscreen);
+
+                    if (activeFs || isVideoFs) {
                         if (document.exitFullscreen) {
-                            await document.exitFullscreen();
+                            await document.exitFullscreen().catch(() => {});
                         } else if (document.webkitExitFullscreen) {
-                            await document.webkitExitFullscreen();
+                            await document.webkitExitFullscreen().catch(() => {});
                         } else if (document.mozCancelFullScreen) {
-                            await document.mozCancelFullScreen();
+                            await document.mozCancelFullScreen().catch(() => {});
                         } else if (document.msExitFullscreen) {
-                            await document.msExitFullscreen();
+                            await document.msExitFullscreen().catch(() => {});
+                        }
+                        if (video && video.webkitExitFullscreen && isVideoFs) {
+                            try { video.webkitExitFullscreen(); } catch (e) {}
                         }
                     } else {
                         if (target.requestFullscreen) {
@@ -21449,6 +21456,7 @@
                         try { video.webkitEnterFullscreen(); } catch (e) { }
                     }
                 }
+                setTimeout(syncFullscreenState, 150);
             }
 
             async function togglePictureInPicture() {

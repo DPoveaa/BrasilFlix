@@ -623,11 +623,17 @@ class DownloaderManager extends EventEmitter {
                     // Se TODOS os arquivos de vídeo forem incompatíveis (ex: Pokémon Horizons para job Pokémon 1997, ou Resident Evil 1997 para filme de 2026)
                     const hasCompatibleFile = allFiles.some(file => {
                         const relName = `${file.name} ${torrent.name || ''}`;
-                        return isReleaseCompatibleWithTarget(relName, options.title, options.originalTitle, {
+                        const matchPrimary = isReleaseCompatibleWithTarget(relName, options.title, options.originalTitle, {
                             ano: options.ano,
                             isAnime: options.isAnime,
                             tipo: options.type
                         });
+                        const matchTranslated = options.translatedTitle ? isReleaseCompatibleWithTarget(relName, options.translatedTitle, options.originalTitle, {
+                            ano: options.ano,
+                            isAnime: options.isAnime,
+                            tipo: options.type
+                        }) : false;
+                        return matchPrimary || matchTranslated;
                     });
 
                     if (!hasCompatibleFile) {
@@ -639,10 +645,11 @@ class DownloaderManager extends EventEmitter {
                         return reject(new Error(errMsg));
                     }
 
-                    // 2. Checa palavras-chave do título (ou título original) contra nomes dos arquivos e da pasta
+                    // 2. Checa palavras-chave do título (ou título original ou traduzido) contra nomes dos arquivos e da pasta
                     const targetWords = new Set([
                         ...normalizeFake(options.title || '').split(' '),
-                        ...normalizeFake(options.originalTitle || '').split(' ')
+                        ...normalizeFake(options.originalTitle || '').split(' '),
+                        ...normalizeFake(options.translatedTitle || '').split(' ')
                     ].filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w) && !/^\d{3,4}$/.test(w)));
 
                     if (targetWords.size >= 1) {
