@@ -16867,6 +16867,17 @@
                 clearTimeout(_headerSearchTimer);
                 const q = (query || '').trim();
 
+                // ⛔ Não interrompe o player: se o player está ativo, não navega
+                const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
+                if (isPlayerActive && q) {
+                    // Apenas sincroniza o campo lateral sem navegar
+                    const sideSearch = document.getElementById('sidebar-search-input');
+                    if (sideSearch && sideSearch.value !== (query || '')) {
+                        sideSearch.value = query || '';
+                    }
+                    return;
+                }
+
                 const sideSearch = document.getElementById('sidebar-search-input');
                 if (sideSearch && sideSearch.value !== (query || '')) {
                     sideSearch.value = query || '';
@@ -17081,6 +17092,9 @@
             }
 
             function onSidebarSearchInput(val) {
+                // ⛔ Não interrompe o player: se o player está ativo, não navega
+                const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
+                if (isPlayerActive && (val || '').trim()) return;
                 const desktopSearch = document.getElementById('header-search-input');
                 if (desktopSearch) desktopSearch.value = val;
                 onHeaderSearchInput(val);

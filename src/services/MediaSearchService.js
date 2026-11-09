@@ -54,15 +54,15 @@ class MediaSearchService {
         const episode = options.episode || 1;
         const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
 
-        const isLiveActionExplicit = /live[-_ .]?action/i.test(cleanQuery) || 
-                                     /live[-_ .]?action/i.test(originalName || '') || 
-                                     (options.originalLanguage === 'en' && ano >= 2023) ||
-                                     options.tmdbId === 111110;
+        const isLiveActionExplicit = /live[-_ .]?action/i.test(cleanQuery) ||
+            /live[-_ .]?action/i.test(originalName || '') ||
+            (options.originalLanguage === 'en' && ano >= 2023) ||
+            options.tmdbId === 111110;
 
-        let isAnime = !isLiveActionExplicit && (options.isAnime || options.is_anime || 
-                      options.originalLanguage === 'ja' || options.idiomaOriginal === 'ja' ||
-                      KNOWN_ANIME_TITLES.test(cleanQuery) || (originalName && KNOWN_ANIME_TITLES.test(originalName)) ||
-                      /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery));
+        let isAnime = !isLiveActionExplicit && (options.isAnime || options.is_anime ||
+            options.originalLanguage === 'ja' || options.idiomaOriginal === 'ja' ||
+            KNOWN_ANIME_TITLES.test(cleanQuery) || (originalName && KNOWN_ANIME_TITLES.test(originalName)) ||
+            /anime|shonen|seinen|isekai|kimetsu/i.test(cleanQuery));
 
         const prefTexto = pref === 'legendado' ? 'Legendada (PT-BR)' : (pref === 'dublado' ? 'Dublada (PT-BR)' : 'em Português (Dublado > Legendado)');
 
@@ -101,14 +101,14 @@ class MediaSearchService {
         // Se ainda não temos IMDb ID, faz busca rápida no TMDB
         if (!imdbId) {
             try {
-                const searchRes = tipo === 'filme' ? 
-                    await TMDBService.searchMovie(cleanQuery, ano || null) : 
+                const searchRes = tipo === 'filme' ?
+                    await TMDBService.searchMovie(cleanQuery, ano || null) :
                     await TMDBService.searchTV(cleanQuery, ano || null);
-                
+
                 if (searchRes.length > 0) {
                     const first = searchRes[0];
-                    tmdbDetails = tipo === 'filme' ? 
-                        await TMDBService.getMovieDetails(first.tmdbId) : 
+                    tmdbDetails = tipo === 'filme' ?
+                        await TMDBService.getMovieDetails(first.tmdbId) :
                         await TMDBService.getTVDetails(first.tmdbId);
                     if (tmdbDetails) {
                         imdbId = tmdbDetails.imdbId;
@@ -188,7 +188,7 @@ class MediaSearchService {
             try {
                 const relStatus = await TMDBService.checkDigitalReleaseStatus(tmdbDetails.tmdbId, pref === 'dublado');
                 isTheatricalOnly = relStatus.isTheatricalOnly;
-            } catch (e) {}
+            } catch (e) { }
         }
 
         // 3. BUSCA CONCORRENTE: TORRENTIO & PROWLARR (Multi-Tracker: YTS, The Pirate Bay, Nyaa)
@@ -204,13 +204,13 @@ class MediaSearchService {
         if (imdbId) {
             console.log(`🌐 Consultando catálogo Stremio/Torrentio para IMDb: ${imdbId} ${tipo === 'serie' ? `(S${season}E${episode})` : ''}...`);
             searchPromises.push(
-                this.searchTorrentio(imdbId, tipo, { 
-                    forcarNaoCam, 
-                    query: cleanQuery, 
-                    originalName, 
-                    ano, 
-                    season, 
-                    episode, 
+                this.searchTorrentio(imdbId, tipo, {
+                    forcarNaoCam,
+                    query: cleanQuery,
+                    originalName,
+                    ano,
+                    season,
+                    episode,
                     isTheatricalOnly,
                     audioPreference: pref
                 }).catch(e => {
@@ -269,8 +269,8 @@ class MediaSearchService {
         // Se Torrentio ou Prowlarr já encontraram releases com sementes ativas suficientes, pula o TPB loop
         const dubComSeedsPre = allResults.filter(r => r.isDublado && (r.seeders || 0) >= 3);
         const legComSeedsPre = allResults.filter(r => r.isLegendado && (r.seeders || 0) >= 3);
-        const hasEnoughSources = pref === 'legendado' 
-            ? legComSeedsPre.length >= 2 
+        const hasEnoughSources = pref === 'legendado'
+            ? legComSeedsPre.length >= 2
             : (pref === 'dublado' ? dubComSeedsPre.length >= 2 : (dubComSeedsPre.length + legComSeedsPre.length) >= 2);
 
         if (!hasEnoughSources) {
@@ -374,7 +374,7 @@ class MediaSearchService {
             const batchSize = 3;
             for (let i = 0; i < variations.length; i += batchSize) {
                 const batch = variations.slice(i, i + batchSize);
-                const batchPromises = batch.map(q => 
+                const batchPromises = batch.map(q =>
                     this.searchTorrentApi(q, { forcarNaoCam, query: cleanQuery, originalName, ano, tipo, season, episode, isTheatricalOnly })
                         .catch(() => [])
                 );
@@ -429,9 +429,9 @@ class MediaSearchService {
                     const sNum = parseInt(season, 10);
                     const titleLower = r.title.toLowerCase();
                     const rangeMatch = titleLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/);
-                    const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})(?=[eEx._\s-]|$)/i) || 
-                                              titleLower.match(/(?:season|temporada)[._\s-]*0*(\d{1,2})\b/i) || 
-                                              titleLower.match(/\b0*(\d{1,2})x\d{1,4}\b/i);
+                    const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})(?=[eEx._\s-]|$)/i) ||
+                        titleLower.match(/(?:season|temporada)[._\s-]*0*(\d{1,2})\b/i) ||
+                        titleLower.match(/\b0*(\d{1,2})x\d{1,4}\b/i);
 
                     if (rangeMatch) {
                         const startS = parseInt(rangeMatch[1], 10);
@@ -449,8 +449,8 @@ class MediaSearchService {
                     const titleLower = r.title.toLowerCase();
                     const epSingleMatch = titleLower.match(/(?:s0*\d{1,2}[._\s-]*)?(?:e|ep|episodio|episódio|x)[._\s-]*0*(\d{1,4})\b/i);
                     const isPackTitle = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(titleLower) ||
-                                        /(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/i.test(titleLower) ||
-                                        /\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i.test(titleLower);
+                        /(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/i.test(titleLower) ||
+                        /\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i.test(titleLower);
 
                     if (epSingleMatch && !isPackTitle) {
                         const foundEp = parseInt(epSingleMatch[1], 10);
@@ -511,10 +511,10 @@ class MediaSearchService {
                 const ptSubs = await this.getOpenSubtitlesPT(imdbId, tipo, season, episode);
                 if (ptSubs.length > 0) {
                     console.log(`📝 Encontradas ${ptSubs.length} legendas oficiais em Português! Selecionando versões 1080p e Season Packs com sementes ativas...`);
-                    const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, { 
+                    const fallbackStreams = await this.searchTorrentioAllStreams(imdbId, tipo, {
                         query: cleanQuery,
                         originalName,
-                        season, 
+                        season,
                         episode,
                         ano,
                         isAnime,
@@ -523,6 +523,38 @@ class MediaSearchService {
                         isTheatricalOnly,
                         allowCam: options.allowCam
                     });
+                    // Função para selecionar a legenda que melhor combina com o título do stream
+                    const pickBestSubForStream = (streamTitle, subs) => {
+                        if (!subs || subs.length === 0) return null;
+                        if (subs.length === 1) return subs[0];
+
+                        // Extrai tokens relevantes do título do stream (resolução, fonte, grupo)
+                        const tokenize = (s) => (s || '').toLowerCase()
+                            .replace(/[^a-z0-9]/g, ' ')
+                            .split(/\s+/)
+                            .filter(t => t.length > 2);
+
+                        const streamTokens = tokenize(streamTitle);
+
+                        // Pontua cada legenda por quantos tokens do stream ela compartilha
+                        const scored = subs.map(sub => {
+                            const relName = (sub.movieReleaseName || sub.releaseName || '');
+                            const subTokens = tokenize(relName);
+                            const common = subTokens.filter(t => streamTokens.includes(t)).length;
+                            // Bônus por qualidade declarada OpenSubtitles
+                            const gScore = parseInt(sub.g || 0);
+                            // Bônus por ser pob/pt-br
+                            const langBonus = ['pob', 'pt-br', 'brazilian'].includes((sub.lang || '').toLowerCase()) ? 5 : 0;
+                            return { sub, score: common * 2 + gScore + langBonus };
+                        });
+
+                        scored.sort((a, b) => b.score - a.score);
+                        const best = scored[0].sub;
+                        const relName = best.movieReleaseName || best.releaseName || '(sem nome)';
+                        console.log(`📝 Legenda selecionada para "${streamTitle.substring(0, 60)}": "${relName}" (score: ${scored[0].score}, lang: ${best.lang})`);
+                        return best;
+                    };
+
                     for (const st of fallbackStreams) {
                         if (!ptBrResults.some(r => r.infoHash === st.infoHash)) {
                             // Validação estrita de temporada no fallback para séries
@@ -533,12 +565,14 @@ class MediaSearchService {
                                     continue;
                                 }
                             }
+                            // Escolhe a legenda que melhor combina com este stream específico
+                            const bestSub = pickBestSubForStream(st.title, ptSubs);
                             st.isPtBr = true;
                             st.isLegendado = true;
                             st.isDublado = false;
                             st.audio = 'Legendado (PT-BR)';
                             st.hasPtSub = true;
-                            st.subtitleUrl = ptSubs[0].url;
+                            st.subtitleUrl = bestSub ? bestSub.url : ptSubs[0].url;
                             ptBrResults.push(st);
                         }
                     }
@@ -619,7 +653,7 @@ class MediaSearchService {
             try {
                 const https = require('https');
                 const agent = new https.Agent({ rejectUnauthorized: false });
-                const res = await axios.get(url, { 
+                const res = await axios.get(url, {
                     timeout: this.timeout,
                     httpsAgent: agent,
                     headers: {
@@ -778,7 +812,7 @@ class MediaSearchService {
 
                         const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
                         const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
-                                        cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+                            cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
 
                         if (rangeMatch) {
                             const startEp = parseInt(rangeMatch[1], 10);
@@ -855,7 +889,7 @@ class MediaSearchService {
         const https = require('https');
         const agent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
         const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
-        
+
         const endpoints = [
             `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
             `https://subtitles.strem.io/subtitles/${streamPath}`,
@@ -864,23 +898,31 @@ class MediaSearchService {
 
         for (const url of endpoints) {
             try {
-                const res = await axios.get(url, { 
-                    timeout: 6000, 
+                const res = await axios.get(url, {
+                    timeout: 6000,
                     httpsAgent: agent,
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
                 });
                 const subs = res.data?.subtitles || [];
+                // Palavras-chave de PT-PT (Português de Portugal) para exclusão de legendas ruins
+                const ptPtKeywords = /\b(autocarro|telemóvel|ecrã|computador|frigorífico|casa\s*de\s*banho|carro|apanhar|fixe|giro|espetáculo|percebes|percebes\b|malta|miúdos|pá\b|bué|tipo\b|chapar|aldrabice|gajas|gaja|bazar|basar|chilique|boleias|boleia|bolacha|bata|atão|tás|tô|tó\b|'tá\b|sabes\b|pronto\b|pois\b|vá\b|lá\b|cá\b|né\b|'tá|porquê\b|há\b|deste\b|neste\b|desse\b|nesse\b)/i;
                 const ptSubs = subs.filter(s => {
                     const lang = (s.lang || s.language || '').toLowerCase();
                     const isPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt');
                     if (isPtPt) return false;
+                    // Exclui legendas cujo nome de release contém indicadores de PT-PT
+                    const relName = (s.movieReleaseName || s.releaseName || '').toLowerCase();
+                    if (relName.includes('pt-pt') || relName.includes('por.pt') || relName.includes('portuguese.pt')) return false;
                     return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
                 }).sort((a, b) => {
                     const langA = (a.lang || a.language || '').toLowerCase();
                     const langB = (b.lang || b.language || '').toLowerCase();
+                    // Prioridade 1: pob/pt-br/brazilian (PT-BR) > por/pt genérico
                     const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 10 : 1;
                     const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 10 : 1;
-                    return scoreB - scoreA;
+                    if (scoreB !== scoreA) return scoreB - scoreA;
+                    // Prioridade 2: score OpenSubtitles (campo g)
+                    return parseInt(b.g || 0) - parseInt(a.g || 0);
                 });
 
                 if (ptSubs.length > 0) {
@@ -906,7 +948,7 @@ class MediaSearchService {
             const episode = opts.episode || 1;
             const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
             const url = `https://torrentio.strem.fun/stream/${streamPath}`;
-            
+
             const response = await axios.get(url, { timeout: this.timeout, httpsAgent: agent });
             const streams = response.data?.streams || [];
 
@@ -982,7 +1024,7 @@ class MediaSearchService {
                     const normStream = (s) => (s || '').toLowerCase()
                         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
                         .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-                    const STOPWORDS_STREAM = new Set(['the','a','an','o','os','as','de','da','do','das','dos','e','em','um','uma','no','na','nos','nas','por','para','com','sem','part','complete','season','s01','s02','s03','s04','s1','s2','s3','s4','e01','e02','ep','720p','1080p','2160p','hevc','x265','x264','web','dl','bluray','webrip','hdtv','cam','hd','full','br','pt','ptbr','dub','leg','legendado','dublado','audio','multi','dual','aac','h264','h265','mkv','mp4']);
+                    const STOPWORDS_STREAM = new Set(['the', 'a', 'an', 'o', 'os', 'as', 'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'um', 'uma', 'no', 'na', 'nos', 'nas', 'por', 'para', 'com', 'sem', 'part', 'complete', 'season', 's01', 's02', 's03', 's04', 's1', 's2', 's3', 's4', 'e01', 'e02', 'ep', '720p', '1080p', '2160p', 'hevc', 'x265', 'x264', 'web', 'dl', 'bluray', 'webrip', 'hdtv', 'cam', 'hd', 'full', 'br', 'pt', 'ptbr', 'dub', 'leg', 'legendado', 'dublado', 'audio', 'multi', 'dual', 'aac', 'h264', 'h265', 'mkv', 'mp4']);
                     const qWords = new Set([
                         ...normStream(opts.query).split(' ').filter(w => w.length > 2 && !STOPWORDS_STREAM.has(w) && !/^\d{3,4}$/.test(w)),
                         ...normStream(opts.originalName || '').split(' ').filter(w => w.length > 2 && !STOPWORDS_STREAM.has(w) && !/^\d{3,4}$/.test(w))
@@ -1015,7 +1057,7 @@ class MediaSearchService {
 
                         const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
                         const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
-                                        cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+                            cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
 
                         if (rangeMatch) {
                             const startEp = parseInt(rangeMatch[1], 10);
@@ -1089,7 +1131,7 @@ class MediaSearchService {
         const clean = text.toLowerCase()
             .replace(/\b(19\d\d|20\d\d)\b/g, '')
             .replace(/\b(1080p|720p|480p|2160p|4k|2k|h264|h265|x264|x265|hevc|ddp5|5\.1|7\.1|ch)\b/g, '');
-        
+
         const match = clean.match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x|parte\s*\d+|part\s*\d+|[1-9]|1[0-5])\b/);
         if (!match) return null;
         let val = match[1].replace(/parte\s*|part\s*/, '');
@@ -1232,7 +1274,7 @@ class MediaSearchService {
                     const sRegex = new RegExp(`\\b(s${opts.season}|s${sPad}|temporada\\s*${opts.season}|temporada\\s*${sPad}|season\\s*${opts.season}|season\\s*${sPad}|${opts.season}ª\\s*temporada)\\b`, 'i');
                     const hasSeason = sRegex.test(name);
                     const hasAnySeason = /\b(s\d+|temporada\s*\d+|season\s*\d+|\d+x\d+)\b/i.test(name);
-                    
+
                     if (hasAnySeason && !hasSeason) {
                         return;
                     }
@@ -1321,7 +1363,7 @@ class MediaSearchService {
                     for (const it of items) {
                         parseAndAdd(it.title, it.infohash, it.size || 0, it.seeders || 0, 'BitSearch');
                     }
-                }).catch(() => {}),
+                }).catch(() => { }),
 
             // 2. SolidTorrents
             axios.get(`https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`, { timeout: 6000, headers })
@@ -1330,7 +1372,7 @@ class MediaSearchService {
                     for (const it of items) {
                         parseAndAdd(it.title, it.infohash, it.size || 0, it.seeders || 0, 'SolidTorrents');
                     }
-                }).catch(() => {}),
+                }).catch(() => { }),
 
             // 3. ApiBay (ThePirateBay)
             axios.get(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, { timeout: 6000, headers })
@@ -1340,7 +1382,7 @@ class MediaSearchService {
                             parseAndAdd(it.name, it.info_hash, parseInt(it.size || 0, 10), parseInt(it.seeders || 0, 10), 'ThePirateBay');
                         }
                     }
-                }).catch(() => {})
+                }).catch(() => { })
         ];
 
         await Promise.all(searches);
