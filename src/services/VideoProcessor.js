@@ -923,7 +923,7 @@ ${events.join('\n')}
         const ptPtSpellingMatches = (norm.match(ptPtSpellingRegex) || []).length;
 
         // 6. Vocabulário estritamente exclusivo de Portugal (SEM falsos positivos comuns do Brasil como "com certeza", "pois bem")
-        const ptPtVocabRegex = /\b(ora\s+pois|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|porreiro|porreira|fita-cola|fato\s+de\s+banho|camioneta|guichet|perceber\?|apanhar\s+o|apanhar\s+a)\b/gi;
+        const ptPtVocabRegex = /\b(estafeta|estafetas|ora\s+pois|o\s+pa\b|epa\s+pa\b|malta\b|rapariga|raparigas|miudo|miudos|miuda|miudas|comboio|comboios|ecra|ecras|telemovel|telemoveis|autocarro|autocarros|pequeno-almoco|pequeno\s+almoco|parvalhao|casa\s+de\s+banho|trabalho\s+de\s+equipa|porreiro|porreira|fita-cola|fato\s+de\s+banho|camioneta|guichet|perceber\?|apanhar\s+o|apanhar\s+a|bicha\b|talho\b|passadeira\b|chavalo|chavalos)\b/gi;
         const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
 
         const ptPtScore = (ptPtGerundMatches * 6) +
@@ -936,13 +936,15 @@ ${events.join('\n')}
         // Pontuação de marcas de Português Brasileiro para contrabalançar
         const ptBrGerundMatches = (norm.match(/\b[a-z]{3,15}(?:ando|endo|indo)\b/gi) || []).length;
         const ptBrVocabMatches = (norm.match(/\b(voce|voces|to|ta|tava|tavam|ne|pra|pro|pras|pros|a\s+gente|legal\b|cara\b|celular|celulares|onibus|trem\b|cafe\s+da\s+manha|banheiro|banheiros|garoto|garota|garotos|garotas|moco|moca|grana|droga|beleza|valeu\b|time\b|equipe\b|ruim\b|olha\s+so|tudo\s+bem|como\s+vai|falou\b|com\s+certeza\b|partiu\b|fala\s+serio)\b/gi) || []).length;
-        const ptBrProcliseMatches = (norm.match(/\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|nao\s+me|nao\s+te|se\s+lembra|me\s+da|me\s+diz|te\s+amo|te\s+vejo)\b/gi) || []).length;
+        // Removido "nao me / nao te" pois negação atrai pronome tanto em Portugal quanto no Brasil
+        const ptBrProcliseMatches = (norm.match(/\b(me\s+[a-z]{3,12}|te\s+[a-z]{3,12}|se\s+lembra|me\s+da|me\s+diz|te\s+amo|te\s+vejo)\b/gi) || []).length;
         const ptBrScore = (ptBrGerundMatches * 2) + (ptBrVocabMatches * 3) + (ptBrProcliseMatches * 2);
 
         // Se contiver marcas nítidas de Portugal e ausência de PT-BR predominante:
-        if (ptPtScore >= 8 && (ptBrScore < 10 || ptPtScore >= ptBrScore * 1.5)) return true;
-        if (ptPtVocabMatches >= 2 && ptBrScore < 8) return true;
-        if (ptPtGerundMatches >= 2 && ptBrScore < 8) return true;
+        if (ptPtVocabMatches >= 2) return true;
+        if (ptPtGerundMatches >= 4) return true;
+        if (ptPtScore >= 15 && ptPtScore > ptBrScore * 0.7) return true;
+        if (ptPtTuVerbMatches >= 3 && ptPtScore > ptBrScore * 0.5) return true;
 
         return false;
     }
@@ -1292,6 +1294,8 @@ ${events.join('\n')}
                         }
                         return finalSrt;
                     }
+                } else if (res.data) {
+                    console.warn(`⚠️ [SubtitleSync] Legenda direta descartada: texto não validado como PT-BR autêntico (detectado Português de Portugal ou qualidade inadequada). Recorrendo à busca completa.`);
                 }
             } catch (e) {
                 console.warn(`⚠️ [SubtitleSync] Falha ao baixar/sincronizar legenda direta: ${e.message}`);
@@ -1363,15 +1367,18 @@ ${events.join('\n')}
                             let scoreA = commonA * 3 + parseInt(a.g || 0);
                             let scoreB = commonB * 3 + parseInt(b.g || 0);
 
-                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relA)) scoreA += 6;
-                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relB)) scoreB += 6;
-                            if (isFile1080p && /\b(2160p|4k|uhd)\b/i.test(relA)) scoreA -= 12;
-                            if (isFile1080p && /\b(2160p|4k|uhd)\b/i.test(relB)) scoreB -= 12;
-                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relA)) scoreA += 3;
-                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relB)) scoreB += 3;
+                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relA)) scoreA += 4;
+                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relB)) scoreB += 4;
+                            if (isFile720p && /\b(720p|hd)\b/i.test(relA)) scoreA += 4;
+                            if (isFile720p && /\b(720p|hd)\b/i.test(relB)) scoreB += 4;
+                            if (isFile4k && /\b(2160p|4k|uhd)\b/i.test(relA)) scoreA += 4;
+                            if (isFile4k && /\b(2160p|4k|uhd)\b/i.test(relB)) scoreB += 4;
+                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relA)) scoreA += 4;
+                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relB)) scoreB += 4;
 
-                            if (['pob', 'pt-br', 'brazilian'].includes((a.lang || '').toLowerCase())) scoreA += 3;
-                            if (['pob', 'pt-br', 'brazilian'].includes((b.lang || '').toLowerCase())) scoreB += 3;
+                            // Bônus prioritário absoluto para Português Brasileiro (pob / pt-br / brazilian)
+                            if (['pob', 'pt-br', 'brazilian'].includes((a.lang || '').toLowerCase())) scoreA += 25;
+                            if (['pob', 'pt-br', 'brazilian'].includes((b.lang || '').toLowerCase())) scoreB += 25;
 
                             return scoreB - scoreA;
                         });

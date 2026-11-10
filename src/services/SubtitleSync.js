@@ -203,9 +203,13 @@ sys.exit(main())
             const pythonExec = process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
             const timeoutMs = options.timeoutMs || 180000; // 3 minutos para permitir análise completa de voz sem corte prematuro
 
+            let stderrOutput = '';
             const success = await new Promise((resolve) => {
                 let isDone = false;
                 const pyProc = spawn(pythonExec, ['-c', pythonCode, videoOrRefSrt, srtInputPath, srtOutputPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+                if (pyProc.stderr) {
+                    pyProc.stderr.on('data', d => { stderrOutput += d.toString(); });
+                }
 
                 const timeout = setTimeout(() => {
                     if (!isDone) {
@@ -230,6 +234,18 @@ sys.exit(main())
                         isDone = true;
                         clearTimeout(timeout);
                         if (code === 0 && fs.existsSync(srtOutputPath) && fs.statSync(srtOutputPath).size > 200) {
+                            // Se for alinhamento Sub-to-Sub contra legenda de referência, valida consistência do frameratio
+                            if (isRefSubtitle) {
+                                const ratioMatch = stderrOutput.match(/inferred frameratio ratio:\s*([0-9.]+)/i);
+                                if (ratioMatch) {
+                                    const ratio = parseFloat(ratioMatch[1]);
+                                    if (ratio < 0.92 || ratio > 1.08) {
+                                        console.warn(`⚠️ [SubtitleSync] Desalinhamento estrutural detectado: razão de framerate anômala (${ratio}). Rejeitando legenda.`);
+                                        resolve(false);
+                                        return;
+                                    }
+                                }
+                            }
                             resolve(true);
                         } else {
                             resolve(false);

@@ -553,19 +553,19 @@ class MediaSearchService {
                             const isSub720p = /\b(720p|hd)\b/i.test(relName);
                             const isSubWeb = /\b(web-dl|webrip|web|amzn|nf|dsnp)\b/i.test(relName);
 
-                            // Bônus/penalidade de resolução:
-                            if (isStream1080p && isSub1080p) score += 6;
-                            if (isStream720p && isSub720p) score += 6;
-                            if (isStream1080p && isSub4k) score -= 12; // Rejeita legenda 4K para stream 1080p
-                            if (!isStream4k && isSub4k) score -= 10;
-                            if (isStreamWeb && isSubWeb) score += 3;
+                            // Bônus moderado de resolução idêntica
+                            if (isStream1080p && isSub1080p) score += 4;
+                            if (isStream720p && isSub720p) score += 4;
+                            if (isStream4k && isSub4k) score += 4;
+                            if (isStreamWeb && isSubWeb) score += 4;
 
                             // Bônus por qualidade declarada OpenSubtitles (campo g)
                             score += parseInt(sub.g || 0);
 
-                            // Bônus moderado por pob/pt-br
+                            // BÔNUS PRIORITÁRIO ABSOLUTO para Português Brasileiro (pob / pt-br / brazilian)
+                            // Evita que release groups como PSA com áudio PT-PT ou 24fps superem legendas PT-BR autênticas
                             if (['pob', 'pt-br', 'brazilian'].includes((sub.lang || '').toLowerCase())) {
-                                score += 3;
+                                score += 25;
                             }
                             return { sub, score };
                         });
@@ -933,15 +933,15 @@ class MediaSearchService {
                     const isPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt');
                     if (isPtPt) return false;
                     // Exclui legendas cujo nome de release contém indicadores de PT-PT
-                    const relName = (s.movieReleaseName || s.releaseName || '').toLowerCase();
-                    if (relName.includes('pt-pt') || relName.includes('por.pt') || relName.includes('portuguese.pt')) return false;
+                    const relName = (s.movieReleaseName || s.releaseName || s.subtitleFileName || '').toLowerCase();
+                    if (relName.includes('pt-pt') || relName.includes('por.pt') || relName.includes('portuguese.pt') || relName.includes('pt_pt')) return false;
                     return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
                 }).sort((a, b) => {
                     const langA = (a.lang || a.language || '').toLowerCase();
                     const langB = (b.lang || b.language || '').toLowerCase();
                     // Prioridade 1: pob/pt-br/brazilian (PT-BR) > por/pt genérico
-                    const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 10 : 1;
-                    const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 10 : 1;
+                    const scoreA = ['pob', 'pt-br', 'brazilian'].includes(langA) ? 50 : 1;
+                    const scoreB = ['pob', 'pt-br', 'brazilian'].includes(langB) ? 50 : 1;
                     if (scoreB !== scoreA) return scoreB - scoreA;
                     // Prioridade 2: score OpenSubtitles (campo g)
                     return parseInt(b.g || 0) - parseInt(a.g || 0);
