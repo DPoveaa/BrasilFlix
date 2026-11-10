@@ -55,8 +55,22 @@ class ProwlarrSearchService {
                 const seeders = item.seeders || 0;
                 const indexerName = item.indexer || 'Prowlarr';
 
+                // Prowlarr retorna magnetUrl como URL HTTP que redireciona (301) para magnet: URI.
+                // Node 18 fetch() não segue redirects para esquemas não-HTTP, então precisamos
+                // resolver o redirect para obter o magnet: URI real antes de armazenar.
                 let magnet = item.magnetUrl;
-                if (!magnet && infoHash) {
+                if (magnet && magnet.startsWith('http') && infoHash) {
+                    // Já temos o infoHash — monta o magnet diretamente sem fazer HTTP request
+                    const trackers = [
+                        'udp://tracker.opentrackr.org:1337/announce',
+                        'udp://open.stealth.si:80/announce',
+                        'udp://tracker.torrent.eu.org:451/announce',
+                        'udp://tracker.moeking.me:6969/announce',
+                        'udp://explodie.org:6969/announce',
+                        'udp://exodus.desync.com:6969/announce'
+                    ].map(t => `&tr=${encodeURIComponent(t)}`).join('');
+                    magnet = `magnet:?xt=urn:btih:${infoHash.toLowerCase()}&dn=${encodeURIComponent(name)}${trackers}`;
+                } else if (!magnet && infoHash) {
                     const trackers = [
                         'udp://tracker.opentrackr.org:1337/announce',
                         'udp://open.stealth.si:80/announce',
@@ -119,8 +133,8 @@ class ProwlarrSearchService {
                     if (opts.episode) {
                         const targetEpNum = opts.absoluteEpisode || opts.episode;
                         const epMatch = name.match(/s\d{1,2}[._ -]?e0*(\d{1,4})/i) ||
-                                        name.match(/\b\d{1,2}x0*(\d{1,4})\b/i) ||
-                                        name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,4})\b/i);
+                            name.match(/\b\d{1,2}x0*(\d{1,4})\b/i) ||
+                            name.match(/\b(?:e|ep|episodio|episódio)\s*0*(\d{1,4})\b/i);
                         const rangeMatch = name.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*e?0*(\d{1,4})\b/i);
                         const animeEpMatch = (opts.isAnime || targetEpNum > 30)
                             ? name.match(new RegExp(`(?:-\\s*|\\s|^|\\[)0*${targetEpNum}(?:v\\d+)?(?:[\\s\\.\\[\\(-]|$)`, 'i'))
