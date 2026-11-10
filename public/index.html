@@ -10870,7 +10870,7 @@
                             </div>
 
                             <!-- ELEMENTO DE VÍDEO HTML5 NATIVO -->
-                            <video id="html5-video-player" playsinline preload="metadata" controls></video>
+                            <video id="html5-video-player" playsinline preload="auto" controls></video>
                         </div>
 
                         <!-- FOOTER DE CONTROLES: ÁUDIO, VELOCIDADE & ATALHOS -->
@@ -21118,6 +21118,7 @@
                 if (!video) return;
 
                 if (!video.src || video.src === '' || !video.src.includes(currentPlayingMedia.streamUrl)) {
+                    video.preload = 'auto';
                     video.src = currentPlayingMedia.streamUrl;
                     video.load();
                 }
@@ -21363,7 +21364,15 @@
                 if (mediaInfo.autoPlay === true) {
                     startPlaybackStreamNow();
                 } else {
-                    // Exibe a capa com o botão de play no player (NÃO consome nem inicia sozinho)
+                    // Pré-arma a fonte em segundo plano com preload auto para handshake e buffer inicial instantâneos
+                    if (!currentPartyRoom || partyIsHost) {
+                        if (!video.src || video.src === '' || !video.src.includes(streamUrl)) {
+                            video.preload = 'auto';
+                            video.src = streamUrl;
+                            video.load();
+                        }
+                    }
+                    // Exibe a capa com o botão de play no player (NÃO inicia reprodução com áudio até o usuário clicar)
                     showPlaybackPosterOverlay(mediaInfo);
                 }
             }

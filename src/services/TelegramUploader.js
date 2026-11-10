@@ -29,6 +29,8 @@ class TelegramUploader {
         this.client = null;
         this.isClientReady = false;
         this.initClientPromise = null;
+        this.storageMessageCache = new Map();
+        this.storageCacheTtlMs = 2 * 60 * 60 * 1000; // 2 horas de cache em memória para streaming instantâneo
     }
 
     setBot(bot) {
@@ -137,11 +139,27 @@ class TelegramUploader {
 
         if (ids.length === 0) return resultMap;
 
+        // 1. Resolução ultrarrápida a partir do cache em memória (<1ms)
+        const idsToFetch = [];
+        const now = Date.now();
+        for (const id of ids) {
+            const cached = this.storageMessageCache?.get(id);
+            if (cached && (now - cached.timestamp < this.storageCacheTtlMs) && cached.data.status === 'FOUND') {
+                resultMap.set(id, cached.data);
+            } else {
+                idsToFetch.push(id);
+            }
+        }
+
+        if (idsToFetch.length === 0) {
+            return resultMap;
+        }
+
         let client;
         try {
             client = await this.getClient();
         } catch (err) {
-            for (const id of ids) {
+            for (const id of idsToFetch) {
                 resultMap.set(id, {
                     status: 'ERROR',
                     message: null,
@@ -158,8 +176,8 @@ class TelegramUploader {
         }
 
         const batchSize = 100;
-        for (let i = 0; i < ids.length; i += batchSize) {
-            const batch = ids.slice(i, i + batchSize);
+        for (let i = 0; i < idsToFetch.length; i += batchSize) {
+            const batch = idsToFetch.slice(i, i + batchSize);
             try {
                 let entity = null;
                 try {
@@ -217,7 +235,7 @@ class TelegramUploader {
                                 error: docSize === 0 ? 'Documento com 0 bytes' : 'Documento não é formato de vídeo'
                             });
                         } else {
-                            resultMap.set(requestedId, {
+                            const foundEntry = {
                                 status: 'FOUND',
                                 message: msg,
                                 doc: doc,
@@ -227,7 +245,20 @@ class TelegramUploader {
                                 duration: duration,
                                 fileName: fnAttr?.fileName || null,
                                 error: null
-                            });
+                            };
+                            resultMap.set(requestedId, foundEntry);
+
+                            // Salva no cache em memória para seeks e retornos de pause instantâneos
+                            if (this.storageMessageCache) {
+                                if (this.storageMessageCache.size >= 2000) {
+                                    const firstKey = this.storageMessageCache.keys().next().value;
+                                    this.storageMessageCache.delete(firstKey);
+                                }
+                                this.storageMessageCache.set(requestedId, {
+                                    data: foundEntry,
+                                    timestamp: Date.now()
+                                });
+                            }
                         }
                     } else {
                         resultMap.set(requestedId, {
@@ -385,6 +416,11 @@ class TelegramUploader {
             }
 
             console.log(`🗑️ [Storage Group] ${finalIds.length} mensagem(ns) excluída(s) permanentemente do grupo de armazém:`, finalIds);
+            if (this.storageMessageCache) {
+                for (const delId of finalIds) {
+                    this.storageMessageCache.delete(delId);
+                }
+            }
             return true;
         } catch (error) {
             console.warn(`⚠️ Aviso ao excluir mensagens ${ids.join(', ')} do storage:`, error.message);

@@ -3353,6 +3353,16 @@ class StremioServer {
             const totalSize = Number(doc.size);
             const mimeType = doc.mimeType || 'video/mp4';
             const range = req.headers.range;
+            const etag = `"${doc.id || rawMsgId}-${totalSize}"`;
+
+            // Permite revalidação ultra-rápida (304 Not Modified) para buffers cacheados pelo browser
+            if (req.headers['if-none-match'] === etag) {
+                res.writeHead(304, {
+                    'ETag': etag,
+                    'Cache-Control': 'public, max-age=86400, no-transform'
+                });
+                return res.end();
+            }
 
             if (range) {
                 const parts = range.replace(/bytes=/, '').split('-');
@@ -3375,24 +3385,28 @@ class StremioServer {
                 }
 
                 const chunkSize = (end - start) + 1;
+                const partByteSize = 512 * 1024;
+                const partLimit = Math.ceil(chunkSize / partByteSize);
 
                 res.writeHead(206, {
                     'Content-Range': `bytes ${start}-${end}/${totalSize}`,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunkSize,
                     'Content-Type': mimeType,
-                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                    'ETag': etag,
+                    'Cache-Control': 'public, max-age=86400, no-transform'
                 });
 
                 const downloadIter = client.iterDownload({
                     file: inputFileLocation,
                     offset: bigInt(start),
-                    limit: chunkSize,
-                    chunkSize: 512 * 1024,
+                    limit: partLimit,
+                    chunkSize: partByteSize,
                     dcId: doc.dcId
                 });
 
                 let isAborted = false;
+                let bytesSent = 0;
                 const onClose = () => {
                     isAborted = true;
                     try {
@@ -3402,11 +3416,21 @@ class StremioServer {
                 req.on('close', onClose);
 
                 try {
-                    for await (const chunk of downloadIter) {
+                    for await (let chunk of downloadIter) {
                         if (isAborted || res.writableEnded || res.destroyed) break;
+
+                        if (bytesSent + chunk.length > chunkSize) {
+                            chunk = chunk.slice(0, chunkSize - bytesSent);
+                        }
+                        bytesSent += chunk.length;
+
                         const canContinue = res.write(chunk);
                         if (!canContinue && !res.writableEnded && !res.destroyed) {
                             await new Promise(resolve => res.once('drain', resolve));
+                        }
+
+                        if (bytesSent >= chunkSize) {
+                            break;
                         }
                     }
                 } catch (iterErr) {
@@ -3424,7 +3448,8 @@ class StremioServer {
                     'Content-Length': totalSize,
                     'Content-Type': mimeType,
                     'Accept-Ranges': 'bytes',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                    'ETag': etag,
+                    'Cache-Control': 'public, max-age=86400, no-transform'
                 });
 
                 const downloadIter = client.iterDownload({
