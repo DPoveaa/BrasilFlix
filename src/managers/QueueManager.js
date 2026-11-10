@@ -1132,7 +1132,7 @@ class QueueManager extends EventEmitter {
 
         // Se for adição automática (não for pedido manual nem VIP de usuário) e o conteúdo foi descartado recentemente por falhas repetidas, não re-adiciona
         const isUserRequest = !!(extraData.userId || extraData.isManualAdd || extraData.pedidoId);
-        if (!isUserRequest && this.isSkippedRecently(title, newSeason, newEpisode, audioPreference)) {
+        if (!isUserRequest && this.isSkippedRecently(title, newSeason, newEpisode, job.audioPreference)) {
             console.log(`⏭️ [Fila Anti-Loop] "${title}" ${type === 'serie' ? `T${newSeason}E${newEpisode}` : ''} descartado recentemente após falhas consecutivas. Pulando re-adição automática.`);
             return null;
         }
