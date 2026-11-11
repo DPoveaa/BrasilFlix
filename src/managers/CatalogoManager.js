@@ -1353,8 +1353,10 @@ class CatalogoManager {
 
     getAudioBadge(item) {
         if (!item) return '';
-        const temDub = item.isDublado || !!item.versoes?.dublado || (item.audio && !item.audio.toLowerCase().includes('legendado'));
-        const temLeg = item.isLegendado || !!item.versoes?.legendado || (item.audio && item.audio.toLowerCase().includes('legendado'));
+        const isLegTexto = item.audio && /\b(legenda|legendas|legendado|sub|legend)\b/i.test(item.audio);
+        const isDubTexto = item.audio && /\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(item.audio);
+        const temDub = item.isDublado || !!item.versoes?.dublado || (isDubTexto && !isLegTexto);
+        const temLeg = item.isLegendado || !!item.versoes?.legendado || isLegTexto;
 
         let audioCode = '';
         if (temDub && temLeg) audioCode = 'D/L';
@@ -1450,8 +1452,6 @@ class CatalogoManager {
 
 
     async adicionarFilme(nome, descricao, messageId, tipo = 'filme', forcarAdicao = false, metadadosExtras = {}) {
-        const existente = this.buscarItemExato(nome, tipo);
-
         // Se metadados de poster ou TMDB estiverem ausentes, busca no TMDB proativamente
         if (!metadadosExtras.posterUrl || !metadadosExtras.tmdbId) {
             try {
@@ -1469,11 +1469,13 @@ class CatalogoManager {
             } catch (e) { }
         }
 
+        const existente = (metadadosExtras.tmdbId ? this.buscarFilmePorTmdb(metadadosExtras.tmdbId) : null) || this.buscarItemExato(nome, tipo);
+
         const isDublado = metadadosExtras.isDublado ?? (metadadosExtras.audio ? (/\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(metadadosExtras.audio)) : false);
         const isLegendado = metadadosExtras.isLegendado ?? (metadadosExtras.audio ? (/\b(legendado|dual|sub|leg)\b/i.test(metadadosExtras.audio)) : false);
 
-        if (existente && !forcarAdicao) {
-            console.log(`⚠️ ${tipo} já existe no catálogo: ${nome}. Atualizando versões de áudio...`);
+        if (existente) {
+            console.log(`⚠️ ${tipo} já existe no catálogo: ${nome} (id: ${existente.id}). Atualizando versões de áudio em vez de duplicar...`);
             await this.atualizarMidiaFilme(existente.id, {
                 messageId,
                 fileId: metadadosExtras.fileId,
@@ -1481,7 +1483,8 @@ class CatalogoManager {
                 isCam: metadadosExtras.isCam || false,
                 isDublado,
                 isLegendado,
-                audio: metadadosExtras.audio
+                audio: metadadosExtras.audio,
+                tmdbId: metadadosExtras.tmdbId || existente.tmdbId
             });
             return { success: true, message: 'Versão atualizada no catálogo', item: existente };
         }
@@ -3035,11 +3038,15 @@ class CatalogoManager {
     }
 
     getFilmesDublados() {
-        return this.getFilmesNormais().filter(f => !f.audio || f.audio.toLowerCase().includes('dublado') || f.isDublado || !!f.versoes?.dublado);
+        return this.getFilmesNormais().filter(f => {
+            const isLegTexto = f.audio && /\b(legenda|legendas|legendado|sub|legend)\b/i.test(f.audio);
+            const isDubTexto = f.audio && /\b(dublado|dual|nacional|pt[-_]?br|portugu[eê]s)\b/i.test(f.audio);
+            return f.isDublado || !!f.versoes?.dublado || (isDubTexto && !isLegTexto);
+        });
     }
 
     getFilmesLegendados() {
-        return this.getFilmesNormais().filter(f => (f.audio && f.audio.toLowerCase().includes('legendado')) || f.isLegendado || !!f.versoes?.legendado);
+        return this.getFilmesNormais().filter(f => (f.audio && /\b(legenda|legendas|legendado|sub|legend)\b/i.test(f.audio)) || f.isLegendado || !!f.versoes?.legendado);
     }
 
     getSeriesDubladas() {

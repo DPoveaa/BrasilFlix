@@ -432,9 +432,10 @@ class QueueManager extends EventEmitter {
             }
         }
 
-        // Verifica pasta downloads/temp
+        // Verifica pasta downloads/temp (em upgrades/reprocessamentos, descarta opt_ antigos para recodificar com nova mídia)
+        const isUpgradeJob = job.isUpgrade || job.extraData?.isUpgrade;
         const localDiskFile = this.findLocalMediaOnDisk(job.title, job.type, s, e, job.tmdbId);
-        if (localDiskFile) {
+        if (localDiskFile && (!isUpgradeJob || !path.basename(localDiskFile).startsWith('opt_'))) {
             return {
                 alreadyCompleted: false,
                 inProgress: false,
@@ -3768,9 +3769,9 @@ class QueueManager extends EventEmitter {
 
         // 6. Cadastrar ou Atualizar no Catálogo
         if (job.type === 'filme') {
-            const existente = this.catalogoManager.buscarItemExato(metadata.nome, 'filme');
+            const existente = (metadata.tmdbId ? this.catalogoManager.buscarFilmePorTmdb(metadata.tmdbId) : null) || this.catalogoManager.buscarItemExato(metadata.nome, 'filme');
             if (existente) {
-                this.catalogoManager.atualizarMidiaFilme(metadata.nome, {
+                await this.catalogoManager.atualizarMidiaFilme(existente.id, {
                     messageId: uploadResult.messageId,
                     fileId: uploadResult.fileId,
                     qualidade: metadata.qualidade,
