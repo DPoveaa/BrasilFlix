@@ -11019,7 +11019,7 @@
                             </div>
 
                             <!-- ELEMENTO DE VÍDEO HTML5 NATIVO -->
-                            <video id="html5-video-player" playsinline preload="auto" controls tabindex="-1"></video>
+                            <video id="html5-video-player" playsinline preload="auto" controls controlsList="nodownload noplaybackrate"></video>
                         </div>
 
                         <!-- FOOTER DE CONTROLES: ÁUDIO, VELOCIDADE & ATALHOS -->
@@ -21246,50 +21246,34 @@
             if (menu) menu.classList.toggle('visible');
         }
 
-        function toggleSpeedDropdown(e) {
-            if (e) e.stopPropagation();
-            const audioMenu = document.getElementById('player-audio-menu');
-            if (audioMenu) audioMenu.classList.remove('visible');
-            const menu = document.getElementById('player-speed-menu');
-            if (menu) menu.classList.toggle('visible');
+        function toggleMobilePlayerControls() {
+            const card = document.getElementById('player-card-container');
+            if (card) {
+                card.classList.remove('controls-hidden');
+                resetControlsAutoHide();
+            }
         }
 
-        function setPlaybackSpeed(speed) {
-            const video = document.getElementById('html5-video-player');
-            if (video) {
-                video.playbackRate = speed;
-            }
-            const label = document.getElementById('player-speed-label');
-            if (label) {
-                label.innerText = `${speed}x`;
-            }
-            document.querySelectorAll('#player-speed-menu .speed-opt-btn').forEach(btn => {
-                const text = btn.innerText || '';
-                btn.classList.toggle('active', text.startsWith(`${speed}x`));
-            });
-            const menu = document.getElementById('player-speed-menu');
-            if (menu) menu.classList.remove('visible');
-            showToast(`⚡ Velocidade ajustada para ${speed}x`, 'info');
-        }
+        // Listener global para fechar menus do player ao clicar ou tocar fora (funciona no PC e mobile)
+        ['click', 'touchstart', 'pointerdown'].forEach(evtName => {
+            document.addEventListener(evtName, (e) => {
+                const audioBox = document.getElementById('player-audio-box');
+                const speedBox = document.getElementById('player-speed-box');
+                const audioMenu = document.getElementById('player-audio-menu');
+                const speedMenu = document.getElementById('player-speed-menu');
 
-        // Listener global para fechar menus do player ao clicar fora
-        document.addEventListener('click', (e) => {
-            const audioBox = document.getElementById('player-audio-box');
-            const speedBox = document.getElementById('player-speed-box');
-            const audioMenu = document.getElementById('player-audio-menu');
-            const speedMenu = document.getElementById('player-speed-menu');
-
-            if (audioMenu && audioMenu.classList.contains('visible')) {
-                if (!audioBox || !audioBox.contains(e.target)) {
-                    audioMenu.classList.remove('visible');
+                if (audioMenu && audioMenu.classList.contains('visible')) {
+                    if (!audioBox || !audioBox.contains(e.target)) {
+                        audioMenu.classList.remove('visible');
+                    }
                 }
-            }
 
-            if (speedMenu && speedMenu.classList.contains('visible')) {
-                if (!speedBox || !speedBox.contains(e.target)) {
-                    speedMenu.classList.remove('visible');
+                if (speedMenu && speedMenu.classList.contains('visible')) {
+                    if (!speedBox || !speedBox.contains(e.target)) {
+                        speedMenu.classList.remove('visible');
+                    }
                 }
-            }
+            }, { passive: true });
         });
 
         function updatePlayerAudioUI(activeAudio, hasDub = true, hasLeg = true) {
@@ -21589,9 +21573,11 @@
                 }).catch(() => { });
             };
 
-            // Configura controles nativos para mobile/PC
+            // Configura controles nativos limpos para mobile/PC
             video.controls = true;
-            video.tabIndex = -1;
+            try {
+                video.controlsList = 'nodownload noplaybackrate';
+            } catch (_) { }
             closeAllPlayerDropdowns();
 
             if (!video._cleanKeyListeners) {
@@ -21606,7 +21592,15 @@
             video.onclick = () => {
                 closeAllPlayerDropdowns();
                 dismissResumePlayback();
+                toggleMobilePlayerControls();
             };
+
+            if (card && !card._touchBound) {
+                card._touchBound = true;
+                card.addEventListener('touchstart', () => {
+                    toggleMobilePlayerControls();
+                }, { passive: true });
+            }
 
             // Escurecer e ocultar controles automaticamente durante reprodução
             video.onplay = () => {
@@ -21936,23 +21930,28 @@
         }
 
         function handleZoneTap(e, seconds) {
-            e.preventDefault();
-            e.stopPropagation();
             closeAllPlayerDropdowns();
             dismissResumePlayback();
-            if (currentPartyRoom) {
-                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
-                const canSeek = partyIsHost || perms.canSeek;
-                if (!canSeek) {
-                    showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
-                    return;
-                }
-            }
+            toggleMobilePlayerControls();
+
             const now = Date.now();
             const zoneKey = seconds < 0 ? 'left' : 'right';
             const lastTap = lastTapTimes[zoneKey] || 0;
 
             if (now - lastTap < 350) {
+                // Duplo toque real: avança/retrocede 10s e consome o evento
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                if (currentPartyRoom) {
+                    const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                    const canSeek = partyIsHost || perms.canSeek;
+                    if (!canSeek) {
+                        showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
+                        return;
+                    }
+                }
                 const video = document.getElementById('html5-video-player');
                 if (video) {
                     video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + seconds));
@@ -21966,6 +21965,7 @@
                 }
                 lastTapTimes[zoneKey] = 0;
             } else {
+                // Toque simples: NÃO chama preventDefault para permitir que o clique alcance o vídeo/controles
                 lastTapTimes[zoneKey] = now;
             }
         }
