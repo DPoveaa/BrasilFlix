@@ -1223,6 +1223,67 @@ ${events.join('\n')}
             }
         }
 
+        // 🆕 FALLBACK INTELIGENTE: Se ainda não há referência EN, busca legenda EN no OpenSubtitles
+        // para usar como âncora Sub-to-Sub (muito mais preciso que VAD de áudio)
+        if (!refSyncTarget && metadata.imdbId) {
+            try {
+                const axios = require('axios');
+                const https = require('https');
+                const agent = new https.Agent({ rejectUnauthorized: false });
+                const season = metadata.season || 1;
+                const episode = metadata.episode || 1;
+                const streamPath = metadata.tipo === 'serie'
+                    ? `series/${metadata.imdbId}:${season}:${episode}.json`
+                    : `movie/${metadata.imdbId}.json`;
+
+                const osEndpoints = [
+                    `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
+                    `https://subtitles.strem.io/subtitles/${streamPath}`,
+                    `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
+                ];
+
+                let enSubs = [];
+                for (const osUrl of osEndpoints) {
+                    try {
+                        const res = await axios.get(osUrl, {
+                            timeout: 6000, httpsAgent: agent,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
+                        });
+                        const subs = res.data?.subtitles || [];
+                        enSubs = subs.filter(s => {
+                            const lang = (s.lang || s.language || '').toLowerCase();
+                            return ['eng', 'en', 'english'].includes(lang);
+                        });
+                        if (enSubs.length > 0) break;
+                    } catch (e) { }
+                }
+
+                if (enSubs.length > 0) {
+                    // Ordena por downloads (campo "g") — legendas mais populares tendem a ser mais completas
+                    enSubs.sort((a, b) => parseInt(b.g || 0) - parseInt(a.g || 0));
+                    for (const enSub of enSubs.slice(0, 3)) {
+                        try {
+                            const subRes = await axios.get(enSub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
+                            if (!subRes.data || subRes.data.length < 2000) continue;
+                            const cueCount = (subRes.data.match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/g) || []).length;
+                            if (cueCount < 50) continue; // Muito poucas linhas → Signs/Songs/Forced
+                            const refEnSrtPath = path.join(path.dirname(inputPath), `ref_en_os_${Date.now()}.srt`);
+                            await fs.writeFile(refEnSrtPath, subRes.data, 'utf8');
+                            refSyncTarget = refEnSrtPath;
+                            console.log(`🎯 [SubtitleSync] Legenda EN do OpenSubtitles baixada como referência sub-to-sub (${cueCount} cues, ${(subRes.data.length / 1024).toFixed(1)} KB)!`);
+                            break;
+                        } catch (e) { }
+                    }
+                }
+
+                if (!refSyncTarget) {
+                    console.log(`ℹ️ [SubtitleSync] Nenhuma legenda EN encontrada no OpenSubtitles para referência. Usando VAD de áudio.`);
+                }
+            } catch (e) {
+                // Silencioso — VAD será usado como fallback abaixo
+            }
+        }
+
         if (!refSyncTarget) {
             refSyncTarget = inputPath; // Fallback: alinha contra o áudio do vídeo via VAD
         }
