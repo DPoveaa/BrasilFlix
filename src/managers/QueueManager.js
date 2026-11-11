@@ -2298,6 +2298,20 @@ class QueueManager extends EventEmitter {
         let resumeFromOptimized = false;
         let resumeFromRaw = false;
 
+        // 🔄 JOBS DE REPROCESSAMENTO (isUpgrade=true): descarta arquivos otimizados/raw antigos
+        // para garantir recodificação limpa com nova legenda/áudio (nunca reutiliza versão anterior com bug)
+        const isForceReprocess = job.isUpgrade || job.extraData?.isUpgrade;
+        if (isForceReprocess && optimizedPath) {
+            if (fs.existsSync(optimizedPath)) {
+                console.log(`🔄 [Reprocessamento] Job de upgrade/reprocessamento: descartando arquivo otimizado anterior para recodificação limpa: ${require('path').basename(optimizedPath)}`);
+                await DownloaderManager.cleanupFile(optimizedPath).catch(() => {});
+            }
+            optimizedPath = null;
+            job.optimizedPath = null;
+            rawFilePath = null;
+            job.rawFilePath = null;
+        }
+
         // Primeiro tenta retomar do arquivo otimizado (já codificado, pronto para upload)
         if (optimizedPath && fs.existsSync(optimizedPath)) {
             const optStat = fs.statSync(optimizedPath);
