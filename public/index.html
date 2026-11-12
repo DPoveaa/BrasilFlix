@@ -27750,7 +27750,7 @@
                     const collectionItem = results.find(r => r.isCollection);
                     if (collectionItem && Array.isArray(collectionItem.filmes) && collectionItem.filmes.length > 1 && franchiseBox) {
                         const totalF = collectionItem.filmes.length;
-                        const allSelected = collectionItem.filmes.every(f => reqMediaBasket.some(b => b.tmdbId === f.tmdbId || b.nome.toLowerCase() === f.nome.toLowerCase()));
+                        const allSelected = collectionItem.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
 
                         franchiseBox.innerHTML = `
                             <div class="req-franchise-card">
@@ -27781,7 +27781,7 @@
                     const movieItems = results.filter(r => !r.isCollection);
                     if (listEl) {
                         listEl.innerHTML = movieItems.map((item, idx) => {
-                            const isSel = reqMediaBasket.some(b => (b.tmdbId && b.tmdbId === item.tmdbId) || (b.nome.toLowerCase() === item.nome.toLowerCase()));
+                            const isSel = reqMediaBasket.some(b => isSameMedia(b, item));
                             let typeTag = '🎬 Filme';
                             if (item.tipo === 'anime') typeTag = '🌸 Anime';
                             else if (item.tipo === 'dorama') typeTag = '🇰🇷 Dorama';
@@ -27814,12 +27814,18 @@
             }, 220);
         }
 
+        function isSameMedia(a, b) {
+            if (a.tmdbId && b.tmdbId) return a.tmdbId === b.tmdbId;
+            if (a.tmdbId || b.tmdbId) return false; // um tem id e o outro não → diferentes
+            return a.nome.toLowerCase() === b.nome.toLowerCase();
+        }
+
         function toggleMovieItem(idx) {
             const movieItems = _lastTMDBResults.filter(r => !r.isCollection);
             const item = movieItems[idx];
             if (!item) return;
 
-            const existingIdx = reqMediaBasket.findIndex(b => (b.tmdbId && b.tmdbId === item.tmdbId) || (b.nome.toLowerCase() === item.nome.toLowerCase()));
+            const existingIdx = reqMediaBasket.findIndex(b => isSameMedia(b, item));
             if (existingIdx >= 0) {
                 reqMediaBasket.splice(existingIdx, 1);
             } else {
@@ -27841,17 +27847,17 @@
             const col = _lastTMDBResults.find(r => r.isCollection);
             if (!col || !Array.isArray(col.filmes)) return;
 
-            const allSelected = col.filmes.every(f => reqMediaBasket.some(b => (b.tmdbId && b.tmdbId === f.tmdbId) || (b.nome.toLowerCase() === f.nome.toLowerCase())));
+            const allSelected = col.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
 
             if (allSelected) {
                 // Desmarca todos da franquia
-                reqMediaBasket = reqMediaBasket.filter(b => !col.filmes.some(f => (f.tmdbId && f.tmdbId === b.tmdbId) || (f.nome.toLowerCase() === b.nome.toLowerCase())));
+                reqMediaBasket = reqMediaBasket.filter(b => !col.filmes.some(f => isSameMedia(f, b)));
                 showToast(`Franquia "${col.nome}" removida da seleção.`, 'info');
             } else {
                 // Marca todos os filmes da franquia
                 let added = 0;
                 for (const f of col.filmes) {
-                    if (!reqMediaBasket.some(b => (b.tmdbId && b.tmdbId === f.tmdbId) || (b.nome.toLowerCase() === f.nome.toLowerCase()))) {
+                    if (!reqMediaBasket.some(b => isSameMedia(b, f))) {
                         reqMediaBasket.push({
                             tmdbId: f.tmdbId,
                             nome: f.nome,
@@ -27910,7 +27916,7 @@
             movieItems.forEach((item, idx) => {
                 const row = document.getElementById(`req-item-row-${idx}`);
                 if (!row) return;
-                const isSel = reqMediaBasket.some(b => (b.tmdbId && b.tmdbId === item.tmdbId) || (b.nome.toLowerCase() === item.nome.toLowerCase()));
+                const isSel = reqMediaBasket.some(b => isSameMedia(b, item));
                 if (isSel) row.classList.add('is-selected');
                 else row.classList.remove('is-selected');
 
@@ -27930,7 +27936,7 @@
             const col = _lastTMDBResults.find(r => r.isCollection);
             const franchiseBtn = document.querySelector('.req-franchise-btn');
             if (col && Array.isArray(col.filmes) && franchiseBtn) {
-                const allSelected = col.filmes.every(f => reqMediaBasket.some(b => (b.tmdbId && b.tmdbId === f.tmdbId) || (b.nome.toLowerCase() === f.nome.toLowerCase())));
+                const allSelected = col.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
                 if (allSelected) {
                     franchiseBtn.classList.add('selected');
                     franchiseBtn.textContent = '✓ Franquia Toda Selecionada';
