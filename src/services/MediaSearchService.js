@@ -253,9 +253,28 @@ class MediaSearchService {
         }
 
         for (const item of (prowlarrResults || [])) {
-            const isMatch = tipo === 'serie'
+            let isMatch = tipo === 'serie'
                 ? isReleaseCompatibleWithTarget(item.title, cleanQuery, originalName, { ano, tipo, season, isAnime })
                 : this.matchesMovieTitle(item.title, cleanQuery, originalName, ano);
+
+            if (isMatch && tipo === 'serie' && episode) {
+                const epInt = parseInt(episode, 10);
+                const targetEpList = [epInt];
+                if (absEp) targetEpList.push(parseInt(absEp, 10));
+
+                const cleanRel = (item.title || '')
+                    .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
+                    .replace(/\b(19\d{2}|20\d{2})\b/g, '');
+                const epMatch = cleanRel.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})(?:v\d+)?\b/i) ||
+                    cleanRel.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:v\d+)?(?:[._ -]|$)/);
+                const isPack = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(item.title);
+                if (epMatch && !isPack) {
+                    const foundEp = parseInt(epMatch[1], 10);
+                    if (!targetEpList.includes(foundEp) && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                        isMatch = false;
+                    }
+                }
+            }
 
             if (isMatch && !seenHashes.has(item.infoHash || item.magnet)) {
                 seenHashes.add(item.infoHash || item.magnet);
@@ -717,12 +736,13 @@ class MediaSearchService {
                     continue;
                 }
 
-                // Detecta e bloqueia categoricamente releases em Espanhol / Latino / Castelhano (Cinecalidad, EliteTorrent/EXT, DonTorrent, etc.)
-                // para evitar que áudios em espanhol sejam baixados no lugar de dublagem PT-BR
+                // Detecta e bloqueia categoricamente releases em Espanhol / Latino / Castelhano (Cinecalidad, EliteTorrent/EXT, DonTorrent, CameEsp, etc.)
+                // para evitar que áudios em espanhol sejam baixados no lugar de dublagem ou áudio original
                 const isSpanishOrLatino = !isBrazilianGroup && !isPtBrExplicit && (
-                    /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|sub[-_ .]?esp|subs?[-_ .]?esp|kontrast|ratonera)\b/i.test(rawTitle) ||
-                    /⚙️\s*EXT\b|\bcap\.\d+/i.test(rawTitle) ||
-                    /\b(cinecalidad|elitetorrent|estrenos|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast|ratonera)\b/i.test(title)
+                    /\b(cinecalidad|elitetorrent|estrenos|dontorrent|pctmix|divxatope|cameesp|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|sub[-_ .]?esp|subs?[-_ .]?esp|kontrast|ratonera)\b/i.test(rawTitle) ||
+                    /⚙️\s*EXT\b|\bcap\.\d+|\[cameesp\]|\[esp[-_ .]?eng\]|\[eng[-_ .]?esp\]/i.test(rawTitle) ||
+                    /\b(cinecalidad|elitetorrent|estrenos|cameesp|latino|castellano|espanol|español|dual[-_ .]?lat|audio[-_ .]?lat|dual[-_ .]?cast|audio[-_ .]?cast|kontrast|ratonera)\b/i.test(title) ||
+                    /\[cameesp\]|\[esp[-_ .]?eng\]|\[eng[-_ .]?esp\]/i.test(title)
                 );
                 if (isSpanishOrLatino) {
                     continue; // Rejeita releases dubladas em espanhol
@@ -827,25 +847,29 @@ class MediaSearchService {
                     // 4. Validação de Episódio
                     if (episode) {
                         const epInt = parseInt(episode, 10);
+                        const targetEpList = [epInt];
+                        if (opts.absoluteEpisode) targetEpList.push(parseInt(opts.absoluteEpisode, 10));
+
                         // Match de faixa de episódios com ou sem prefixo "e/ep" (ex: "0892 ~ 1089", "E01-E24", "01-12", "0892-1089")
                         const cleanTitleForEp = title
                             .replace(/\b(1080p|720p|480p|2160p|4k|x264|x265|hevc|aac|10bit|dual|dublado|legendado)\b/gi, '')
                             .replace(/\b(19\d{2}|20\d{2})\b/g, '');
 
                         const rangeMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i);
-                        const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})\b/i) ||
-                            cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+                        const epMatch = cleanTitleForEp.match(/\b(?:e|ep|episodio|episódio|x)\s*0*(\d{1,4})(?:v\d+)?\b/i) ||
+                            cleanTitleForEp.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:v\d+)?(?:[._ -]|$)/);
 
                         if (rangeMatch) {
                             const startEp = parseInt(rangeMatch[1], 10);
                             const endEp = parseInt(rangeMatch[2], 10);
-                            if (epInt < startEp || epInt > endEp) {
+                            const isWithin = targetEpList.some(t => t >= startEp && t <= endEp);
+                            if (!isWithin) {
                                 continue; // Rejeita lotes que não contêm o episódio desejado
                             }
                         } else if (epMatch) {
                             const foundEp = parseInt(epMatch[1], 10);
-                            if (foundEp !== epInt && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
-                                continue; // Rejeita episódios divergentes (ex: 892 quando buscamos 3)
+                            if (!targetEpList.includes(foundEp) && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720 && foundEp !== 480 && foundEp !== 2160) {
+                                continue; // Rejeita episódios divergentes (ex: 1065 quando buscamos 543)
                             }
                         }
                     }

@@ -2928,6 +2928,7 @@ class QueueManager extends EventEmitter {
                                 isAnime: !!(metadata.isAnime || metadata.is_anime || (metadata.generos || []).includes('Animação') || (metadata.generos || []).includes('Anime')),
                                 isMicrodrama: !!(metadata.isMicrodrama || metadata.is_microdrama || metadata.isDoramaVertical || metadata.is_dorama_vertical || (metadata.runtime && metadata.runtime < 5)),
                                 runtime: metadata.runtime || metadata.duracao,
+                                absoluteEpisode: absoluteEpisode,
                                 totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                             });
 
@@ -3018,7 +3019,10 @@ class QueueManager extends EventEmitter {
                                 season: job.season || 1,
                                 episode: job.episode || 1,
                                 audioPreference: 'legendado',
-                                allowOriginalAudio: true
+                                allowOriginalAudio: true,
+                                isAnime: isAnimeFlag,
+                                absoluteEpisode: absoluteEpisode,
+                                titulosAlternativos: titulosAlternativos
                             });
 
                             const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub || s.isOriginal);
@@ -3047,6 +3051,8 @@ class QueueManager extends EventEmitter {
                                             totalAttempts: totalLegAttempts,
                                             mode: SchedulerService.getActiveMode(),
                                             isEpisodeMissing: makeIsEpisodeMissing(false),
+                                            isAnime: isAnimeFlag,
+                                            absoluteEpisode: absoluteEpisode,
                                             totalSeasonEpisodes: (metadata && metadata.temporadas) ? ((metadata.temporadas.find(t => t.numero === (job.season || 1)) || {}).episodiosContagem || metadata.totalEpisodios || 0) : (metadata.totalEpisodios || 0)
                                         });
                                     }

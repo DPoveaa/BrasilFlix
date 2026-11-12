@@ -251,12 +251,14 @@ class DownloaderManager extends EventEmitter {
             }
 
             // 2. Verifica se o episódio é divergente (ex: One Piece 892.mkv quando buscamos 3)
-            const otherEpMatch = clean.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || clean.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:[._ -]|$)/);
+            const targetEpList = [epNum];
+            if (options.absoluteEpisode) targetEpList.push(parseInt(options.absoluteEpisode, 10));
+            const otherEpMatch = clean.match(/(?:s\d+[._ -]*)?e0*(\d{1,4})\b/i) || clean.match(/(?:^|[._ -])(?:-\s*)?0*(\d{2,4})(?:v\d+)?(?:[._ -]|$)/);
             if (otherEpMatch) {
                 const foundEp = parseInt(otherEpMatch[1], 10);
-                if (foundEp !== epNum && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720) {
+                if (!targetEpList.includes(foundEp) && foundEp < 1900 && foundEp !== 1080 && foundEp !== 720) {
                     if (!options.silent) {
-                        console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é o episódio ${foundEp}, mas solicitamos ${epNum}. Rejeitando.`);
+                        console.warn(`⚠️ [Download] Arquivo único de vídeo "${single.name}" é o episódio ${foundEp}, mas solicitamos ${targetEpList.join(' / ')}. Rejeitando.`);
                     }
                     return null;
                 }
@@ -704,13 +706,24 @@ class DownloaderManager extends EventEmitter {
                     return reject(new Error(`Arquivo com tamanho físico insuficiente (${this.formatBytes(torrent.files[0].length)}). Amostra/Fake descartado.`));
                 }
 
-                // Se o torrent é de arquivo único para um episódio, verifica se ele realmente está faltando no catálogo
-                if (options.episode && torrent.files.length === 1 && typeof options.isEpisodeMissing === 'function') {
-                    if (!options.isEpisodeMissing(epNum)) {
-                        console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Episódio ${epNum} já consta no catálogo com a versão solicitada. Abortando download redundante.`);
+                // Se o torrent é de arquivo único para um episódio, valida temporada/episódio e se está faltando no catálogo
+                if (options.episode && torrent.files.length === 1) {
+                    const singleCandidate = this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum, options);
+                    if (!singleCandidate) {
+                        console.warn(`❌ [DOWNLOAD] Arquivo único "${torrent.files[0].name}" não corresponde a S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Abortando imediatamente.`);
                         finished = true;
                         safeCleanup();
-                        return resolve({ redundant: true, filePath: null });
+                        return reject(new Error(`Episódio S${seasonNum}E${epNum} não localizado no arquivo do torrent.`));
+                    }
+                    targetEpisodeFile = singleCandidate;
+
+                    if (typeof options.isEpisodeMissing === 'function') {
+                        if (!options.isEpisodeMissing(epNum)) {
+                            console.log(`ℹ️ [DOWNLOAD: "${displayTitle}"] Episódio ${epNum} já consta no catálogo com a versão solicitada. Abortando download redundante.`);
+                            finished = true;
+                            safeCleanup();
+                            return resolve({ redundant: true, filePath: null });
+                        }
                     }
                 }
 
@@ -847,14 +860,10 @@ class DownloaderManager extends EventEmitter {
                             isSeasonPack = false;
                             detectedEpisodeMap = { [epNum]: found };
                         } else {
-                            console.log(`ℹ️ [Multi-Pack] Nenhum arquivo avulso isolado para S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Baixando arquivos de vídeo.`);
-                            const videoFiles = torrent.files.filter(f => {
-                                const ext = path.extname(f.name).toLowerCase();
-                                return ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(ext) && (f.length >= minAllowedBytes);
-                            });
-                            videoFiles.forEach(vf => {
-                                try { vf.select(); } catch (e) {}
-                            });
+                            console.warn(`❌ [DOWNLOAD] Episódio S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')} não localizado entre os arquivos do torrent "${torrent.name}". Abortando download imediatamente.`);
+                            finished = true;
+                            safeCleanup();
+                            return reject(new Error(`Episódio ${epNum} não localizado na estrutura de arquivos do torrent.`));
                         }
                     }
                 }
