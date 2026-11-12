@@ -1292,7 +1292,7 @@ ${events.join('\n')}
         if (info._internalPtSrtPath && fs.existsSync(info._internalPtSrtPath)) {
             try {
                 const syncedInternalPath = path.join(path.dirname(inputPath), `sub_pt_synced_internal_${Date.now()}.srt`);
-                const finalInternalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, info._internalPtSrtPath, syncedInternalPath, { isAnime: metadata.isAnime });
+                const finalInternalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, info._internalPtSrtPath, syncedInternalPath, { isAnime: metadata.isAnime, videoPath: inputPath });
                 if (finalInternalSrt && fs.existsSync(finalInternalSrt)) {
                     if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
                         fs.remove(refSyncTarget).catch(() => { });
@@ -1319,7 +1319,7 @@ ${events.join('\n')}
         if (companion.ptSrtPath && fs.existsSync(companion.ptSrtPath)) {
             try {
                 const syncedCompanionPath = path.join(path.dirname(inputPath), `sub_pt_synced_companion_${Date.now()}.srt`);
-                const finalCompanionSrt = await SubtitleSync.syncSubtitle(refSyncTarget, companion.ptSrtPath, syncedCompanionPath, { isAnime: metadata.isAnime });
+                const finalCompanionSrt = await SubtitleSync.syncSubtitle(refSyncTarget, companion.ptSrtPath, syncedCompanionPath, { isAnime: metadata.isAnime, videoPath: inputPath });
                 if (finalCompanionSrt && fs.existsSync(finalCompanionSrt)) {
                     if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
                         fs.remove(refSyncTarget).catch(() => { });
@@ -1348,7 +1348,7 @@ ${events.join('\n')}
                     console.log(`✅ Legenda PT-BR direta da fonte selecionada baixada e validada!`);
 
                     const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_direct_${Date.now()}.srt`);
-                    const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath, { isAnime: metadata.isAnime });
+                    const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath, { isAnime: metadata.isAnime, videoPath: inputPath });
                     if (finalSrt && fs.existsSync(finalSrt)) {
                         if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
                             fs.remove(refSyncTarget).catch(() => { });
@@ -1474,7 +1474,7 @@ ${events.join('\n')}
                             console.log(`✅ Legenda PT-BR oficial #${idx + 1} [${subRel}] (${sub.lang}) baixada (${(subRes.data.length / 1024).toFixed(1)} KB). Sincronizando...`);
 
                             const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}_${idx}.srt`);
-                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, candidateSrtPath, syncedSrtPath, { isAnime: metadata.isAnime });
+                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, candidateSrtPath, syncedSrtPath, { isAnime: metadata.isAnime, videoPath: inputPath });
 
                             if (finalSrt && fs.existsSync(finalSrt)) {
                                 console.log(`🎯 [SubtitleSync] Legenda candidata #${idx + 1} perfeitamente sincronizada com o conteúdo!`);
