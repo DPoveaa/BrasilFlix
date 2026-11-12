@@ -1230,25 +1230,32 @@ class StremioServer {
             }
         });
 
-        // 🔍 TMDB Search Unificado para Pedidos de Usuários
+        // 🔍 TMDB Search Unificado para Pedidos de Usuários (com detecção de Franquias/Coleções)
         this.app.get('/api/tmdb/search-all', async (req, res) => {
             try {
                 const query = (req.query.query || req.query.q || '').trim();
                 if (!query || query.length < 2) {
                     return res.json({ success: true, results: [] });
                 }
-                const results = await this.tmdbService.searchMulti(query);
+                const results = typeof this.tmdbService.searchWithCollections === 'function'
+                    ? await this.tmdbService.searchWithCollections(query)
+                    : await this.tmdbService.searchMulti(query);
+
                 res.json({
                     success: true,
-                    results: (results || []).slice(0, 12).map(r => ({
-                        tmdbId: r.tmdbId,
+                    results: (results || []).slice(0, 16).map(r => ({
+                        tmdbId: r.tmdbId || null,
                         nome: r.nome,
                         nomeOriginal: r.nomeOriginal,
                         tipo: r.tipo || 'filme',
                         ano: r.ano || '',
                         poster: r.posterUrl || r.poster || '',
                         nota: r.nota || 0,
-                        sinopse: r.sinopse || ''
+                        sinopse: r.sinopse || '',
+                        isCollection: !!r.isCollection,
+                        collectionId: r.collectionId || null,
+                        totalFilmes: r.totalFilmes || 0,
+                        filmes: Array.isArray(r.filmes) ? r.filmes : []
                     }))
                 });
             } catch (e) {
@@ -1256,12 +1263,18 @@ class StremioServer {
             }
         });
 
-        // 🍿 1. Criação de Pedido de Conteúdo (Filme / Série / Anime / Dorama)
+        // 🍿 1. Criação de Pedido de Conteúdo (Filme / Série / Franquia / Múltiplos Títulos)
         this.app.post('/api/user/pedidos/create', async (req, res) => {
             try {
-                const { nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes } = req.body;
-                if (!nome || !nome.trim()) {
-                    return res.status(400).json({ error: 'Nome da obra é obrigatório.' });
+                let items = [];
+                if (Array.isArray(req.body.itens) && req.body.itens.length > 0) {
+                    items = req.body.itens;
+                } else if (req.body.nome && req.body.nome.trim()) {
+                    items = [req.body];
+                }
+
+                if (items.length === 0) {
+                    return res.status(400).json({ error: 'Nenhum título informado para o pedido.' });
                 }
 
                 let userId = 0;
@@ -1279,37 +1292,49 @@ class StremioServer {
                     }
                 }
 
-                const resolvedTipo = (tipo || 'filme').toLowerCase();
-                const resolvedTemporada = (temporada || '').trim() || (resolvedTipo !== 'filme' ? 'todas as temporadas' : '');
-                const resolvedIdioma = (idioma || '').trim() || 'Dual Áudio (Dublado + Legendado)';
+                const createdList = [];
+                for (const it of items) {
+                    const nome = (it.nome || '').trim();
+                    if (!nome) continue;
 
-                const pedido = await this.pedidosManager?.adicionarPedidoCompleto({
-                    userId,
-                    username,
-                    nome: nome.trim(),
-                    tipo: resolvedTipo,
-                    temporada: resolvedTemporada,
-                    idioma: resolvedIdioma,
-                    tmdbId: tmdb_id || null,
-                    posterUrl: poster_url || '',
-                    ano: ano || '',
-                    detalhes: (detalhes || '').trim(),
-                    isAssinante
-                });
+                    const resolvedTipo = (it.tipo || req.body.tipo || 'filme').toLowerCase();
+                    const resolvedTemporada = (it.temporada || '').trim() || (resolvedTipo !== 'filme' ? 'todas as temporadas' : '');
+                    const resolvedIdioma = (it.idioma || req.body.idioma || '').trim() || 'Dual Áudio (Dublado + Legendado)';
 
-                auditService.logEvent({
-                    identityType: userId ? 'registered' : 'anonymous',
-                    userId: userId || null,
-                    eventType: 'REQUEST_CREATED',
-                    source: 'website',
-                    title: nome.trim(),
-                    metadata: { tipo: tipo || 'filme', ano, idioma, detalhes }
-                }).catch(() => {});
+                    const pedido = await this.pedidosManager?.adicionarPedidoCompleto({
+                        userId,
+                        username,
+                        nome,
+                        tipo: resolvedTipo,
+                        temporada: resolvedTemporada,
+                        idioma: resolvedIdioma,
+                        tmdbId: it.tmdb_id || it.tmdbId || null,
+                        posterUrl: it.poster_url || it.poster || '',
+                        ano: it.ano || '',
+                        detalhes: (it.detalhes || req.body.detalhes || '').trim(),
+                        isAssinante
+                    });
 
+                    if (pedido) createdList.push(pedido);
+
+                    auditService.logEvent({
+                        identityType: userId ? 'registered' : 'anonymous',
+                        userId: userId || null,
+                        eventType: 'REQUEST_CREATED',
+                        source: 'website',
+                        title: nome,
+                        metadata: { tipo: resolvedTipo, ano: it.ano, idioma: resolvedIdioma }
+                    }).catch(() => {});
+                }
+
+                const total = createdList.length;
                 res.json({
                     success: true,
-                    message: `Pedido de "${nome.trim()}" registrado com sucesso!`,
-                    pedido
+                    count: total,
+                    message: total > 1
+                        ? `🎉 ${total} pedidos registrados com sucesso para inclusão no catálogo!`
+                        : `🍿 Pedido de "${items[0].nome}" registrado com sucesso!`,
+                    pedidos: createdList
                 });
             } catch (e) {
                 res.status(500).json({ error: e.message });

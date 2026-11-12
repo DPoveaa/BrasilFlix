@@ -180,6 +180,116 @@ class TMDBService {
         }
     }
 
+    async searchWithCollections(query) {
+        if (!query || query.trim().length === 0) return [];
+        const cleanQuery = query.trim();
+        const cacheKey = `search_collections_${cleanQuery.toLowerCase()}`;
+        const cached = this._getFromCache(cacheKey);
+        if (cached) return cached;
+
+        try {
+            const [multiData, colData] = await Promise.all([
+                this._getWithRetry('/search/multi', { query: cleanQuery, include_adult: false }).catch(() => ({ results: [] })),
+                this._getWithRetry('/search/collection', { query: cleanQuery, include_adult: false }).catch(() => ({ results: [] }))
+            ]);
+
+            const collectionsFound = [];
+            const rawCols = colData?.results || [];
+
+            if (rawCols.length > 0) {
+                for (const col of rawCols.slice(0, 2)) {
+                    try {
+                        const colDetails = await this._getWithRetry(`/collection/${col.id}`).catch(() => null);
+                        const parts = (colDetails?.parts || [])
+                            .filter(p => p.title || p.name)
+                            .sort((a, b) => new Date(a.release_date || '2099-01-01') - new Date(b.release_date || '2099-01-01'));
+
+                        if (parts.length > 1) {
+                            const anosValidos = parts.map(p => (p.release_date || '').slice(0, 4)).filter(Boolean);
+                            const anoRange = anosValidos.length > 0 ? `${anosValidos[0]} - ${anosValidos[anosValidos.length - 1]}` : '';
+
+                            collectionsFound.push({
+                                isCollection: true,
+                                collectionId: col.id,
+                                nome: `${col.name}`,
+                                nomeOriginal: col.original_name || col.name,
+                                tipo: 'colecao',
+                                ano: anoRange,
+                                poster: this.getPosterUrl(col.poster_path || parts[0]?.poster_path),
+                                nota: colDetails?.vote_average || 0,
+                                sinopse: col.overview || colDetails?.overview || `Franquia completa com todos os ${parts.length} filmes.`,
+                                totalFilmes: parts.length,
+                                filmes: parts.map(p => ({
+                                    tmdbId: p.id,
+                                    nome: p.title || p.name,
+                                    nomeOriginal: p.original_title || p.title,
+                                    ano: (p.release_date || '').slice(0, 4),
+                                    poster: this.getPosterUrl(p.poster_path),
+                                    tipo: 'filme',
+                                    nota: p.vote_average || 0
+                                }))
+                            });
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            const multiResults = (multiData?.results || [])
+                .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
+                .map(item => this.formatItem(item));
+
+            const rankedMulti = this.rankSearchResults(multiResults, cleanQuery);
+
+            // Se não achou por /search/collection, verifica se o primeiro filme pertence a uma coleção
+            if (collectionsFound.length === 0 && rankedMulti.length > 0 && rankedMulti[0].tipo === 'filme' && rankedMulti[0].tmdbId) {
+                try {
+                    const movieDetails = await this._getWithRetry(`/movie/${rankedMulti[0].tmdbId}`).catch(() => null);
+                    if (movieDetails?.belongs_to_collection?.id) {
+                        const colId = movieDetails.belongs_to_collection.id;
+                        const colDetails = await this._getWithRetry(`/collection/${colId}`).catch(() => null);
+                        const parts = (colDetails?.parts || [])
+                            .filter(p => p.title || p.name)
+                            .sort((a, b) => new Date(a.release_date || '2099-01-01') - new Date(b.release_date || '2099-01-01'));
+
+                        if (parts.length > 1) {
+                            const anosValidos = parts.map(p => (p.release_date || '').slice(0, 4)).filter(Boolean);
+                            const anoRange = anosValidos.length > 0 ? `${anosValidos[0]} - ${anosValidos[anosValidos.length - 1]}` : '';
+
+                            collectionsFound.push({
+                                isCollection: true,
+                                collectionId: colId,
+                                nome: `${colDetails.name}`,
+                                nomeOriginal: colDetails.original_name || colDetails.name,
+                                tipo: 'colecao',
+                                ano: anoRange,
+                                poster: this.getPosterUrl(colDetails.poster_path || parts[0]?.poster_path),
+                                nota: colDetails.vote_average || 0,
+                                sinopse: colDetails.overview || `Franquia completa com todos os ${parts.length} filmes.`,
+                                totalFilmes: parts.length,
+                                filmes: parts.map(p => ({
+                                    tmdbId: p.id,
+                                    nome: p.title || p.name,
+                                    nomeOriginal: p.original_title || p.title,
+                                    ano: (p.release_date || '').slice(0, 4),
+                                    poster: this.getPosterUrl(p.poster_path),
+                                    tipo: 'filme',
+                                    nota: p.vote_average || 0
+                                }))
+                            });
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            const finalResults = [...collectionsFound, ...rankedMulti];
+            this._setInCache(cacheKey, finalResults, 15 * 60 * 1000);
+            return finalResults;
+        } catch (error) {
+            console.error('❌ Erro na busca TMDB com coleções:', error.message);
+            return this.searchMulti(cleanQuery);
+        }
+    }
+
     async searchMovie(query, year = null) {
         if (!query || query.trim().length === 0) return [];
         const cacheKey = `search_movie_${query.trim().toLowerCase()}_${year || ''}`;
