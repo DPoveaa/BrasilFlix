@@ -971,10 +971,39 @@ class MediaSearchService {
                     return parseInt(b.g || 0) - parseInt(a.g || 0);
                 });
 
-                if (ptSubs.length > 0) {
+                let validPtSubs = ptSubs;
+                const hasExplicitPtBr = ptSubs.some(s => ['pob', 'pt-br', 'brazilian'].includes((s.lang || s.language || '').toLowerCase()));
+
+                if (!hasExplicitPtBr && ptSubs.length > 0) {
+                    const VideoProcessor = require('./VideoProcessor');
+                    const filtered = [];
+                    for (const s of ptSubs.slice(0, 3)) {
+                        try {
+                            if (!s.url) continue;
+                            const subSample = await axios.get(s.url, {
+                                timeout: 4000,
+                                httpsAgent: agent,
+                                responseType: 'text',
+                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                            });
+                            if (subSample.data && subSample.data.length > 150) {
+                                if (VideoProcessor.isEuropeanPortugueseSubtitle(subSample.data)) {
+                                    console.log(`⚠️ [OpenSubtitles] Legenda candidata "${s.movieReleaseName || s.releaseName || s.id}" (${s.lang}) descartada: detectado Português de Portugal.`);
+                                    continue;
+                                }
+                                if (VideoProcessor.isBrazilianPortugueseSubtitle(subSample.data)) {
+                                    filtered.push(s);
+                                }
+                            }
+                        } catch (_) { }
+                    }
+                    validPtSubs = filtered;
+                }
+
+                if (validPtSubs.length > 0) {
                     if (!this._subCache) this._subCache = new Map();
-                    this._subCache.set(cacheKey, { subs: ptSubs, time: Date.now() });
-                    return ptSubs;
+                    this._subCache.set(cacheKey, { subs: validPtSubs, time: Date.now() });
+                    return validPtSubs;
                 }
             } catch (e) {
                 // Tenta próximo endpoint silenciosamente

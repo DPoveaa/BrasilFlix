@@ -3457,6 +3457,37 @@ class QueueManager extends EventEmitter {
                     job.rawFilePath = null;
                     await this.saveJob(job);
                 }
+            } catch (errOpt) {
+                // Se a otimização falhou por ausência de legenda PT-BR ou arquivo estrangeiro sem tradução
+                const isMissingSubError = errOpt.message && (
+                    errOpt.message.includes('sem legenda PT-BR') ||
+                    errOpt.message.includes('sem áudio dublado e sem legenda') ||
+                    errOpt.message.includes('Nenhuma legenda')
+                );
+
+                if (isMissingSubError) {
+                    // Limpa imediatamente o arquivo bruto em disco para não ocupar GBs inúteis
+                    if (rawFilePath && fs.existsSync(rawFilePath)) {
+                        console.log(`🧹 [Limpeza] Removendo arquivo sem legenda PT-BR disponível (${path.basename(rawFilePath)})...`);
+                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => {});
+                        rawFilePath = null;
+                        job.rawFilePath = null;
+                        await this.saveJob(job).catch(() => {});
+                    }
+
+                    // Se o item já possui versão Dublada no catálogo e o job buscava Legendado,
+                    // conclui graciosamente mantendo a versão existente sem travar a esteira em loops de falha
+                    if (job.audioPreference === 'legendado' && jaPossuiDublado) {
+                        console.log(`ℹ️ [UPGRADE LEGENDADO] "${job.title}" já possui versão Dublada no catálogo e a fonte baixada não possui legenda PT-BR disponível. Mantendo versão Dublada.`);
+                        job.status = 'completed';
+                        job.progress = 100;
+                        job.progressDetails = 'Mantida versão Dublada existente (sem fonte Legendada no momento)';
+                        await this.saveJob(job);
+                        this.queue = this.queue.filter(j => j.id !== job.id);
+                        return;
+                    }
+                }
+                throw errOpt;
             } finally {
                 // Libera o lock de transcode independente de sucesso ou falha
                 this.transcodeLocks.delete(transcodeKey);

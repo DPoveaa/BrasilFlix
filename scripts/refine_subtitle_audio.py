@@ -234,3 +234,4 @@ if __name__ == "__main__":
     srt = sys.argv[2]
     out = refine(video, srt)
     print(json.dumps(out, ensure_ascii=False))
+
