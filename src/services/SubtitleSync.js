@@ -257,12 +257,6 @@ sys.exit(main())
             const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
             if (success && this.validateSynchronizedSubtitle(srtOutputPath)) {
-                // Calibração de precisão do início das falas contra a voz humana real (Whisper + Silero VAD)
-                const videoForRefine = options.videoPath || (!isRefSubtitle ? videoOrRefSrt : null);
-                if (videoForRefine && fs.existsSync(videoForRefine)) {
-                    await this.refineWithAudioSpeech(videoForRefine, srtOutputPath);
-                }
-
                 // Normaliza o formato SRT sem alterar os timestamps produzidos pelo ffsubsync
                 await this.optimizeSubtitleFile(srtOutputPath);
                 console.log(`✅ [SubtitleSync] Legenda sincronizada em ${elapsedSec}s!`);
@@ -295,13 +289,18 @@ sys.exit(main())
      * garantindo que a legenda só apareça quando o ator realmente começar a falar.
      * 100% seguro: se houver qualquer dúvida ou desvio anômalo, mantém a sincronia do ffsubsync intacta.
      */
+    /**
+     * Sincroniza legenda contra o áudio do vídeo via ffsubsync (Python API).
+     * Usado como fallback quando não há legenda de referência (ex: hardsub sem legenda EN).
+     * Analisa o padrão de fala/silêncio ao longo de todo o vídeo — corrige offset e drift.
+     */
     async refineWithAudioSpeech(videoPath, srtPath) {
         if (!videoPath || !srtPath || !fs.existsSync(videoPath) || !fs.existsSync(srtPath)) return;
         const pythonScript = path.resolve(__dirname, '../../scripts/refine_subtitle_audio.py');
         if (!fs.existsSync(pythonScript)) return;
 
         try {
-            console.log(`🎙️ [SubtitleSync] Calibrando início das falas contra a voz real no áudio (Whisper VAD)...`);
+            console.log(`🎙️ [SubtitleSync] Sincronizando legenda contra áudio real via ffsubsync...`);
             const pythonExec = process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
 
             await new Promise((resolve) => {
@@ -309,8 +308,9 @@ sys.exit(main())
                 const pyProc = spawn(pythonExec, [pythonScript, videoPath, srtPath], { stdio: ['ignore', 'pipe', 'pipe'] });
                 const timer = setTimeout(() => {
                     try { pyProc.kill('SIGKILL'); } catch (e) {}
+                    console.log(`ℹ️ [SubtitleSync] Timeout na sincronização via ffsubsync (mantendo legenda atual).`);
                     resolve();
-                }, 20000); // 20s timeout máximo de segurança
+                }, 180000); // 3 min — ffsubsync analisa o arquivo inteiro
 
                 pyProc.stdout?.on('data', d => { stdout += d.toString(); });
                 pyProc.on('close', () => {
@@ -318,9 +318,11 @@ sys.exit(main())
                     try {
                         const res = JSON.parse(stdout.trim());
                         if (res.adjusted) {
-                            console.log(`🎯 [SubtitleSync] Calibração de fala aplicada com sucesso: ${res.reason} (Fala detectada: "${res.detected_speech_text}")`);
+                            console.log(`🎯 [SubtitleSync] ffsubsync sincronizou com sucesso: ${res.reason}`);
                         } else if (res.reason) {
-                            console.log(`ℹ️ [SubtitleSync] Calibração de áudio: ${res.reason}`);
+                            console.log(`ℹ️ [SubtitleSync] ffsubsync: ${res.reason}`);
+                        } else if (res.error) {
+                            console.warn(`⚠️ [SubtitleSync] ffsubsync erro: ${res.error}`);
                         }
                     } catch (e) {}
                     resolve();
@@ -331,7 +333,7 @@ sys.exit(main())
                 });
             });
         } catch (e) {
-            console.warn(`⚠️ [SubtitleSync] Aviso na calibração de áudio (mantendo sincronia ffsubsync): ${e.message}`);
+            console.warn(`⚠️ [SubtitleSync] Aviso na sincronização via ffsubsync: ${e.message}`);
         }
     }
 }
