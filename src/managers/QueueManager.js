@@ -3351,14 +3351,22 @@ class QueueManager extends EventEmitter {
                             } catch (e) { }
                         }
                         const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
+                        const SubtitleTranslationService = require('../services/SubtitleTranslationService');
+                        let canTranslateAi = false;
+                        if ((!ptSubs || ptSubs.length === 0) && SubtitleTranslationService.isAvailable() && imdbId) {
+                            const enSubs = await MediaSearchService.getOpenSubtitlesEN(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []);
+                            canTranslateAi = enSubs && enSubs.length > 0;
+                        }
+
                         // Permite fallback para Legendado via OpenSubtitles se:
-                        // - há legendas PT-BR disponíveis no OpenSubtitles, E
+                        // - há legendas PT-BR disponíveis no OpenSubtitles (ou legenda EN para tradução IA), E
                         // - não é um upgrade e não foi explicitamente marcado como apenas-dublado
                         // NOTA: remove bloqueio por jaPossuiLegendado para doramas/animes/conteúdo asiático
                         //       pois o episódio anterior pode ter falhado e ficado com estado incorreto
                         const isBlockedUpgrade = job.isUpgrade && jaPossuiLegendado;
-                        if (ptSubs && ptSubs.length > 0 && !job.ignorarFallbackLegendado && !job.onlyDublado && !isBlockedUpgrade) {
-                            console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${ptSubs.length} legenda(s) PT-BR encontradas no OpenSubtitles. Processando como Legendado (PT-BR)...`);
+                        if ((ptSubs && ptSubs.length > 0 || canTranslateAi) && !job.ignorarFallbackLegendado && !job.onlyDublado && !isBlockedUpgrade) {
+                            const subOrigin = ptSubs?.length > 0 ? `${ptSubs.length} legenda(s) PT-BR encontradas` : 'legenda EN para tradução inteligente via IA';
+                            console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${subOrigin} no OpenSubtitles. Processando como Legendado (PT-BR)...`);
                             langInfo = {
                                 isValid: true,
                                 isDublado: false,
@@ -3370,7 +3378,9 @@ class QueueManager extends EventEmitter {
                         } else {
                             const motivo = isBlockedUpgrade ? 'já possui Legendado e é upgrade' : 'sem legendas PT-BR no OpenSubtitles';
                             console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (${motivo}).`);
-                            await DownloaderManager.cleanupFile(rawFilePath);
+                            if (rawFilePath && fs.existsSync(rawFilePath)) {
+                                await DownloaderManager.cleanupFile(rawFilePath);
+                            }
                             if (job.type === 'serie') {
                                 this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
                             }

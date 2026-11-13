@@ -1527,6 +1527,59 @@ ${events.join('\n')}
             } catch (e) { }
         }
 
+        // 5. AUTO-TRADUÇÃO DE EMERGÊNCIA VIA IA (Gemini Flash)
+        // Se nenhuma legenda PT-BR foi encontrada no mundo mas temos uma legenda em Inglês
+        // (do container de vídeo, companion ou do OpenSubtitles), traduz as falas mantendo 100% dos timecodes
+        try {
+            const SubtitleTranslationService = require('./SubtitleTranslationService');
+            if (SubtitleTranslationService.isAvailable()) {
+                let sourceEnSrt = (refSyncTarget && refSyncTarget !== inputPath) ? refSyncTarget : companion.refEnPath;
+
+                if (!sourceEnSrt && metadata.imdbId) {
+                    try {
+                        const season = metadata.season || 1;
+                        const episode = metadata.episode || 1;
+                        const streamPath = metadata.tipo === 'serie' ? `series/${metadata.imdbId}:${season}:${episode}.json` : `movie/${metadata.imdbId}.json`;
+                        const osEndpoints = [
+                            `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
+                            `https://subtitles.strem.io/subtitles/${streamPath}`,
+                            `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
+                        ];
+                        for (const url of osEndpoints) {
+                            try {
+                                const res = await axios.get(url, { timeout: 6000, httpsAgent: agent, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                                const enSub = (res.data?.subtitles || []).find(s => ['eng', 'en'].includes((s.lang || '').toLowerCase()));
+                                if (enSub?.url) {
+                                    const enRes = await axios.get(enSub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
+                                    if (enRes.data && enRes.data.length > 500) {
+                                        const downloadedEnPath = path.join(path.dirname(inputPath), `ref_en_for_trans_${Date.now()}.srt`);
+                                        await fs.writeFile(downloadedEnPath, enRes.data, 'utf8');
+                                        sourceEnSrt = downloadedEnPath;
+                                        break;
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+                    } catch (_) {}
+                }
+
+                if (sourceEnSrt && fs.existsSync(sourceEnSrt)) {
+                    console.log(`🤖 [SubtitleTranslation] Nenhuma legenda PT-BR disponível. Realizando tradução emergencial via IA (Gemini) a partir da legenda EN...`);
+                    const translatedSrtPath = path.join(path.dirname(inputPath), `sub_pt_translated_${Date.now()}.srt`);
+                    await SubtitleTranslationService.translateSrtFile(sourceEnSrt, translatedSrtPath, { title: metadata.nome || path.basename(inputPath) });
+                    if (fs.existsSync(translatedSrtPath) && fs.statSync(translatedSrtPath).size > 200) {
+                        console.log(`🎉 [SubtitleTranslation] Legenda traduzida via IA com sucesso para PT-BR!`);
+                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
+                            fs.remove(refSyncTarget).catch(() => {});
+                        }
+                        return translatedSrtPath;
+                    }
+                }
+            }
+        } catch (transErr) {
+            console.warn(`⚠️ [SubtitleTranslation] Falha na auto-tradução via IA: ${transErr.message}`);
+        }
+
         return null;
     }
 

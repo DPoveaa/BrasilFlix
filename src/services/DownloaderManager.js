@@ -867,6 +867,87 @@ class DownloaderManager extends EventEmitter {
                         }
                     }
                 }
+
+                // ─────────────────────────────────────────────────────────────────────
+                // VALIDAÇÃO PRÉ-DOWNLOAD: HEADER PROBE E VERIFICAÇÃO DE LEGENDAS
+                // Analisa os primeiros ~1.5MB do vídeo para confirmar áudio PT-BR e
+                // verifica disponibilidade de legendas ANTES de baixar gigabytes.
+                // ─────────────────────────────────────────────────────────────────────
+                let fileToProbe = targetEpisodeFile;
+                if (!fileToProbe && !options.episode && torrent.files && torrent.files.length > 0) {
+                    const videoFiles = torrent.files.filter(f => ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(path.extname(f.name).toLowerCase()));
+                    const realVideoFiles = videoFiles.filter(f => !/sample|amostra|trailer|teaser/i.test(f.name));
+                    fileToProbe = realVideoFiles.length > 0
+                        ? realVideoFiles.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), realVideoFiles[0])
+                        : torrent.files[0];
+                    targetEpisodeFile = fileToProbe;
+                }
+
+                if (fileToProbe) {
+                    const isBrGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(torrent.name || '') || options.isBrazilianGroup;
+                    const needsAudioProbe = (options.isDublado || options.audioPreference === 'dublado') && !isBrGroup;
+                    const isLegendadoRequested = options.audioPreference === 'legendado' || !options.isDublado;
+
+                    if (needsAudioProbe || isLegendadoRequested) {
+                        console.log(`🔍 [Pré-Download: "${displayTitle}"] Sondando cabeçalho de "${fileToProbe.name}" (~1.5MB) para validação precoce de áudio/legendas...`);
+                        const probeRes = await this.probeVideoHeader(fileToProbe, 20000);
+
+                        // Verifica legendas disponíveis no torrent ou OpenSubtitles
+                        const hasPtSubInTorrent = torrent.files.some(f => {
+                            const ext = path.extname(f.name || '').toLowerCase();
+                            if (!['.srt', '.ass', '.vtt'].includes(ext)) return false;
+                            return /\b(pt[-_]?br|ptbr|pob|por|portugues|legendas?)\b/i.test(f.name);
+                        });
+
+                        const MediaSearchService = require('./MediaSearchService');
+                        const SubtitleTranslationService = require('./SubtitleTranslationService');
+
+                        let hasPtSubInOpenSubtitles = false;
+                        let hasEnSubInOpenSubtitles = false;
+                        const targetImdbId = options.imdbId || options.metaDetails?.imdbId;
+
+                        if (targetImdbId) {
+                            const ptSubs = await MediaSearchService.getOpenSubtitlesPT(targetImdbId, options.type, options.season || 1, options.episode || 1).catch(() => []);
+                            hasPtSubInOpenSubtitles = ptSubs && ptSubs.length > 0;
+                            if (!hasPtSubInOpenSubtitles && SubtitleTranslationService.isAvailable()) {
+                                const enSubs = await MediaSearchService.getOpenSubtitlesEN(targetImdbId, options.type, options.season || 1, options.episode || 1).catch(() => []);
+                                hasEnSubInOpenSubtitles = enSubs && enSubs.length > 0;
+                            }
+                        }
+
+                        const hasValidPtSub = (probeRes.success && probeRes.hasPortugueseSub) || hasPtSubInTorrent || Boolean(options.subtitleUrl) || hasPtSubInOpenSubtitles;
+                        const hasEnSubForAi = !hasValidPtSub && ((probeRes.success && probeRes.hasEnglishSub) || hasEnSubInOpenSubtitles) && SubtitleTranslationService.isAvailable();
+
+                        if (needsAudioProbe && probeRes.success && probeRes.audioStreams.length > 0 && !probeRes.hasPortugueseAudio) {
+                            console.warn(`⚠️ [PRÉ-DOWNLOAD: ÁUDIO INCOMPATÍVEL] Nenhuma faixa em Português detectada no cabeçalho (${probeRes.audioLangs}).`);
+
+                            if (!options.onlyDublado && !options.ignorarFallbackLegendado && (hasValidPtSub || hasEnSubForAi)) {
+                                console.log(`🔄 [PRÉ-DOWNLOAD: CONVERSÃO AUTOMÁTICA] Áudio PT ausente, mas legendas ${hasValidPtSub ? 'PT-BR' : 'EN (com tradução IA)'} confirmadas. Convertendo job para Legendado sem reiniciar download.`);
+                                options.audioPreference = 'legendado';
+                                options.isDublado = false;
+                                options.isLegendado = true;
+                            } else {
+                                const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Arquivo "${fileToProbe.name}" não contém áudio dublado em Português (${probeRes.audioLangs}) e não possui legendas PT-BR disponíveis.`;
+                                console.warn(reasonMsg);
+                                finished = true;
+                                safeCleanup();
+                                return reject(new Error(reasonMsg));
+                            }
+                        }
+
+                        if (options.audioPreference === 'legendado' && !hasValidPtSub && !hasEnSubForAi) {
+                            const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Release em idioma original sem nenhuma legenda PT-BR disponível (embutida ou OpenSubtitles) e sem legenda EN para tradução IA.`;
+                            console.warn(reasonMsg);
+                            finished = true;
+                            safeCleanup();
+                            return reject(new Error(reasonMsg));
+                        }
+
+                        if (probeRes.success) {
+                            console.log(`✅ [Pré-Download Validado: "${displayTitle}"] Áudio: [${probeRes.audioLangs}] | Legendas PT: ${hasValidPtSub ? 'SIM' : 'NÃO'} | Legendas EN (IA): ${hasEnSubForAi ? 'SIM' : 'NÃO'}`);
+                        }
+                    }
+                }
             });
 
             let isCompleting = false;
@@ -1696,6 +1777,134 @@ class DownloaderManager extends EventEmitter {
             } catch (e) {}
         }
         return false;
+    }
+
+    /**
+     * Realiza probe inteligente nos primeiros ~1.5-2MB do arquivo via WebTorrent
+     * para inspecionar trilhas de áudio e legendas ANTES de baixar o arquivo completo.
+     */
+    async probeVideoHeader(file, maxWaitMs = 25000) {
+        if (!file || typeof file.createReadStream !== 'function') {
+            return { success: false, reason: 'Objeto de arquivo WebTorrent inválido' };
+        }
+
+        const probeFileName = `.probe_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`;
+        const probeFilePath = path.join(this.downloadDir, probeFileName);
+        const targetBytes = 1.5 * 1024 * 1024; // 1.5 MB para extração de cabeçalhos MKV e MP4
+
+        return new Promise((resolve) => {
+            let stream = null;
+            let outStream = null;
+            let timer = null;
+            let resolved = false;
+            let bytesWritten = 0;
+
+            const cleanup = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (stream) {
+                    try { stream.destroy(); } catch (_) {}
+                    stream = null;
+                }
+                if (outStream) {
+                    try { outStream.end(); } catch (_) {}
+                    outStream = null;
+                }
+            };
+
+            const finalizeProbe = async () => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+
+                try {
+                    if (!fs.existsSync(probeFilePath) || fs.statSync(probeFilePath).size < 40 * 1024) {
+                        try { if (fs.existsSync(probeFilePath)) fs.unlinkSync(probeFilePath); } catch (_) {}
+                        return resolve({ success: false, reason: 'Tamanho insuficiente no probe (<40KB baixados)' });
+                    }
+
+                    const exec = require('child_process').exec;
+                    const cmd = `ffprobe -v quiet -print_format json -show_streams -show_format "${probeFilePath}"`;
+
+                    exec(cmd, { timeout: 15000 }, (err, stdout) => {
+                        try { if (fs.existsSync(probeFilePath)) fs.unlinkSync(probeFilePath); } catch (_) {}
+
+                        if (err || !stdout) {
+                            return resolve({ success: false, reason: err?.message || 'ffprobe sem retorno' });
+                        }
+
+                        try {
+                            const data = JSON.parse(stdout);
+                            const streams = data.streams || [];
+                            const audioStreams = streams.filter(s => s.codec_type === 'audio');
+                            const subtitleStreams = streams.filter(s => s.codec_type === 'subtitle');
+
+                            const isPtLang = (s) => {
+                                const lang = (s.tags?.language || s.tags?.LANG || s.tags?.Language || '').toLowerCase();
+                                const title = (s.tags?.title || s.tags?.handler_name || '').toLowerCase();
+                                const isPtCode = ['por', 'pob', 'pt', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'portuguese'].includes(lang);
+                                const isPtTitle = /\b(portugu[eê]s|dublado|pt[-_ ]?br|brazilian|audio[-_ ]?pt)\b/i.test(title);
+                                return isPtCode || isPtTitle;
+                            };
+
+                            const isEnLang = (s) => {
+                                const lang = (s.tags?.language || s.tags?.LANG || s.tags?.Language || '').toLowerCase();
+                                const title = (s.tags?.title || '').toLowerCase();
+                                return ['eng', 'en'].includes(lang) || /\b(english|eng)\b/i.test(title);
+                            };
+
+                            const hasPortugueseAudio = audioStreams.some(isPtLang);
+                            const hasPortugueseSub = subtitleStreams.some(isPtLang);
+                            const hasEnglishSub = subtitleStreams.some(isEnLang);
+
+                            const audioLangs = audioStreams.map(s => {
+                                const l = s.tags?.language || s.tags?.title || s.codec_name;
+                                return l ? String(l).trim() : 'und';
+                            }).join(', ') || 'nenhum';
+
+                            return resolve({
+                                success: true,
+                                audioStreams,
+                                subtitleStreams,
+                                hasPortugueseAudio,
+                                hasPortugueseSub,
+                                hasEnglishSub,
+                                audioLangs
+                            });
+                        } catch (parseErr) {
+                            return resolve({ success: false, reason: parseErr.message });
+                        }
+                    });
+                } catch (e) {
+                    try { if (fs.existsSync(probeFilePath)) fs.unlinkSync(probeFilePath); } catch (_) {}
+                    return resolve({ success: false, reason: e.message });
+                }
+            };
+
+            timer = setTimeout(() => {
+                finalizeProbe();
+            }, maxWaitMs);
+
+            try {
+                outStream = fs.createWriteStream(probeFilePath);
+                stream = file.createReadStream({ start: 0, end: targetBytes + 512 * 1024 });
+
+                stream.on('data', (chunk) => {
+                    bytesWritten += chunk.length;
+                    if (bytesWritten >= targetBytes) {
+                        finalizeProbe();
+                    }
+                });
+
+                stream.on('end', () => finalizeProbe());
+                stream.on('error', () => finalizeProbe());
+                stream.pipe(outStream);
+            } catch (err) {
+                finalizeProbe();
+            }
+        });
     }
 
     async cleanupFile(filePath) {

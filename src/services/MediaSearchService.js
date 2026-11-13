@@ -351,21 +351,21 @@ class MediaSearchService {
                     );
                     if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                         variations.push(
-                            `${originalName} S${sPadded}E${ePadded} dual`,
                             `${originalName} S${sPadded}E${ePadded} dublado`,
-                            `${originalName} S${sPadded}E${ePadded}`,
-                            `${originalName} S${sPadded} dual`,
+                            `${originalName} S${sPadded}E${ePadded} dual pt-br`,
+                            `${originalName} S${sPadded}E${ePadded} pt-br`,
                             `${originalName} S${sPadded} dublado`,
-                            `${originalName} S${sPadded} complete`,
-                            `${originalName} season ${season} dual`
+                            `${originalName} S${sPadded} dual pt-br`,
+                            `${originalName} season ${season} dublado`,
+                            `${originalName} season ${season} dual pt-br`
                         );
                     }
                 }
             } else {
                 variations.push(
-                    `${cleanQuery} 1080p dual`,
                     `${cleanQuery} 1080p dublado`,
-                    `${cleanQuery} dual audio`,
+                    `${cleanQuery} 1080p dual`,
+                    `${cleanQuery} dual audio pt-br`,
                     `${cleanQuery} dublado`,
                     `${cleanQuery} nacional`,
                     `${cleanQuery} 1080p legendado`,
@@ -373,16 +373,16 @@ class MediaSearchService {
                 );
                 if (originalName && originalName.toLowerCase() !== cleanQuery.toLowerCase()) {
                     variations.push(
-                        `${originalName} 1080p dual`,
                         `${originalName} 1080p dublado`,
-                        `${originalName} dual`,
+                        `${originalName} 1080p dual pt-br`,
                         `${originalName} dublado`,
+                        `${originalName} dual audio pt-br`,
                         `${originalName} 1080p legendado`
                     );
                     if (ano) {
                         variations.push(
-                            `${originalName} ${ano} dual`,
                             `${originalName} ${ano} dublado`,
+                            `${originalName} ${ano} dual pt-br`,
                             `${originalName} ${ano} legendado`
                         );
                     }
@@ -764,9 +764,9 @@ class MediaSearchService {
                 // Par estrangeiro sem PT-BR: bloqueia somente se não houver indicador explícito de áudio PT-BR
                 const hasForeignAudioPair = hasForeignPairInTitle && !isPtBrExplicit && !isBrazilianGroup && !/\b(dublado|nacional|pt[-_]?br|ptbr|brasileiro|brazilian)\b/i.test(rawTitle);
 
-                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(title);
-                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Multi[- ]?Dub|Multi[- ]?Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT|POR|PORTUGUESE|PT-BR)\b)/i.test(rawTitle));
-                const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(rawTitle));
+                const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt[-_ ]?br|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|pt[-_ ]?dual|dual[-_ ]?pt[-_ ]?br)\b/i.test(title);
+                const hasPtAudioFlag = (/(Dubbed|Dual Audio|Multi Audio|Multi[- ]?Dub|Multi[- ]?Audio|Dual)/i.test(rawTitle)) && !hasForeignAudioPair && !isSpanishOrLatino && (isPtBrExplicit || isBrazilianGroup || /(🇧🇷|\b(PT[-_ ]?BR|PORTUGU[EÊ]S|BRAZILIAN)\b)/i.test(rawTitle));
+                const isDualPtInTitle = /\b(dual)\b/i.test(title) && !hasForeignAudioPair && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|português|brasil|brazilian|dublado)\b/i.test(rawTitle));
 
                 // Releases de indexadores genéricos como EXT que não sejam de grupos brasileiros NÃO podem ser aceitas como dubladas
                 const isUntrustedExt = (rawTitle.includes('⚙️ EXT') || /⚙️\s*EXT\b/i.test(rawTitle)) && !isBrazilianGroup;
@@ -1010,6 +1010,49 @@ class MediaSearchService {
             }
         }
 
+        return [];
+    }
+
+    async getOpenSubtitlesEN(imdbId, tipo = 'filme', season = 1, episode = 1) {
+        if (!imdbId) return [];
+        const cacheKey = `en_${imdbId}_${tipo}_${season}_${episode}`;
+        if (this._subCache && this._subCache.has(cacheKey)) {
+            const cached = this._subCache.get(cacheKey);
+            if (Date.now() - cached.time < 30 * 60 * 1000) {
+                return cached.subs;
+            }
+        }
+
+        const https = require('https');
+        const agent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+        const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+
+        const endpoints = [
+            `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
+            `https://subtitles.strem.io/subtitles/${streamPath}`,
+            `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
+        ];
+
+        for (const url of endpoints) {
+            try {
+                const res = await axios.get(url, {
+                    timeout: 6000,
+                    httpsAgent: agent,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
+                });
+                const subs = res.data?.subtitles || [];
+                const enSubs = subs.filter(s => {
+                    const lang = (s.lang || s.language || '').toLowerCase();
+                    return ['eng', 'en'].includes(lang);
+                });
+
+                if (enSubs.length > 0) {
+                    if (!this._subCache) this._subCache = new Map();
+                    this._subCache.set(cacheKey, { subs: enSubs, time: Date.now() });
+                    return enSubs;
+                }
+            } catch (e) {}
+        }
         return [];
     }
 
@@ -1324,8 +1367,8 @@ class MediaSearchService {
             if (isSpanishOrLatino) return;
 
             const isPtPtExplicit = !isBrazilianGroup && !isPtBrExplicit && /\b(pt[-_]?pt|pt_pt|ptpt|dobrado|european[._ -]?portuguese)\b/i.test(name);
-            const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|multi[-_ ]?audio|multi[-_ ]?dub|dual[-_ ]?audio)\b/i.test(name);
-            const isDualPtInTitle = /\b(dual)\b/i.test(name) && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|brasil|brazilian|dub)\b/i.test(name));
+            const isExplicitPtDubInTitle = /\b(dublado|nacional|audio[-_ ]?pt|audio[-_ ]?pt[-_ ]?br|pt[-_ ]?br[-_ ]?dub|dub[-_ ]?pt|dublado[-_ ]?pt[-_ ]?br|ptbr[-_ ]?dual|dual[-_ ]?pt|pt[-_ ]?dual|dual[-_ ]?pt[-_ ]?br)\b/i.test(name);
+            const isDualPtInTitle = /\b(dual)\b/i.test(name) && !isSpanishOrLatino && (isBrazilianGroup || /\b(pt[-_]?br|ptbr|portugues|português|brasil|brazilian|dublado)\b/i.test(name));
 
             const isDublado = (isExplicitPtDubInTitle || isBrazilianGroup || isDualPtInTitle) && !isPtPtExplicit;
             const isLegendadoPt = /\b(legendado|legendas|legenda|leg[-_ ]?pt|sub[-_ ]?pt|legendado[-_ ]?pt[-_ ]?br|sub[-_ ]?pt[-_ ]?br)\b/i.test(name);

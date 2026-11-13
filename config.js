@@ -82,6 +82,9 @@ module.exports = {
     ECO_UPLOAD_LIMIT_KB: parseInt(process.env.ECO_UPLOAD_LIMIT_KB || '30', 10),
     ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10),
 
+    // Inteligência Artificial & Tradução de Legendas
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
+
     // Integração Prowlarr (Agregador de Indexers e Trackers Públicos/Privados)
     PROWLARR_ENABLED: process.env.PROWLARR_ENABLED !== 'false',
     PROWLARR_URL: process.env.PROWLARR_URL || 'http://127.0.0.1:9696',
