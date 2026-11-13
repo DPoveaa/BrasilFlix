@@ -1083,6 +1083,21 @@ ${events.join('\n')}
         const agent = new https.Agent({ rejectUnauthorized: false });
         const srtPath = path.join(path.dirname(inputPath), `sub_pt_${Date.now()}.srt`);
 
+        // 🆔 Garante a resolução antecipada de IMDb ID via TMDB antes de qualquer busca de referência
+        if (!metadata.imdbId && metadata.tmdbId) {
+            try {
+                const extPath = metadata.tipo === 'serie' ? `tv/${metadata.tmdbId}` : `movie/${metadata.tmdbId}`;
+                const extRes = await axios.get(`https://api.themoviedb.org/3/${extPath}/external_ids`, {
+                    params: { api_key: config.TMDB_API_KEY },
+                    timeout: 6000
+                });
+                if (extRes.data?.imdb_id) {
+                    metadata.imdbId = extRes.data.imdb_id;
+                    console.log(`🆔 [TMDB External IDs] IMDb ID resolvido antecipadamente: ${metadata.imdbId}`);
+                }
+            } catch (e) { }
+        }
+
         // 1. Tenta extrair legenda embutida em Português do arquivo de vídeo original
         // Prioriza: 1º Português Brasileiro (pob, pt-br, brazilian, título com 'brasil' ou 'brasileiro')
         //           2º Português genérico (por, portuguese, português, pt)
@@ -1354,6 +1369,11 @@ ${events.join('\n')}
                             fs.remove(refSyncTarget).catch(() => { });
                         }
                         return finalSrt;
+                    } else {
+                        // Se o sync falhar ou for inseguro, a legenda direta já foi selecionada para este release específico
+                        console.log(`ℹ️ [SubtitleSync] Sync adicional dispensado ou falhou. Mantendo legenda original do release validada.`);
+                        await SubtitleSync.optimizeSubtitleFile(srtPath);
+                        return srtPath;
                     }
                 } else if (res.data) {
                     console.warn(`⚠️ [SubtitleSync] Legenda direta descartada: texto não validado como PT-BR autêntico (detectado Português de Portugal ou qualidade inadequada). Recorrendo à busca completa.`);
