@@ -26,6 +26,20 @@ class DiskCleaner {
      */
     async getDiskSpaceInfo(dirPath = this.downloadDir) {
         try {
+            const statfs = require('node:fs/promises').statfs;
+            if (statfs) {
+                const info = await statfs(dirPath);
+                const totalBytes = info.blocks * info.bsize;
+                const freeBytes = info.bavail * info.bsize;
+                const usedBytes = (info.blocks - info.bfree) * info.bsize;
+                return {
+                    totalBytes, freeBytes, usedBytes,
+                    freeGB: (freeBytes / 1024 ** 3).toFixed(1),
+                    totalGB: (totalBytes / 1024 ** 3).toFixed(1),
+                    usedGB: (usedBytes / 1024 ** 3).toFixed(1),
+                    usedPercent: totalBytes ? Math.round(usedBytes / totalBytes * 100) : 0
+                };
+            }
             const checkvfs = async () => {
                 if (process.platform === 'linux' || process.platform === 'darwin') {
                     const { execSync } = require('child_process');
@@ -67,7 +81,7 @@ class DiskCleaner {
      * Executa varredura profunda e remoção de arquivos órfãos
      * @param {Array<string>} activeFilePaths - Caminhos de arquivos atualmente em uso/download/processamento
      */
-    async scanAndClean(activeFilePaths = []) {
+    async scanAndClean(activeFilePaths = this.getActiveFiles?.() || [], minAgeMs = 2 * 60 * 60 * 1000) {
 
         if (this.isRunning) return { cleanedCount: 0, freedBytes: 0 };
         this.isRunning = true;
@@ -90,7 +104,6 @@ class DiskCleaner {
         let totalFreedBytes = 0;
         let totalCleanedCount = 0;
         const now = Date.now();
-        const minAgeMs = 2 * 60 * 60 * 1000; // 2 horas de inatividade mínima comprovada
 
         const cleanFolder = async (folderPath) => {
             if (!folderPath || !fs.existsSync(folderPath)) return;
@@ -111,7 +124,7 @@ class DiskCleaner {
                 if (isActive) continue;
 
                 try {
-                    const stat = await fs.stat(fullPath);
+                    const stat = await fs.lstat(fullPath);
                     const mostRecentTime = Math.max(stat.ctimeMs || 0, stat.mtimeMs || 0, stat.birthtimeMs || 0);
                     const ageMs = now - mostRecentTime;
 
@@ -170,6 +183,7 @@ class DiskCleaner {
      * @param {number} intervalMs - Intervalo entre checagens (padrão: 45 min)
      */
     startAutoCleanup(getActiveFilesCallback, intervalMs = 45 * 60 * 1000) {
+        this.getActiveFiles = getActiveFilesCallback;
         console.log(`🧹 [Auto-Cleaner] Monitor de limpeza inteligente de disco ativado (Intervalo: ${Math.round(intervalMs / 60000)} min)!`);
         
         // Executa limpeza inicial após 15 segundos do boot

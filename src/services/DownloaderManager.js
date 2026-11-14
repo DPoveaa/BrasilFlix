@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const config = require('../../config');
 const VideoProcessor = require('./VideoProcessor');
 const SchedulerService = require('./SchedulerService');
+const DiskCleaner = require('./DiskCleaner');
 const { isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 
 let WebTorrentClass = null;
@@ -97,7 +98,8 @@ class DownloaderManager extends EventEmitter {
         const maxBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
         const currentSize = await this.getTempDirSizeBytes();
         // Se ultrapassar 75% dos 100GB (~75GB), segura novos downloads para dar espaço à duplicação da transcodificação
-        return currentSize >= maxBytes * 0.75;
+        const disk = await DiskCleaner.getDiskSpaceInfo(this.downloadDir);
+        return currentSize >= maxBytes * 0.75 || Boolean(disk && disk.freeBytes < 8 * 1024 ** 3);
     }
 
     async ensureDiskSpace(estimatedSizeBytes = 0) {
@@ -109,7 +111,7 @@ class DownloaderManager extends EventEmitter {
         let currentSize = await this.getTempDirSizeBytes();
         if (currentSize + safetyMarginBytes >= maxBytes * 0.75) {
             console.log(`⚠️ [Guarda de Disco] Pasta temporária em ${this.formatBytes(currentSize)} (margem de duplicação: ${this.formatBytes(safetyMarginBytes)}, limite: ${maxGB} GB). Executando limpeza automática...`);
-            await this.cleanupOrphanedFiles(1);
+            await DiskCleaner.scanAndClean(undefined, 60 * 60 * 1000);
             currentSize = await this.getTempDirSizeBytes();
         }
 
@@ -579,6 +581,7 @@ class DownloaderManager extends EventEmitter {
             let targetEpisodeFile = null;
             let preflightComplete = false;
             let subtitleFiles = [];
+            let validatedSubtitleText = null;
 
 
             torrent.on('wire', (wire, addr) => {
@@ -925,14 +928,15 @@ class DownloaderManager extends EventEmitter {
                             const urls = [...new Set([options.subtitleUrl, ...(ptSubs || []).map(sub => sub.url)].filter(Boolean))];
                             const checks = await Promise.allSettled(urls.slice(0, 3).map(url => VideoProcessor.fetchPortugueseSrt(url)));
                             if (finished) return;
-                            externalSubtitle = checks.some(result => result.status === 'fulfilled' && result.value);
+                            validatedSubtitleText = checks.find(result => result.status === 'fulfilled' && result.value)?.value || null;
+                            externalSubtitle = Boolean(validatedSubtitleText);
                             externalLookupIncomplete ||= urls.length > checks.length || checks.some(result => result.status === 'rejected');
                         }
                         const hasValidPtSub = probeRes.hasPortugueseSub || hasPtSubInTorrent || externalSubtitle;
                         const hasEnSubForAi = translationAvailable && (probeRes.hasEnglishSub || hasEnSubInTorrent || Boolean(enSubs?.length));
                         const hasUnknownAudio = probeRes.audioStreams?.some(s => !s.tags?.language || /^(und|unk|unknown)$/i.test(s.tags.language));
                         const knownForeignAudio = probeRes.success && probeRes.audioStreams.length > 0 &&
-                            !probeRes.hasPortugueseAudio && !hasUnknownAudio;
+                            !probeRes.hasPortugueseAudio && (!hasUnknownAudio || probeRes.spokenLanguage === 'foreign');
 
                         if (needsAudioProbe && knownForeignAudio) {
                             console.warn(`⚠️ [PRÉ-DOWNLOAD: ÁUDIO INCOMPATÍVEL] Nenhuma faixa em Português detectada no cabeçalho (${probeRes.audioLangs}).`);
@@ -1054,9 +1058,7 @@ class DownloaderManager extends EventEmitter {
                     const stat = fs.statSync(fullPath);
                     const expectedSize = selectedFile.length;
 
-                    // Permite margem de 95% caso WebTorrent tenha finalizado
-                    const minAllowedSize = Math.floor(expectedSize * 0.95);
-                    if (expectedSize > 0 && stat.size < minAllowedSize) {
+                    if (!selectedFile.done || stat.size !== expectedSize) {
                         completionRetries++;
                         const isDoneTorrent = (torrent.progress >= 0.999 || torrent.done);
                         if (isDoneTorrent && completionRetries >= maxCompletionRetries) {
@@ -1071,8 +1073,8 @@ class DownloaderManager extends EventEmitter {
 
                     // Se for Season Pack, só finaliza quando todos os episódios selecionados do pack estiverem 100% concluídos no WebTorrent
                     if (isSeasonPack && detectedEpisodeMap && Object.keys(detectedEpisodeMap).length > 1) {
-                        const allSelectedDone = Object.values(detectedEpisodeMap).every(vf => vf.done || (vf.progress || 0) >= 0.999);
-                        if (!allSelectedDone && !torrent.done && torrent.progress < 0.999) {
+                        const allSelectedDone = Object.values(detectedEpisodeMap).every(vf => vf.done);
+                        if (!allSelectedDone) {
                             isCompleting = false;
                             return; // Aguarda os outros episódios da temporada terminarem de baixar!
                         }
@@ -1140,11 +1142,11 @@ class DownloaderManager extends EventEmitter {
                     if (isSeasonPack && detectedEpisodeMap) {
                         for (const [epStr, f] of Object.entries(detectedEpisodeMap)) {
                             // Apenas inclui arquivos cujo download foi 100% finalizado e validado pelo WebTorrent
-                            if (!f.done && (f.progress || 0) < 0.999 && !torrent.done) continue;
+                            if (!f.done) continue;
                             const epFullPath = path.join(this.downloadDir, f.path);
                             if (fs.existsSync(epFullPath)) {
                                 const epStat = fs.statSync(epFullPath);
-                                if (epStat.size > 20 * 1024 * 1024) {
+                                if (epStat.size === f.length && epStat.size > 20 * 1024 * 1024) {
                                     fullEpisodeMap[parseInt(epStr, 10)] = {
                                         filePath: epFullPath,
                                         fileName: f.name,
@@ -1160,6 +1162,7 @@ class DownloaderManager extends EventEmitter {
                     console.log(`✅ Download concluído e validado 100% em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
 
                     const fileInfo = {
+                        validatedSubtitleText,
                         filePath: fullPath,
                         fileName: selectedFile.name,
                         sizeBytes: stat.size,
@@ -1393,7 +1396,7 @@ class DownloaderManager extends EventEmitter {
                             if (fs.existsSync(epFullPath)) {
                                 const epStat = fs.statSync(epFullPath);
                                 const expectedSize = f.length || 0;
-                                const isSizeOk = expectedSize > 0 ? epStat.size >= expectedSize * 0.95 : epStat.size > minRequiredBytes;
+                                const isSizeOk = f.done && expectedSize > 0 && epStat.size === expectedSize;
                                 if (isSizeOk && epStat.size > 20 * 1024 * 1024) {
                                     harvestedMap[parseInt(epStr, 10)] = {
                                         filePath: epFullPath,
@@ -1405,6 +1408,14 @@ class DownloaderManager extends EventEmitter {
                         }
 
                         const harvestedCount = Object.keys(harvestedMap).length;
+                        if (harvestedCount > 0 && !harvestedMap[options.episode]) {
+                            const error = Object.assign(new Error('Episódio alvo incompleto; outros episódios verificados foram resgatados.'), {
+                                code: 'PACK_TARGET_INCOMPLETE', episodeMap: harvestedMap
+                            });
+                            finished = true;
+                            safeCleanup();
+                            return reject(error);
+                        }
                         if (harvestedCount > 0) {
                             console.log(`🌾 [SEASON PACK HARVEST] Resgatando ${harvestedCount} episódio(s) 100% íntegro(s) no SSD antes de encerrar fonte estagnada!`);
                             const primaryEp = (options.episode && harvestedMap[options.episode]) ? harvestedMap[options.episode] : Object.values(harvestedMap)[0];
@@ -1491,12 +1502,20 @@ class DownloaderManager extends EventEmitter {
                                         if (fs.existsSync(epFullPath)) {
                                             const epStat = fs.statSync(epFullPath);
                                             const expSize = f.length || 0;
-                                            if ((expSize > 0 ? epStat.size >= expSize * 0.95 : epStat.size > minRequiredBytes) && epStat.size > 20 * 1024 * 1024) {
+                                            if (f.done && expSize > 0 && epStat.size === expSize && epStat.size > 20 * 1024 * 1024) {
                                                 harvestedMap[parseInt(epStr, 10)] = { filePath: epFullPath, fileName: f.name, sizeBytes: epStat.size };
                                             }
                                         }
                                     }
                                     const hCount = Object.keys(harvestedMap).length;
+                                    if (hCount > 0 && !harvestedMap[options.episode]) {
+                                        const error = Object.assign(new Error('Episódio alvo incompleto; outros episódios verificados foram resgatados.'), {
+                                            code: 'PACK_TARGET_INCOMPLETE', episodeMap: harvestedMap
+                                        });
+                                        finished = true;
+                                        safeCleanup();
+                                        return reject(error);
+                                    }
                                     if (hCount > 0) {
                                         console.log(`🌾 [SEASON PACK HARVEST] Resgatando ${hCount} episódio(s) prontos antes de trocar de fonte!`);
                                         const primaryEp = (options.episode && harvestedMap[options.episode]) ? harvestedMap[options.episode] : Object.values(harvestedMap)[0];
@@ -1862,10 +1881,9 @@ class DownloaderManager extends EventEmitter {
                     const exec = require('child_process').exec;
                     const cmd = `ffprobe -v quiet -print_format json -show_streams -show_format "${probeFilePath}"`;
 
-                    exec(cmd, { timeout: 15000 }, (err, stdout) => {
-                        try { if (fs.existsSync(probeFilePath)) fs.unlinkSync(probeFilePath); } catch (_) {}
-
+                    exec(cmd, { timeout: 15000 }, async (err, stdout) => {
                         if (err || !stdout) {
+                            await fs.remove(probeFilePath).catch(() => {});
                             return resolve({ success: false, reason: err?.message || 'ffprobe sem retorno' });
                         }
 
@@ -1889,7 +1907,18 @@ class DownloaderManager extends EventEmitter {
                                 return ['eng', 'en'].includes(lang) || /\b(english|eng)\b/i.test(title);
                             };
 
-                            const hasPortugueseAudio = audioStreams.some(isPtLang);
+                            let hasPortugueseAudio = audioStreams.some(isPtLang);
+                            let spokenLanguage;
+                            if (!hasPortugueseAudio && audioStreams.length === 1 &&
+                                /^(und|unk|unknown)?$/i.test(audioStreams[0].tags?.language || '')) {
+                                const SpeechLanguageService = require('./SpeechLanguageService');
+                                const speech = await SpeechLanguageService._sampleAtOffset(probeFilePath, 0, 0, 8).catch(() => null);
+                                if (speech?.probability >= 0.95 && String(speech.sample_text || speech.text || '').trim().length >= 12 &&
+                                    typeof speech.language === 'string' && speech.language) {
+                                    hasPortugueseAudio = speech.language === 'pt';
+                                    spokenLanguage = hasPortugueseAudio ? 'pt' : 'foreign';
+                                }
+                            }
                             const hasPortugueseSub = subtitleStreams.some(isPtLang);
                             const hasEnglishSub = subtitleStreams.some(isEnLang);
 
@@ -1903,12 +1932,15 @@ class DownloaderManager extends EventEmitter {
                                 audioStreams,
                                 subtitleStreams,
                                 hasPortugueseAudio,
+                                spokenLanguage,
                                 hasPortugueseSub,
                                 hasEnglishSub,
                                 audioLangs
                             });
                         } catch (parseErr) {
                             return resolve({ success: false, reason: parseErr.message });
+                        } finally {
+                            await fs.remove(probeFilePath).catch(() => {});
                         }
                     });
                 } catch (e) {

@@ -38,6 +38,14 @@ class StremioServer {
 
     setupMiddlewares() {
         this.app.use(express.json());
+        this.app.use('/api', (req, res, next) => {
+            if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+                (req.get('sec-fetch-site') === 'cross-site' ||
+                    (req.get('origin') && ![this.getBaseUrl(req), `http://${req.get('host')}`, `https://${req.get('host')}`].includes(req.get('origin'))))) {
+                return res.status(403).json({ error: 'Origem da requisição inválida.' });
+            }
+            next();
+        });
 
         // Normalização de trailing slashes para SEO (redireciona /assinar/ -> /assinar com 301)
         this.app.use((req, res, next) => {
@@ -50,8 +58,15 @@ class StremioServer {
         });
 
         const publicDir = path.resolve(__dirname, '../../public');
-        this.app.use(express.static(publicDir));
-        this.app.use('/assets', express.static(path.join(publicDir, 'assets')));
+        this.app.use(express.static(publicDir, {
+            index: false,
+            redirect: false,
+            setHeaders(res, filename) {
+                if (/\.[a-f0-9]{10}\.(js|css)$/.test(filename)) {
+                    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                }
+            }
+        }));
 
         // Header CORS universal para o Stremio e Web Players
         this.app.use((req, res, next) => {
@@ -101,6 +116,10 @@ class StremioServer {
             });
         });
 
+        this.app.get('/api/resumo', (req, res) => {
+            res.json({ stats: this.catalogoManager?.getEstatisticas(), catalogVersion: this.catalogoManager?.getVersion() });
+        });
+
         this.app.get('/api/catalogo/version', async (req, res) => {
             if (this.catalogoManager?.checkAndSyncDbIfChanged) {
                 await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
@@ -119,6 +138,33 @@ class StremioServer {
             res.json(catalogo);
         });
 
+        this.app.get('/api/catalogo/titulos', (req, res) => {
+            const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+            const limit = Math.min(200, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
+            const version = this.catalogoManager.getVersion();
+            if (this.catalogIndex?.version !== version) {
+                const { filmes, series } = this.catalogoManager.getPublicCatalogo();
+                const titles = [
+                    ...filmes.map(item => ({ ...item, itemType: 'filme' })),
+                    ...series.map(({ temporadas, ...item }) => ({ ...item, itemType: 'serie' }))
+                ];
+                this.catalogIndex = { version, titles };
+            }
+            const { titles } = this.catalogIndex;
+            res.json({ version, titles: titles.slice(offset, offset + limit), next: offset + limit < titles.length ? offset + limit : null });
+        });
+
+        this.app.get('/api/catalogo/serie/:id', (req, res) => {
+            const version = this.catalogoManager.getVersion();
+            if (this.catalogSeries?.version !== version) {
+                const { series } = this.catalogoManager.getPublicCatalogo();
+                this.catalogSeries = { version, byId: new Map(series.map(item => [String(item.id), item])) };
+            }
+            const serie = this.catalogSeries.byId.get(req.params.id);
+            if (!serie) return res.sendStatus(404);
+            res.json(serie);
+        });
+
         this.app.get('/api/fila', (req, res) => {
             const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
             res.json(queueStatus);
@@ -129,6 +175,9 @@ class StremioServer {
         // ═══════════════════════════════════════════════════════════════════════
 
         const auth = authService.authMiddleware();
+        this.app.get('/api/admin/ingestion-metrics', auth, (req, res) => {
+            res.json(this.queueManager?.ingestionMetrics || {});
+        });
 
         // 1. Autenticação
         this.app.post('/api/admin/login', async (req, res) => {
@@ -137,7 +186,8 @@ class StremioServer {
             if (!result.success) {
                 return res.status(401).json(result);
             }
-            res.json(result);
+            this.setWebSession(res, 'admin', result.token);
+            res.json({ ...result, token: undefined });
         });
 
         this.app.get('/api/admin/me', auth, (req, res) => {
@@ -180,6 +230,7 @@ class StremioServer {
                 res.json({
                     catalogo: catStats,
                     fila: queueStats,
+                    ingestao: this.queueManager?.ingestionMetrics,
                     assinaturasAtivas,
                     pedidosPendentes,
                     totalTokens,
@@ -323,12 +374,13 @@ class StremioServer {
             // Valida token – aceita Authorization: Bearer <token> OU ?token=<jwt>
             // (EventSource da W3C não suporta headers customizados, por isso aceitamos query param)
             const rawToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() ||
-                             String(req.query.token || '').trim();
+                             authService.readSessionCookie(req, 'admin');
             if (!rawToken) return res.status(401).json({ error: 'Token obrigatório.' });
 
             // verifyToken retorna null em caso de token inválido/expirado (não lança exceção)
             const decoded = authService.verifyToken(rawToken);
             if (!decoded) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+            if (decoded.role !== 'admin') return res.status(403).json({ error: 'Acesso restrito para administradores.' });
 
             // Cabeçalhos SSE
             res.setHeader('Content-Type',  'text/event-stream');
@@ -1284,7 +1336,7 @@ class StremioServer {
                 const authHeader = req.headers['authorization'];
                 if (authHeader && authHeader.startsWith('Bearer ')) {
                     const token = authHeader.split(' ')[1];
-                    const decoded = authService.verifyToken(token);
+                    const decoded = authService.verifyToken(token) || authService.verifyToken(authService.readSessionCookie(req, 'user'));
                     if (decoded) {
                         userId = Number(decoded.id || decoded.telegram_id || 0);
                         username = decoded.username || decoded.email || 'Usuário';
@@ -1357,7 +1409,7 @@ class StremioServer {
                 const authHeader = req.headers['authorization'];
                 if (authHeader && authHeader.startsWith('Bearer ')) {
                     const token = authHeader.split(' ')[1];
-                    const decoded = authService.verifyToken(token);
+                    const decoded = authService.verifyToken(token) || authService.verifyToken(authService.readSessionCookie(req, 'user'));
                     if (decoded) {
                         userId = String(decoded.id || decoded.telegram_id || '');
                         username = decoded.username || decoded.email || 'Usuário';
@@ -1411,7 +1463,7 @@ class StremioServer {
                 const authHeader = req.headers['authorization'];
                 if (authHeader && authHeader.startsWith('Bearer ')) {
                     const token = authHeader.split(' ')[1];
-                    const decoded = authService.verifyToken(token);
+                    const decoded = authService.verifyToken(token) || authService.verifyToken(authService.readSessionCookie(req, 'user'));
                     if (decoded) {
                         userId = String(decoded.id || decoded.telegram_id || '');
                         username = decoded.username || decoded.email || 'Usuário';
@@ -2584,17 +2636,27 @@ class StremioServer {
 
         // APIs de Usuários Públicos (Cadastro / Login / Favoritos / Notificações)
         this.app.post('/api/user/register', async (req, res) => {
-            const { email, username, password, telegramId } = req.body;
-            const result = await authService.registerUser(email, username, password, telegramId);
+            const { email, username, password } = req.body;
+            const result = await authService.registerUser(email, username, password);
             if (!result.success) return res.status(400).json(result);
-            res.json(result);
+            this.setWebSession(res, 'user', result.token);
+            res.json({ ...result, token: undefined });
         });
 
         this.app.post('/api/user/login', async (req, res) => {
             const { identifier, password } = req.body;
             const result = await authService.loginUser(identifier, password);
             if (!result.success) return res.status(401).json(result);
-            res.json(result);
+            this.setWebSession(res, 'user', result.token);
+            this.setWebSession(res, 'admin', result.adminToken || result.token, true);
+            res.json({ ...result, token: undefined, adminToken: undefined });
+        });
+
+        this.app.post('/api/user/logout', (req, res) => {
+            for (const kind of ['user', 'admin']) {
+                res.clearCookie(`bf_${kind}_session`, { path: kind === 'user' ? '/' : '/api', httpOnly: true, sameSite: 'lax', secure: true });
+            }
+            res.sendStatus(204);
         });
 
         this.app.get('/api/user/me', authService.userAuthMiddleware(), async (req, res) => {
@@ -2602,7 +2664,7 @@ class StremioServer {
             if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
             
             // Verifica status VIP atualizado
-            const auth = this.assinaturaManager.verificarAcessoStremio(user.telegram_id || user.id);
+            const auth = this.assinaturaManager.verificarAcessoStremio(user.telegram_id || user.id, true);
             const isVip = auth.authorized || user.is_vip;
 
             // Busca notificações do usuário da tabela user_notifications
@@ -2626,6 +2688,7 @@ class StremioServer {
                     id: user.id,
                     email: user.email,
                     username: user.username,
+                    role: req.user.role === 'admin' ? 'admin' : 'user',
                     is_vip: isVip,
                     telegram_id: user.telegram_id,
                     avatar_url: user.avatar_url || null,
@@ -2848,7 +2911,8 @@ class StremioServer {
 
         this.app.get('/api/user/quota-check', async (req, res) => {
             try {
-                const token = req.query.token || 'public';
+                const session = authService.verifyToken(authService.readSessionCookie(req, 'user'));
+                const token = session?.telegram_id || session?.telegramId || session?.id || req.query.token || 'public';
                 const type = req.query.type || 'filme';
                 const mediaKey = req.query.mediaKey || null;
                 const quota = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(token, type, mediaKey);
@@ -2897,7 +2961,10 @@ class StremioServer {
         this.app.get('/api/auth/telegram/check/:code', (req, res) => {
             try {
                 const result = authService.checkTelegramLoginSession(req.params.code);
-                res.json(result);
+                this.setWebSession(res, 'user', result.token);
+                this.setWebSession(res, 'admin', result.token, true);
+                res.setHeader('Cache-Control', 'no-store');
+                res.json({ ...result, token: undefined });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -2971,7 +3038,7 @@ class StremioServer {
 
         this.app.get('/:userToken', (req, res, next) => {
             const token = req.params.userToken;
-            if (token.includes('.') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health' || token === 'filme' || token === 'serie' || token === 'assistir' || token === 'sala' || token === 'status' || token === 'fila' || token === 'catalogo' || token === 'robots.txt' || token === 'sitemap.xml') {
+            if ((token.includes('.') && authService.verifyToken(token)?.scope !== 'stremio') || token === 'webhook' || token === 'stream' || token === 'install' || token === 'api' || token === 'admin' || token === 'configure' || token === 'assinar' || token === 'health' || token === 'filme' || token === 'serie' || token === 'assistir' || token === 'sala' || token === 'status' || token === 'fila' || token === 'catalogo' || token === 'robots.txt' || token === 'sitemap.xml') {
                 return next();
             }
             this.renderLandingPage(req, res, token);
@@ -3100,6 +3167,7 @@ class StremioServer {
 
     async handleStreamFilme(req, res) {
         const { userToken, id, audio } = req.params;
+        res.setHeader('Cache-Control', 'private, no-cache, no-transform');
 
         // 1. Resolve o filme no catálogo
         const filme = this.catalogoManager.buscarFilmePorId(id);
@@ -3151,7 +3219,7 @@ class StremioServer {
 
         // 3. APENAS após validação da mídia, verifica e consome cota gratuita
         const mediaKey = `filme_${filme.id}`;
-        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
+        const auth = this.resolvePlaybackAccess(req, userToken);
         if (!auth.authorized) {
             const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'filme', mediaKey);
             if (!consumo.permitido) {
@@ -3215,6 +3283,7 @@ class StremioServer {
 
     async handleStreamSerie(req, res) {
         const { userToken, id, season, episode, audio } = req.params;
+        res.setHeader('Cache-Control', 'private, no-cache, no-transform');
         const seasonNum = parseInt(season, 10);
         const epNum = parseInt(episode, 10);
 
@@ -3280,7 +3349,7 @@ class StremioServer {
 
         // 5. APENAS após validação da mídia, verifica e consome cota gratuita
         const mediaKey = `serie_${serie.id}_s${seasonNum}_e${epNum}`;
-        const auth = this.assinaturaManager.verificarAcessoStremio(userToken);
+        const auth = this.resolvePlaybackAccess(req, userToken);
         if (!auth.authorized) {
             const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie', mediaKey);
             if (!consumo.permitido) {
@@ -3344,6 +3413,20 @@ class StremioServer {
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
     }
 
+    resolvePlaybackAccess(req, token) {
+        const session = authService.verifyToken(authService.readSessionCookie(req, 'user'));
+        const identity = session?.telegram_id || session?.telegramId || session?.id;
+        if (session?.role === 'admin') return { authorized: true };
+        const account = this.assinaturaManager.verificarAcessoStremio(identity, true);
+        if (account.authorized) return account;
+        const addon = authService.verifyToken(token);
+        if (addon?.scope === 'stremio') {
+            const access = this.assinaturaManager.verificarAcessoStremio(addon.identity, true);
+            return access.authorized ? access : this.assinaturaManager.verificarAcessoStremio(addon.username, true);
+        }
+        return this.assinaturaManager.verificarAcessoStremio(token);
+    }
+
     async streamTelegramMedia(req, res, midia) {
         try {
             const uploader = telegramUploader.getInstance();
@@ -3381,32 +3464,26 @@ class StremioServer {
             const etag = `"${doc.id || rawMsgId}-${totalSize}"`;
 
             // Permite revalidação ultra-rápida (304 Not Modified) para buffers cacheados pelo browser
-            if (req.headers['if-none-match'] === etag) {
+            if (!range && req.headers['if-none-match'] === etag) {
                 res.writeHead(304, {
                     'ETag': etag,
-                    'Cache-Control': 'public, max-age=86400, no-transform'
+                    'Cache-Control': 'private, no-cache, no-transform'
                 });
                 return res.end();
             }
 
             if (range) {
-                const parts = range.replace(/bytes=/, '').split('-');
-                const start = parseInt(parts[0], 10);
-                let end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-
-                if (isNaN(start) || start >= totalSize || start < 0) {
+                const match = /^bytes=(\d*)-(\d*)$/i.exec(range);
+                const suffix = match && !match[1] ? Number(match[2]) : null;
+                const start = suffix === null ? Number(match?.[1]) : Math.max(0, totalSize - suffix);
+                const end = suffix !== null || !match?.[2] ? totalSize - 1 : Math.min(totalSize - 1, Number(match[2]));
+                if (!match || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+                    (suffix !== null && (!Number.isSafeInteger(suffix) || suffix <= 0)) || start >= totalSize || end < start) {
                     res.writeHead(416, {
                         'Content-Range': `bytes */${totalSize}`,
                         'Accept-Ranges': 'bytes'
                     });
                     return res.end();
-                }
-
-                if (isNaN(end) || end >= totalSize) {
-                    end = totalSize - 1;
-                }
-                if (end < start) {
-                    end = start;
                 }
 
                 const chunkSize = (end - start) + 1;
@@ -3419,8 +3496,9 @@ class StremioServer {
                     'Content-Length': chunkSize,
                     'Content-Type': mimeType,
                     'ETag': etag,
-                    'Cache-Control': 'public, max-age=86400, no-transform'
+                    'Cache-Control': 'private, no-cache, no-transform'
                 });
+                if (req.method === 'HEAD') return res.end();
 
                 const downloadIter = client.iterDownload({
                     file: inputFileLocation,
@@ -3438,7 +3516,7 @@ class StremioServer {
                         if (typeof downloadIter.return === 'function') downloadIter.return();
                     } catch (e) {}
                 };
-                req.on('close', onClose);
+                res.on('close', onClose);
 
                 try {
                     for await (let chunk of downloadIter) {
@@ -3451,7 +3529,7 @@ class StremioServer {
 
                         const canContinue = res.write(chunk);
                         if (!canContinue && !res.writableEnded && !res.destroyed) {
-                            await new Promise(resolve => res.once('drain', resolve));
+                            await this.waitForStreamDrain(res);
                         }
 
                         if (bytesSent >= chunkSize) {
@@ -3463,7 +3541,7 @@ class StremioServer {
                         console.warn('⚠️ Aviso durante iteração do stream de vídeo:', iterErr.message);
                     }
                 } finally {
-                    req.removeListener('close', onClose);
+                    res.removeListener('close', onClose);
                     if (!res.writableEnded && !res.destroyed) {
                         res.end();
                     }
@@ -3474,8 +3552,9 @@ class StremioServer {
                     'Content-Type': mimeType,
                     'Accept-Ranges': 'bytes',
                     'ETag': etag,
-                    'Cache-Control': 'public, max-age=86400, no-transform'
+                    'Cache-Control': 'private, no-cache, no-transform'
                 });
+                if (req.method === 'HEAD') return res.end();
 
                 const downloadIter = client.iterDownload({
                     file: inputFileLocation,
@@ -3490,14 +3569,14 @@ class StremioServer {
                         if (typeof downloadIter.return === 'function') downloadIter.return();
                     } catch (e) {}
                 };
-                req.on('close', onClose);
+                res.on('close', onClose);
 
                 try {
                     for await (const chunk of downloadIter) {
                         if (isAborted || res.writableEnded || res.destroyed) break;
                         const canContinue = res.write(chunk);
                         if (!canContinue && !res.writableEnded && !res.destroyed) {
-                            await new Promise(resolve => res.once('drain', resolve));
+                            await this.waitForStreamDrain(res);
                         }
                     }
                 } catch (iterErr) {
@@ -3505,7 +3584,7 @@ class StremioServer {
                         console.warn('⚠️ Aviso durante iteração do stream de vídeo:', iterErr.message);
                     }
                 } finally {
-                    req.removeListener('close', onClose);
+                    res.removeListener('close', onClose);
                     if (!res.writableEnded && !res.destroyed) {
                         res.end();
                     }
@@ -3517,6 +3596,26 @@ class StremioServer {
                 res.status(500).send('Erro ao transmitir vídeo.');
             }
         }
+    }
+
+    setWebSession(res, kind, token, requireAdmin = false) {
+        const payload = authService.verifyToken(token);
+        if (!payload || (requireAdmin && payload.role !== 'admin')) return;
+        res.cookie(`bf_${kind}_session`, token, {
+            path: kind === 'user' ? '/' : '/api', httpOnly: true, sameSite: 'lax', secure: true, expires: new Date(payload.exp * 1000)
+        });
+    }
+
+    waitForStreamDrain(res) {
+        return new Promise(resolve => {
+            const finish = () => {
+                res.removeListener('close', finish);
+                res.removeListener('drain', finish);
+                resolve();
+            };
+            res.once('close', finish);
+            res.once('drain', finish);
+        });
     }
 
     async autoHealMissingMedia(rawMsgId) {
@@ -3625,7 +3724,7 @@ class StremioServer {
         }
 
         try {
-            let html = fs.readFileSync(indexPath, 'utf8');
+            let html = this.landingTemplate ??= fs.readFileSync(indexPath, 'utf8');
             const baseUrl = config.STREMIO_BASE_URL || 'https://brasilflix.kapsu.com.br';
 
             // Identifica rota de mídia (filme, serie, anime, dorama, assistir)
@@ -3645,11 +3744,24 @@ class StremioServer {
                 const itemType = isSerie ? 'serie' : 'filme';
                 const CatalogoManagerClass = this.catalogoManager?.constructor;
                 const slug = item.slug || (CatalogoManagerClass?.generateSlug ? CatalogoManagerClass.generateSlug(item.nome || item.nomeOriginal || item.id) : String(item.id));
-                const canonicalUrl = `${baseUrl}/${itemType}/${item.id}-${slug}`;
-                const titleText = `${item.nome}${item.ano ? ` (${item.ano})` : ''} - Assistir Online em Full HD | BrasilFlix`;
+                const escapeHtml = value => String(value).replace(/[&<>"']/g, character =>
+                    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+                const canonicalUrl = escapeHtml(`${baseUrl}/${itemType}/${encodeURIComponent(item.id)}-${encodeURIComponent(slug)}`);
+                const titleText = escapeHtml(`${item.nome}${item.ano ? ` (${item.ano})` : ''} - Assistir Online em Full HD | BrasilFlix`);
                 const rawDesc = item.sinopse || item.descricao || `Assista ${item.nome} online completo em full HD com áudio dublado e legendado no BrasilFlix.`;
-                const cleanDesc = rawDesc.replace(/"/g, '&quot;').replace(/\n/g, ' ').substring(0, 160);
-                const imgUrl = item.backdropUrl || item.posterUrl || `${baseUrl}/assets/logo.png`;
+                const description = rawDesc.replace(/\n/g, ' ').substring(0, 160);
+                const cleanDesc = escapeHtml(description);
+                const rawImage = item.backdropUrl || item.posterUrl || `${baseUrl}/logo.jpg`;
+                const image = /^https?:\/\//i.test(rawImage) ? rawImage : `${baseUrl}/logo.jpg`;
+                const imgUrl = escapeHtml(image);
+                const jsonLd = JSON.stringify({
+                    '@context': 'https://schema.org',
+                    '@type': isSerie ? 'TVSeries' : 'Movie',
+                    name: item.nome,
+                    description,
+                    image,
+                    datePublished: item.ano || undefined
+                }).replace(/</g, '\\u003c');
 
                 const seoBlock = `
     <!-- Dynamic Media SEO Generated by BrasilFlix Engine -->
@@ -3667,20 +3779,7 @@ class StremioServer {
     <meta name="twitter:description" content="${cleanDesc}">
     <meta name="twitter:image" content="${imgUrl}">
     <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "${isSerie ? 'TVSeries' : 'Movie'}",
-      "name": "${(item.nome || '').replace(/"/g, '\\"')}",
-      "description": "${cleanDesc.replace(/"/g, '\\"')}",
-      "image": "${imgUrl}",
-      "datePublished": "${item.ano || '2026'}",
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "${item.nota || 8.5}",
-        "bestRating": "10",
-        "ratingCount": "150"
-      }
-    }
+    ${jsonLd}
     </script>`;
 
                 if (html.includes('<title>')) {

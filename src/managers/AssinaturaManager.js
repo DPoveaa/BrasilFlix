@@ -248,13 +248,13 @@ class AssinaturaManager {
         return assinatura;
     }
 
-    verificarAcessoStremio(tokenOuUser) {
+    verificarAcessoStremio(tokenOuUser, verifiedIdentity = false) {
         if (!tokenOuUser) return { authorized: false, reason: 'Token não fornecido' };
 
         const str = tokenOuUser.toString().trim().replace(/^@/, '');
 
         // 1. Admin permanente
-        if (str === config.ADMIN_ID.toString() || str === 'admin' || str === 'bf_admin') {
+        if (verifiedIdentity && str === String(config.ADMIN_ID)) {
             return { authorized: true, user: 'Administrador BrasilFlix', plano: 'vitalicio' };
         }
 
@@ -267,7 +267,7 @@ class AssinaturaManager {
         }
 
         // 3. Assinatura ativa por username ou userId
-        const assinatura = this.assinaturas.find(a => 
+        const assinatura = verifiedIdentity && this.assinaturas.find(a =>
             (a.userId?.toString() === str || a.username?.toLowerCase() === str.toLowerCase()) && 
             a.status === 'ativa'
         );

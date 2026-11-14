@@ -1088,6 +1088,8 @@ ${events.join('\n')}
     }
 
     async getOrExtractPortugueseSubtitle(inputPath, info, metadata = {}) {
+        let providerUnavailable = false;
+        let syncFailed = false;
         const axios = require('axios');
         const https = require('https');
         const agent = new https.Agent({ rejectUnauthorized: false });
@@ -1305,9 +1307,9 @@ ${events.join('\n')}
         }
 
         // 3. Legenda PT-BR direta fornecida pelos metadados da busca (já selecionada especificamente para este release)
-        if (metadata.subtitleUrl) {
+        if (metadata.subtitleUrl || metadata.validatedSubtitleText) {
             try {
-                const content = await this.fetchPortugueseSrt(metadata.subtitleUrl);
+                const content = metadata.validatedSubtitleText || await this.fetchPortugueseSrt(metadata.subtitleUrl);
                 if (content) {
                     await fs.writeFile(srtPath, content, 'utf8');
                     console.log(`✅ Legenda PT-BR direta da fonte selecionada baixada e validada!`);
@@ -1320,15 +1322,14 @@ ${events.join('\n')}
                         }
                         return finalSrt;
                     } else {
-                        // Se o sync falhar ou for inseguro, a legenda direta já foi selecionada para este release específico
-                        console.log(`ℹ️ [SubtitleSync] Sync adicional dispensado ou falhou. Mantendo legenda original do release validada.`);
-                        await SubtitleSync.optimizeSubtitleFile(srtPath);
-                        return srtPath;
+                        syncFailed = true;
+                        await fs.remove(srtPath).catch(() => {});
                     }
                 } else {
                     console.warn(`⚠️ [SubtitleSync] Legenda direta descartada: texto não validado como PT-BR autêntico (detectado Português de Portugal ou qualidade inadequada). Recorrendo à busca completa.`);
                 }
             } catch (e) {
+                providerUnavailable = true;
                 console.warn(`⚠️ [SubtitleSync] Falha ao baixar/sincronizar legenda direta: ${e.message}`);
             }
         }
@@ -1415,13 +1416,11 @@ ${events.join('\n')}
                         });
 
                         if (ptSubs.length > 0) break;
-                    } catch (e) { }
+                    } catch (e) { providerUnavailable = true; }
                 }
 
                 if (ptSubs.length > 0) {
                     console.log(`🌐 Testando até ${ptSubs.length} legendas candidatas no OpenSubtitles (ranqueadas para "${path.basename(inputPath)}")...`);
-
-                    let lastValidPtBrCandidatePath = null;
 
                     // Itera pelas legendas candidatas e tenta sincronizar até achar uma correspondência ideal
                     for (let idx = 0; idx < Math.min(ptSubs.length, 6); idx++) {
@@ -1435,7 +1434,6 @@ ${events.join('\n')}
 
                             const candidateSrtPath = path.join(path.dirname(inputPath), `sub_pt_cand_${Date.now()}_${idx}.srt`);
                             await fs.writeFile(candidateSrtPath, content, 'utf8');
-                            lastValidPtBrCandidatePath = candidateSrtPath;
 
                             const subRel = sub.movieReleaseName || sub.releaseName || sub.id;
                             console.log(`✅ Legenda PT-BR oficial #${idx + 1} [${subRel}] (${sub.lang}) baixada (${(Buffer.byteLength(content) / 1024).toFixed(1)} KB). Sincronizando...`);
@@ -1453,23 +1451,16 @@ ${events.join('\n')}
                                 }
                                 return finalSrt;
                             } else {
+                                syncFailed = true;
+                                await fs.remove(candidateSrtPath).catch(() => {});
                                 console.warn(`⚠️ Legenda candidata #${idx + 1} falhou na sincronia. Testando próxima legenda candidata do OpenSubtitles...`);
                             }
                         } catch (errSub) {
+                            providerUnavailable = true;
                             console.warn(`⚠️ Falha ao baixar/testar candidata #${idx + 1}: ${errSub.message}`);
                         }
                     }
 
-                    // Se a sincronização VAD falhou em todas as opções mas temos a legenda PT-BR baixada,
-                    // usa como último recurso de emergência aplicando otimização de leitura
-                    if (lastValidPtBrCandidatePath && fs.existsSync(lastValidPtBrCandidatePath)) {
-                        console.warn(`⚠️ [SubtitleSync] Sincronização automática falhou em todas as opções. Utilizando legenda PT-BR com tempo de leitura otimizado como fallback emergencial.`);
-                        await SubtitleSync.optimizeSubtitleFile(lastValidPtBrCandidatePath);
-                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                            fs.remove(refSyncTarget).catch(() => { });
-                        }
-                        return lastValidPtBrCandidatePath;
-                    }
                 }
             } catch (e) { }
         }
@@ -1505,7 +1496,7 @@ ${events.join('\n')}
                                         break;
                                     }
                                 }
-                            } catch (_) {}
+                            } catch (_) { providerUnavailable = true; }
                         }
                     } catch (_) {}
                 }
@@ -1521,14 +1512,23 @@ ${events.join('\n')}
                         if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
                             fs.remove(refSyncTarget).catch(() => {});
                         }
-                        return (finalTransSrt && fs.existsSync(finalTransSrt)) ? finalTransSrt : translatedSrtPath;
+                        if (finalTransSrt && fs.existsSync(finalTransSrt)) return finalTransSrt;
+                        if (sourceEnSrt === refSyncTarget || sourceEnSrt === companion.refEnPath) return translatedSrtPath;
+                        syncFailed = true;
+                        await fs.remove(translatedSrtPath).catch(() => {});
                     }
                 }
             }
         } catch (transErr) {
+            providerUnavailable = true;
             console.warn(`⚠️ [SubtitleTranslation] Falha na auto-tradução via IA: ${transErr.message}`);
         }
 
+        if (providerUnavailable || syncFailed) {
+            throw Object.assign(new Error(providerUnavailable ? 'Provedor de legenda temporariamente indisponível' : 'Falha de sincronização de legenda'), {
+                code: providerUnavailable ? 'SUBTITLE_PROVIDER_UNAVAILABLE' : 'SUBTITLE_SYNC_FAILED'
+            });
+        }
         return null;
     }
 

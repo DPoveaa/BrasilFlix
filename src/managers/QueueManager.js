@@ -68,7 +68,8 @@ class QueueManager extends EventEmitter {
         this.maxConcurrentUploads = config.MAX_CONCURRENT_UPLOADS || 4;
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
         this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
-        this.reservedDownloadJobId = null; // Slot de reserva de download atômico (Modo Econômico)
+        this.downloadSlots = new Set();
+        this.ingestionMetrics = { jobs: 0, published: 0, failures: {}, discardedBytes: {}, timings: {} };
         this._processingStarted = false; // Só inicia downloads após o servidor web estar no ar
         // Mutex para evitar race condition no loop de lançamento de workers paralelos
         this._processNextRunning = false;
@@ -978,7 +979,7 @@ class QueueManager extends EventEmitter {
         }
     }
 
-    async saveJob(job) {
+    async saveJob(job, required = false) {
         try {
             await db.query(
                 `INSERT INTO queue_jobs
@@ -1017,6 +1018,8 @@ class QueueManager extends EventEmitter {
                         expectedSize: job.expectedSize,
                         bestSource: job.bestSource,
                         rejectedSubtitleSources: job.rejectedSubtitleSources,
+                        pendingUpload: job.pendingUpload,
+                        validatedSubtitleText: job.validatedSubtitleText,
                         langInfo: job.langInfo,
                         customMagnet: job.customMagnet || null,
                         isManualAdd: job.isManualAdd || false,
@@ -1037,6 +1040,7 @@ class QueueManager extends EventEmitter {
             );
         } catch (e) {
             console.error('❌ Erro ao persistir job no PostgreSQL:', e.message);
+            if (required) throw e;
         }
     }
 
@@ -1068,6 +1072,8 @@ class QueueManager extends EventEmitter {
             expectedSize: extra.expectedSize || null,
             bestSource: extra.bestSource || null,
             rejectedSubtitleSources: extra.rejectedSubtitleSources || [],
+            pendingUpload: extra.pendingUpload || null,
+            validatedSubtitleText: extra.validatedSubtitleText || null,
             langInfo: extra.langInfo || null,
             customMagnet: extra.customMagnet || null,
             isManualAdd: extra.isManualAdd || false,
@@ -1705,41 +1711,36 @@ class QueueManager extends EventEmitter {
     }
 
     acquireDownloadSlot(jobId) {
-        const mode = SchedulerService.getActiveMode();
-        if (mode !== 'eco') return true;
-
-        // Auto-limpeza de segurança: se o job que reservou o slot não existe mais
-        // em activeJobs nem no DownloaderManager, libera automaticamente.
-        // Isso evita deadlock permanente quando um job falha antes de liberar o slot.
-        if (this.reservedDownloadJobId !== null && this.reservedDownloadJobId !== jobId) {
-            const reservedStillActive = this.activeJobs.has(this.reservedDownloadJobId);
-            const reservedInDownloader = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(this.reservedDownloadJobId);
-            if (!reservedStillActive && !reservedInDownloader) {
-                console.log(`🔓 [Slot Auto-Liberado] Job reservado "${this.reservedDownloadJobId}" não está mais ativo. Slot liberado automaticamente.`);
-                this.reservedDownloadJobId = null;
-            }
-        }
-
-        const isDownloaderActive = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.size >= 1;
-        const isDownloaderOwnsIt = DownloaderManager && DownloaderManager.activeDownloads && DownloaderManager.activeDownloads.has(jobId);
-
-        if (this.reservedDownloadJobId === jobId || isDownloaderOwnsIt) {
-            return true;
-        }
-
-        if (this.reservedDownloadJobId === null && (!isDownloaderActive || isDownloaderOwnsIt)) {
-            this.reservedDownloadJobId = jobId;
-            console.log(`🔒 [Slot Reservado] Job "${jobId}" reservou o slot único de download (Modo Econômico).`);
-            return true;
-        }
-
-        return false;
+        if (this.downloadSlots.has(jobId)) return true;
+        const limit = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || this.maxConcurrentDownloads);
+        if (this.downloadSlots.size >= limit) return false;
+        this.downloadSlots.add(jobId);
+        return true;
     }
 
     releaseDownloadSlot(jobId) {
-        if (this.reservedDownloadJobId === jobId) {
-            this.reservedDownloadJobId = null;
-            console.log(`🔓 [Slot Liberado] Job "${jobId}" liberou o slot de download.`);
+        this.downloadSlots.delete(jobId);
+    }
+
+    recordIngestionTiming(stage, startedAt) {
+        const metric = this.ingestionMetrics.timings[stage] ||= { samples: 0, totalMs: 0 };
+        metric.samples++;
+        metric.totalMs += Date.now() - startedAt;
+    }
+
+    async enqueueRecoveredPackEpisodes(job, metadata, source, episodeMap) {
+        for (const [episode, media] of Object.entries(episodeMap)) {
+            await this.addJob(job.title, 'serie', job.priority, {
+                tmdbId: metadata.tmdbId || job.tmdbId,
+                season: job.season,
+                episode: Number(episode),
+                audioPreference: source.isDublado ? 'dublado' : 'legendado',
+                isAnime: job.isAnime,
+                originalLanguage: job.originalLanguage,
+                rawFilePath: media.filePath,
+                expectedSize: media.sizeBytes,
+                bestSource: source
+            });
         }
     }
 
@@ -1763,17 +1764,7 @@ class QueueManager extends EventEmitter {
     }
 
     getActiveDownloadsCount() {
-        let count = 0;
-        for (const job of this.activeJobs.values()) {
-            const hasRaw = !!(job.rawFilePath && fs.existsSync(job.rawFilePath));
-            const hasOpt = !!(job.optimizedPath && fs.existsSync(job.optimizedPath));
-            if (job.status === 'downloading' || (!hasRaw && !hasOpt)) {
-                count++;
-            }
-        }
-        const activeInDownloader = (DownloaderManager && DownloaderManager.activeDownloads) ? DownloaderManager.activeDownloads.size : 0;
-        const reservedCount = this.reservedDownloadJobId ? 1 : 0;
-        return Math.max(count, activeInDownloader, reservedCount);
+        return this.downloadSlots.size;
     }
 
     getActiveOptimizationsCount() {
@@ -1841,7 +1832,8 @@ class QueueManager extends EventEmitter {
             const maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
             const maxUploads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || config.MAX_CONCURRENT_UPLOADS || 3);
             // O limite global de concorrência é a soma dos slots independentes de cada fase
-            const maxConcurrent = mode === 'eco' ? (maxDownloads + maxTranscodes + maxUploads) : (maxDownloads + maxTranscodes + maxUploads);
+            const maxSearches = mode === 'eco' ? 2 : Math.min(maxDownloads, 4);
+            const maxConcurrent = maxSearches + maxDownloads + maxTranscodes + maxUploads;
 
             // Se o disco estiver acima da margem, aguarda uploads liberarem espaço antes de novos downloads
             const diskCrowded = await DownloaderManager.isDiskOvercrowded().catch(() => false);
@@ -1851,11 +1843,10 @@ class QueueManager extends EventEmitter {
 
             // Dispara jobs em paralelo enquanto houver slots livres
             while (this.activeJobs.size < maxConcurrent) {
-                const activeDownloads = this.getActiveDownloadsCount();
                 const activeTranscodes = this.getActiveOptimizationsCount();
                 const activeUploads = this.getActiveUploadsCount();
 
-                const canDownload = !diskCrowded && isNetworkAllowed && activeDownloads < maxDownloads;
+                const canDownload = !diskCrowded && isNetworkAllowed && [...this.activeJobs.values()].filter(job => !job.rawFilePath && !job.optimizedPath && !this.downloadSlots.has(job.id)).length < maxSearches;
                 const canTranscode = activeTranscodes < maxTranscodes;
                 const canUpload = isNetworkAllowed && activeUploads < maxUploads;
 
@@ -1941,11 +1932,13 @@ class QueueManager extends EventEmitter {
         }
 
         nextJob.status = 'processing';
+        if (nextJob.createdAt && !nextJob.attemptCount) this.recordIngestionTiming('queue', new Date(nextJob.createdAt).getTime());
         await this.saveJob(nextJob);
 
         console.log(`\n⚙️ [TRILHA PARALELA ${this.activeJobs.size}/${this.maxConcurrentJobs}] INICIANDO: "${nextJob.title}" (Tipo: ${nextJob.type}, Prioridade: ${nextJob.priority})`);
 
         try {
+            this.ingestionMetrics.jobs++;
             await this.executeJob(nextJob);
             if (nextJob.status === 'queued') return;
             nextJob.status = 'completed';
@@ -1954,6 +1947,8 @@ class QueueManager extends EventEmitter {
             this.queue = this.queue.filter(j => j.id !== nextJob.id);
             console.log(`🎉 [TRILHA CONCLUÍDA] Trabalho finalizado com sucesso: "${nextJob.title}"`);
         } catch (error) {
+            const reason = error.code || 'OTHER';
+            this.ingestionMetrics.failures[reason] = (this.ingestionMetrics.failures[reason] || 0) + 1;
             // Incrementa o contador de tentativas
             nextJob.attemptCount = (nextJob.attemptCount || 0) + 1;
 
@@ -1974,7 +1969,9 @@ class QueueManager extends EventEmitter {
                 nextJob.progress = 0;
                 nextJob.retryAfter = new Date(Date.now() + 45 * 60 * 1000).toISOString();
                 nextJob.error = `Tentativa ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}: ${error.message}`;
-                nextJob.progressDetails = `Aguardando nova tentativa (${attemptsLeft} restante(s))...`;
+                nextJob.progressDetails = ['SUBTITLE_PROVIDER_UNAVAILABLE', 'SUBTITLE_SYNC_FAILED'].includes(error.code)
+                    ? `Aguardando legenda: ${error.message}`
+                    : `Aguardando nova tentativa (${attemptsLeft} restante(s))...`;
 
                 // Define queueOrder máximo para garantir que fique no final absoluto da fila
                 const maxOrder = Math.max(0, ...this.queue.map(j => j.queueOrder || 0)) + 100;
@@ -2258,6 +2255,7 @@ class QueueManager extends EventEmitter {
 
         // 2. Buscar fontes (Torrents / Direct) se necessário
         let sources = [];
+        const searchStartedAt = Date.now();
         let downloadedMedia = null;
         let bestSource = job.bestSource || null;
         let rawFilePath = job.rawFilePath || null;
@@ -2776,6 +2774,7 @@ class QueueManager extends EventEmitter {
                 }
 
                 // 3. Download com Fallback Automático entre as melhores opções (tenta até 8 fontes com timeout global de 25 min)
+                this.recordIngestionTiming('search', searchStartedAt);
                 job.status = 'downloading';
                 await this.saveJob(job);
 
@@ -2896,9 +2895,9 @@ class QueueManager extends EventEmitter {
                 const maxAttempts = downloadedMedia?.filePath ? 0 : Math.min(8, sources.length);
 
                 // No Modo Econômico, garante reserva atômica de slot único APENAS quando o download real for iniciar
-                if (maxAttempts > 0 && !downloadedMedia?.filePath && SchedulerService.getActiveMode() === 'eco') {
+                if (!downloadedMedia?.filePath && (maxAttempts > 0 || (job.audioPreference === 'dublado' && !jaPossuiLegendado && !job.isUpgrade))) {
                     while (!this.acquireDownloadSlot(job.id)) {
-                        console.log(`🍃 [Modo Econômico] Download de "${job.title}" aguardando liberação do slot de download...`);
+                        console.log(`🍃 [Fila de transferência] Download de "${job.title}" aguardando liberação do slot de download...`);
                         await new Promise(r => setTimeout(r, 5000));
                         if (!SchedulerService.isAllowedToRun()) {
                             job.status = 'queued';
@@ -2912,14 +2911,21 @@ class QueueManager extends EventEmitter {
 
                 for (let i = 0; i < maxAttempts; i++) {
                     const currentSource = sources[i];
+                    const transferStartedAt = Date.now();
+                    let firstByte = false;
+                    const onProgress = progress => {
+                        if (!firstByte && progress.percent > 0) {
+                            firstByte = true;
+                            this.recordIngestionTiming('firstByte', transferStartedAt);
+                        }
+                        job.progress = progress.percent;
+                        job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed || 'Web CDN'})`;
+                    };
                     console.log(`🎯 Tentando fonte [${i + 1}/${maxAttempts}]: ${currentSource.title} (${currentSource.sizeMB} MB, ${currentSource.seeders || 0} seeds, ${currentSource.audio || 'PT-BR'})`);
 
                     try {
                         if (currentSource.magnet) {
-                            downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, (progress) => {
-                                job.progress = progress.percent;
-                                job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed})`;
-                            }, {
+                            downloadedMedia = await DownloaderManager.downloadTorrent(currentSource.magnet, onProgress, {
                                 jobId: job.id,
                                 title: job.title,
                                 originalTitle: metadata.nomeOriginal || job.originalTitle,
@@ -2959,10 +2965,7 @@ class QueueManager extends EventEmitter {
                             const finalExt = (baseExt === '.mp4' || baseExt === '.mkv') ? baseExt : '.mp4';
                             const fileName = `${safeTitle}${epSuffix}_${Date.now()}${finalExt}`;
 
-                            downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, (progress) => {
-                                job.progress = progress.percent;
-                                job.progressDetails = `${progress.downloaded} / ${progress.total} (${progress.speed || 'Web CDN'})`;
-                            }, {
+                            downloadedMedia = await DownloaderManager.downloadHttp(currentSource.url, fileName, onProgress, {
                                 jobId: job.id,
                                 title: job.title,
                                 season: job.season,
@@ -2991,10 +2994,14 @@ class QueueManager extends EventEmitter {
                         }
 
                         if (downloadedMedia && downloadedMedia.filePath) {
+                            this.recordIngestionTiming('transfer', transferStartedAt);
                             bestSource = currentSource;
                             break;
                         }
                     } catch (err) {
+                        if (err.code === 'PACK_TARGET_INCOMPLETE') {
+                            await this.enqueueRecoveredPackEpisodes(job, metadata, currentSource, err.episodeMap);
+                        }
                         if (err.message === 'DOWNLOAD_CANCELLED') {
                             console.log(`⏹️ [Queue Worker] Download de "${job.title}" cancelado ordenadamente devido a mudança de modo/pausa.`);
                             job.status = 'queued';
@@ -3092,6 +3099,9 @@ class QueueManager extends EventEmitter {
                                         break;
                                     }
                                 } catch (errLeg) {
+                                    if (errLeg.code === 'PACK_TARGET_INCOMPLETE') {
+                                        await this.enqueueRecoveredPackEpisodes(job, metadata, currentLeg, errLeg.episodeMap);
+                                    }
                                     if (errLeg.message === 'DOWNLOAD_CANCELLED') {
                                         console.log(`⏹️ [Queue Worker] Fallback de "${job.title}" cancelado ordenadamente.`);
                                         job.status = 'queued';
@@ -3135,6 +3145,7 @@ class QueueManager extends EventEmitter {
                 job.rawFilePath = rawFilePath;
                 job.expectedSize = downloadedMedia.sizeBytes;
                 job.bestSource = bestSource;
+                job.validatedSubtitleText = downloadedMedia.validatedSubtitleText || null;
                 await this.saveJob(job);
 
                 // Se for um Season Pack com múltiplos episódios indexados, enfileira e vincula os outros episódios ao SSD local
@@ -3252,6 +3263,7 @@ class QueueManager extends EventEmitter {
         }
 
         if (!resumeFromOptimized) {
+            const optimizeStartedAt = Date.now();
             // 3.4 Validação: arquivo físico deve corresponder ao episódio do job (evita S01E01 virar T1E2)
             // IMPORTANTE: usa APENAS o basename para evitar que o nome da pasta-pai (ex: S04E01-02-03)
             // seja capturado pelo regex antes do nome do arquivo real (ex: S04E02).
@@ -3469,6 +3481,7 @@ class QueueManager extends EventEmitter {
                     imdbId: metadata.imdbId,
                     tmdbId: metadata.tmdbId,
                     subtitleUrl: bestSource?.subtitleUrl || job.bestSource?.subtitleUrl,
+                    validatedSubtitleText: job.validatedSubtitleText,
                     isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
                     hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
                     isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
@@ -3483,6 +3496,7 @@ class QueueManager extends EventEmitter {
                 });
 
                 // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
+                this.recordIngestionTiming('optimization', optimizeStartedAt);
                 // para não manter cópias duplicadas ocupando espaço durante a fase de upload
                 if (rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
                     console.log(`🧹 [Otimização Concluída] Liberando espaço em disco: removendo arquivo bruto original (${path.basename(rawFilePath)})...`);
@@ -3492,6 +3506,12 @@ class QueueManager extends EventEmitter {
                     await this.saveJob(job);
                 }
             } catch (errOpt) {
+                if (errOpt.code === 'SUBTITLE_PROVIDER_UNAVAILABLE' || errOpt.code === 'SUBTITLE_SYNC_FAILED') {
+                    job.optimizedPath = null;
+                    job.progressDetails = errOpt.message;
+                    await this.saveJob(job);
+                    throw errOpt;
+                }
                 // Se a otimização falhou por ausência de legenda PT-BR ou arquivo estrangeiro sem tradução
                 const isMissingSubError = errOpt.message && (
                     errOpt.message.includes('sem legenda PT-BR') ||
@@ -3506,6 +3526,8 @@ class QueueManager extends EventEmitter {
                     }
                     // Limpa imediatamente o arquivo bruto em disco para não ocupar GBs inúteis
                     if (rawFilePath && fs.existsSync(rawFilePath)) {
+                        const bytes = fs.statSync(rawFilePath).size;
+                        this.ingestionMetrics.discardedBytes.noSubtitle = (this.ingestionMetrics.discardedBytes.noSubtitle || 0) + bytes;
                         console.log(`🧹 [Limpeza] Removendo arquivo sem legenda PT-BR disponível (${path.basename(rawFilePath)})...`);
                         await DownloaderManager.cleanupFile(rawFilePath).catch(() => {});
                         rawFilePath = null;
@@ -3780,12 +3802,22 @@ class QueueManager extends EventEmitter {
             episodioNome: job.type === 'serie' ? (metadata.episodioNome || `Episódio ${job.episode || 1}`) : ''
         };
         job.lastUploadProgressAt = Date.now();
-        const uploadResult = await this.uploader.uploadVideo(optimizedPath, uploadMetadata, (p) => {
+        const uploadStartedAt = Date.now();
+        const uploadResult = job.pendingUpload || await this.uploader.uploadVideo(optimizedPath, uploadMetadata, (p) => {
             job.progress = p.percent;
             job.progressDetails = `Enviando Telegram: ${p.percent}% (${p.speed})`;
             job.lastUploadProgressAt = Date.now();
             this.activeTask = job;
         });
+        if (!job.pendingUpload) this.recordIngestionTiming('upload', uploadStartedAt);
+        job.pendingUpload = {
+            messageId: uploadResult.messageId,
+            fileId: uploadResult.fileId,
+            fileName: uploadResult.fileName,
+            fileSize: uploadResult.fileSize,
+            fileUniqueId: uploadResult.fileUniqueId
+        };
+        await this.saveJob(job, true);
 
         // 5.5 VALIDAÇÃO PÓS-UPLOAD: cruza o nome real do arquivo com o título esperado do job
         // Previne que torrents falsos/renomeados (ex: "The Shadow Men 1997" entregue como "Resident Evil")
@@ -3816,6 +3848,8 @@ class QueueManager extends EventEmitter {
                 const errMsg = `🚫 [TORRENT INCOMPATÍVEL PÓS-UPLOAD] Job "${job.title}" recebeu arquivo incompatível: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
                 console.error(errMsg);
                 await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => { });
+                job.pendingUpload = null;
+                await this.saveJob(job);
                 throw new Error(errMsg);
             }
 
@@ -3838,6 +3872,8 @@ class QueueManager extends EventEmitter {
                 console.error(errMsg);
                 // Apaga o arquivo falso do Telegram imediatamente
                 await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => { });
+                job.pendingUpload = null;
+                await this.saveJob(job);
                 throw new Error(errMsg);
             }
         }
@@ -4007,6 +4043,9 @@ class QueueManager extends EventEmitter {
         }
 
         // 8. Limpeza dos arquivos temporários
+        this.ingestionMetrics.published++;
+        job.pendingUpload = null;
+        await this.saveJob(job);
         await DownloaderManager.cleanupFile(rawFilePath);
         await DownloaderManager.cleanupFile(optimizedPath);
 

@@ -190,7 +190,8 @@ class AuthService {
             .update(`${b64Header}.${b64Payload}`)
             .digest('base64url');
 
-        if (signature !== expectedSig) {
+        if (!/^[A-Za-z0-9_-]+$/.test(signature) || signature.length !== expectedSig.length ||
+            !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
             return null;
         }
 
@@ -906,29 +907,14 @@ class AuthService {
                 token = authHeader.substring(7).trim();
             } else if (req.headers['x-admin-token']) {
                 token = req.headers['x-admin-token'];
-            } else if (req.query && req.query.admin_token) {
-                token = req.query.admin_token;
-            } else if (req.query && req.query.token) {
-                token = req.query.token;
-            }
+            } else token = this.readSessionCookie(req, 'admin');
+            if (!token || token === 'session') token = this.readSessionCookie(req, 'admin');
 
             if (!token || token === 'public' || token === 'null' || token === 'undefined') {
                 return res.status(401).json({ error: 'Acesso não autorizado. Token JWT ausente.' });
             }
 
-            const strToken = String(token).trim();
-            if (strToken === String(config.ADMIN_ID) || strToken === 'admin' || strToken === 'bf_admin') {
-                req.adminUser = {
-                    id: 1,
-                    username: 'admin',
-                    role: 'admin',
-                    telegram_id: config.ADMIN_ID,
-                    is_vip: true
-                };
-                return next();
-            }
-
-            const payload = this.verifyToken(token);
+            const payload = this.verifyToken(token) || this.verifyToken(this.readSessionCookie(req, 'admin'));
             if (!payload || payload.role !== 'admin') {
                 return res.status(403).json({ error: 'Acesso restrito para administradores.' });
             }
@@ -950,9 +936,8 @@ class AuthService {
                 token = req.headers['x-user-token'];
             } else if (req.headers['x-admin-token']) {
                 token = req.headers['x-admin-token'];
-            } else if (req.query && req.query.token) {
-                token = req.query.token;
-            }
+            } else token = this.readSessionCookie(req, 'user');
+            if (!token || token === 'session' || token === 'null') token = this.readSessionCookie(req, 'user');
 
             if (!token || token === 'public' || token === 'null' || token === 'undefined') {
                 if (optional) {
@@ -962,51 +947,8 @@ class AuthService {
                 return res.status(401).json({ error: 'Faça login para acessar esta funcionalidade.' });
             }
 
-            const strToken = String(token).trim();
-
-            // Admin permanente pelo ID configurado
-            if (strToken === String(config.ADMIN_ID)) {
-                req.user = {
-                    id: 1,
-                    username: 'admin',
-                    role: 'admin',
-                    telegram_id: config.ADMIN_ID,
-                    is_vip: true
-                };
-                return next();
-            }
-
-            // Identificação por Telegram ID numérico
-            if (/^\d+$/.test(strToken)) {
-                const tgId = Number(strToken);
-                try {
-                    const uRes = await db.query('SELECT * FROM usuarios WHERE telegram_id = $1', [tgId]);
-                    if (uRes.rows.length > 0) {
-                        const u = uRes.rows[0];
-                        req.user = {
-                            id: u.id,
-                            username: u.username,
-                            email: u.email,
-                            telegram_id: u.telegram_id,
-                            role: (tgId === config.ADMIN_ID || u.role === 'admin') ? 'admin' : 'user',
-                            is_vip: u.is_vip
-                        };
-                        return next();
-                    } else {
-                        req.user = {
-                            id: null,
-                            username: `tg_${tgId}`,
-                            telegram_id: tgId,
-                            role: tgId === config.ADMIN_ID ? 'admin' : 'user',
-                            is_vip: false
-                        };
-                        return next();
-                    }
-                } catch (e) { }
-            }
-
-            const payload = this.verifyToken(token);
-            if (!payload) {
+            const payload = this.verifyToken(token) || this.verifyToken(this.readSessionCookie(req, 'user'));
+            if (!payload || !payload.id || payload.scope === 'stremio') {
                 if (optional) {
                     req.user = null;
                     return next();
@@ -1017,6 +959,10 @@ class AuthService {
             req.user = payload;
             next();
         };
+    }
+
+    readSessionCookie(req, kind) {
+        return (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)bf_${kind}_session=([A-Za-z0-9_.-]+)(?:;|$)`))?.[1];
     }
 
     async getMediaReviews(mediaType, mediaId, seasonNum = 0, episodeNum = 0) {

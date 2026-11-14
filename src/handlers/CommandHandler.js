@@ -3976,7 +3976,7 @@ class CommandHandler {
         }
 
         const assinatura = this.assinaturaManager.autorizarUsernameVitalicio(cleanUser);
-        const links = this.getStremioLinks(cleanUser);
+        const links = this.getStremioLinks(authService.generateToken({ scope: 'stremio', identity: cleanUser }, 90 * 86400));
 
         const mensagem = `👑 *Acesso Vitalício Liberado com Sucesso!*\n\n` +
                         `👤 *Usuário:* @${cleanUser}\n` +
@@ -4079,7 +4079,7 @@ class CommandHandler {
 
         const isAssinante = this.assinaturaManager.verificarAssinatura(userId) || userId === config.ADMIN_ID;
 
-        const token = msg.from.username || userId.toString();
+        const token = authService.generateToken({ scope: 'stremio', identity: userId.toString(), username: msg.from.username }, 90 * 86400);
         const links = this.getStremioLinks(token);
 
         let mensagem = `📺 *BrasilFlix no Stremio (Smart TV & Celular)*\n\n` +
@@ -6318,4 +6318,4 @@ class CommandHandler {
     }
 }
 
-module.exports = CommandHandler; 
+module.exports = CommandHandler;
