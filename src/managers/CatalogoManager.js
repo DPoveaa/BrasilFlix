@@ -316,7 +316,8 @@ class CatalogoManager {
      * Verifica se a referência de mídia possui identificador verificado e reproduzível.
      * Mídias confirmadas com status definitivo MISSING, INVALID_MEDIA ou FILE_ID_MISMATCH
      * NÃO são expostas como reproduzíveis no catálogo público.
-     * Mídias válidas no banco de dados com messageId ou fileId são tratadas como reproduzíveis por padrão.
+     * Uma mensagem do armazém é necessária para reprodução. Erros temporários de verificação
+     * não removem referências que ainda não foram confirmadas como inválidas.
      */
     static hasPlayableMedia(mediaObj) {
         if (!mediaObj) return false;
@@ -324,20 +325,9 @@ class CatalogoManager {
         const fileId = mediaObj.fileId ?? mediaObj.file_id;
 
         const hasValidMsg = msgId !== null && msgId !== undefined && msgId !== '' && !isNaN(Number(msgId)) && Number(msgId) > 0;
-        const hasValidFile = typeof fileId === 'string' && fileId.trim().length > 0;
-
-        if (!hasValidMsg && !hasValidFile) return false;
-
-        if (hasValidMsg) {
-            const num = Number(msgId);
-            const state = CatalogoManager.getMediaVerificationState(num, fileId);
-            if (state === 'MISSING' || state === 'INVALID_MEDIA' || state === 'FILE_ID_MISMATCH') {
-                return false;
-            }
-            return true;
-        }
-
-        return true;
+        if (!hasValidMsg) return false;
+        const state = CatalogoManager.getMediaVerificationState(Number(msgId), fileId);
+        return !['MISSING', 'INVALID_MEDIA', 'FILE_ID_MISMATCH'].includes(state);
     }
 
     static _periodicRevalidationTimer = null;
@@ -747,14 +737,14 @@ class CatalogoManager {
 
         // --- Teto efetivo de completude ---
         // Para séries finalizadas/desconhecidas: usa o total TMDB quando disponível,
-        // ou maxAnySeq como fallback quando TMDB não tiver metadados da temporada.
-        const effectiveCeiling = (expectedEps > 0) ? expectedEps : maxAnySeq;
+        // Sem total externo, cada faixa usa como referência a própria sequência contínua.
+        const effectiveCeiling = expectedEps || maxAnySeq;
 
         // Para séries em lançamento: áudio é completo se tiver qualquer sequência contínua a partir do Ep 1,
         // ou se já atingiu o total de episódios previstos.
         const isCompleto = isEmLancamento ? (maxAnySeq > 0) : (maxAnySeq >= effectiveCeiling);
-        const isDubCompleto = isEmLancamento ? (maxDubSeq > 0) : (maxDubSeq >= effectiveCeiling);
-        const isLegCompleto = isEmLancamento ? (maxLegSeq > 0) : (maxLegSeq >= effectiveCeiling);
+        const isDubCompleto = maxDubSeq > 0 && (isEmLancamento || !expectedEps || maxDubSeq >= effectiveCeiling);
+        const isLegCompleto = maxLegSeq > 0 && (isEmLancamento || !expectedEps || maxLegSeq >= effectiveCeiling);
 
         // --- Liberação progressiva para temporadas longas (Bug 3 - Pokémon/One Piece) ---
         // Séries muito longas não precisam estar completas para aparecer no catálogo.

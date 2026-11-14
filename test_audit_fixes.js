@@ -198,6 +198,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         let bodyResp1 = null;
         const fakeReq1 = { params: { userToken: 'token_user', id: '10', audio: 'dublado' }, headers: {} };
         const fakeRes1 = {
+            setHeader: () => {},
             status: (s) => { statusResp1 = s; return fakeRes1; },
             send: (b) => { bodyResp1 = b; }
         };
@@ -209,6 +210,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         let bodyResp2 = null;
         const fakeReq2 = { params: { userToken: 'token_user', id: '20', audio: 'dublado' }, headers: {} };
         const fakeRes2 = {
+            setHeader: () => {},
             status: (s) => { statusResp2 = s; return fakeRes2; },
             send: (b) => { bodyResp2 = b; }
         };
@@ -268,7 +270,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         registeredConsumptions = [];
         checkedConsumptions = [];
         let s1 = null;
-        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '99', audio: 'dublado' }, headers: {} }, { status: (c) => { s1 = c; return { send: () => {} }; } });
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '99', audio: 'dublado' }, headers: {} }, { setHeader: () => {}, status: (c) => { s1 = c; return { send: () => {} }; } });
         assert(s1 === 404, 'Episodio inexistente deve retornar 404');
         assert(registeredConsumptions.length === 0, 'Episodio inexistente NAO deve consumir cota');
         assert(checkedConsumptions.length === 0, 'Episodio inexistente NAO deve verificar cota');
@@ -277,7 +279,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         registeredConsumptions = [];
         checkedConsumptions = [];
         let s2 = null;
-        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '6', audio: 'dublado' }, headers: {} }, { status: (c) => { s2 = c; return { send: () => {} }; } });
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '6', audio: 'dublado' }, headers: {} }, { setHeader: () => {}, status: (c) => { s2 = c; return { send: () => {} }; } });
         assert(s2 === 404, 'Episodio apos gap de continuidade deve retornar 404');
         assert(registeredConsumptions.length === 0, 'Episodio apos gap NAO deve consumir cota');
         assert(checkedConsumptions.length === 0, 'Episodio apos gap NAO deve verificar cota');
@@ -286,7 +288,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         registeredConsumptions = [];
         checkedConsumptions = [];
         let s3 = null;
-        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'legendado' }, headers: {} }, { status: (c) => { s3 = c; return { send: () => {} }; } });
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'legendado' }, headers: {} }, { setHeader: () => {}, status: (c) => { s3 = c; return { send: () => {} }; } });
         assert(s3 === 404, 'Versao de audio inexistente deve retornar 404');
         assert(registeredConsumptions.length === 0, 'Audio inexistente NAO deve consumir cota');
         assert(checkedConsumptions.length === 0, 'Audio inexistente NAO deve verificar cota');
@@ -295,7 +297,7 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         registeredConsumptions = [];
         checkedConsumptions = [];
         let s4 = null;
-        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '102', audio: 'dublado' }, headers: {} }, { status: (c) => { s4 = c; return { send: () => {} }; } });
+        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '102', audio: 'dublado' }, headers: {} }, { setHeader: () => {}, status: (c) => { s4 = c; return { send: () => {} }; } });
         assert(s4 === 404, 'Identificador invalido deve retornar 404');
         assert(registeredConsumptions.length === 0, 'Identificador invalido NAO deve consumir cota');
         assert(checkedConsumptions.length === 0, 'Identificador invalido NAO deve verificar cota');
@@ -303,14 +305,14 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         // 12.5 Episódio válido com mídia válida -> consome cota normalmente
         registeredConsumptions = [];
         checkedConsumptions = [];
-        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'dublado' }, headers: {} }, { status: () => ({ send: () => {} }) });
+        await quotaServer.handleStreamSerie({ params: { userToken: 'u1', id: '200', season: '1', episode: '1', audio: 'dublado' }, headers: {} }, { setHeader: () => {}, status: () => ({ send: () => {} }) });
         assert(registeredConsumptions.length === 1, 'Episodio valido DEVE consumir cota');
         assert(registeredConsumptions[0].mediaKey === 'serie_200_s1_e1', 'mediaKey da serie deve estar correto');
 
         // 12.6 Filme válido com mídia válida -> consome cota normalmente
         registeredConsumptions = [];
         checkedConsumptions = [];
-        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '100', audio: 'dublado' }, headers: {} }, { status: () => ({ send: () => {} }) });
+        await quotaServer.handleStreamFilme({ params: { userToken: 'u1', id: '100', audio: 'dublado' }, headers: {} }, { setHeader: () => {}, status: () => ({ send: () => {} }) });
         assert(registeredConsumptions.length === 1, 'Filme valido DEVE consumir cota');
         assert(registeredConsumptions[0].mediaKey === 'filme_100', 'mediaKey do filme deve estar correto');
 
@@ -552,14 +554,14 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         try {
             telegramUploaderInstance.getStorageMessage = async () => ({ status: 'ERROR', error: 'Network timeout' });
             let respCode = null;
-            await mockStreamServer.streamTelegramMedia({}, { status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 999 });
+            await mockStreamServer.streamTelegramMedia({}, { setHeader: () => {}, status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 999 });
             assert(respCode === 503, 'Erro de rede deve retornar 503');
             assert(autoHealTriggeredFor.length === 0, 'Erro de rede NÃO deve disparar auto-healing');
 
             // 17.2 Mídia confirmada ausente (NOT_FOUND) -> Retorna 404 e DISPARA auto-healing
             telegramUploaderInstance.getStorageMessage = async () => ({ status: 'NOT_FOUND', error: null });
             respCode = null;
-            await mockStreamServer.streamTelegramMedia({}, { status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 888 });
+            await mockStreamServer.streamTelegramMedia({}, { setHeader: () => {}, status: (c) => { respCode = c; return { send: () => {} }; } }, { messageId: 888 });
             assert(respCode === 404, 'Mídia NOT_FOUND deve retornar 404');
             assert(autoHealTriggeredFor.includes(888), 'Mídia confirmada ausente DEVE disparar auto-healing');
         } finally {
@@ -572,9 +574,10 @@ console.log('\n--- Teste 10: Teste Integrado com processSerie & StremioService S
         CatalogoManager.mediaVerificationCache.set(200, 'VERIFIED_PLAYABLE', { docId: 'doc_200' });
         assert(CatalogoManager.hasPlayableMedia({ messageId: 100 }) === true, 'messageId numérico positivo verificado deve ser playable');
         assert(CatalogoManager.hasPlayableMedia({ messageId: '200' }) === true, 'messageId string numérica positiva verificada deve ser playable');
-        assert(CatalogoManager.hasPlayableMedia({ messageId: 999999 }) === false, 'messageId numérico positivo NÃO verificado NÃO deve ser playable');
-        assert(CatalogoManager.hasPlayableMedia({ fileId: '4931446608492496572' }) === false, 'Apenas fileId sem messageId NÃO deve ser tratado como playable no catálogo público');
-        assert(CatalogoManager.hasPlayableMedia({ messageId: 0, fileId: 'some_id' }) === false, 'messageId 0 com fileId NÃO deve ser playable');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 999999 }) === true, 'Referência ainda não verificada continua disponível no catálogo');
+        assert(CatalogoManager.hasPlayableMedia({ fileId: '4931446608492496572' }) === false, 'O player exige messageId mesmo quando há fileId');
+        CatalogoManager.mediaVerificationCache.set(999999, 'MISSING');
+        assert(CatalogoManager.hasPlayableMedia({ messageId: 999999 }) === false, 'Mídia confirmada ausente deve ser filtrada');
 
         // Teste de exclusão estrita de FILE_ID_MISMATCH da lista de válidos
         const mismatchAuditUploader = new TelegramUploader();

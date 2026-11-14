@@ -23,6 +23,15 @@ async function backup() {
         ], { env });
         await run('pg_restore', ['--list', partial], { maxBuffer: 8 * 1024 * 1024 });
         await fs.rename(partial, target);
+        const retentionDays = Number(process.env.BRASILFLIX_BACKUP_RETENTION_DAYS || 0);
+        if (Number.isInteger(retentionDays) && retentionDays > 0) {
+            const cutoff = Date.now() - retentionDays * 86400000;
+            for (const entry of await fs.readdir(destination, { withFileTypes: true })) {
+                if (!entry.isFile() || !/^brasilflix-\d{4}-\d{2}-\d{2}T[\d-]+Z\.dump$/.test(entry.name)) continue;
+                const previous = path.join(destination, entry.name);
+                if ((await fs.stat(previous)).mtimeMs < cutoff) await fs.unlink(previous);
+            }
+        }
         console.log(`Backup PostgreSQL verificado: ${target}`);
     } finally {
         await fs.rm(partial, { force: true });
