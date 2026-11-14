@@ -1005,58 +1005,6 @@ class CatalogoManager {
                 const seriesRes = await db.query(`SELECT * FROM series ORDER BY id DESC`);
                 const epsRes = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
 
-                // Coleta todos os messageIds referenciados para verificação preventiva com cache ANTES de construir epsPorSerie
-                const allMessageIds = [];
-                for (const f of filmesRes.rows) {
-                    let versoes = f.versoes || {};
-                    if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
-                    if (f.message_id) allMessageIds.push(Number(f.message_id));
-                    if (versoes.dublado?.messageId) allMessageIds.push(Number(versoes.dublado.messageId));
-                    if (versoes.legendado?.messageId) allMessageIds.push(Number(versoes.legendado.messageId));
-                }
-                for (const ep of epsRes.rows) {
-                    let versoes = ep.versoes || {};
-                    if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { versoes = {}; }
-                    if (ep.message_id) allMessageIds.push(Number(ep.message_id));
-                    if (versoes.dublado?.messageId) allMessageIds.push(Number(versoes.dublado.messageId));
-                    if (versoes.legendado?.messageId) allMessageIds.push(Number(versoes.legendado.messageId));
-                }
-
-                // Identifica messageIds pendentes de verificação no cache
-                const unverifiedIds = [...new Set(allMessageIds)]
-                    .filter(id => !isNaN(id) && id > 0 && !CatalogoManager.mediaVerificationCache.get(id));
-
-                if (unverifiedIds.length > 0) {
-                    // Executa a verificação preventiva em segundo plano sem travar o boot nem o início da fila
-                    setImmediate(async () => {
-                        try {
-                            const TelegramUploader = require('../services/TelegramUploader');
-                            const uploader = TelegramUploader.getInstance();
-                            const tgResults = await uploader.getStorageMessages(unverifiedIds);
-                            for (const [mid, info] of tgResults.entries()) {
-                                if (info.status === 'FOUND') {
-                                    CatalogoManager.mediaVerificationCache.set(mid, 'VERIFIED_PLAYABLE', {
-                                        docId: info.docId,
-                                        docSize: info.docSize,
-                                        isVideo: info.isVideo,
-                                        duration: info.duration,
-                                        fileName: info.fileName
-                                    });
-                                } else if (info.status === 'NOT_FOUND') {
-                                    CatalogoManager.mediaVerificationCache.set(mid, 'MISSING', { error: 'MessageEmpty' });
-                                } else if (info.status === 'INVALID_MEDIA') {
-                                    CatalogoManager.mediaVerificationCache.set(mid, 'INVALID_MEDIA', { error: info.error });
-                                } else if (info.status === 'ERROR') {
-                                    CatalogoManager.mediaVerificationCache.set(mid, 'UNVERIFIED', { error: info.error });
-                                }
-                            }
-                        } catch (tgErr) {
-                            console.warn('⚠️ Aviso ao verificar status das mídias no Telegram durante carga do catálogo:', tgErr.message);
-                        }
-                    });
-                }
-
-                // Mapeia episódios por série e temporada (com o cache de mídias já atualizado)
                 const epsPorSerie = {};
                 for (const ep of epsRes.rows) {
                     if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
@@ -1199,9 +1147,6 @@ class CatalogoManager {
                     if (currentSig) this._lastDbSignature = currentSig;
                 } catch (_) { }
                 console.log(`📦 Catálogo BrasilFlix carregado: ${filmes.length} filmes, ${series.length} séries ativas.`);
-
-                // Inicia o verificador periódico de integridade (singleton)
-                this.startPeriodicRevalidation();
 
                 // Executa enriquecimento automático em segundo plano apenas 1 vez na inicialização ou a cada 4 horas
                 const now = Date.now();

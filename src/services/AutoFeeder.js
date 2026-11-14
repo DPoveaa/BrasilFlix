@@ -19,6 +19,10 @@ class AutoFeeder {
     }
 
     start() {
+        const checkOrders = () => this.checkPendingPedidos().catch(error =>
+            console.warn('Falha ao encaminhar pedidos de clientes:', error.message));
+        setTimeout(checkOrders, 3000);
+        setInterval(checkOrders, 5 * 60 * 1000).unref();
         if (!this.isEnabled) {
             console.log('💤 AutoFeeder desativado na configuração.');
             return;
@@ -181,11 +185,10 @@ class AutoFeeder {
         this.isRunningCheck = true;
 
         try {
-            // 0. Checa sementes de itens monitorados na watchlist
-            await SwarmWatcher.checkWatchlist();
-
             // 1. Reprocessar Pedidos Pendentes de Clientes (Prioridade máxima)
             await this.checkPendingPedidos();
+
+            await SwarmWatcher.checkWatchlist();
 
             // 2. Prioridade Total: Preencher episódios faltantes e novas temporadas de Séries já iniciadas no Catálogo
             console.log('📺 AutoFeeder: Verificando episódios pendentes de séries já no catálogo...');
@@ -320,6 +323,8 @@ class AutoFeeder {
     }
 
     async checkPendingPedidos() {
+        if (this.checkingPendingOrders) return;
+        this.checkingPendingOrders = true;
         try {
             if (!this.pedidosManager) return;
             const pedidosPendentes = (this.pedidosManager.getPedidos() || []).filter(p => p.status !== 'adicionado' && p.status !== 'recusado');
@@ -455,17 +460,18 @@ class AutoFeeder {
                 // 2. Verifica se já está em processamento na fila
                 const priority = pedido.isAssinante ? PRIORITIES.VIP_USER : PRIORITIES.USER;
                 const allActive = this.queueManager.activeJobs ? Array.from(this.queueManager.activeJobs.values()) : [];
-                const inQueue = [...this.queueManager.queue, ...allActive].some(j =>
+                const existing = [...this.queueManager.queue, ...allActive].find(j =>
                     (isSameMedia(j.title, title) || (tmdbId && j.tmdbId && String(j.tmdbId) === String(tmdbId))) &&
                     j.type === tipo &&
-                    j.status !== 'failed' &&
+                    ['queued', 'pending', 'processing', 'downloading', 'uploading'].includes(j.status) &&
                     (!isSerie || ((j.season ?? 1) === (startSeason || 1) && (j.episode ?? 1) === (startEp || 1))) &&
                     (j.audioPreference === targetAudioPref || j.audioPreference === 'dual')
                 );
 
-                if (!inQueue) {
+                let queued = existing;
+                if (!existing || existing.priority > priority || !existing.pedidoId) {
                     console.log(`🚀 [PEDIDO PENDENTE] Enfileirando pedido prioritário de cliente: "${title}" (${tipo}) [Áudio Alvo: ${targetAudioPref}, Prioridade: ${priority}]`);
-                    this.queueManager.addJob(title, tipo, priority, {
+                    queued = await this.queueManager.addJob(title, tipo, priority, {
                         userId: pedido.userId,
                         username: pedido.username,
                         pedidoId: pedido.id,
@@ -481,12 +487,14 @@ class AutoFeeder {
                 }
 
                 // Mantém o pedido com status 'em_processamento' até que QueueManager confirme adição real ao catálogo
-                if (pedido.status !== 'em_processamento') {
+                if (queued && pedido.status !== 'em_processamento') {
                     await this.pedidosManager.atualizarStatus(pedido.id, 'em_processamento');
                 }
             }
         } catch (e) {
             console.error('⚠️ Erro ao reprocessar pedidos pendentes no AutoFeeder:', e.message);
+        } finally {
+            this.checkingPendingOrders = false;
         }
     }
 

@@ -81,6 +81,7 @@ class QueueManager extends EventEmitter {
         this.skippedEpisodes = new Map(); // Controle de episódios sem sementes / pulados para evitar loops
         this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
         this.downloadSlots = new Set();
+        this.downloadWaiters = new Map();
         this.ingestionMetrics = { jobs: 0, published: 0, failures: {}, discardedBytes: {}, timings: {} };
         this._processingStarted = false; // Só inicia downloads após o servidor web estar no ar
         // Mutex para evitar race condition no loop de lançamento de workers paralelos
@@ -1026,6 +1027,7 @@ class QueueManager extends EventEmitter {
                     job.tmdbId || null,
                     JSON.stringify({
                         rawFilePath: job.rawFilePath,
+                        pedidoId: job.pedidoId,
                         optimizedPath: job.optimizedPath,
                         expectedSize: job.expectedSize,
                         bestSource: job.bestSource,
@@ -1080,6 +1082,7 @@ class QueueManager extends EventEmitter {
             error: row.error,
             queueOrder: row.queue_order !== null && row.queue_order !== undefined ? Number(row.queue_order) : (row.created_at ? new Date(row.created_at).getTime() : 0),
             rawFilePath: extra.rawFilePath || null,
+            pedidoId: extra.pedidoId || null,
             optimizedPath: extra.optimizedPath || null,
             expectedSize: extra.expectedSize || null,
             bestSource: extra.bestSource || null,
@@ -1124,6 +1127,7 @@ class QueueManager extends EventEmitter {
             idiomaOriginal: extraData.originalLanguage || extraData.idiomaOriginal || null,
             category: extraData.category || (extraData.isAnime ? 'Anime' : (extraData.isDorama ? 'Dorama' : (extraData.isMicrodrama ? 'Microdrama' : null))),
             userId: extraData.userId || null,
+            pedidoId: extraData.pedidoId || null,
             username: extraData.username || null,
             season: type === 'serie' ? (extraData.season || 1) : null,
             episode: type === 'serie' ? (extraData.episode || 1) : null,
@@ -1167,7 +1171,8 @@ class QueueManager extends EventEmitter {
         const allCurrentJobs = [...this.queue, ...Array.from(this.activeJobs.values())];
         const existing = allCurrentJobs.find(j => {
             if (j.type !== type) return false;
-            if (j.status === 'completed' || j.status === 'failed') return false;
+            if (!['queued', 'pending', 'processing', 'downloading', 'uploading'].includes(j.status)) return false;
+            if (j.audioPreference !== job.audioPreference && j.audioPreference !== 'dual' && !extraData.rawFilePath) return false;
 
             // isSameMedia detecta alias de título (ex: "Demon Slayer" = "Demon Slayer: Kimetsu no Yaiba")
             // tmdbId é o árbitro supremo quando disponível em ambos
@@ -1213,12 +1218,14 @@ class QueueManager extends EventEmitter {
             }
 
             // Se for pedido de usuário, eleva a prioridade do existente
-            if ((priority === PRIORITIES.VIP_USER || priority === PRIORITIES.USER) && existing.priority > priority) {
-                existing.priority = priority;
-                existing.userId = job.userId;
-                existing.username = job.username;
+            if (isUserRequest) {
+                existing.priority = Math.min(existing.priority, priority);
+                existing.userId ||= job.userId;
+                existing.username ||= job.username;
+                existing.pedidoId ||= job.pedidoId;
                 this.sortQueue();
-                this.saveJob(existing).catch(() => { });
+                await this.saveJob(existing);
+                setImmediate(() => this.processNext());
             }
 
             console.log(`ℹ️ [Fila] Trabalho para "${job.title}" ${type === 'serie' ? `T${job.season || 1}E${job.episode || 1}` : ''} já existe na esteira (ID: ${existing.id}, Status: ${existing.status}). Evitando duplicata.`);
@@ -1570,6 +1577,10 @@ class QueueManager extends EventEmitter {
         const uploadReady = eligibleJobs.find(j => j.optimizedPath && fs.existsSync(j.optimizedPath));
         if (uploadReady && capacity.canUpload) return uploadReady;
 
+        const customerJob = eligibleJobs.find(j => j.pedidoId ||
+            (j.userId && Number(j.priority) <= PRIORITIES.USER));
+        if (customerJob) return customerJob;
+
         // Helper para categorização precisa do job
         const KNOWN_DORAMA_TITLES = /^(vincenzo|pousando no amor|uma advogada extraordinária|my love from the star|goblin|crash landing on you|boys over flowers|itaewon class|start-up|hospital playlist|nevertheless|twenty-five twenty-one|extraordinary attorney woo|all of us are dead|business proposal|my mister|misaeng|signal|romance is a bonus book|something in the rain|be melodramatic|dr romantic|when the camellia blooms|arthdal chronicles|kingdom|hellbound|juvenile justice|move to heaven|my name|extracurricular|sweet home|mouse|voice|beyond evil|law of the jungle|running man|amazing saturday|homens com missão|o rato)$/i;
         const KNOWN_ANIME_TITLES = /one piece|naruto|dragon ball|bleach|jujutsu kaisen|demon slayer|attack on titan|kimetsu|hunter x hunter|fullmetal|sword art online|solo leveling|fairy tail|black clover|my hero academia|tokyo ghoul|death note|neon genesis|evangelion|cowboy bebop|trigun|rurouni kenshin|samurai champloo|code geass|no game no life|re:zero|overlord|danmachi|steins.gate|jojo|vinland saga|chainsaw man|spy x family|bocchi|mob psycho|one punch man|fire force|quintessential quintuplets|rent a girlfriend|mushoku tensei|oshi no ko|blue lock|frieren|dungeon meshi/i;
@@ -1726,6 +1737,8 @@ class QueueManager extends EventEmitter {
         if (this.downloadSlots.has(jobId)) return true;
         const limit = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || this.maxConcurrentDownloads);
         if (this.downloadSlots.size >= limit) return false;
+        const first = [...this.downloadWaiters.values()].sort((a, b) => Number(a.priority) - Number(b.priority))[0];
+        if (first && first.id !== jobId) return false;
         this.downloadSlots.add(jobId);
         return true;
     }
@@ -2935,16 +2948,25 @@ class QueueManager extends EventEmitter {
 
                 // No Modo Econômico, garante reserva atômica de slot único APENAS quando o download real for iniciar
                 if (!downloadedMedia?.filePath && (maxAttempts > 0 || (job.audioPreference === 'dublado' && !jaPossuiLegendado && !job.isUpgrade))) {
-                    while (!this.acquireDownloadSlot(job.id)) {
-                        console.log(`🍃 [Fila de transferência] Download de "${job.title}" aguardando liberação do slot de download...`);
-                        await new Promise(r => setTimeout(r, 5000));
-                        if (!SchedulerService.isAllowedToRun()) {
-                            job.status = 'queued';
-                            job.progress = 0;
-                            job.progressDetails = 'Aguardando janela de download (01h-05h SP)...';
-                            await this.saveJob(job);
-                            return;
+                    this.downloadWaiters.set(job.id, job);
+                    try {
+                        let waitingLogged = false;
+                        while (!this.acquireDownloadSlot(job.id)) {
+                            if (!waitingLogged) {
+                                console.log(`🍃 [Fila de transferência] "${job.title}" aguardando vaga (prioridade ${job.priority}).`);
+                                waitingLogged = true;
+                            }
+                            await new Promise(r => setTimeout(r, 5000));
+                            if (!SchedulerService.isAllowedToRun()) {
+                                job.status = 'queued';
+                                job.progress = 0;
+                                job.progressDetails = 'Aguardando janela de download...';
+                                await this.saveJob(job);
+                                return;
+                            }
                         }
+                    } finally {
+                        this.downloadWaiters.delete(job.id);
                     }
                 }
 
@@ -3468,7 +3490,11 @@ class QueueManager extends EventEmitter {
                             if (job.type === 'serie') {
                                 this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
                             }
-                            throw new Error(`O arquivo baixado não contém áudio dublado em Português.`);
+                            const failedSource = bestSource || job.bestSource;
+                            await this.rememberSourceFailure(sourceFailureKey(job, metadata), failedSource, 'NO_DUBBED_AUDIO', 24);
+                            job.rawFilePath = null;
+                            await this.saveJob(job);
+                            throw Object.assign(new Error('O arquivo baixado não contém áudio dublado em Português.'), { code: 'NO_DUBBED_AUDIO' });
                         }
                     }
                 }
