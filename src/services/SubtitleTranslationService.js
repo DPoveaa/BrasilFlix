@@ -239,3 +239,4 @@ REGRAS CRÍTICAS INVIOLÁVEIS:
 }
 
 module.exports = new SubtitleTranslationService();
+

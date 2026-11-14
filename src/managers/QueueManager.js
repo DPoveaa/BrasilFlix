@@ -2594,6 +2594,7 @@ class QueueManager extends EventEmitter {
 
                 let absoluteEpisode = job.absoluteEpisode || job.extraData?.absoluteEpisode || null;
                 const titulosAlternativos = metadata.titulosAlternativos || job.titulosAlternativos || job.extraData?.titulosAlternativos || [];
+                const isAnimeFlag = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
 
                 if (job.customMagnet) {
                     console.log(`🧲 [MANUAL MAGNET] Utilizando fonte magnética direta informada pelo administrador: "${job.title}"`);
@@ -2618,8 +2619,6 @@ class QueueManager extends EventEmitter {
                             }
                         } catch (e) { }
                     }
-
-                    const isAnimeFlag = !!(job.isAnime || metadata.isAnime || metadata.is_anime || metadata.generos?.includes('Animação') || metadata.generos?.includes('Anime') || metadata.original_language === 'ja' || job.originalLanguage === 'ja');
 
                     // Para animes com temporadas separadas no TMDB (ex: Bleach T2 = "Guerra Sangrenta de Mil Anos"),
                     // passa o nome da temporada para que o AnimeExtractor possa buscar com o título correto nos sites.
