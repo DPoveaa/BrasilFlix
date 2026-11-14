@@ -2,6 +2,7 @@ const { spawn, exec } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs-extra');
+const axios = require('axios');
 const config = require('../../config');
 const SubtitleSync = require('./SubtitleSync');
 const SpeechLanguageService = require('./SpeechLanguageService');
@@ -1090,7 +1091,6 @@ ${events.join('\n')}
     async getOrExtractPortugueseSubtitle(inputPath, info, metadata = {}) {
         let providerUnavailable = false;
         let syncFailed = false;
-        const axios = require('axios');
         const https = require('https');
         const agent = new https.Agent({ rejectUnauthorized: false });
         const srtPath = path.join(path.dirname(inputPath), `sub_pt_${Date.now()}.srt`);
