@@ -118,7 +118,7 @@ section('8. Hardsub ASS PlayRes scaling');
     const fontMatch = ass.match(/Style: Default,Arial,(\d+)/);
     assert.ok(fontMatch);
     const fontSize = parseInt(fontMatch[1], 10);
-    assert.ok(fontSize >= 28 && fontSize <= 52, `fontSize=${fontSize}`);
+    assert.strictEqual(fontSize, 54);
     // Must NOT use the old broken FontSize=22 against default PlayRes 288
     assert.ok(!ass.includes('FontSize=22'));
     await fs.remove(srt).catch(() => {});

@@ -922,7 +922,7 @@ class MediaSearchService {
         return results;
     }
 
-    async getOpenSubtitlesPT(imdbId, tipo = 'filme', season = 1, episode = 1) {
+    async getOpenSubtitlesPT(imdbId, tipo = 'filme', season = 1, episode = 1, { requireProviderResponse = false } = {}) {
         if (!imdbId) return [];
         const cacheKey = `${imdbId}_${tipo}_${season}_${episode}`;
         if (this._subCache && this._subCache.has(cacheKey)) {
@@ -942,6 +942,7 @@ class MediaSearchService {
             `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
         ];
 
+        let lookupIncomplete = false;
         for (const url of endpoints) {
             try {
                 const res = await axios.get(url, {
@@ -949,7 +950,11 @@ class MediaSearchService {
                     httpsAgent: agent,
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
                 });
-                const subs = res.data?.subtitles || [];
+                const subs = res.data?.subtitles;
+                if (!Array.isArray(subs)) {
+                    lookupIncomplete = true;
+                    continue;
+                }
                 // Palavras-chave de PT-PT (Português de Portugal) para exclusão de legendas ruins
                 const ptPtKeywords = /\b(autocarro|telemóvel|ecrã|computador|frigorífico|casa\s*de\s*banho|carro|apanhar|fixe|giro|espetáculo|percebes|percebes\b|malta|miúdos|pá\b|bué|tipo\b|chapar|aldrabice|gajas|gaja|bazar|basar|chilique|boleias|boleia|bolacha|bata|atão|tás|tô|tó\b|'tá\b|sabes\b|pronto\b|pois\b|vá\b|lá\b|cá\b|né\b|'tá|porquê\b|há\b|deste\b|neste\b|desse\b|nesse\b)/i;
                 const ptSubs = subs.filter(s => {
@@ -995,7 +1000,7 @@ class MediaSearchService {
                                     filtered.push(s);
                                 }
                             }
-                        } catch (_) { }
+                        } catch (_) { lookupIncomplete = true; }
                     }
                     validPtSubs = filtered;
                 }
@@ -1006,14 +1011,15 @@ class MediaSearchService {
                     return validPtSubs;
                 }
             } catch (e) {
-                // Tenta próximo endpoint silenciosamente
+                lookupIncomplete = true;
             }
         }
 
+        if (requireProviderResponse && lookupIncomplete) throw new Error('Consulta PT-BR incompleta no OpenSubtitles.');
         return [];
     }
 
-    async getOpenSubtitlesEN(imdbId, tipo = 'filme', season = 1, episode = 1) {
+    async getOpenSubtitlesEN(imdbId, tipo = 'filme', season = 1, episode = 1, { requireProviderResponse = false } = {}) {
         if (!imdbId) return [];
         const cacheKey = `en_${imdbId}_${tipo}_${season}_${episode}`;
         if (this._subCache && this._subCache.has(cacheKey)) {
@@ -1033,6 +1039,7 @@ class MediaSearchService {
             `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
         ];
 
+        let lookupIncomplete = false;
         for (const url of endpoints) {
             try {
                 const res = await axios.get(url, {
@@ -1040,7 +1047,11 @@ class MediaSearchService {
                     httpsAgent: agent,
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
                 });
-                const subs = res.data?.subtitles || [];
+                const subs = res.data?.subtitles;
+                if (!Array.isArray(subs)) {
+                    lookupIncomplete = true;
+                    continue;
+                }
                 const enSubs = subs.filter(s => {
                     const lang = (s.lang || s.language || '').toLowerCase();
                     return ['eng', 'en'].includes(lang);
@@ -1051,8 +1062,9 @@ class MediaSearchService {
                     this._subCache.set(cacheKey, { subs: enSubs, time: Date.now() });
                     return enSubs;
                 }
-            } catch (e) {}
+            } catch (e) { lookupIncomplete = true; }
         }
+        if (requireProviderResponse && lookupIncomplete) throw new Error('Consulta EN incompleta no OpenSubtitles.');
         return [];
     }
 

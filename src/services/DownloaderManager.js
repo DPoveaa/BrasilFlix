@@ -565,7 +565,8 @@ class DownloaderManager extends EventEmitter {
             try {
                 torrent = client.add(torrentTarget, { 
                     path: this.downloadDir,
-                    announce: trackers
+                    announce: trackers,
+                    deselect: true
                 });
             } catch (err) {
                 safeCleanup();
@@ -576,6 +577,8 @@ class DownloaderManager extends EventEmitter {
             let lastLogTime = Date.now();
             const downloadStartTime = Date.now();
             let targetEpisodeFile = null;
+            let preflightComplete = false;
+            let subtitleFiles = [];
 
 
             torrent.on('wire', (wire, addr) => {
@@ -588,7 +591,8 @@ class DownloaderManager extends EventEmitter {
             const seasonNum = parseInt(options.season || 1, 10);
             const epNum = options.episode ? parseInt(options.episode, 10) : null;
 
-            torrent.on('metadata', async () => {
+            const prepareTorrent = async () => {
+                const selectedFiles = new Set();
                 if (torrent.name) {
                     activeFolderPath = path.join(this.downloadDir, torrent.name);
                     this.activePaths.add(activeFolderPath);
@@ -801,10 +805,7 @@ class DownloaderManager extends EventEmitter {
                         // Seleciona APENAS os arquivos e peças correspondentes aos episódios faltantes/necessários
                         for (const [neededEpStr, neededFile] of Object.entries(neededEpisodesMap)) {
                             try {
-                                if (typeof torrent.select === 'function' && neededFile._startPiece !== undefined && neededFile._endPiece !== undefined) {
-                                    torrent.select(neededFile._startPiece, neededFile._endPiece, 1);
-                                }
-                                neededFile.select();
+                                selectedFiles.add(neededFile);
                                 neededFile.on('done', () => checkAndComplete());
                             } catch (e) {}
                         }
@@ -848,10 +849,7 @@ class DownloaderManager extends EventEmitter {
                             } catch (e) {}
                             targetEpisodeFile = found;
                             try {
-                                if (typeof torrent.select === 'function' && found._startPiece !== undefined && found._endPiece !== undefined) {
-                                    torrent.select(found._startPiece, found._endPiece, 1);
-                                }
-                                found.select();
+                                selectedFiles.add(found);
                                 found.on('done', () => checkAndComplete());
                                 console.log(`🎯 [Episódio Avulso] Baixando somente o episódio ${epNum}: ${found.name} (${this.formatBytes(found.length)})`);
                             } catch (e) {
@@ -875,79 +873,115 @@ class DownloaderManager extends EventEmitter {
                 // ─────────────────────────────────────────────────────────────────────
                 let fileToProbe = targetEpisodeFile;
                 if (!fileToProbe && !options.episode && torrent.files && torrent.files.length > 0) {
-                    const videoFiles = torrent.files.filter(f => ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts'].includes(path.extname(f.name).toLowerCase()));
+                    const videoFiles = torrent.files.filter(f => /\.(mp4|mkv|avi|mov|webm|ts|m4v|wmv)$/i.test(f.name));
                     const realVideoFiles = videoFiles.filter(f => !/sample|amostra|trailer|teaser/i.test(f.name));
-                    fileToProbe = realVideoFiles.length > 0
-                        ? realVideoFiles.reduce((prev, curr) => (curr.length > prev.length ? curr : prev), realVideoFiles[0])
-                        : torrent.files[0];
+                    const candidates = realVideoFiles.length ? realVideoFiles : videoFiles;
+                    fileToProbe = candidates.reduce((largest, file) => !largest || file.length > largest.length ? file : largest, null);
                     targetEpisodeFile = fileToProbe;
                 }
 
                 if (fileToProbe) {
+                    selectedFiles.add(fileToProbe);
+                    const subtitles = torrent.files.filter(f =>
+                        /\.srt$/i.test(f.name) && f.length <= 2 * 1024 * 1024
+                    );
+                    const videoFiles = [...selectedFiles];
+                    const singleVideo = torrent.files.filter(f => /\.(mp4|mkv|avi|mov|webm|ts|m4v|wmv)$/i.test(f.name)).length === 1;
+                    for (const subtitle of subtitles) {
+                        if (singleVideo || videoFiles.some(file => {
+                            const stem = path.parse(file.name).name.toLowerCase();
+                            return subtitle.path.toLowerCase().split(/[/\\]/).some(part => part === stem || part.startsWith(`${stem}.`));
+                        })) {
+                            subtitleFiles.push(subtitle);
+                        }
+                    }
                     const isBrGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(torrent.name || '') || options.isBrazilianGroup;
                     const needsAudioProbe = (options.isDublado || options.audioPreference === 'dublado') && !isBrGroup;
                     const isLegendadoRequested = options.audioPreference === 'legendado' || !options.isDublado;
 
                     if (needsAudioProbe || isLegendadoRequested) {
                         console.log(`🔍 [Pré-Download: "${displayTitle}"] Sondando cabeçalho de "${fileToProbe.name}" (~1.5MB) para validação precoce de áudio/legendas...`);
-                        const probeRes = await this.probeVideoHeader(fileToProbe, 20000);
-
-                        // Verifica legendas disponíveis no torrent ou OpenSubtitles
-                        const hasPtSubInTorrent = torrent.files.some(f => {
-                            const ext = path.extname(f.name || '').toLowerCase();
-                            if (!['.srt', '.ass', '.vtt'].includes(ext)) return false;
-                            return /\b(pt[-_]?br|ptbr|pob|por|portugues|legendas?)\b/i.test(f.name);
-                        });
+                        const hasPtSubInTorrent = subtitleFiles.some(f => /\b(pt[-_]?br|pob|por|portuguese|portugu[eê]s|brazilian)\b/i.test(f.path));
+                        const hasEnSubInTorrent = subtitleFiles.some(f => /\b(en|eng|english)\b/i.test(f.path));
 
                         const MediaSearchService = require('./MediaSearchService');
                         const SubtitleTranslationService = require('./SubtitleTranslationService');
 
-                        let hasPtSubInOpenSubtitles = false;
-                        let hasEnSubInOpenSubtitles = false;
                         const targetImdbId = options.imdbId || options.metaDetails?.imdbId;
+                        const lookupArgs = [targetImdbId, options.type, options.season || 1, options.episode || 1];
+                        const translationAvailable = SubtitleTranslationService.isAvailable();
+                        const [probeRes, ptSubs, enSubs] = await Promise.all([
+                            this.probeVideoHeader(fileToProbe, 20000),
+                            targetImdbId ? MediaSearchService.getOpenSubtitlesPT(...lookupArgs, { requireProviderResponse: true }).catch(() => null) : null,
+                            targetImdbId && translationAvailable ? MediaSearchService.getOpenSubtitlesEN(...lookupArgs, { requireProviderResponse: true }).catch(() => null) : []
+                        ]);
+                        if (finished) return;
 
-                        if (targetImdbId) {
-                            const ptSubs = await MediaSearchService.getOpenSubtitlesPT(targetImdbId, options.type, options.season || 1, options.episode || 1).catch(() => []);
-                            hasPtSubInOpenSubtitles = ptSubs && ptSubs.length > 0;
-                            if (!hasPtSubInOpenSubtitles && SubtitleTranslationService.isAvailable()) {
-                                const enSubs = await MediaSearchService.getOpenSubtitlesEN(targetImdbId, options.type, options.season || 1, options.episode || 1).catch(() => []);
-                                hasEnSubInOpenSubtitles = enSubs && enSubs.length > 0;
-                            }
+                        const fallbackBlocked = options.onlyDublado || options.ignorarFallbackLegendado;
+                        let externalLookupIncomplete = ptSubs === null;
+                        let externalSubtitle = false;
+                        if (!probeRes.hasPortugueseAudio && !probeRes.hasPortugueseSub && !hasPtSubInTorrent &&
+                            (!fallbackBlocked || isLegendadoRequested)) {
+                            const urls = [...new Set([options.subtitleUrl, ...(ptSubs || []).map(sub => sub.url)].filter(Boolean))];
+                            const checks = await Promise.allSettled(urls.slice(0, 3).map(url => VideoProcessor.fetchPortugueseSrt(url)));
+                            if (finished) return;
+                            externalSubtitle = checks.some(result => result.status === 'fulfilled' && result.value);
+                            externalLookupIncomplete ||= urls.length > checks.length || checks.some(result => result.status === 'rejected');
                         }
+                        const hasValidPtSub = probeRes.hasPortugueseSub || hasPtSubInTorrent || externalSubtitle;
+                        const hasEnSubForAi = translationAvailable && (probeRes.hasEnglishSub || hasEnSubInTorrent || Boolean(enSubs?.length));
+                        const hasUnknownAudio = probeRes.audioStreams?.some(s => !s.tags?.language || /^(und|unk|unknown)$/i.test(s.tags.language));
+                        const knownForeignAudio = probeRes.success && probeRes.audioStreams.length > 0 &&
+                            !probeRes.hasPortugueseAudio && !hasUnknownAudio;
 
-                        const hasValidPtSub = (probeRes.success && probeRes.hasPortugueseSub) || hasPtSubInTorrent || Boolean(options.subtitleUrl) || hasPtSubInOpenSubtitles;
-                        const hasEnSubForAi = !hasValidPtSub && ((probeRes.success && probeRes.hasEnglishSub) || hasEnSubInOpenSubtitles) && SubtitleTranslationService.isAvailable();
-
-                        if (needsAudioProbe && probeRes.success && probeRes.audioStreams.length > 0 && !probeRes.hasPortugueseAudio) {
+                        if (needsAudioProbe && knownForeignAudio) {
                             console.warn(`⚠️ [PRÉ-DOWNLOAD: ÁUDIO INCOMPATÍVEL] Nenhuma faixa em Português detectada no cabeçalho (${probeRes.audioLangs}).`);
 
-                            if (!options.onlyDublado && !options.ignorarFallbackLegendado && (hasValidPtSub || hasEnSubForAi)) {
+                            if (!fallbackBlocked && (hasValidPtSub || hasEnSubForAi)) {
                                 console.log(`🔄 [PRÉ-DOWNLOAD: CONVERSÃO AUTOMÁTICA] Áudio PT ausente, mas legendas ${hasValidPtSub ? 'PT-BR' : 'EN (com tradução IA)'} confirmadas. Convertendo job para Legendado sem reiniciar download.`);
                                 options.audioPreference = 'legendado';
                                 options.isDublado = false;
                                 options.isLegendado = true;
-                            } else {
+                            } else if (fallbackBlocked || (!externalLookupIncomplete && enSubs)) {
                                 const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Arquivo "${fileToProbe.name}" não contém áudio dublado em Português (${probeRes.audioLangs}) e não possui legendas PT-BR disponíveis.`;
                                 console.warn(reasonMsg);
                                 finished = true;
                                 safeCleanup();
-                                return reject(new Error(reasonMsg));
+                                return reject(Object.assign(new Error(reasonMsg), { code: 'TORRENT_TRANSLATION_UNAVAILABLE' }));
                             }
                         }
 
-                        if (options.audioPreference === 'legendado' && !hasValidPtSub && !hasEnSubForAi) {
+                        if (isLegendadoRequested && knownForeignAudio &&
+                            !hasValidPtSub && !hasEnSubForAi && !externalLookupIncomplete && enSubs) {
                             const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Release em idioma original sem nenhuma legenda PT-BR disponível (embutida ou OpenSubtitles) e sem legenda EN para tradução IA.`;
                             console.warn(reasonMsg);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(reasonMsg));
+                            return reject(Object.assign(new Error(reasonMsg), { code: 'TORRENT_TRANSLATION_UNAVAILABLE' }));
                         }
 
                         if (probeRes.success) {
-                            console.log(`✅ [Pré-Download Validado: "${displayTitle}"] Áudio: [${probeRes.audioLangs}] | Legendas PT: ${hasValidPtSub ? 'SIM' : 'NÃO'} | Legendas EN (IA): ${hasEnSubForAi ? 'SIM' : 'NÃO'}`);
+                            console.log(`🔍 [Pré-Download: "${displayTitle}"] Tags de áudio: [${probeRes.audioLangs}] | Indício de legenda PT: ${hasValidPtSub ? 'SIM' : 'NÃO'} | Indício de legenda EN para IA: ${hasEnSubForAi ? 'SIM' : 'NÃO'}`);
                         }
                     }
                 }
+                if (finished) return;
+                preflightComplete = true;
+                for (const file of subtitleFiles) file.select(2);
+                for (const file of selectedFiles) file.select();
+                if (!selectedFiles.size) {
+                    throw new Error('Nenhum arquivo de vídeo selecionável encontrado no torrent.');
+                }
+                lastBytesChangeTime = Date.now();
+                if (torrent.done) checkAndComplete();
+            };
+            torrent.on('metadata', () => {
+                prepareTorrent().catch(error => {
+                    if (finished) return;
+                    finished = true;
+                    safeCleanup();
+                    reject(error);
+                });
             });
 
             let isCompleting = false;
@@ -955,7 +989,8 @@ class DownloaderManager extends EventEmitter {
             const maxCompletionRetries = 10;
 
             const checkAndComplete = async () => {
-                if (finished || isCompleting) return;
+                if (finished || isCompleting || !preflightComplete || !torrent.ready) return;
+                if (subtitleFiles.some(file => !file.done) && Date.now() - lastBytesChangeTime < 15000) return;
                 isCompleting = true;
 
                 try {
@@ -1142,7 +1177,7 @@ class DownloaderManager extends EventEmitter {
             };
 
             torrent.on('download', () => {
-                if (finished) return;
+                if (finished || !preflightComplete) return;
 
                 let curTotal = 0;
                 let curDownloaded = 0;
@@ -1241,6 +1276,9 @@ class DownloaderManager extends EventEmitter {
             });
 
             torrent.on('done', () => checkAndComplete());
+            torrent.on('ready', () => {
+                if (torrent.done) checkAndComplete();
+            });
 
             torrent.on('error', (err) => {
                 finished = true;
@@ -1794,10 +1832,9 @@ class DownloaderManager extends EventEmitter {
 
         return new Promise((resolve) => {
             let stream = null;
-            let outStream = null;
             let timer = null;
             let resolved = false;
-            let bytesWritten = 0;
+            const chunks = [];
 
             const cleanup = () => {
                 if (timer) {
@@ -1808,10 +1845,6 @@ class DownloaderManager extends EventEmitter {
                     try { stream.destroy(); } catch (_) {}
                     stream = null;
                 }
-                if (outStream) {
-                    try { outStream.end(); } catch (_) {}
-                    outStream = null;
-                }
             };
 
             const finalizeProbe = async () => {
@@ -1820,10 +1853,11 @@ class DownloaderManager extends EventEmitter {
                 cleanup();
 
                 try {
-                    if (!fs.existsSync(probeFilePath) || fs.statSync(probeFilePath).size < 40 * 1024) {
-                        try { if (fs.existsSync(probeFilePath)) fs.unlinkSync(probeFilePath); } catch (_) {}
+                    const sample = Buffer.concat(chunks);
+                    if (sample.length < 40 * 1024) {
                         return resolve({ success: false, reason: 'Tamanho insuficiente no probe (<40KB baixados)' });
                     }
+                    await fs.writeFile(probeFilePath, sample);
 
                     const exec = require('child_process').exec;
                     const cmd = `ffprobe -v quiet -print_format json -show_streams -show_format "${probeFilePath}"`;
@@ -1888,19 +1922,11 @@ class DownloaderManager extends EventEmitter {
             }, maxWaitMs);
 
             try {
-                outStream = fs.createWriteStream(probeFilePath);
-                stream = file.createReadStream({ start: 0, end: targetBytes + 512 * 1024 });
-
-                stream.on('data', (chunk) => {
-                    bytesWritten += chunk.length;
-                    if (bytesWritten >= targetBytes) {
-                        finalizeProbe();
-                    }
-                });
+                stream = file.createReadStream({ start: 0, end: Math.min(file.length, targetBytes) - 1 });
+                stream.on('data', chunk => chunks.push(chunk));
 
                 stream.on('end', () => finalizeProbe());
                 stream.on('error', () => finalizeProbe());
-                stream.pipe(outStream);
             } catch (err) {
                 finalizeProbe();
             }

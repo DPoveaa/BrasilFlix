@@ -26,6 +26,12 @@ const PRIORITIES = new Proxy({}, {
 const { normalizeTitle, isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 const AnimeSeasonMapper = require('../utils/AnimeSeasonMapper');
 
+function releaseKey(source) {
+    return source?.infoHash?.toLowerCase() ||
+        source?.magnet?.match(/urn:btih:([a-z0-9]+)/i)?.[1].toLowerCase() ||
+        source?.url || source?.magnet;
+}
+
 /** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
 function parseSeasonEpisodeFromPath(filePath) {
     if (!filePath) return null;
@@ -1010,6 +1016,7 @@ class QueueManager extends EventEmitter {
                         optimizedPath: job.optimizedPath,
                         expectedSize: job.expectedSize,
                         bestSource: job.bestSource,
+                        rejectedSubtitleSources: job.rejectedSubtitleSources,
                         langInfo: job.langInfo,
                         customMagnet: job.customMagnet || null,
                         isManualAdd: job.isManualAdd || false,
@@ -1060,6 +1067,7 @@ class QueueManager extends EventEmitter {
             optimizedPath: extra.optimizedPath || null,
             expectedSize: extra.expectedSize || null,
             bestSource: extra.bestSource || null,
+            rejectedSubtitleSources: extra.rejectedSubtitleSources || [],
             langInfo: extra.langInfo || null,
             customMagnet: extra.customMagnet || null,
             isManualAdd: extra.isManualAdd || false,
@@ -1939,6 +1947,7 @@ class QueueManager extends EventEmitter {
 
         try {
             await this.executeJob(nextJob);
+            if (nextJob.status === 'queued') return;
             nextJob.status = 'completed';
             nextJob.progress = 100;
             await this.saveJob(nextJob);
@@ -2881,6 +2890,8 @@ class QueueManager extends EventEmitter {
                     bestSource = sources[0] || { title: job.title, audio: job.audioPreference };
                 }
 
+                const isNewSource = source => !(job.rejectedSubtitleSources || []).includes(releaseKey(source));
+                sources = sources.filter(isNewSource);
                 let lastError = null;
                 const maxAttempts = downloadedMedia?.filePath ? 0 : Math.min(8, sources.length);
 
@@ -2917,6 +2928,10 @@ class QueueManager extends EventEmitter {
                                 season: job.season,
                                 episode: job.episode,
                                 type: job.type,
+                                imdbId: metadata.imdbId,
+                                subtitleUrl: currentSource.subtitleUrl,
+                                onlyDublado: job.onlyDublado,
+                                ignorarFallbackLegendado: jaPossuiLegendado || job.ignorarFallbackLegendado,
                                 audio: currentSource.audio,
                                 isDublado: currentSource.isDublado,
                                 audioPreference: job.audioPreference || 'geral',
@@ -2982,6 +2997,8 @@ class QueueManager extends EventEmitter {
                     } catch (err) {
                         if (err.message === 'DOWNLOAD_CANCELLED') {
                             console.log(`⏹️ [Queue Worker] Download de "${job.title}" cancelado ordenadamente devido a mudança de modo/pausa.`);
+                            job.status = 'queued';
+                            await this.saveJob(job);
                             return;
                         }
                         console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
@@ -2990,6 +3007,10 @@ class QueueManager extends EventEmitter {
                 }
 
                 if (!downloadedMedia || !bestSource) {
+                    if (lastError?.code === 'TORRENT_TRANSLATION_UNAVAILABLE' ||
+                        (!sources.length && job.rejectedSubtitleSources?.length)) {
+                        throw new Error(lastError?.message || 'Os releases disponíveis já falharam na validação de legenda.');
+                    }
                     // Se a busca inicial era Dublado e todas as fontes falharam:
                     // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
                     if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
@@ -3024,7 +3045,7 @@ class QueueManager extends EventEmitter {
                                 titulosAlternativos: titulosAlternativos
                             });
 
-                            const candidatesLeg = legSources.filter(s => s.isLegendado || s.hasPtSub || s.isOriginal);
+                            const candidatesLeg = legSources.filter(s => isNewSource(s) && (s.isLegendado || s.hasPtSub || s.isOriginal));
                             const totalLegAttempts = Math.min(6, candidatesLeg.length);
                             for (let j = 0; j < totalLegAttempts; j++) {
                                 const currentLeg = candidatesLeg[j];
@@ -3043,6 +3064,8 @@ class QueueManager extends EventEmitter {
                                             season: job.season,
                                             episode: job.episode,
                                             type: job.type,
+                                            imdbId: metadata.imdbId,
+                                            subtitleUrl: currentLeg.subtitleUrl,
                                             audio: currentLeg.audio || 'Legendado (PT-BR)',
                                             isDublado: false,
                                             audioPreference: 'legendado',
@@ -3071,6 +3094,8 @@ class QueueManager extends EventEmitter {
                                 } catch (errLeg) {
                                     if (errLeg.message === 'DOWNLOAD_CANCELLED') {
                                         console.log(`⏹️ [Queue Worker] Fallback de "${job.title}" cancelado ordenadamente.`);
+                                        job.status = 'queued';
+                                        await this.saveJob(job);
                                         return;
                                     }
                                     console.warn(`⚠️ [Fallback Legendado] Fonte [${j + 1}] falhou: ${errLeg.message}`);
@@ -3388,15 +3413,15 @@ class QueueManager extends EventEmitter {
                     }
                 }
 
-                console.log(`🎙️ Conteúdo em Português e Duração validados com sucesso: ${langInfo.audioText} (Duração: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''})`);
+                console.log(`🎙️ Duração conferida: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''}. Classificação inicial: ${langInfo.audioText}. Conferência final de áudio e legenda pendente.`);
 
             } catch (err) {
                 if (err.message.includes('não contém áudio nem legendas') || err.message.includes('duração inferior') || err.message.includes('Russo/Scam')) {
                     if (job.type === 'serie') {
                         this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1);
                     }
-                    throw err;
                 }
+                throw err;
             }
 
             // 4. Otimização de Vídeo 1080p com FFmpeg
@@ -3443,7 +3468,7 @@ class QueueManager extends EventEmitter {
                     totalEpisodios: metadata.totalEpisodios,
                     imdbId: metadata.imdbId,
                     tmdbId: metadata.tmdbId,
-                    subtitleUrl: bestSource?.subtitleUrl,
+                    subtitleUrl: bestSource?.subtitleUrl || job.bestSource?.subtitleUrl,
                     isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
                     hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
                     isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
@@ -3475,6 +3500,10 @@ class QueueManager extends EventEmitter {
                 );
 
                 if (isMissingSubError) {
+                    const key = releaseKey(bestSource || job.bestSource);
+                    if (key) {
+                        job.rejectedSubtitleSources = [...new Set([...(job.rejectedSubtitleSources || []), key])];
+                    }
                     // Limpa imediatamente o arquivo bruto em disco para não ocupar GBs inúteis
                     if (rawFilePath && fs.existsSync(rawFilePath)) {
                         console.log(`🧹 [Limpeza] Removendo arquivo sem legenda PT-BR disponível (${path.basename(rawFilePath)})...`);
@@ -4411,6 +4440,8 @@ class QueueManager extends EventEmitter {
         job.progressDetails = 'Reenfileirado pelo Administrador';
         job.error = null;
         job.attemptCount = 0; // Reseta contagem de tentativas ao reenfileirar manualmente
+        job.retryAfter = null;
+        job.rejectedSubtitleSources = [];
 
         // Se já estava na fila em memória, atualiza
         const existingIdx = this.queue.findIndex(j => j.id === jobId);

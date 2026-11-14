@@ -990,6 +990,16 @@ ${events.join('\n')}
         return this.isBrazilianPortugueseSubtitle(content);
     }
 
+    async fetchPortugueseSrt(url) {
+        const { data } = await axios.get(url, {
+            timeout: 6000,
+            maxContentLength: 2 * 1024 * 1024,
+            responseType: 'text'
+        });
+        const timestamps = typeof data === 'string' && data.match(/^\s*\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}[,.]\d{3}/gm);
+        return timestamps?.length >= 3 && this.isBrazilianPortugueseSubtitle(data) ? data : null;
+    }
+
     async findCompanionSubtitle(inputPath, metadata = {}) {
         try {
             const videoDir = path.dirname(inputPath);
@@ -1297,9 +1307,9 @@ ${events.join('\n')}
         // 3. Legenda PT-BR direta fornecida pelos metadados da busca (já selecionada especificamente para este release)
         if (metadata.subtitleUrl) {
             try {
-                const res = await axios.get(metadata.subtitleUrl, { timeout: 10000, httpsAgent: agent, responseType: 'text' });
-                if (res.data && this.isBrazilianPortugueseSubtitle(res.data)) {
-                    await fs.writeFile(srtPath, res.data, 'utf8');
+                const content = await this.fetchPortugueseSrt(metadata.subtitleUrl);
+                if (content) {
+                    await fs.writeFile(srtPath, content, 'utf8');
                     console.log(`✅ Legenda PT-BR direta da fonte selecionada baixada e validada!`);
 
                     const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_direct_${Date.now()}.srt`);
@@ -1315,7 +1325,7 @@ ${events.join('\n')}
                         await SubtitleSync.optimizeSubtitleFile(srtPath);
                         return srtPath;
                     }
-                } else if (res.data) {
+                } else {
                     console.warn(`⚠️ [SubtitleSync] Legenda direta descartada: texto não validado como PT-BR autêntico (detectado Português de Portugal ou qualidade inadequada). Recorrendo à busca completa.`);
                 }
             } catch (e) {
@@ -1417,21 +1427,18 @@ ${events.join('\n')}
                     for (let idx = 0; idx < Math.min(ptSubs.length, 6); idx++) {
                         const sub = ptSubs[idx];
                         try {
-                            const subRes = await axios.get(sub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
-                            if (!subRes.data || subRes.data.length < 500) continue;
-
-                            const isPtBr = this.isBrazilianPortugueseSubtitle(subRes.data);
-                            if (!isPtBr) {
+                            const content = await this.fetchPortugueseSrt(sub.url);
+                            if (!content) {
                                 console.warn(`⚠️ Legenda OpenSubtitles #${idx + 1} (${sub.lang}) descartada: texto não validado como PT-BR autêntico (ou detectado Português de Portugal).`);
                                 continue;
                             }
 
                             const candidateSrtPath = path.join(path.dirname(inputPath), `sub_pt_cand_${Date.now()}_${idx}.srt`);
-                            await fs.writeFile(candidateSrtPath, subRes.data, 'utf8');
+                            await fs.writeFile(candidateSrtPath, content, 'utf8');
                             lastValidPtBrCandidatePath = candidateSrtPath;
 
                             const subRel = sub.movieReleaseName || sub.releaseName || sub.id;
-                            console.log(`✅ Legenda PT-BR oficial #${idx + 1} [${subRel}] (${sub.lang}) baixada (${(subRes.data.length / 1024).toFixed(1)} KB). Sincronizando...`);
+                            console.log(`✅ Legenda PT-BR oficial #${idx + 1} [${subRel}] (${sub.lang}) baixada (${(Buffer.byteLength(content) / 1024).toFixed(1)} KB). Sincronizando...`);
 
                             const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}_${idx}.srt`);
                             const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, candidateSrtPath, syncedSrtPath, { isAnime: metadata.isAnime, videoPath: inputPath });
