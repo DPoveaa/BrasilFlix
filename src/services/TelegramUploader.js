@@ -175,27 +175,43 @@ class TelegramUploader {
             return resultMap;
         }
 
+        const withLookupTimeout = async operation => {
+            let timer;
+            try {
+                return await Promise.race([
+                    operation(),
+                    new Promise((_, reject) => {
+                        timer = setTimeout(() => reject(new Error('Timeout consultando o armazém do Telegram')), 12000);
+                    })
+                ]);
+            } finally {
+                clearTimeout(timer);
+            }
+        };
         const batchSize = 100;
+        let storageEntity;
+        let storageEntityError;
+        try {
+            storageEntity = await withLookupTimeout(() => client.getEntity(this.storageGroupId));
+        } catch (error) {
+            if (String(this.storageGroupId).startsWith('-100')) storageEntityError = error;
+        }
         for (let i = 0; i < idsToFetch.length; i += batchSize) {
             const batch = idsToFetch.slice(i, i + batchSize);
             try {
-                let entity = null;
-                try {
-                    entity = await client.getEntity(this.storageGroupId);
-                } catch (e) {}
-
+                if (storageEntityError) throw storageEntityError;
                 let rawMessages = [];
-                if (entity && (entity.className === 'Channel' || entity.className === 'ChatForbidden')) {
-                    const inputChannel = await client.getInputEntity(entity);
-                    const res = await client.invoke(new Api.channels.GetMessages({
+                if (storageEntity && (storageEntity.className === 'Channel' || storageEntity.className === 'ChatForbidden')) {
+                    const inputChannel = await withLookupTimeout(() => client.getInputEntity(storageEntity));
+                    const res = await withLookupTimeout(() => client.invoke(new Api.channels.GetMessages({
                         channel: inputChannel,
                         id: batch.map(id => new Api.InputMessageID({ id }))
-                    }));
+                    })));
                     rawMessages = res.messages || [];
                 } else {
-                    const res = await client.invoke(new Api.messages.GetMessages({
+                    const res = await withLookupTimeout(() => client.invoke(new Api.messages.GetMessages({
                         id: batch.map(id => new Api.InputMessageID({ id }))
-                    }));
+                    })));
                     rawMessages = res.messages || [];
                 }
 
@@ -275,7 +291,7 @@ class TelegramUploader {
                     }
                 }
             } catch (err) {
-                console.warn(`⚠️ Erro ao consultar lote de mensagens no Telegram (${batch.join(',')}):`, err.message);
+                console.warn(`⚠️ Erro ao consultar ${batch.length} mensagens no Telegram:`, err.message);
                 for (const requestedId of batch) {
                     resultMap.set(requestedId, {
                         status: 'ERROR',
