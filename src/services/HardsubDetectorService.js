@@ -70,7 +70,8 @@ class HardsubDetectorService {
     async runOcr(imagePath) {
         return new Promise((resolve) => {
             // Suporta português, inglês, russo, chinês e coreano
-            const proc = spawn('tesseract', [imagePath, 'stdout', '-l', 'por+eng+rus+chi_sim+kor', '--psm', '6'], {
+            // Usa segmentação de página padrão (sem forçar bloco de texto psm 6 para não alucinar em granulação/letterbox)
+            const proc = spawn('tesseract', [imagePath, 'stdout', '-l', 'por+eng+rus+chi_sim+kor', '--psm', '3'], {
                 timeout: 5000,
                 stdio: ['ignore', 'pipe', 'pipe']
             });
@@ -98,7 +99,7 @@ class HardsubDetectorService {
 
     async runOcrFallback(imagePath) {
         return new Promise((resolve) => {
-            const proc = spawn('tesseract', [imagePath, 'stdout', '-l', 'eng+por', '--psm', '6'], {
+            const proc = spawn('tesseract', [imagePath, 'stdout', '-l', 'eng+por', '--psm', '3'], {
                 timeout: 4000,
                 stdio: ['ignore', 'pipe', 'pipe']
             });
@@ -113,25 +114,44 @@ class HardsubDetectorService {
      * Analisa o texto extraído pelo OCR e classifica tipo de caracteres
      */
     analyzeText(text) {
-        if (!text || text.length < 3) {
+        if (!text || text.length < 5) {
             return { hasText: false, cyrillicCount: 0, asianCount: 0, latinCount: 0, text: '' };
         }
 
         const cleanText = text.replace(/[\r\n]+/g, ' ').trim();
+
+        // 1. Rejeição de ruído de símbolos/pontuação aleatória típica de falsos positivos do OCR (ex: |, ~, », `, =, >, @, —, etc.)
+        const symbolsOnly = cleanText.replace(/[\p{L}\p{N}\s]/gu, '');
+        const nonSpaceCount = cleanText.replace(/\s/g, '').length;
+        if (nonSpaceCount > 0 && (symbolsOnly.length / nonSpaceCount) > 0.20) {
+            return { hasText: false, cyrillicCount: 0, asianCount: 0, latinCount: 0, text: cleanText };
+        }
+
+        // 2. Extrai palavras reais com pelo menos 3 letras
+        const realWords = cleanText.split(/\s+/).map(w => w.replace(/[^\p{L}]/gu, '')).filter(w => w.length >= 3);
+
         const cyrillicMatches = cleanText.match(/[\u0400-\u04FF]/g) || [];
         const asianMatches = cleanText.match(/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/g) || [];
         const latinMatches = cleanText.match(/[A-Za-zÀ-ÿ]/g) || [];
 
-        // Filtra ruídos simples (ex: traços, pontos isolados)
-        const words = cleanText.split(/\s+/).filter(w => w.length >= 2);
-        const hasText = words.length >= 2 || cyrillicMatches.length >= 3 || asianMatches.length >= 2 || latinMatches.length >= 8;
+        // Legenda cirílica real: pelo menos 6 caracteres cirílicos e pelo menos 2 palavras de 3+ letras
+        const isCyrillicReal = cyrillicMatches.length >= 6 && realWords.filter(w => /[\u0400-\u04FF]/.test(w)).length >= 2;
+
+        // Legenda asiática real: pelo menos 4 caracteres ideográficos CJK
+        const isAsianReal = asianMatches.length >= 4;
+
+        // Legenda latina real: pelo menos 14 letras latinas E pelo menos 3 palavras reais com 3+ letras
+        const latinWords = realWords.filter(w => /^[A-Za-zÀ-ÿ]+$/.test(w));
+        const isLatinReal = latinMatches.length >= 14 && latinWords.length >= 3;
+
+        const hasText = isCyrillicReal || isAsianReal || isLatinReal;
 
         return {
             hasText,
-            cyrillicCount: cyrillicMatches.length,
-            asianCount: asianMatches.length,
-            latinCount: latinMatches.length,
-            wordCount: words.length,
+            cyrillicCount: isCyrillicReal ? cyrillicMatches.length : 0,
+            asianCount: isAsianReal ? asianMatches.length : 0,
+            latinCount: isLatinReal ? latinMatches.length : 0,
+            wordCount: realWords.length,
             text: cleanText
         };
     }

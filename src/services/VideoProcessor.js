@@ -1802,14 +1802,16 @@ ${events.join('\n')}
             const hardsubCheck = await HardsubDetectorService.detectHardsub(inputPath, info.duration);
 
             if (hardsubCheck.checked) {
+                const isBrGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br/i.test(path.basename(inputPath)) || metadata.isBrazilianGroup;
+
                 if (isConfirmedDublado) {
                     // Filme Dublado:
                     // Se tiver legenda fixa estrangeira (russo, asiático, etc.) -> REJEITA
-                    if (hardsubCheck.isForeignHardsub) {
+                    if (hardsubCheck.isForeignHardsub && !isBrGroup) {
                         throw new Error(`Legenda fixa estrangeira (${hardsubCheck.detectedScript}) detectada na imagem de vídeo dublado para "${optTitle}": ${hardsubCheck.textSamples}`);
                     }
                     // Se tiver texto latino persistente em quase todos os pontos (>= 4 de 5) -> REJEITA
-                    if (hardsubCheck.latinHits >= 4) {
+                    if (hardsubCheck.latinHits >= 4 && !isBrGroup) {
                         throw new Error(`Legenda fixa persistente detectada na imagem de vídeo dublado para "${optTitle}": ${hardsubCheck.textSamples}`);
                     }
                     if (hardsubCheck.latinHits > 0) {
@@ -1819,7 +1821,11 @@ ${events.join('\n')}
                     // Filme Legendado onde vamos queimar legenda PT-BR:
                     // Se já existir hardsub na imagem, queimar PT-BR vai gerar sobreposição ilegível (double subtitle)
                     if (hardsubCheck.hasHardsub) {
-                        throw new Error(`Vídeo já possui legenda fixa (${hardsubCheck.detectedScript}) na imagem para "${optTitle}". Queimar legenda PT-BR causaria sobreposição: ${hardsubCheck.textSamples}`);
+                        if (isBrGroup && !hardsubCheck.isForeignHardsub) {
+                            console.log(`ℹ️ [Hardsub Check] Release de grupo brasileiro verificado ("${path.basename(inputPath)}") com texto latino pontual/letterbox. Tratando como falso positivo e liberando queima da legenda.`);
+                        } else {
+                            throw new Error(`Vídeo já possui legenda fixa (${hardsubCheck.detectedScript}) na imagem para "${optTitle}". Queimar legenda PT-BR causaria sobreposição: ${hardsubCheck.textSamples}`);
+                        }
                     }
                 }
             }
