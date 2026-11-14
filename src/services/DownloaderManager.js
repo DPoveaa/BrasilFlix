@@ -651,7 +651,7 @@ class DownloaderManager extends EventEmitter {
                         console.error(errMsg);
                         finished = true;
                         safeCleanup();
-                        return reject(new Error(errMsg));
+                        return reject(Object.assign(new Error(errMsg), { code: 'TORRENT_WRONG_MEDIA' }));
                     }
 
                     // 2. Checa palavras-chave do título (ou título original ou traduzido) contra nomes dos arquivos e da pasta
@@ -676,7 +676,7 @@ class DownloaderManager extends EventEmitter {
                             console.error(errMsg);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(errMsg));
+                            return reject(Object.assign(new Error(errMsg), { code: 'TORRENT_WRONG_MEDIA' }));
                         }
 
                         // Log informativo quando há correspondência confirmada
@@ -720,7 +720,7 @@ class DownloaderManager extends EventEmitter {
                         console.warn(`❌ [DOWNLOAD] Arquivo único "${torrent.files[0].name}" não corresponde a S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}. Abortando imediatamente.`);
                         finished = true;
                         safeCleanup();
-                        return reject(new Error(`Episódio S${seasonNum}E${epNum} não localizado no arquivo do torrent.`));
+                        return reject(Object.assign(new Error(`Episódio S${seasonNum}E${epNum} não localizado no arquivo do torrent.`), { code: 'TORRENT_WRONG_MEDIA' }));
                     }
                     targetEpisodeFile = singleCandidate;
 
@@ -794,7 +794,7 @@ class DownloaderManager extends EventEmitter {
                     const currentTempBytes = await this.getTempDirSizeBytes().catch(() => 0);
                     const isSafeToDownloadSelected = neededTotalBytes <= maxPackBytes && (currentTempBytes + neededTotalBytes * 1.3 <= maxDiskBytes * 0.75);
 
-                    if (neededCount > 0 && isSafeToDownloadSelected) {
+                    if (neededEpisodesMap[epNum] && isSafeToDownloadSelected) {
                         // Desmarca o torrent inteiro e todas as peças preventivamente
                         try {
                             if (typeof torrent.deselect === 'function') {
@@ -813,7 +813,7 @@ class DownloaderManager extends EventEmitter {
                             } catch (e) {}
                         }
 
-                        targetEpisodeFile = neededEpisodesMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+                        targetEpisodeFile = neededEpisodesMap[epNum];
 
                         if (neededCount === 1) {
                             const singleFile = Object.values(neededEpisodesMap)[0];
@@ -833,7 +833,7 @@ class DownloaderManager extends EventEmitter {
                         return resolve({ redundant: true, filePath: null });
                     } else {
                         // Se não for seguro baixar múltiplos e houver episódio pendente, baixa SOMENTE o episódio alvo do job
-                        const found = neededEpisodesMap[epNum] || detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum);
+                        const found = neededEpisodesMap[epNum] || detectedEpisodeMap[epNum] || this.findEpisodeFileInTorrent(torrent.files, seasonNum, epNum, options);
                         if (found) {
                             if (found.length < minAllowedBytes) {
                                 console.warn(`❌ [DOWNLOAD] Arquivo "${found.name}" descartado: tamanho físico insuficiente (${this.formatBytes(found.length)} < ${this.formatBytes(minAllowedBytes)}).`);
@@ -864,7 +864,7 @@ class DownloaderManager extends EventEmitter {
                             console.warn(`❌ [DOWNLOAD] Episódio S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')} não localizado entre os arquivos do torrent "${torrent.name}". Abortando download imediatamente.`);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(`Episódio ${epNum} não localizado na estrutura de arquivos do torrent.`));
+                            return reject(Object.assign(new Error(`Episódio ${epNum} não localizado na estrutura de arquivos do torrent.`), { code: 'TORRENT_WRONG_MEDIA' }));
                         }
                     }
                 }
@@ -1038,13 +1038,18 @@ class DownloaderManager extends EventEmitter {
                         return reject(new Error('Nenhum arquivo selecionável encontrado no torrent.'));
                     }
 
+                    // O progresso arredondado pode chegar a 100% antes da última peça verificada.
+                    if (!selectedFile.done) {
+                        isCompleting = false;
+                        return;
+                    }
+
                     const fullPath = path.join(this.downloadDir, selectedFile.path);
 
                     // 1. Verificação de existência do arquivo físico
                     if (!fs.existsSync(fullPath)) {
                         completionRetries++;
-                        const isDoneTorrent = (torrent.progress >= 0.999 || torrent.done);
-                        if (isDoneTorrent && completionRetries >= maxCompletionRetries) {
+                        if (completionRetries >= maxCompletionRetries) {
                             console.warn(`❌ [DOWNLOAD] Arquivo físico não encontrado após download 100%: ${fullPath}`);
                             finished = true;
                             safeCleanup();
@@ -1058,14 +1063,13 @@ class DownloaderManager extends EventEmitter {
                     const stat = fs.statSync(fullPath);
                     const expectedSize = selectedFile.length;
 
-                    if (!selectedFile.done || stat.size !== expectedSize) {
+                    if (stat.size !== expectedSize) {
                         completionRetries++;
-                        const isDoneTorrent = (torrent.progress >= 0.999 || torrent.done);
-                        if (isDoneTorrent && completionRetries >= maxCompletionRetries) {
-                            console.warn(`❌ [DOWNLOAD] Arquivo incompleto em disco (${this.formatBytes(stat.size)} de ${this.formatBytes(expectedSize)}).`);
+                        if (completionRetries >= maxCompletionRetries) {
+                            console.warn(`❌ [DOWNLOAD] Tamanho em disco divergente (${stat.size} de ${expectedSize} bytes).`);
                             finished = true;
                             safeCleanup();
-                            return reject(new Error(`Arquivo incompleto no disco (${this.formatBytes(stat.size)} de ${this.formatBytes(expectedSize)}).`));
+                            return reject(new Error(`Tamanho em disco divergente (${stat.size} de ${expectedSize} bytes).`));
                         }
                         isCompleting = false;
                         return;
@@ -1098,8 +1102,7 @@ class DownloaderManager extends EventEmitter {
                     const videoInfo = await VideoProcessor.getVideoInfo(fullPath).catch(() => null);
                     if (!videoInfo || !videoInfo.duration || videoInfo.duration <= 0) {
                         completionRetries++;
-                        const isDoneTorrent = (torrent.progress >= 0.999 || torrent.done);
-                        if (isDoneTorrent && completionRetries >= maxCompletionRetries) {
+                        if (completionRetries >= maxCompletionRetries) {
                             console.warn(`❌ [DOWNLOAD] Arquivo corrompido ou ffprobe incapaz de ler stream: ${fullPath}`);
                             finished = true;
                             safeCleanup();
@@ -1318,7 +1321,7 @@ class DownloaderManager extends EventEmitter {
 
                 if (curTotal > 0 && (fileProg >= 0.99 || curDownloaded >= curTotal * 0.99 || torrent.progress >= 0.99 || torrent.done)) {
                     checkAndComplete();
-                    return;
+                    if (isCompleting || finished) return;
                 }
 
                 const now = Date.now();

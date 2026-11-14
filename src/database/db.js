@@ -314,6 +314,14 @@ async function createTables() {
         ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0;
         ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS retry_after TIMESTAMP WITH TIME ZONE;
 
+        CREATE TABLE IF NOT EXISTS queue_source_failures (
+            target_key TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            retry_after TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (target_key, source_hash)
+        );
+
         CREATE TABLE IF NOT EXISTS stremio_tokens (
             token VARCHAR(100) PRIMARY KEY,
             user_id BIGINT,

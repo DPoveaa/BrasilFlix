@@ -25,11 +25,23 @@ const PRIORITIES = new Proxy({}, {
 
 const { normalizeTitle, isSameMedia, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 const AnimeSeasonMapper = require('../utils/AnimeSeasonMapper');
+const { createHash } = require('node:crypto');
 
 function releaseKey(source) {
     return source?.infoHash?.toLowerCase() ||
-        source?.magnet?.match(/urn:btih:([a-z0-9]+)/i)?.[1].toLowerCase() ||
+        (source?.magnet || source?.magnetUri)?.match(/urn:btih:([a-z0-9]+)/i)?.[1].toLowerCase() ||
         source?.url || source?.magnet;
+}
+
+function sourceFailureKey(job, metadata) {
+    const media = String(metadata.tmdbId || job.tmdbId || metadata.imdbId ||
+        `${normalizeTitle(metadata.nomeOriginal || job.title)}:${metadata.ano || ''}`);
+    return JSON.stringify([job.type, media, job.season || 0, job.episode || 0]);
+}
+
+function sourceHash(source) {
+    const key = releaseKey(source);
+    return key ? createHash('sha256').update(key).digest('hex') : null;
 }
 
 /** Extrai SxxExx / TxxExx / 1x01 do nome/caminho do arquivo. */
@@ -1744,6 +1756,18 @@ class QueueManager extends EventEmitter {
         }
     }
 
+    async rememberSourceFailure(target, source, reason, hours) {
+        const hash = sourceHash(source);
+        if (!hash) return;
+        await db.query(
+            `INSERT INTO queue_source_failures (target_key, source_hash, reason, retry_after)
+             VALUES ($1, $2, $3, NOW() + $4::integer * INTERVAL '1 hour')
+             ON CONFLICT (target_key, source_hash) DO UPDATE
+             SET reason = EXCLUDED.reason, retry_after = EXCLUDED.retry_after`,
+            [target, hash, reason, hours]
+        ).catch(error => console.warn('Falha ao persistir histórico da fonte:', error.message));
+    }
+
     /**
      * Remove a reserva de série de _pendingSeriesDownloads para um dado job.
      * Deve ser chamado em todos os caminhos de saída de runJobWorker (finally + early returns)
@@ -2889,7 +2913,22 @@ class QueueManager extends EventEmitter {
                     bestSource = sources[0] || { title: job.title, audio: job.audioPreference };
                 }
 
-                const isNewSource = source => !(job.rejectedSubtitleSources || []).includes(releaseKey(source));
+                const target = sourceFailureKey(job, metadata);
+                const previousFailures = await db.query(
+                    'SELECT source_hash FROM queue_source_failures WHERE target_key = $1 AND retry_after > NOW()',
+                    [target]
+                ).catch(() => ({ rows: [] }));
+                const seenSources = new Set();
+                const blockedSources = new Set(previousFailures.rows.map(row => row.source_hash));
+                const isNewSource = source => !seenSources.has(sourceHash(source)) &&
+                    (job.customMagnet === source.magnet || !blockedSources.has(sourceHash(source))) &&
+                    !(job.rejectedSubtitleSources || []).includes(releaseKey(source));
+                const recordSourceFailure = async (source, error) => {
+                    const reason = error.code || 'TRANSFER_FAILED';
+                    const hours = reason === 'TORRENT_WRONG_MEDIA' ? 24 * 30 :
+                        reason === 'TORRENT_TRANSLATION_UNAVAILABLE' ? 6 : 1;
+                    await this.rememberSourceFailure(target, source, reason, hours);
+                };
                 sources = sources.filter(isNewSource);
                 let lastError = null;
                 const maxAttempts = downloadedMedia?.filePath ? 0 : Math.min(8, sources.length);
@@ -2911,6 +2950,9 @@ class QueueManager extends EventEmitter {
 
                 for (let i = 0; i < maxAttempts; i++) {
                     const currentSource = sources[i];
+                    if (!isNewSource(currentSource)) continue;
+                    const hash = sourceHash(currentSource);
+                    if (hash) seenSources.add(hash);
                     const transferStartedAt = Date.now();
                     let firstByte = false;
                     const onProgress = progress => {
@@ -3009,15 +3051,12 @@ class QueueManager extends EventEmitter {
                             return;
                         }
                         console.warn(`⚠️ Fonte [${i + 1}/${maxAttempts}] falhou ou estagnou (${err.message}). Tentando próxima opção...`);
+                        await recordSourceFailure(currentSource, err);
                         lastError = err;
                     }
                 }
 
                 if (!downloadedMedia || !bestSource) {
-                    if (lastError?.code === 'TORRENT_TRANSLATION_UNAVAILABLE' ||
-                        (!sources.length && job.rejectedSubtitleSources?.length)) {
-                        throw new Error(lastError?.message || 'Os releases disponíveis já falharam na validação de legenda.');
-                    }
                     // Se a busca inicial era Dublado e todas as fontes falharam:
                     // Se o item JÁ POSSUI Legendado ou se é um job de upgrade, NÃO faz fallback para Legendado
                     if (job.audioPreference === 'dublado' && (jaPossuiLegendado || job.isUpgrade)) {
@@ -3056,6 +3095,9 @@ class QueueManager extends EventEmitter {
                             const totalLegAttempts = Math.min(6, candidatesLeg.length);
                             for (let j = 0; j < totalLegAttempts; j++) {
                                 const currentLeg = candidatesLeg[j];
+                                if (!isNewSource(currentLeg)) continue;
+                                const hash = sourceHash(currentLeg);
+                                if (hash) seenSources.add(hash);
                                 console.log(`🎯 [Fallback Legendado] Tentando fonte [${j + 1}/${totalLegAttempts}]: ${currentLeg.title} (${currentLeg.sizeMB} MB, ${currentLeg.seeders || 0} seeds)`);
                                 try {
                                     if (currentLeg.magnet) {
@@ -3109,6 +3151,7 @@ class QueueManager extends EventEmitter {
                                         return;
                                     }
                                     console.warn(`⚠️ [Fallback Legendado] Fonte [${j + 1}] falhou: ${errLeg.message}`);
+                                    await recordSourceFailure(currentLeg, errLeg);
                                     lastError = errLeg;
                                 }
                             }
@@ -3120,6 +3163,11 @@ class QueueManager extends EventEmitter {
 
 
                 if (!downloadedMedia || !bestSource) {
+                    if (lastError?.code === 'TORRENT_TRANSLATION_UNAVAILABLE' ||
+                        lastError?.code === 'TORRENT_WRONG_MEDIA' ||
+                        (!lastError && (blockedSources.size || job.rejectedSubtitleSources?.length))) {
+                        throw lastError || new Error('As fontes disponíveis já falharam ou estão no intervalo de retentativa.');
+                    }
                     if (job.type === 'serie') {
                         this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'any');
                         console.warn(`⚠️ [SÉRIE PAUSADA] Todas as fontes testadas (Dublado e Legendado) para "${job.title}" T${job.season || 1}E${job.episode || 1} estavam sem seeders. Adicionando ao Swarm Watcher...`);
@@ -3523,6 +3571,7 @@ class QueueManager extends EventEmitter {
                     const key = releaseKey(bestSource || job.bestSource);
                     if (key) {
                         job.rejectedSubtitleSources = [...new Set([...(job.rejectedSubtitleSources || []), key])];
+                        await this.rememberSourceFailure(sourceFailureKey(job, metadata), bestSource || job.bestSource, 'SUBTITLE_UNAVAILABLE', 24);
                     }
                     // Limpa imediatamente o arquivo bruto em disco para não ocupar GBs inúteis
                     if (rawFilePath && fs.existsSync(rawFilePath)) {

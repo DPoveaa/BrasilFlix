@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { normalizeTitle, isReleaseCompatibleWithTarget } = require('../utils/titleUtils');
 
 class NyaaSearchService {
     constructor() {
@@ -305,6 +306,8 @@ class NyaaSearchService {
         // Deduplicação e filtragem de integridade
         const candidates = [];
         const seenHashes = new Set();
+        const acceptedTitles = [titlePt, origName, ...(options.titulosAlternativos || [])]
+            .map(normalizeTitle).filter(Boolean);
 
         for (const item of rawResults) {
             if (seenHashes.has(item.infoHash)) continue;
@@ -312,6 +315,11 @@ class NyaaSearchService {
 
             // Rejeita releases sem seeders
             if (item.seeders < 1) continue;
+            const releaseName = normalizeTitle(item.title.replace(/^(?:\[[^\]]+\]\s*)+/, ''));
+            if (!acceptedTitles.some(title => releaseName.startsWith(title)) ||
+                !isReleaseCompatibleWithTarget(item.title, titlePt, origName, { tipo, season })) continue;
+            if (/\b(?:english|eng|spanish|castilian|german|french)[ ._-]+dub\b/i.test(item.title) &&
+                !/\b(?:dual|multi|japanese|pt[-_ ]?br|portugu[eê]s)\b/i.test(item.title)) continue;
 
             // Se for série, valida se o release corresponde ao episódio ou temporada
             if (tipo === 'serie') {
@@ -364,7 +372,7 @@ class NyaaSearchService {
                 quality,
                 source: 'Nyaa.si',
                 provider: 'Nyaa.si',
-                magnetUri: this.buildMagnet(item.infoHash, item.title),
+                magnet: this.buildMagnet(item.infoHash, item.title),
                 isDirect: false,
                 isBatch,
                 audioScore
