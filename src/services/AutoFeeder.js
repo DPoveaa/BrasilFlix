@@ -5,6 +5,7 @@ const MediaSearchService = require('./MediaSearchService');
 const SwarmWatcher = require('./SwarmWatcher');
 const DiskCleaner = require('./DiskCleaner');
 const SchedulerService = require('./SchedulerService');
+const CatalogoManager = require('../managers/CatalogoManager');
 const { PRIORITIES } = require('../managers/QueueManager');
 const { isSameMedia } = require('../utils/titleUtils');
 const AnimeSeasonMapper = require('../utils/AnimeSeasonMapper');
