@@ -1285,21 +1285,25 @@ class StremioServer {
         // 🔍 TMDB Search Unificado para Pedidos de Usuários (com detecção de Franquias/Coleções)
         this.app.get('/api/tmdb/search-all', async (req, res) => {
             try {
-                const query = (req.query.query || req.query.q || '').trim();
+                const query = String(req.query.query || req.query.q || '').trim();
                 if (!query || query.length < 2) {
                     return res.json({ success: true, results: [] });
                 }
-                const results = typeof this.tmdbService.searchWithCollections === 'function'
-                    ? await this.tmdbService.searchWithCollections(query)
-                    : await this.tmdbService.searchMulti(query);
+                if (query.length > 120) return res.status(400).json({ error: 'Busca longa demais.' });
+                const page = Math.max(1, Math.min(20, Number.parseInt(req.query.page, 10) || 1));
+                const filter = ['movies', 'series', 'animation'].includes(req.query.filter) ? req.query.filter : 'all';
+                const results = await this.tmdbService.searchWithCollections(query, { page, filter, related: req.query.related === '1' });
 
                 res.json({
                     success: true,
-                    results: (results || []).slice(0, 16).map(r => ({
+                    results: (results || []).map(r => ({
                         tmdbId: r.tmdbId || null,
                         nome: r.nome,
                         nomeOriginal: r.nomeOriginal,
                         tipo: r.tipo || 'filme',
+                        categoria: r.categoria,
+                        isAnimation: !!r.isAnimation,
+                        related: !!r.related,
                         ano: r.ano || '',
                         poster: r.posterUrl || r.poster || '',
                         nota: r.nota || 0,
@@ -1311,7 +1315,7 @@ class StremioServer {
                     }))
                 });
             } catch (e) {
-                res.status(500).json({ error: e.message });
+                res.status(503).json({ error: e.message });
             }
         });
 

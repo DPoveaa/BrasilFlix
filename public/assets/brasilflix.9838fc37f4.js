@@ -13162,11 +13162,34 @@
 
         function closeRequestMediaModal(e) {
             if (e && !isSafeModalBackdropClick(e, 'request-media-modal')) return;
+            clearTimeout(tmdbSearchDebounceTimer);
+            requestSearchController?.abort();
+            requestSearchVersion++;
             const modal = document.getElementById('request-media-modal');
             if (modal) modal.style.display = 'none';
         }
 
-        function handleTMDBAutocomplete(query) {
+        let requestSearchPage = 1;
+        let requestSearchVersion = 0;
+        let requestSearchController;
+
+        function searchMoreRequestTitles() {
+            handleTMDBAutocomplete(document.getElementById('req-media-input').value, requestSearchPage + 1);
+        }
+
+        function searchRelatedRequestTitles() {
+            handleTMDBAutocomplete(document.getElementById('req-media-input').value, 1, true);
+        }
+
+        function handleTMDBAutocomplete(query, page = 1, related = false) {
+            clearTimeout(tmdbSearchDebounceTimer);
+            requestSearchController?.abort();
+            const version = ++requestSearchVersion;
+            const more = document.getElementById('req-more-results');
+            const relatedButton = document.getElementById('req-related-results');
+            more.hidden = true;
+            relatedButton.hidden = true;
+            if (page === 1) requestSearchPage = 1;
             const q = (query || '').trim();
             const resultsArea = document.getElementById('req-results-area');
             const initialTip = document.getElementById('req-initial-tip');
@@ -13179,13 +13202,30 @@
                 return;
             }
 
-            clearTimeout(tmdbSearchDebounceTimer);
+            resultsArea.style.display = 'block';
+            initialTip.style.display = 'none';
+            franchiseBox.replaceChildren();
+            listEl.textContent = related ? 'Buscando filmes relacionados…' : 'Buscando títulos…';
             tmdbSearchDebounceTimer = setTimeout(async () => {
                 try {
-                    const res = await fetch('/api/tmdb/search-all?query=' + encodeURIComponent(q));
+                    const controller = new AbortController();
+                    requestSearchController = controller;
+                    const params = new URLSearchParams({ query: q, page, filter: document.getElementById('req-media-filter').value, related: related ? '1' : '0' });
+                    const res = await fetch('/api/tmdb/search-all?' + params, { signal: controller.signal });
+                    if (!res.ok) throw new Error('Busca indisponível');
                     const data = await res.json();
-                    const results = data.results || [];
+                    if (version !== requestSearchVersion) return;
+                    const incoming = data.results || [];
+                    const results = page === 1 ? incoming : [..._lastTMDBResults];
+                    if (page > 1) {
+                        for (const item of incoming) {
+                            if (!results.some(current => isSameMedia(current, item))) results.push(item);
+                        }
+                    }
+                    requestSearchPage = page;
                     _lastTMDBResults = results;
+                    more.hidden = !incoming.some(item => !item.isCollection && !item.related) || page >= 20;
+                    relatedButton.hidden = related || !results.some(item => item.tipo === 'filme' || item.isCollection);
 
                     if (initialTip) initialTip.style.display = 'none';
                     if (resultsArea) resultsArea.style.display = 'block';
@@ -13196,63 +13236,46 @@
                             listEl.innerHTML = `
                                 <div style="padding: 24px 16px; text-align: center; color: #94a3b8; font-size: 13px;">
                                     <div>Nenhum filme ou série encontrado com esse nome no TMDB.</div>
-                                    <button type="button" onclick="addManualTitle('${q.replace(/'/g, "\\'")}')" class="btn-modal btn-modal-primary" style="margin-top: 12px; padding: 8px 16px; font-size: 12px; border-radius: 8px;">
-                                        + Pedir "${q}" como título avulso
+                                    <button type="button" id="req-manual-title" class="btn-modal btn-modal-primary" style="margin-top: 12px; padding: 8px 16px; font-size: 12px; border-radius: 8px;">
+                                        + Pedir "${escapeHtml(q)}" como título avulso
                                     </button>
                                 </div>
                             `;
                         }
+                        document.getElementById('req-manual-title')?.addEventListener('click', () => addManualTitle(q));
                         return;
                     }
 
-                    // 1. Destaque Especial da Franquia (se existir)
-                    const collectionItem = results.find(r => r.isCollection);
-                    if (collectionItem && Array.isArray(collectionItem.filmes) && collectionItem.filmes.length > 1 && franchiseBox) {
-                        const totalF = collectionItem.filmes.length;
-                        const allSelected = collectionItem.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
-
-                        franchiseBox.innerHTML = `
-                            <div class="req-franchise-card">
-                                <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
-                                    <img src="${collectionItem.poster || '/assets/no-poster.png'}" alt="Poster" style="width: 44px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0;" onerror="this.src='/assets/no-poster.png'">
-                                    <div style="min-width: 0;">
-                                        <div style="display: inline-block; background: #eab308; color: #000; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">
-                                            ⭐ FRANQUIA COMPLETA
-                                        </div>
-                                        <h4 style="color: #fff; font-size: 14.5px; font-weight: 800; margin: 3px 0 2px 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-                                            ${collectionItem.nome}
-                                        </h4>
-                                        <div style="font-size: 11.5px; color: #fde047; font-weight: 600;">
-                                            ${totalF} filmes disponíveis (${collectionItem.ano || 'Saga completa'})
-                                        </div>
-                                    </div>
-                                </div>
-                                <button type="button" class="req-franchise-btn ${allSelected ? 'selected' : ''}" onclick="toggleFranchiseAll()">
-                                    ${allSelected ? '✓ Franquia Toda Selecionada' : `+ Selecionar Franquia Toda (${totalF})`}
-                                </button>
-                            </div>
-                        `;
-                    } else if (franchiseBox) {
-                        franchiseBox.innerHTML = '';
-                    }
+                    const groups = results.filter(item => item.isCollection);
+                    franchiseBox.innerHTML = groups.map((group, index) => `
+                        <details class="req-franchise-card" style="display:block">
+                            <summary style="cursor:pointer">${escapeHtml(group.nome)} · ${group.filmes.length} filmes${group.related ? ' · Relacionada' : ''}</summary>
+                            <button type="button" class="req-franchise-btn" data-collection-index="${index}" onclick="toggleFranchiseAll(${index})"></button>
+                            ${group.filmes.map((film, filmIndex) => `
+                                <div class="req-result-item">
+                                    <span>${escapeHtml(film.nome)} ${film.ano ? '(' + escapeHtml(film.ano) + ')' : ''}</span>
+                                    <button type="button" class="req-btn-add" data-collection-film="${index}:${filmIndex}" onclick="toggleCollectionFilm(${index},${filmIndex})">+ Adicionar</button>
+                                </div>`).join('')}
+                        </details>`).join('');
 
                     // 2. Lista dos Filmes Encontrados
                     const movieItems = results.filter(r => !r.isCollection);
                     if (listEl) {
                         listEl.innerHTML = movieItems.map((item, idx) => {
                             const isSel = reqMediaBasket.some(b => isSameMedia(b, item));
-                            let typeTag = '🎬 Filme';
-                            if (item.tipo === 'anime') typeTag = '🌸 Anime';
-                            else if (item.tipo === 'dorama') typeTag = '🇰🇷 Dorama';
+                            let typeTag = item.related ? 'Filme relacionado' : '🎬 Filme';
+                            if (item.isAnimation) typeTag = item.related ? 'Animação relacionada' : 'Animação · ' + (item.tipo === 'serie' ? 'Série' : 'Filme');
+                            else if (item.categoria === 'anime') typeTag = '🌸 Anime';
+                            else if (item.categoria === 'dorama') typeTag = '🇰🇷 Dorama';
                             else if (item.tipo === 'serie' || item.tipo === 'tv') typeTag = '📺 Série';
 
                             return `
                                 <div class="req-result-item ${isSel ? 'is-selected' : ''}" id="req-item-row-${idx}">
                                     <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-                                        <img src="${item.poster || '/assets/no-poster.png'}" alt="${escapeHtml(item.nome)}" style="width: 36px; height: 50px; object-fit: cover; border-radius: 5px; flex-shrink: 0;" onerror="this.src='/assets/no-poster.png'">
+                                        <img src="${safeImageUrl(item.poster || '/logo.jpg')}" alt="${escapeHtml(item.nome)}" style="width: 36px; height: 50px; object-fit: cover; border-radius: 5px; flex-shrink: 0;" onerror="this.onerror=null; this.src='/logo.jpg'">
                                         <div style="min-width: 0;">
                                             <div style="font-size: 13.5px; font-weight: 800; color: #fff; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-                                                ${item.nome} ${item.ano ? `<span style="color: #94a3b8; font-weight: 500;">(${item.ano})</span>` : ''}
+                                                ${escapeHtml(item.nome)} ${item.ano ? `<span style="color: #94a3b8; font-weight: 500;">(${escapeHtml(item.ano)})</span>` : ''}
                                             </div>
                                             <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
                                                 ${typeTag} ${item.nota ? '• ⭐ ' + Number(item.nota).toFixed(1) : ''}
@@ -13267,14 +13290,17 @@
                         }).join('');
                     }
 
+                    refreshResultsSelectionVisuals();
                 } catch (e) {
+                    if (page > 1) more.hidden = false;
+                    if (version !== requestSearchVersion || e.name === 'AbortError') return;
                     if (listEl) listEl.innerHTML = '<div style="padding: 15px; text-align: center; color: #ef4444; font-size: 12px;">Erro ao buscar sugestões. Tente novamente.</div>';
                 }
             }, 220);
         }
 
         function isSameMedia(a, b) {
-            if (a.tmdbId && b.tmdbId) return a.tmdbId === b.tmdbId;
+            if (a.tmdbId && b.tmdbId) return String(a.tmdbId) === String(b.tmdbId) && a.tipo === b.tipo;
             if (a.tmdbId || b.tmdbId) return false; // um tem id e o outro não → diferentes
             return a.nome.toLowerCase() === b.nome.toLowerCase();
         }
@@ -13302,8 +13328,18 @@
             refreshResultsSelectionVisuals();
         }
 
-        function toggleFranchiseAll() {
-            const col = _lastTMDBResults.find(r => r.isCollection);
+        function toggleCollectionFilm(index, filmIndex) {
+            const film = _lastTMDBResults.filter(r => r.isCollection)[index]?.filmes[filmIndex];
+            if (!film) return;
+            const existing = reqMediaBasket.findIndex(item => isSameMedia(item, film));
+            if (existing >= 0) reqMediaBasket.splice(existing, 1);
+            else reqMediaBasket.push(film);
+            renderReqBasket();
+            refreshResultsSelectionVisuals();
+        }
+
+        function toggleFranchiseAll(index) {
+            const col = _lastTMDBResults.filter(r => r.isCollection)[index];
             if (!col || !Array.isArray(col.filmes)) return;
 
             const allSelected = col.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
@@ -13343,7 +13379,7 @@
                     nome: title,
                     nomeOriginal: title,
                     ano: '',
-                    poster: '/assets/no-poster.png',
+                    poster: '/logo.jpg',
                     tipo: 'filme'
                 });
                 renderReqBasket();
@@ -13391,19 +13427,19 @@
                 }
             });
 
-            // Atualiza botão da franquia
-            const col = _lastTMDBResults.find(r => r.isCollection);
-            const franchiseBtn = document.querySelector('.req-franchise-btn');
-            if (col && Array.isArray(col.filmes) && franchiseBtn) {
-                const allSelected = col.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
-                if (allSelected) {
-                    franchiseBtn.classList.add('selected');
-                    franchiseBtn.textContent = '✓ Franquia Toda Selecionada';
-                } else {
-                    franchiseBtn.classList.remove('selected');
-                    franchiseBtn.textContent = `+ Selecionar Franquia Toda (${col.filmes.length})`;
-                }
-            }
+            const groups = _lastTMDBResults.filter(item => item.isCollection);
+            document.querySelectorAll('[data-collection-index]').forEach(button => {
+                const group = groups[Number(button.dataset.collectionIndex)];
+                const selected = group.filmes.every(film => reqMediaBasket.some(item => isSameMedia(item, film)));
+                button.classList.toggle('selected', selected);
+                button.textContent = selected ? 'Remover coleção' : 'Selecionar coleção';
+            });
+            document.querySelectorAll('[data-collection-film]').forEach(button => {
+                const [group, index] = button.dataset.collectionFilm.split(':').map(Number);
+                const selected = reqMediaBasket.some(item => isSameMedia(item, groups[group].filmes[index]));
+                button.classList.toggle('selected', selected);
+                button.textContent = selected ? '✓ Adicionado' : '+ Adicionar';
+            });
         }
 
         function renderReqBasket() {
@@ -13433,15 +13469,15 @@
                 if (chips) {
                     chips.innerHTML = reqMediaBasket.map((item, idx) => `
                         <div class="req-chip">
-                            <span>${item.nome} ${item.ano ? `(${item.ano})` : ''}</span>
+                            <span>${escapeHtml(item.nome)} ${item.ano ? `(${escapeHtml(item.ano)})` : ''}</span>
                             <button type="button" class="req-chip-del" onclick="removeBasketItem(${idx})" title="Remover">✕</button>
                         </div>
                     `).join('');
                 }
                 if (btnSubmit) {
                     btnSubmit.textContent = total > 1
-                        ? `🚀 Confirmar Pedido de ${total} Filmes`
-                        : `🚀 Confirmar Pedido (${reqMediaBasket[0].nome})`;
+                        ? `Pedir ${total} títulos`
+                        : 'Pedir 1 título';
                     btnSubmit.disabled = false;
                     btnSubmit.style.opacity = '1';
                     btnSubmit.style.cursor = 'pointer';

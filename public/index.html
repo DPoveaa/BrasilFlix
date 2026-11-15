@@ -4677,7 +4677,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.9240669803.js"></script>
+    <script src="/assets/brasilflix.9838fc37f4.js"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)
@@ -4704,6 +4704,13 @@
                     <input type="text" id="req-media-input" class="req-search-input"
                         placeholder="🔍 Digite o nome (ex: Era do Gelo, Harry Potter, Velozes e Furiosos...)" autocomplete="off"
                         oninput="handleTMDBAutocomplete(this.value)">
+                    <label for="req-media-filter">Tipo de título</label>
+                    <select id="req-media-filter" class="req-search-input" onchange="handleTMDBAutocomplete(document.getElementById('req-media-input').value)">
+                        <option value="all">Todos</option>
+                        <option value="movies">Filmes</option>
+                        <option value="series">Séries</option>
+                        <option value="animation">Animação</option>
+                    </select>
                 </div>
 
                 <!-- ÁREA DE RESULTADOS DA BUSCA (DIRETO NA TELA) -->
@@ -4716,6 +4723,8 @@
                         Títulos Encontrados:
                     </div>
                     <div id="req-results-list" class="req-results-list"></div>
+                    <button type="button" id="req-more-results" onclick="searchMoreRequestTitles()" hidden>Buscar mais títulos</button>
+                    <button type="button" id="req-related-results" onclick="searchRelatedRequestTitles()" hidden>Buscar filmes relacionados</button>
                 </div>
 
                 <!-- ESTADO INICIAL / DICA AMIGÁVEL -->

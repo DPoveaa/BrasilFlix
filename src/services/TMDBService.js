@@ -94,7 +94,7 @@ class TMDBService {
             .trim();
     }
 
-    rankSearchResults(items, query) {
+    rankSearchResults(items, query, { retainAll = false } = {}) {
         if (!items || items.length === 0) return [];
         const qClean = this._cleanForComparison(query);
         const qTokens = qClean.split(' ').filter(Boolean);
@@ -134,6 +134,8 @@ class TMDBService {
         });
 
         scored.sort((a, b) => b.score - a.score);
+
+        if (retainAll) return scored.map(({ item }) => item);
 
         // Deduplicação inteligente de títulos idênticos
         const finalResults = [];
@@ -180,114 +182,117 @@ class TMDBService {
         }
     }
 
-    async searchWithCollections(query) {
-        if (!query || query.trim().length === 0) return [];
-        const cleanQuery = query.trim();
-        const cacheKey = `search_collections_${cleanQuery.toLowerCase()}`;
+    async searchWithCollections(query, { page = 1, filter = 'all', related = false } = {}) {
+        const cleanQuery = query.trim().replace(/([a-zà-ÿ])([A-Z])/g, '$1 $2');
+        const cacheKey = JSON.stringify(['request-search', cleanQuery.toLowerCase(), page, filter, related]);
+        if (!cleanQuery) return [];
         const cached = this._getFromCache(cacheKey);
         if (cached) return cached;
 
-        try {
-            const [multiData, colData] = await Promise.all([
-                this._getWithRetry('/search/multi', { query: cleanQuery, include_adult: false }).catch(() => ({ results: [] })),
-                this._getWithRetry('/search/collection', { query: cleanQuery, include_adult: false }).catch(() => ({ results: [] }))
-            ]);
+        const params = { query: cleanQuery, include_adult: false, page };
+        const get = (endpoint, args) => this._getWithRetry(endpoint, args, 4500, 1).catch(() => null);
+        const searchMovies = filter !== 'series';
+        const searchTv = filter !== 'movies';
+        const [movies, tv, collections] = await Promise.all([
+            searchMovies ? get('/search/movie', params) : null,
+            searchTv ? get('/search/tv', params) : null,
+            searchMovies && page === 1 ? get('/search/collection', params) : null
+        ]);
+        if (!movies && !tv) throw new Error('Busca de títulos temporariamente indisponível.');
 
-            const collectionsFound = [];
-            const rawCols = colData?.results || [];
+        const unique = new Map();
+        const add = (raw, kind, target = unique) => {
+            if (!raw.id || raw.adult || (filter === 'animation' && !raw.genre_ids?.includes(16))) return;
+            const formatted = this.formatItem({ ...raw, media_type: kind });
+            target.set(kind + ':' + raw.id, {
+                ...formatted, tipo: kind === 'movie' ? 'filme' : 'serie',
+                categoria: formatted.tipo, isAnimation: raw.genre_ids?.includes(16) || false
+            });
+        };
+        for (const movie of movies?.results || []) add(movie, 'movie');
+        for (const show of tv?.results || []) add(show, 'tv');
 
-            if (rawCols.length > 0) {
-                for (const col of rawCols.slice(0, 2)) {
-                    try {
-                        const colDetails = await this._getWithRetry(`/collection/${col.id}`).catch(() => null);
-                        const parts = (colDetails?.parts || [])
-                            .filter(p => p.title || p.name)
-                            .sort((a, b) => new Date(a.release_date || '2099-01-01') - new Date(b.release_date || '2099-01-01'));
+        const ranked = this.rankSearchResults([...unique.values()], cleanQuery, { retainAll: true });
+        const groups = [];
+        const relatedFilms = new Map();
+        if (searchMovies && page === 1) {
+            const queryName = this._cleanForComparison(cleanQuery);
+            const matchesTitle = name => {
+                const normalized = this._cleanForComparison(name);
+                return normalized === queryName || (' ' + normalized + ' ').includes(' ' + queryName + ' ');
+            };
+            const matchingMovies = ranked.filter(item => item.isMovie && [item.nome, item.nomeOriginal].some(matchesTitle));
+            const seedMovies = (matchingMovies.length ? matchingMovies : ranked.filter(item => item.isMovie).slice(0, 1))
+                .slice(0, related ? 4 : 3);
+            const details = await Promise.all(seedMovies.map(item =>
+                get('/movie/' + item.tmdbId, related ? { append_to_response: 'keywords' } : {})));
+            const collectionIds = [...new Set([
+                ...(collections?.results || []).filter(item => matchesTitle(item.name)).slice(0, 4).map(item => item.id),
+                ...details.map(item => item?.belongs_to_collection?.id)
+            ].filter(Boolean))].slice(0, 6);
+            const includedIds = new Set();
+            const addCollection = (collection, isRelated = false) => {
+                if (!collection || groups.some(group => group.collectionId === collection.id)) return;
+                const members = new Map();
+                for (const part of collection.parts || []) add(part, 'movie', members);
+                const filmes = [...members.values()].sort((a, b) => (a.ano || '9999').localeCompare(b.ano || '9999'));
+                if (filmes.length < 2) return;
+                for (const item of filmes) includedIds.add(item.tmdbId);
+                groups.push({
+                    isCollection: true, collectionId: collection.id, nome: collection.name,
+                    poster: this.getPosterUrl(collection.poster_path), filmes, totalFilmes: filmes.length,
+                    related: isRelated
+                });
+            };
+            for (const collection of await Promise.all(collectionIds.map(id => get('/collection/' + id)))) addCollection(collection);
 
-                        if (parts.length > 1) {
-                            const anosValidos = parts.map(p => (p.release_date || '').slice(0, 4)).filter(Boolean);
-                            const anoRange = anosValidos.length > 0 ? `${anosValidos[0]} - ${anosValidos[anosValidos.length - 1]}` : '';
-
-                            collectionsFound.push({
-                                isCollection: true,
-                                collectionId: col.id,
-                                nome: `${col.name}`,
-                                nomeOriginal: col.original_name || col.name,
-                                tipo: 'colecao',
-                                ano: anoRange,
-                                poster: this.getPosterUrl(col.poster_path || parts[0]?.poster_path),
-                                nota: colDetails?.vote_average || 0,
-                                sinopse: col.overview || colDetails?.overview || `Franquia completa com todos os ${parts.length} filmes.`,
-                                totalFilmes: parts.length,
-                                filmes: parts.map(p => ({
-                                    tmdbId: p.id,
-                                    nome: p.title || p.name,
-                                    nomeOriginal: p.original_title || p.title,
-                                    ano: (p.release_date || '').slice(0, 4),
-                                    poster: this.getPosterUrl(p.poster_path),
-                                    tipo: 'filme',
-                                    nota: p.vote_average || 0
-                                }))
-                            });
-                        }
-                    } catch (_) {}
+            if (related) {
+                const keywords = new Map();
+                for (const detail of details.filter(Boolean)) {
+                    for (const tag of detail.keywords?.keywords || []) {
+                        const name = this._cleanForComparison(tag.name);
+                        if (!name || !tag.id) continue;
+                        const previous = keywords.get(tag.id);
+                        keywords.set(tag.id, {
+                            id: tag.id, count: (previous?.count || 0) + 1,
+                            explicit: matchesTitle(name) || /\b(universe|franchise|cinematic universe)\b/.test(name)
+                        });
+                    }
+                }
+                const tags = [...keywords.values()].filter(tag => tag.explicit || tag.count >= 2)
+                    .sort((a, b) => Number(b.explicit) - Number(a.explicit) || b.count - a.count).slice(0, 8);
+                const matches = await Promise.all(tags.map(tag => get('/discover/movie', {
+                    with_keywords: tag.id, include_adult: false, sort_by: 'popularity.desc'
+                })));
+                const suggestions = new Map();
+                for (const [index, pageData] of matches.entries()) {
+                    const limit = tags[index].explicit ? 90 : 18;
+                    if (!pageData?.total_results || pageData.total_results > limit) continue;
+                    for (const movie of pageData.results || []) {
+                        if (includedIds.has(movie.id)) continue;
+                        const previous = suggestions.get(movie.id);
+                        suggestions.set(movie.id, {
+                            movie,
+                            score: (previous?.score || 0) + (tags[index].explicit ? 4 : 1)
+                        });
+                    }
+                }
+                const rankedSuggestions = [...suggestions.values()].sort((a, b) => b.score - a.score);
+                const promising = rankedSuggestions.slice(0, 6);
+                const relatedDetails = await Promise.all(promising.map(({ movie }) => get('/movie/' + movie.id)));
+                const relatedIds = [...new Set(relatedDetails.map(movie => movie?.belongs_to_collection?.id).filter(Boolean))]
+                    .filter(id => !collectionIds.includes(id)).slice(0, 3);
+                for (const collection of await Promise.all(relatedIds.map(id => get('/collection/' + id)))) addCollection(collection, true);
+                for (const { movie, score } of rankedSuggestions) {
+                    if (score >= 2 && !includedIds.has(movie.id)) add(movie, 'movie', relatedFilms);
                 }
             }
-
-            const multiResults = (multiData?.results || [])
-                .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
-                .map(item => this.formatItem(item));
-
-            const rankedMulti = this.rankSearchResults(multiResults, cleanQuery);
-
-            // Se não achou por /search/collection, verifica se o primeiro filme pertence a uma coleção
-            if (collectionsFound.length === 0 && rankedMulti.length > 0 && rankedMulti[0].tipo === 'filme' && rankedMulti[0].tmdbId) {
-                try {
-                    const movieDetails = await this._getWithRetry(`/movie/${rankedMulti[0].tmdbId}`).catch(() => null);
-                    if (movieDetails?.belongs_to_collection?.id) {
-                        const colId = movieDetails.belongs_to_collection.id;
-                        const colDetails = await this._getWithRetry(`/collection/${colId}`).catch(() => null);
-                        const parts = (colDetails?.parts || [])
-                            .filter(p => p.title || p.name)
-                            .sort((a, b) => new Date(a.release_date || '2099-01-01') - new Date(b.release_date || '2099-01-01'));
-
-                        if (parts.length > 1) {
-                            const anosValidos = parts.map(p => (p.release_date || '').slice(0, 4)).filter(Boolean);
-                            const anoRange = anosValidos.length > 0 ? `${anosValidos[0]} - ${anosValidos[anosValidos.length - 1]}` : '';
-
-                            collectionsFound.push({
-                                isCollection: true,
-                                collectionId: colId,
-                                nome: `${colDetails.name}`,
-                                nomeOriginal: colDetails.original_name || colDetails.name,
-                                tipo: 'colecao',
-                                ano: anoRange,
-                                poster: this.getPosterUrl(colDetails.poster_path || parts[0]?.poster_path),
-                                nota: colDetails.vote_average || 0,
-                                sinopse: colDetails.overview || `Franquia completa com todos os ${parts.length} filmes.`,
-                                totalFilmes: parts.length,
-                                filmes: parts.map(p => ({
-                                    tmdbId: p.id,
-                                    nome: p.title || p.name,
-                                    nomeOriginal: p.original_title || p.title,
-                                    ano: (p.release_date || '').slice(0, 4),
-                                    poster: this.getPosterUrl(p.poster_path),
-                                    tipo: 'filme',
-                                    nota: p.vote_average || 0
-                                }))
-                            });
-                        }
-                    }
-                } catch (_) {}
-            }
-
-            const finalResults = [...collectionsFound, ...rankedMulti];
-            this._setInCache(cacheKey, finalResults, 15 * 60 * 1000);
-            return finalResults;
-        } catch (error) {
-            console.error('❌ Erro na busca TMDB com coleções:', error.message);
-            return this.searchMulti(cleanQuery);
         }
+        const result = [...groups, ...ranked, ...[...relatedFilms.entries()]
+            .filter(([key]) => !unique.has(key))
+            .map(([, film]) => ({ ...film, related: true }))];
+        if (result.length) this._setInCache(cacheKey, result, 15 * 60 * 1000);
+        return result;
     }
 
     async searchMovie(query, year = null) {
