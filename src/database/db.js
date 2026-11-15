@@ -225,6 +225,16 @@ async function createTables() {
         ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS detalhes TEXT;
         ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pendente';
 
+        CREATE TABLE IF NOT EXISTS web_request_batches (
+            id UUID PRIMARY KEY,
+            items JSONB NOT NULL,
+            processed INTEGER NOT NULL DEFAULT 0,
+            created_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS feedbacks (
             id BIGSERIAL PRIMARY KEY,
             user_id VARCHAR(100),

@@ -4677,7 +4677,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.613979258b.js"></script>
+    <script src="/assets/brasilflix.4036146566.js"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)
@@ -4703,6 +4703,11 @@
         #request-media-modal .req-close { position:static; width:32px; height:32px; }
         #request-media-modal [hidden] { display:none !important; }
     </style>
+    <aside id="req-batch-progress" hidden role="status"
+        style="position:fixed;right:16px;bottom:16px;z-index:10001;max-width:calc(100vw - 32px);padding:12px 16px;border:1px solid #394357;border-radius:10px;background:#111723;color:#f3f5fa;box-shadow:0 8px 24px #0005">
+        <span></span>
+        <progress aria-label="Títulos processados" style="width:100%;display:block;margin-top:6px;accent-color:#22c55e"></progress>
+    </aside>
     <div class="modal-backdrop" id="request-media-modal" onclick="closeRequestMediaModal(event)">
         <div class="req-media-modal-box" role="dialog" aria-modal="true" aria-labelledby="req-modal-title" onclick="event.stopPropagation()">
             <header class="req-modal-header">

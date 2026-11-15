@@ -18,6 +18,10 @@ const db = require('../database/db');
 const auditService = require('./AuditService');
 const logBroadcaster = require('../utils/LogBroadcaster');
 
+function isWebRequestBatchId(id) {
+    return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
 class StremioServer {
     constructor(catalogoManager, assinaturaManager, queueManager = null, pedidosManager = null, port = config.STREMIO_PORT || 7000) {
         this.catalogoManager = catalogoManager;
@@ -37,6 +41,7 @@ class StremioServer {
     }
 
     setupMiddlewares() {
+        this.app.use('/api/user/pedidos/create', express.json({ limit: '512kb' }));
         this.app.use(express.json());
         this.app.use('/api', (req, res, next) => {
             if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
@@ -1351,32 +1356,39 @@ class StremioServer {
                     isAssinante = decoded.role === 'admin' || !!decoded.is_assinante;
                 }
 
+                if (items.length > 1000) return res.status(400).json({ error: 'Selecione no máximo 1.000 títulos por envio.' });
+                const text = (value, max) => String(value ?? '').trim().slice(0, max);
+                const normalizedItems = items.filter(it => it && text(it.nome, 255)).map(it => {
+                    const tipo = text(it.tipo || req.body.tipo || 'filme', 50).toLowerCase();
+                    const id = Number(it.tmdb_id || it.tmdbId);
+                    return {
+                        userId,
+                        username: text(username, 255),
+                        nome: text(it.nome, 255),
+                        tipo,
+                        temporada: text(it.temporada, 100) || (tipo !== 'filme' ? 'todas as temporadas' : ''),
+                        idioma: text(it.idioma || req.body.idioma, 100) || 'Dual Áudio (Dublado + Legendado)',
+                        tmdbId: Number.isInteger(id) && id > 0 && id <= 2147483647 ? id : null,
+                        posterUrl: text(it.poster_url || it.poster, 2048),
+                        ano: text(it.ano, 20),
+                        detalhes: text(it.detalhes || req.body.detalhes, 4000),
+                        isAssinante
+                    };
+                });
+                if (!normalizedItems.length) return res.status(400).json({ error: 'Nenhum título válido.' });
+                if (req.body.batchId) {
+                    if (!isWebRequestBatchId(req.body.batchId)) return res.status(400).json({ error: 'Lote inválido.' });
+                    const batch = await this.pedidosManager.enqueueWebRequestBatch(req.body.batchId, normalizedItems);
+                    return res.status(202).json(batch);
+                }
+
                 const createdList = [];
                 const skipped = [];
-                for (const it of items) {
-                    const nome = (it.nome || '').trim();
-                    if (!nome) continue;
-
-                    const resolvedTipo = (it.tipo || req.body.tipo || 'filme').toLowerCase();
-                    const resolvedTemporada = (it.temporada || '').trim() || (resolvedTipo !== 'filme' ? 'todas as temporadas' : '');
-                    const resolvedIdioma = (it.idioma || req.body.idioma || '').trim() || 'Dual Áudio (Dublado + Legendado)';
-
-                    const { pedido, status } = await this.pedidosManager.addAvailableWebRequest({
-                        userId,
-                        username,
-                        nome,
-                        tipo: resolvedTipo,
-                        temporada: resolvedTemporada,
-                        idioma: resolvedIdioma,
-                        tmdbId: it.tmdb_id || it.tmdbId || null,
-                        posterUrl: it.poster_url || it.poster || '',
-                        ano: it.ano || '',
-                        detalhes: (it.detalhes || req.body.detalhes || '').trim(),
-                        isAssinante
-                    });
+                for (const item of normalizedItems) {
+                    const { pedido, status } = await this.pedidosManager.addAvailableWebRequest(item);
 
                     if (!pedido) {
-                        skipped.push({ nome, status });
+                        skipped.push({ nome: item.nome, status });
                         continue;
                     }
                     createdList.push(pedido);
@@ -1386,8 +1398,8 @@ class StremioServer {
                         userId: userId || null,
                         eventType: 'REQUEST_CREATED',
                         source: 'website',
-                        title: nome,
-                        metadata: { tipo: resolvedTipo, ano: it.ano, idioma: resolvedIdioma }
+                        title: item.nome,
+                        metadata: { tipo: item.tipo, ano: item.ano, idioma: item.idioma }
                     }).catch(() => {});
                 }
 
@@ -1403,6 +1415,18 @@ class StremioServer {
                 });
             } catch (e) {
                 res.status(500).json({ error: e.message });
+            }
+        });
+
+        this.app.get('/api/user/pedidos/batches/:id', async (req, res) => {
+            res.setHeader('Cache-Control', 'no-store');
+            if (!isWebRequestBatchId(req.params.id)) return res.sendStatus(404);
+            try {
+                const batch = await this.pedidosManager.getWebRequestBatch(req.params.id);
+                return batch ? res.json(batch) : res.sendStatus(404);
+            } catch (error) {
+                console.warn('Falha ao consultar lote de pedidos:', error.message);
+                return res.sendStatus(503);
             }
         });
 
@@ -3812,6 +3836,12 @@ class StremioServer {
         return new Promise((resolve) => {
             try {
                 this.server = this.app.listen(this.port, () => {
+                    if (this.pedidosManager) {
+                        const timer = setInterval(() => this.pedidosManager.processWebRequestBatches()
+                            .catch(error => console.warn('Falha ao processar lote de pedidos:', error.message)), 1500);
+                        timer.unref();
+                        this.server.once('close', () => clearInterval(timer));
+                    }
                     console.log(`🌐 [Web Server] Servidor BrasilFlix Web Dashboard + Stremio Addon rodando na porta ${this.port}!`);
                     console.log(`🚀 [Web Server] Dashboard Web acessível: http://localhost:${this.port}/`);
                     console.log(`📦 [Web Server] Addon Stremio ativo: http://localhost:${this.port}/manifest.json`);

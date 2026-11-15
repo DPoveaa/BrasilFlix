@@ -1,6 +1,8 @@
 const fs = require('fs-extra');
 const config = require('../../config');
 const db = require('../database/db');
+const { randomUUID } = require('node:crypto');
+const auditService = require('../services/AuditService');
 
 class PedidosManager {
     constructor() {
@@ -74,8 +76,8 @@ class PedidosManager {
         });
     }
 
-    async adicionarPedidoCompleto({ userId, username, nome, tipo = 'filme', temporada = '', idioma = '', tmdbId = null, posterUrl = '', ano = '', detalhes = '', isAssinante = false }, client = null) {
-        const id = `ped_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    async adicionarPedidoCompleto({ userId, username, nome, tipo = 'filme', temporada = '', idioma = '', tmdbId = null, posterUrl = '', ano = '', detalhes = '', isAssinante = false }, client = null, { deferCache = false } = {}) {
+        const id = `ped_${randomUUID()}`;
         const pedido = {
             id,
             userId: userId ? Number(userId) : 0,
@@ -109,13 +111,16 @@ class PedidosManager {
             console.warn('⚠️ Erro ao persistir pedido no PostgreSQL:', e.message);
         }
 
+        if (!deferCache) this.rememberPedido(pedido);
+        return pedido;
+    }
+
+    rememberPedido(pedido, backup = true) {
         this.pedidos.push(pedido);
         this.pedidosPendentes.set(pedido.id, pedido);
         this.ordenarPedidos();
-        this.savePedidos();
-
-        console.log(`📝 Novo pedido registrado: [${pedido.tipo.toUpperCase()}] ${pedido.nome} por ${pedido.username} ${isAssinante ? '(Assinante VIP)' : ''}`);
-        return pedido;
+        if (backup) this.savePedidos();
+        console.log(`📝 Novo pedido registrado: [${pedido.tipo.toUpperCase()}] ${pedido.nome} por ${pedido.username} ${pedido.isAssinante ? '(Assinante VIP)' : ''}`);
     }
 
     async getRequestAvailability(items, client = db) {
@@ -159,6 +164,75 @@ class PedidosManager {
             } catch (error) {
                 client.release(error);
             }
+        }
+    }
+
+    async enqueueWebRequestBatch(id, items) {
+        await db.query('INSERT INTO web_request_batches (id, items) VALUES ($1, $2::jsonb) ON CONFLICT (id) DO NOTHING',
+            [id, JSON.stringify(items)]);
+        return this.getWebRequestBatch(id);
+    }
+
+    async getWebRequestBatch(id) {
+        const { rows } = await db.query(`
+            SELECT id, jsonb_array_length(items) AS total, processed,
+                   created_count AS created, skipped_count AS skipped,
+                   retry_at > NOW() AS waiting
+            FROM web_request_batches WHERE id = $1
+        `, [id]);
+        return rows[0] || null;
+    }
+
+    async processWebRequestBatches() {
+        if (this.processingWebBatches) return;
+        this.processingWebBatches = true;
+        try {
+            for (let index = 0; index < 25; index++) {
+                const client = await db.getPool().connect();
+                let batch;
+                try {
+                    await client.query('BEGIN');
+                    const { rows } = await client.query(`
+                        SELECT id, items->processed AS item FROM web_request_batches
+                        WHERE processed < jsonb_array_length(items) AND retry_at <= NOW()
+                        ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+                    `);
+                    batch = rows[0];
+                    if (!batch) {
+                        await client.query('COMMIT');
+                        return;
+                    }
+                    await client.query('SELECT pg_advisory_xact_lock(18489, 1)');
+                    const [status] = await this.getRequestAvailability([batch.item], client);
+                    if (!status) batch.pedido = await this.adicionarPedidoCompleto(batch.item, client, { deferCache: true });
+                    await client.query(`
+                        UPDATE web_request_batches SET processed = processed + 1,
+                            created_count = created_count + $2, skipped_count = skipped_count + $3
+                        WHERE id = $1
+                    `, [batch.id, status ? 0 : 1, status ? 1 : 0]);
+                    await client.query('COMMIT');
+                    if (batch.pedido) {
+                        const pedido = batch.pedido;
+                        this.rememberPedido(pedido, false);
+                        auditService.logEvent({
+                            identityType: pedido.userId ? 'registered' : 'anonymous',
+                            userId: pedido.userId || null,
+                            eventType: 'REQUEST_CREATED',
+                            source: 'website',
+                            title: pedido.nome,
+                            metadata: { tipo: pedido.tipo, ano: pedido.ano, idioma: pedido.idioma }
+                        }).catch(() => {});
+                    }
+                } catch (error) {
+                    await client.query('ROLLBACK').catch(() => {});
+                    if (batch) await client.query("UPDATE web_request_batches SET retry_at = NOW() + INTERVAL '30 seconds' WHERE id = $1", [batch.id]);
+                    throw error;
+                } finally {
+                    client.release();
+                }
+            }
+        } finally {
+            this.processingWebBatches = false;
         }
     }
 

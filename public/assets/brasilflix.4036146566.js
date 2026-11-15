@@ -13463,61 +13463,98 @@
             }
         }
 
-        async function handleRequestMediaSubmitDirect() {
-            const btn = document.getElementById('btn-submit-req-media');
-            const total = reqMediaBasket.length;
+        const requestBatchStorageKey = 'bf_request_batch';
+        let requestBatchBusy = false;
 
-            if (total === 0) {
-                showToast('Selecione ao menos 1 título acima para fazer o pedido.', 'warning');
-                return;
-            }
-
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = `Enviando ${total} pedido(s)...`;
-            }
-
-            try {
-                const res = await fetch('/api/user/pedidos/create', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(userAuthToken ? { 'Authorization': 'Bearer ' + userAuthToken } : {})
-                    },
-                    body: JSON.stringify({
-                        itens: reqMediaBasket.map(item => ({
-                            nome: item.nome,
-                            tipo: item.tipo || 'filme',
-                            temporada: item.tipo !== 'filme' ? 'todas as temporadas' : '',
-                            idioma: 'Dual Áudio (Dublado + Legendado)',
-                            tmdb_id: item.tmdbId ? Number(item.tmdbId) : null,
-                            poster_url: item.poster,
-                            ano: item.ano,
-                            detalhes: ''
-                        }))
-                    })
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Erro ao enviar pedido(s)');
-
-                showToast(data.message || `🎉 ${total} pedido(s) registrado(s) com sucesso!`, data.count ? 'success' : 'info');
-                reqMediaBasket = [];
-                renderReqBasket();
-                closeRequestMediaModal();
-
-                if (typeof loadUserRequests === 'function' && userAuthToken) {
-                    loadUserRequests();
-                }
-            } catch (err) {
-                showToast(err.message || 'Erro ao enviar pedido.', 'error');
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    renderReqBasket();
-                }
+        function showRequestBatchProgress(message, processed, total) {
+            const panel = document.getElementById('req-batch-progress');
+            panel.hidden = false;
+            panel.querySelector('span').textContent = message;
+            const progress = panel.querySelector('progress');
+            progress.hidden = !total;
+            if (total) {
+                progress.max = total;
+                progress.value = processed;
             }
         }
+
+        async function resumeRequestBatch() {
+            if (requestBatchBusy) return;
+            const pending = JSON.parse(localStorage.getItem(requestBatchStorageKey) || 'null');
+            if (!pending) return;
+            requestBatchBusy = true;
+            let nextCheck = 0;
+            const btn = document.getElementById('btn-submit-req-media');
+            try {
+                let response;
+                if (pending.items) {
+                    showRequestBatchProgress('Salvando lote de pedidos…', 0, 0);
+                    response = await fetch('/api/user/pedidos/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ batchId: pending.id, itens: pending.items }),
+                        signal: AbortSignal.timeout(20000)
+                    });
+                    if (response.status === 400 || response.status === 413) {
+                        reqMediaBasket = pending.items;
+                        localStorage.removeItem(requestBatchStorageKey);
+                        renderReqBasket();
+                        document.getElementById('req-batch-progress').hidden = true;
+                        openRequestMediaModal();
+                        showToast(response.status === 413 ? 'Lote muito grande. Divida a seleção em envios menores.' : 'Confira os títulos e tente novamente.', 'error');
+                        return;
+                    }
+                } else {
+                    response = await fetch('/api/user/pedidos/batches/' + pending.id, { signal: AbortSignal.timeout(15000) });
+                }
+                if (!response.ok) throw new Error('Não foi possível consultar o lote');
+                const batch = await response.json();
+                if (pending.items) {
+                    localStorage.setItem(requestBatchStorageKey, JSON.stringify({ id: pending.id }));
+                    reqMediaBasket = [];
+                    renderReqBasket();
+                    closeRequestMediaModal();
+                }
+                if (batch.processed >= batch.total) {
+                    localStorage.removeItem(requestBatchStorageKey);
+                    document.getElementById('req-batch-progress').hidden = true;
+                    showToast(batch.created + ' pedidos registrados · ' + batch.skipped + ' já existentes.', batch.created ? 'success' : 'info');
+                    if (userAuthToken) loadUserRequests();
+                } else {
+                    showRequestBatchProgress(
+                        (batch.waiting ? 'Retomando lote em instantes' : 'Registrando pedidos') + ' · ' + batch.processed + '/' + batch.total,
+                        batch.processed, batch.total
+                    );
+                    nextCheck = batch.waiting ? 5000 : 2000;
+                }
+            } catch {
+                showRequestBatchProgress('Conexão instável. Tentando novamente…', 0, 0);
+                nextCheck = 5000;
+            } finally {
+                requestBatchBusy = false;
+                if (btn && pending.items) renderReqBasket();
+                if (nextCheck) setTimeout(resumeRequestBatch, nextCheck);
+            }
+        }
+
+        function handleRequestMediaSubmitDirect() {
+            if (!reqMediaBasket.length) return;
+            if (localStorage.getItem(requestBatchStorageKey)) {
+                showToast('Já existe um lote sendo registrado neste navegador.', 'info');
+                return;
+            }
+            try {
+                const pending = { id: crypto.randomUUID(), items: reqMediaBasket };
+                localStorage.setItem(requestBatchStorageKey, JSON.stringify(pending));
+                document.getElementById('btn-submit-req-media').disabled = true;
+                resumeRequestBatch();
+            } catch {
+                showToast('Não foi possível salvar o lote neste navegador.', 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', resumeRequestBatch);
+
 
 
         /* ═══════════════════════════════════════════════════════════════════════
