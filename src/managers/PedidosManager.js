@@ -74,7 +74,7 @@ class PedidosManager {
         });
     }
 
-    async adicionarPedidoCompleto({ userId, username, nome, tipo = 'filme', temporada = '', idioma = '', tmdbId = null, posterUrl = '', ano = '', detalhes = '', isAssinante = false }) {
+    async adicionarPedidoCompleto({ userId, username, nome, tipo = 'filme', temporada = '', idioma = '', tmdbId = null, posterUrl = '', ano = '', detalhes = '', isAssinante = false }, client = null) {
         const id = `ped_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
         const pedido = {
             id,
@@ -96,7 +96,7 @@ class PedidosManager {
         };
 
         try {
-            await db.query(`
+            await (client || db).query(`
                 INSERT INTO pedidos (id, user_id, username, nome, tipo, temporada, idioma, tmdb_id, poster_url, ano, detalhes, is_assinante, processado, status, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
             `, [
@@ -105,6 +105,7 @@ class PedidosManager {
                 pedido.posterUrl, pedido.ano, pedido.detalhes, pedido.isAssinante, false, 'pendente'
             ]);
         } catch (e) {
+            if (client) throw e;
             console.warn('⚠️ Erro ao persistir pedido no PostgreSQL:', e.message);
         }
 
@@ -115,6 +116,50 @@ class PedidosManager {
 
         console.log(`📝 Novo pedido registrado: [${pedido.tipo.toUpperCase()}] ${pedido.nome} por ${pedido.username} ${isAssinante ? '(Assinante VIP)' : ''}`);
         return pedido;
+    }
+
+    async getRequestAvailability(items, client = db) {
+        if (!items.length) return [];
+        const { rows } = await client.query(`
+            WITH wanted AS (
+                SELECT * FROM jsonb_to_recordset($1::jsonb) AS w(n integer, id integer, kind text, name text)
+            ), existing AS (
+                SELECT tmdb_id, 'filme' AS kind, nome AS title, 'catalog' AS state FROM filmes
+                UNION ALL SELECT tmdb_id, 'serie', nome, 'catalog' FROM series
+                UNION ALL SELECT tmdb_id, CASE WHEN type = 'filme' THEN 'filme' ELSE 'serie' END, title, 'queued'
+                    FROM queue_jobs WHERE status IN ('queued', 'pending', 'searching', 'processing', 'downloading', 'uploading')
+                UNION ALL SELECT tmdb_id, CASE WHEN tipo = 'filme' THEN 'filme' ELSE 'serie' END, nome, 'queued'
+                    FROM pedidos WHERE status IN ('pendente', 'em_processamento') AND NOT COALESCE(processado, false)
+            )
+            SELECT w.n, CASE WHEN bool_or(e.state = 'catalog') THEN 'catalog'
+                             WHEN bool_or(e.state = 'queued') THEN 'queued' ELSE NULL END AS state
+            FROM wanted w LEFT JOIN existing e ON e.kind = w.kind AND
+                ((w.id IS NOT NULL AND e.tmdb_id IS NOT NULL AND w.id = e.tmdb_id) OR
+                ((w.id IS NULL OR e.tmdb_id IS NULL) AND lower(btrim(e.title)) = lower(btrim(w.name))))
+            GROUP BY w.n ORDER BY w.n
+        `, [JSON.stringify(items.map((item, n) => ({
+            n, id: Number(item.tmdbId || item.tmdb_id) || null,
+            kind: !item.tipo || item.tipo === 'filme' ? 'filme' : 'serie', name: item.nome
+        })))]);
+        return rows.map(row => row.state);
+    }
+
+    async addAvailableWebRequest(item) {
+        const client = await db.getPool().connect();
+        try {
+            // Serializa a checagem e a inclusão mesmo quando há mais de um processo web.
+            await client.query('SELECT pg_advisory_lock(18489, 1)');
+            const [status] = await this.getRequestAvailability([item], client);
+            if (status) return { status };
+            return { pedido: await this.adicionarPedidoCompleto(item, client) };
+        } finally {
+            try {
+                await client.query('SELECT pg_advisory_unlock(18489, 1)');
+                client.release();
+            } catch (error) {
+                client.release(error);
+            }
+        }
     }
 
     async atualizarStatus(pedidoId, novoStatus) {

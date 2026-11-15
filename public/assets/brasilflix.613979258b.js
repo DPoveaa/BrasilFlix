@@ -13249,46 +13249,13 @@
                     const groups = results.filter(item => item.isCollection);
                     franchiseBox.innerHTML = groups.map((group, index) => `
                         <details class="req-franchise-card" style="display:block">
-                            <summary style="cursor:pointer">${escapeHtml(group.nome)} · ${group.filmes.length} filmes${group.related ? ' · Relacionada' : ''}</summary>
-                            <button type="button" class="req-franchise-btn" data-collection-index="${index}" onclick="toggleFranchiseAll(${index})"></button>
-                            ${group.filmes.map((film, filmIndex) => `
-                                <div class="req-result-item">
-                                    <span>${escapeHtml(film.nome)} ${film.ano ? '(' + escapeHtml(film.ano) + ')' : ''}</span>
-                                    <button type="button" class="req-btn-add" data-collection-film="${index}:${filmIndex}" onclick="toggleCollectionFilm(${index},${filmIndex})">+ Adicionar</button>
-                                </div>`).join('')}
+                            <summary>${escapeHtml(group.nome)} · ${group.filmes.length} filmes${group.related ? ' · Relacionada' : ''}</summary>
+                            <div class="req-actions"><button type="button" class="req-subtle-button" data-collection-index="${index}" onclick="toggleFranchiseAll(${index})"></button></div>
+                            ${group.filmes.map((film, filmIndex) => renderRequestResult(film,
+                                `data-collection-film="${index}:${filmIndex}" onclick="toggleCollectionFilm(${index},${filmIndex})"`)).join('')}
                         </details>`).join('');
-
-                    // 2. Lista dos Filmes Encontrados
-                    const movieItems = results.filter(r => !r.isCollection);
-                    if (listEl) {
-                        listEl.innerHTML = movieItems.map((item, idx) => {
-                            const isSel = reqMediaBasket.some(b => isSameMedia(b, item));
-                            let typeTag = item.related ? 'Filme relacionado' : '🎬 Filme';
-                            if (item.isAnimation) typeTag = item.related ? 'Animação relacionada' : 'Animação · ' + (item.tipo === 'serie' ? 'Série' : 'Filme');
-                            else if (item.categoria === 'anime') typeTag = '🌸 Anime';
-                            else if (item.categoria === 'dorama') typeTag = '🇰🇷 Dorama';
-                            else if (item.tipo === 'serie' || item.tipo === 'tv') typeTag = '📺 Série';
-
-                            return `
-                                <div class="req-result-item ${isSel ? 'is-selected' : ''}" id="req-item-row-${idx}">
-                                    <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-                                        <img src="${safeImageUrl(item.poster || '/logo.jpg')}" alt="${escapeHtml(item.nome)}" style="width: 36px; height: 50px; object-fit: cover; border-radius: 5px; flex-shrink: 0;" onerror="this.onerror=null; this.src='/logo.jpg'">
-                                        <div style="min-width: 0;">
-                                            <div style="font-size: 13.5px; font-weight: 800; color: #fff; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-                                                ${escapeHtml(item.nome)} ${item.ano ? `<span style="color: #94a3b8; font-weight: 500;">(${escapeHtml(item.ano)})</span>` : ''}
-                                            </div>
-                                            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
-                                                ${typeTag} ${item.nota ? '• ⭐ ' + Number(item.nota).toFixed(1) : ''}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button type="button" class="req-btn-add ${isSel ? 'selected' : ''}" onclick="toggleMovieItem(${idx})">
-                                        ${isSel ? '✓ Adicionado' : '+ Adicionar'}
-                                    </button>
-                                </div>
-                            `;
-                        }).join('');
-                    }
+                    listEl.innerHTML = results.filter(item => !item.isCollection).map((item, index) =>
+                        renderRequestResult(item, `data-request-result="${index}" onclick="toggleMovieItem(${index})"`)).join('');
 
                     refreshResultsSelectionVisuals();
                 } catch (e) {
@@ -13297,6 +13264,24 @@
                     if (listEl) listEl.innerHTML = '<div style="padding: 15px; text-align: center; color: #ef4444; font-size: 12px;">Erro ao buscar sugestões. Tente novamente.</div>';
                 }
             }, 220);
+        }
+
+        function renderRequestResult(item, buttonAttributes) {
+            const type = item.tipo === 'serie' ? 'Série' : 'Filme';
+            const subtitle = [item.ano, item.isAnimation ? 'Animação · ' + type : type].filter(Boolean).join(' · ');
+            const action = item.availability
+                ? `<span class="req-status" data-state="${item.availability === 'catalog' ? 'catalog' : 'queued'}">${item.availability === 'catalog' ? 'No catálogo' : 'Na fila'}</span>`
+                : `<button type="button" class="req-btn-add" ${buttonAttributes}>Adicionar</button>`;
+            return `<div class="req-result-item">
+                <div style="display:flex;align-items:center;gap:9px;min-width:0">
+                    <img src="${safeImageUrl(item.poster || item.posterUrl || '/logo.jpg')}" alt="" loading="lazy" width="30" height="42"
+                        style="object-fit:cover;border-radius:4px;flex:none" onerror="this.onerror=null;this.src='/logo.jpg'">
+                    <div style="min-width:0;overflow-wrap:anywhere">
+                        <div style="font-size:13px;font-weight:650">${escapeHtml(item.nome)}</div>
+                        <div class="req-status">${escapeHtml(subtitle)}</div>
+                    </div>
+                </div>${action}
+            </div>`;
         }
 
         function isSameMedia(a, b) {
@@ -13308,7 +13293,7 @@
         function toggleMovieItem(idx) {
             const movieItems = _lastTMDBResults.filter(r => !r.isCollection);
             const item = movieItems[idx];
-            if (!item) return;
+            if (!item || item.availability) return;
 
             const existingIdx = reqMediaBasket.findIndex(b => isSameMedia(b, item));
             if (existingIdx >= 0) {
@@ -13330,7 +13315,7 @@
 
         function toggleCollectionFilm(index, filmIndex) {
             const film = _lastTMDBResults.filter(r => r.isCollection)[index]?.filmes[filmIndex];
-            if (!film) return;
+            if (!film || film.availability) return;
             const existing = reqMediaBasket.findIndex(item => isSameMedia(item, film));
             if (existing >= 0) reqMediaBasket.splice(existing, 1);
             else reqMediaBasket.push(film);
@@ -13342,7 +13327,9 @@
             const col = _lastTMDBResults.filter(r => r.isCollection)[index];
             if (!col || !Array.isArray(col.filmes)) return;
 
-            const allSelected = col.filmes.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
+            const available = col.filmes.filter(f => !f.availability);
+            if (!available.length) return;
+            const allSelected = available.every(f => reqMediaBasket.some(b => isSameMedia(b, f)));
 
             if (allSelected) {
                 // Desmarca todos da franquia
@@ -13351,7 +13338,7 @@
             } else {
                 // Marca todos os filmes da franquia
                 let added = 0;
-                for (const f of col.filmes) {
+                for (const f of available) {
                     if (!reqMediaBasket.some(b => isSameMedia(b, f))) {
                         reqMediaBasket.push({
                             tmdbId: f.tmdbId,
@@ -13408,31 +13395,20 @@
         function refreshResultsSelectionVisuals() {
             // Atualiza botões da lista de filmes
             const movieItems = _lastTMDBResults.filter(r => !r.isCollection);
-            movieItems.forEach((item, idx) => {
-                const row = document.getElementById(`req-item-row-${idx}`);
-                if (!row) return;
-                const isSel = reqMediaBasket.some(b => isSameMedia(b, item));
-                if (isSel) row.classList.add('is-selected');
-                else row.classList.remove('is-selected');
-
-                const btn = row.querySelector('.req-btn-add');
-                if (btn) {
-                    if (isSel) {
-                        btn.classList.add('selected');
-                        btn.textContent = '✓ Adicionado';
-                    } else {
-                        btn.classList.remove('selected');
-                        btn.textContent = '+ Adicionar';
-                    }
-                }
+            document.querySelectorAll('[data-request-result]').forEach(button => {
+                const item = movieItems[Number(button.dataset.requestResult)];
+                const selected = reqMediaBasket.some(entry => isSameMedia(entry, item));
+                button.classList.toggle('selected', selected);
+                button.textContent = selected ? 'Remover' : 'Adicionar';
             });
-
             const groups = _lastTMDBResults.filter(item => item.isCollection);
             document.querySelectorAll('[data-collection-index]').forEach(button => {
                 const group = groups[Number(button.dataset.collectionIndex)];
-                const selected = group.filmes.every(film => reqMediaBasket.some(item => isSameMedia(item, film)));
+                const available = group.filmes.filter(film => !film.availability);
+                const selected = available.length > 0 && available.every(film => reqMediaBasket.some(item => isSameMedia(item, film)));
+                button.hidden = available.length === 0;
                 button.classList.toggle('selected', selected);
-                button.textContent = selected ? 'Remover coleção' : 'Selecionar coleção';
+                button.textContent = selected ? 'Remover seleção' : 'Selecionar disponíveis';
             });
             document.querySelectorAll('[data-collection-film]').forEach(button => {
                 const [group, index] = button.dataset.collectionFilm.split(':').map(Number);
@@ -13449,6 +13425,7 @@
             const btnSubmit = document.getElementById('btn-submit-req-media');
 
             const total = reqMediaBasket.length;
+            document.getElementById('req-selection-summary').hidden = total === 0;
 
             if (total === 0) {
                 if (label) label.textContent = '🛒 Nenhum título selecionado';
@@ -13457,14 +13434,14 @@
                     chips.innerHTML = '<span style="color: #64748b; font-size: 12px; font-style: italic;">Clique em "+ Adicionar" nos filmes acima ou na franquia toda para montar seu pedido.</span>';
                 }
                 if (btnSubmit) {
-                    btnSubmit.textContent = 'Pedir 0 Título(s)';
+                    btnSubmit.textContent = 'Enviar pedido';
                     btnSubmit.disabled = true;
                     btnSubmit.style.opacity = '0.45';
                     btnSubmit.style.cursor = 'not-allowed';
                     btnSubmit.style.background = '#e50914';
                 }
             } else {
-                if (label) label.textContent = `🛒 ${total} título(s) selecionado(s):`;
+                if (label) label.textContent = `${total} ${total === 1 ? "selecionado" : "selecionados"}`;
                 if (btnClear) btnClear.style.display = 'block';
                 if (chips) {
                     chips.innerHTML = reqMediaBasket.map((item, idx) => `
@@ -13524,7 +13501,7 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Erro ao enviar pedido(s)');
 
-                showToast(data.message || `🎉 ${total} pedido(s) registrado(s) com sucesso!`, 'success');
+                showToast(data.message || `🎉 ${total} pedido(s) registrado(s) com sucesso!`, data.count ? 'success' : 'info');
                 reqMediaBasket = [];
                 renderReqBasket();
                 closeRequestMediaModal();

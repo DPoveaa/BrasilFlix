@@ -4677,96 +4677,69 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.9838fc37f4.js"></script>
+    <script src="/assets/brasilflix.613979258b.js"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)
          ═══════════════════════════════════════════════════════════════════════ -->
+    <style>
+        #request-media-modal .req-media-modal-box { background:#111723; width:min(620px,calc(100vw - 24px)); max-height:90dvh; border:1px solid #2b3445; }
+        #request-media-modal .req-modal-header, #request-media-modal .req-modal-footer { background:#111723; padding:14px 18px; }
+        #request-media-modal .req-modal-body { padding:14px 18px; gap:10px; }
+        #request-media-modal .req-search-bar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+        #request-media-modal .req-search-input { background:#191f2c; color:#f3f5fa; border:1px solid #394357; border-radius:8px; padding:10px; min-width:0; margin:0; }
+        #request-media-modal .req-results-list { max-height:none; overflow:visible; gap:0; }
+        #request-media-modal .req-result-item { background:none; border:0; border-bottom:1px solid #262f40; border-radius:0; padding:8px 0; }
+        #request-media-modal .req-franchise-card { border:1px solid #323e51; background:#181f2d; padding:10px; margin:0 0 8px; box-shadow:none; }
+        #request-media-modal .req-subtle-button { padding:7px 9px; border:1px solid #394357; color:#e5eaf3; background:transparent; border-radius:7px; cursor:pointer; }
+        #request-media-modal .req-actions { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+        #request-media-modal .req-status { color:#aebbd0; font-size:12px; flex-shrink:0; }
+        #request-media-modal .req-status[data-state="catalog"] { color:#85d9ae; }
+        #request-media-modal .req-summary-box { background:none; border:0; padding:0; margin:0; }
+        #request-media-modal .req-summary-box:not([open]) .req-selected-chips { display:none; }
+        #request-media-modal .req-modal-footer { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+        #request-media-modal .req-modal-footer button { width:auto; max-width:100%; white-space:normal; }
+        #request-media-modal .req-title { margin:0; font-size:18px; color:#fff; }
+        #request-media-modal .req-close { position:static; width:32px; height:32px; }
+        #request-media-modal [hidden] { display:none !important; }
+    </style>
     <div class="modal-backdrop" id="request-media-modal" onclick="closeRequestMediaModal(event)">
-        <div class="req-media-modal-box" onclick="event.stopPropagation()">
-            <!-- 1. CABEÇALHO LIMPO -->
-            <div class="req-modal-header">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 26px;">🍿</span>
-                    <div>
-                        <h3 style="font-size: 18px; font-weight: 800; color: #fff; margin: 0;">Fazer Pedido de Filme ou Série</h3>
-                        <p style="font-size: 12px; color: #94a3b8; margin: 2px 0 0 0;">Pesquise abaixo para adicionar filmes individuais ou a saga inteira</p>
-                    </div>
-                </div>
-                <button type="button" class="modal-close" onclick="closeRequestMediaModal()" title="Fechar"
-                    style="position:static; width:32px; height:32px; font-size:16px;">✕</button>
-            </div>
-
-            <!-- 2. CORPO INTERATIVO -->
+        <div class="req-media-modal-box" role="dialog" aria-modal="true" aria-labelledby="req-modal-title" onclick="event.stopPropagation()">
+            <header class="req-modal-header">
+                <h3 class="req-title" id="req-modal-title">Pedir filme ou série</h3>
+                <button type="button" class="modal-close req-close" onclick="closeRequestMediaModal()" aria-label="Fechar">✕</button>
+            </header>
             <div class="req-modal-body">
-                <!-- CAMPO DE BUSCA DIRETO -->
-                <div>
-                    <input type="text" id="req-media-input" class="req-search-input"
-                        placeholder="🔍 Digite o nome (ex: Era do Gelo, Harry Potter, Velozes e Furiosos...)" autocomplete="off"
-                        oninput="handleTMDBAutocomplete(this.value)">
-                    <label for="req-media-filter">Tipo de título</label>
-                    <select id="req-media-filter" class="req-search-input" onchange="handleTMDBAutocomplete(document.getElementById('req-media-input').value)">
-                        <option value="all">Todos</option>
-                        <option value="movies">Filmes</option>
-                        <option value="series">Séries</option>
-                        <option value="animation">Animação</option>
+                <div class="req-search-bar">
+                    <input type="search" id="req-media-input" class="req-search-input" aria-label="Buscar título"
+                        placeholder="Buscar título ou franquia" autocomplete="off" oninput="handleTMDBAutocomplete(this.value)">
+                    <select id="req-media-filter" class="req-search-input" aria-label="Tipo de título"
+                        onchange="handleTMDBAutocomplete(document.getElementById('req-media-input').value)">
+                        <option value="all">Todos</option><option value="movies">Filmes</option>
+                        <option value="series">Séries</option><option value="animation">Animação</option>
                     </select>
                 </div>
-
-                <!-- ÁREA DE RESULTADOS DA BUSCA (DIRETO NA TELA) -->
-                <div id="req-results-area" style="display: none;">
-                    <!-- BANNER DA FRANQUIA (SE HOUVER) -->
+                <div id="req-initial-tip" class="req-status">Digite pelo menos 2 caracteres para buscar.</div>
+                <div id="req-results-area" style="display:none">
                     <div id="req-franchise-container"></div>
-
-                    <!-- TÍTULOS ENCONTRADOS -->
-                    <div style="font-size: 12px; font-weight: 700; color: #94a3b8; margin: 6px 0 6px 2px; text-transform: uppercase;">
-                        Títulos Encontrados:
-                    </div>
                     <div id="req-results-list" class="req-results-list"></div>
-                    <button type="button" id="req-more-results" onclick="searchMoreRequestTitles()" hidden>Buscar mais títulos</button>
-                    <button type="button" id="req-related-results" onclick="searchRelatedRequestTitles()" hidden>Buscar filmes relacionados</button>
-                </div>
-
-                <!-- ESTADO INICIAL / DICA AMIGÁVEL -->
-                <div id="req-initial-tip" style="padding: 35px 20px; text-align: center; color: #64748b; font-size: 13px;">
-                    <div style="font-size: 34px; margin-bottom: 8px; opacity: 0.85;">🎬 🍿</div>
-                    <div style="color: #94a3b8; font-weight: 600; font-size: 15px;">Qual título você gostaria de assistir?</div>
-                    <div style="margin-top: 4px; font-size: 12.5px;">Digite o nome acima. Se for uma saga, você poderá pedir <b>todos os filmes</b> com 1 clique!</div>
-                </div>
-
-                <!-- 3. RESUMO VISUAL CLARO DO QUE FOI MARCADO -->
-                <div class="req-summary-box">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 13px; font-weight: 800; color: #fff;" id="req-selected-count-label">
-                            🛒 Nenhum título selecionado
-                        </span>
-                        <button type="button" id="btn-clear-selection" onclick="clearReqBasket()"
-                            style="display: none; background: none; border: none; color: #ef4444; font-size: 11.5px; font-weight: 700; cursor: pointer;">
-                            Limpar Seleção
-                        </button>
-                    </div>
-                    <div id="req-selected-chips" class="req-selected-chips">
-                        <span style="color: #64748b; font-size: 12px; font-style: italic;">
-                            Os filmes que você selecionar aparecerão aqui antes de confirmar.
-                        </span>
+                    <div class="req-actions">
+                        <button type="button" id="req-more-results" class="req-subtle-button" onclick="searchMoreRequestTitles()" hidden>Mais resultados</button>
+                        <button type="button" id="req-related-results" class="req-subtle-button" onclick="searchRelatedRequestTitles()" hidden>Franquias relacionadas</button>
                     </div>
                 </div>
             </div>
-
-            <!-- 4. RODAPÉ FIXO -->
-            <div class="req-modal-footer">
-                <button type="button" class="btn-modal btn-modal-secondary" onclick="closeRequestMediaModal()" style="padding: 10px 18px; font-size: 13px; border-radius: 8px;">
-                    Cancelar
-                </button>
+            <footer class="req-modal-footer">
+                <details class="req-summary-box" id="req-selection-summary" hidden>
+                    <summary id="req-selected-count-label"></summary>
+                    <button type="button" id="btn-clear-selection" class="req-subtle-button" onclick="clearReqBasket()">Limpar</button>
+                    <div id="req-selected-chips" class="req-selected-chips"></div>
+                </details>
                 <button type="button" id="btn-submit-req-media" onclick="handleRequestMediaSubmitDirect()"
-                    class="btn-modal btn-modal-primary"
-                    style="flex: 1; max-width: 320px; padding: 12px 20px; font-size: 14px; font-weight: 800; border-radius: 8px; background: #e50914; opacity: 0.5; cursor: not-allowed;" disabled>
-                    Pedir 0 Título(s)
-                </button>
-            </div>
+                    class="btn-modal btn-modal-primary" disabled>Enviar pedido</button>
+            </footer>
         </div>
     </div>
-
     <!-- ═══════════════════════════════════════════════════════════════════════
          💬 MODAL 2: CENTRAL DE AJUDA, SUPORTE & TICKETS (SEM CATEGORIAS CONFUSAS)
          ═══════════════════════════════════════════════════════════════════════ -->

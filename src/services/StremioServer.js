@@ -1293,6 +1293,9 @@ class StremioServer {
                 const page = Math.max(1, Math.min(20, Number.parseInt(req.query.page, 10) || 1));
                 const filter = ['movies', 'series', 'animation'].includes(req.query.filter) ? req.query.filter : 'all';
                 const results = await this.tmdbService.searchWithCollections(query, { page, filter, related: req.query.related === '1' });
+                const titles = results.flatMap(result => result.isCollection ? result.filmes : [result]);
+                const states = await this.pedidosManager.getRequestAvailability(titles);
+                const availability = new Map(titles.map((title, index) => [title, states[index]]));
 
                 res.json({
                     success: true,
@@ -1304,6 +1307,7 @@ class StremioServer {
                         categoria: r.categoria,
                         isAnimation: !!r.isAnimation,
                         related: !!r.related,
+                        availability: availability.get(r) || null,
                         ano: r.ano || '',
                         poster: r.posterUrl || r.poster || '',
                         nota: r.nota || 0,
@@ -1311,7 +1315,9 @@ class StremioServer {
                         isCollection: !!r.isCollection,
                         collectionId: r.collectionId || null,
                         totalFilmes: r.totalFilmes || 0,
-                        filmes: Array.isArray(r.filmes) ? r.filmes : []
+                        filmes: Array.isArray(r.filmes) ? r.filmes.map(film => ({
+                            ...film, availability: availability.get(film) || null
+                        })) : []
                     }))
                 });
             } catch (e) {
@@ -1337,18 +1343,16 @@ class StremioServer {
                 let username = 'Visitante';
                 let isAssinante = false;
 
-                const authHeader = req.headers['authorization'];
-                if (authHeader && authHeader.startsWith('Bearer ')) {
-                    const token = authHeader.split(' ')[1];
-                    const decoded = authService.verifyToken(token) || authService.verifyToken(authService.readSessionCookie(req, 'user'));
-                    if (decoded) {
-                        userId = Number(decoded.id || decoded.telegram_id || 0);
-                        username = decoded.username || decoded.email || 'Usuário';
-                        isAssinante = decoded.role === 'admin' || !!decoded.is_assinante;
-                    }
+                const token = req.headers.authorization?.match(/^Bearer (.+)$/i)?.[1];
+                const decoded = authService.verifyToken(token) || authService.verifyToken(authService.readSessionCookie(req, 'user'));
+                if (decoded) {
+                    userId = Number(decoded.id || decoded.telegram_id || 0);
+                    username = decoded.username || decoded.email || 'Usuário';
+                    isAssinante = decoded.role === 'admin' || !!decoded.is_assinante;
                 }
 
                 const createdList = [];
+                const skipped = [];
                 for (const it of items) {
                     const nome = (it.nome || '').trim();
                     if (!nome) continue;
@@ -1357,7 +1361,7 @@ class StremioServer {
                     const resolvedTemporada = (it.temporada || '').trim() || (resolvedTipo !== 'filme' ? 'todas as temporadas' : '');
                     const resolvedIdioma = (it.idioma || req.body.idioma || '').trim() || 'Dual Áudio (Dublado + Legendado)';
 
-                    const pedido = await this.pedidosManager?.adicionarPedidoCompleto({
+                    const { pedido, status } = await this.pedidosManager.addAvailableWebRequest({
                         userId,
                         username,
                         nome,
@@ -1371,7 +1375,11 @@ class StremioServer {
                         isAssinante
                     });
 
-                    if (pedido) createdList.push(pedido);
+                    if (!pedido) {
+                        skipped.push({ nome, status });
+                        continue;
+                    }
+                    createdList.push(pedido);
 
                     auditService.logEvent({
                         identityType: userId ? 'registered' : 'anonymous',
@@ -1387,9 +1395,10 @@ class StremioServer {
                 res.json({
                     success: true,
                     count: total,
-                    message: total > 1
-                        ? `🎉 ${total} pedidos registrados com sucesso para inclusão no catálogo!`
-                        : `🍿 Pedido de "${items[0].nome}" registrado com sucesso!`,
+                    message: total
+                        ? `${total} ${total === 1 ? 'pedido registrado' : 'pedidos registrados'}.${skipped.length ? ` ${skipped.length} já na fila ou no catálogo.` : ''}`
+                        : 'Os títulos selecionados já estão na fila ou no catálogo.',
+                    skipped,
                     pedidos: createdList
                 });
             } catch (e) {
