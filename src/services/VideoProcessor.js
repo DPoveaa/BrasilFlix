@@ -1420,11 +1420,9 @@ ${events.join('\n')}
             let srtPath = null;
             try {
                 const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
+                    ...metadata,
                     nome: metadata.nome || metadata.title,
                     nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
-                    imdbId: metadata.imdbId,
-                    tmdbId: metadata.tmdbId,
-                    ano: metadata.ano,
                     idioma: 'pt-BR'
                 });
                 srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
@@ -1449,7 +1447,7 @@ ${events.join('\n')}
             try {
                 finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
             } finally {
-                await fs.remove(path.dirname(srtPath)).catch(() => {});
+                await fs.remove(path.dirname(srtPath)).catch(() => { });
                 delete metadata.srtPath;
                 delete metadata._hardsubAssPath;
             }
