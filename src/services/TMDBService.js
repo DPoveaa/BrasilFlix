@@ -43,8 +43,8 @@ class TMDBService {
         this.cache.set(key, { data: cloneData, expiresAt: Date.now() + ttlMs });
     }
 
-    async _getWithRetry(endpoint, params = {}, timeout = 8000, maxRetries = 2) {
-        if (this.circuitBreakerUntil > Date.now()) {
+    async _getWithRetry(endpoint, params = {}, timeout = 8000, maxRetries = 2, { isolated = false } = {}) {
+        if (!isolated && this.circuitBreakerUntil > Date.now()) {
             return null;
         }
 
@@ -60,13 +60,14 @@ class TMDBService {
                     timeout: timeout,
                     httpsAgent: httpsAgent
                 });
-                this.consecutiveFailures = 0;
+                if (!isolated) this.consecutiveFailures = 0;
                 return response.data;
             } catch (err) {
                 if (attempt < maxRetries) {
                     await new Promise(r => setTimeout(r, 1000 * attempt));
                     continue;
                 }
+                if (isolated) throw err;
                 this.consecutiveFailures++;
                 if (this.consecutiveFailures >= 4) {
                     this.circuitBreakerUntil = Date.now() + 60000; // 60s
@@ -190,15 +191,26 @@ class TMDBService {
         if (cached) return cached;
 
         const params = { query: cleanQuery, include_adult: false, page };
-        const get = (endpoint, args) => this._getWithRetry(endpoint, args, 4500, 1).catch(() => null);
+        const get = (endpoint, args, attempts = 1) =>
+            this._getWithRetry(endpoint, args, 4500, attempts, { isolated: true }).catch(() => null);
         const searchMovies = filter !== 'series';
         const searchTv = filter !== 'movies';
-        const [movies, tv, collections] = await Promise.all([
-            searchMovies ? get('/search/movie', params) : null,
-            searchTv ? get('/search/tv', params) : null,
+        let [movies, tv, collections] = await Promise.all([
+            searchMovies ? get('/search/movie', params, 2) : null,
+            searchTv ? get('/search/tv', params, 2) : null,
             searchMovies && page === 1 ? get('/search/collection', params) : null
         ]);
         if (!movies && !tv) throw new Error('Busca de títulos temporariamente indisponível.');
+        if (page === 1 && !movies?.results?.length && !tv?.results?.length && !collections?.results?.length &&
+            /\s\p{L}{6,}$/u.test(cleanQuery)) {
+            const corrected = { ...params, query: cleanQuery.slice(0, -1) };
+            const [fallbackMovies, fallbackTv] = await Promise.all([
+                searchMovies ? get('/search/movie', corrected) : null,
+                searchTv ? get('/search/tv', corrected) : null
+            ]);
+            movies = fallbackMovies || movies;
+            tv = fallbackTv || tv;
+        }
 
         const unique = new Map();
         const add = (raw, kind, target = unique) => {
