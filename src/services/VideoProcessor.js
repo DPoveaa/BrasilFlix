@@ -4,7 +4,8 @@ const os = require('os');
 const fs = require('fs-extra');
 const axios = require('axios');
 const config = require('../../config');
-const SubtitleSync = require('./SubtitleSync');
+const SubtitleAudioService = require('./SubtitleAudioService');
+const SubtitlePipeline = require('./SubtitlePipeline');
 const SpeechLanguageService = require('./SpeechLanguageService');
 const HardsubDetectorService = require('./HardsubDetectorService');
 const BetWatermarkDetectorService = require('./BetWatermarkDetectorService');
@@ -89,7 +90,8 @@ class VideoProcessor {
                             globalIndex: s.index !== undefined ? s.index : idx,
                             codec: (s.codec_name || '').toLowerCase(),
                             language: (s.tags?.language || s.tags?.LANGUAGE || s.tags?.lang || 'und').toLowerCase(),
-                            title: (s.tags?.title || s.tags?.TITLE || s.tags?.handler_name || '').toLowerCase()
+                            title: (s.tags?.title || s.tags?.TITLE || s.tags?.handler_name || '').toLowerCase(),
+                            disposition: s.disposition || null
                         }))
                     });
                 } catch (e) {
@@ -585,6 +587,7 @@ Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${events.join('\n')}
 `;
+        if (!events.length) throw new Error('Legenda sem falas renderizáveis.');
         await fs.writeFile(assPath, ass, 'utf8');
         return assPath;
     }
@@ -1088,450 +1091,6 @@ ${events.join('\n')}
         }
     }
 
-    async getOrExtractPortugueseSubtitle(inputPath, info, metadata = {}) {
-        let providerUnavailable = false;
-        let syncFailed = false;
-        const https = require('https');
-        const agent = new https.Agent({ rejectUnauthorized: false });
-        const srtPath = path.join(path.dirname(inputPath), `sub_pt_${Date.now()}.srt`);
-
-        // 🆔 Garante a resolução antecipada de IMDb ID via TMDB antes de qualquer busca de referência
-        if (!metadata.imdbId && metadata.tmdbId) {
-            try {
-                const extPath = metadata.tipo === 'serie' ? `tv/${metadata.tmdbId}` : `movie/${metadata.tmdbId}`;
-                const extRes = await axios.get(`https://api.themoviedb.org/3/${extPath}/external_ids`, {
-                    params: { api_key: config.TMDB_API_KEY },
-                    timeout: 6000
-                });
-                if (extRes.data?.imdb_id) {
-                    metadata.imdbId = extRes.data.imdb_id;
-                    console.log(`🆔 [TMDB External IDs] IMDb ID resolvido antecipadamente: ${metadata.imdbId}`);
-                }
-            } catch (e) { }
-        }
-
-        // 1. Tenta extrair legenda embutida em Português do arquivo de vídeo original
-        // Prioriza: 1º Português Brasileiro (pob, pt-br, brazilian, título com 'brasil' ou 'brasileiro')
-        //           2º Português genérico (por, portuguese, português, pt)
-        // Desqualifica / Penaliza: Português de Portugal (pt-pt, portugal, european, por-pt)
-        const scoredPtStreams = (info.subtitleStreams || [])
-            .map(s => {
-                const lang = (s.language || '').toLowerCase();
-                const title = (s.title || '').toLowerCase();
-                let score = 0;
-
-                const isExplicitPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt') ||
-                    title.includes('pt-pt') || title.includes('portugal') || title.includes('european') || title.includes('europeu');
-                if (isExplicitPtPt) {
-                    return { stream: s, score: -10 };
-                }
-
-                if (lang === 'pob' || lang === 'pt-br' || lang.includes('brazil') || title.includes('bras') || title.includes('pob') || title.includes('pt-br')) {
-                    score = 20;
-                } else if (lang === 'por' || lang === 'pt' || lang.includes('portug') || title.includes('portug') || title.includes('legenda')) {
-                    score = 5;
-                }
-                return { stream: s, score };
-            })
-            .filter(item => item.score > 0)
-            .sort((a, b) => b.score - a.score);
-
-        for (const { stream: ptSubStream } of scoredPtStreams) {
-            const isTextCodec = ['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'text', 'webvtt'].includes((ptSubStream.codec || '').toLowerCase());
-            if (isTextCodec) {
-                try {
-                    const streamTarget = ptSubStream.globalIndex !== undefined ? `0:${ptSubStream.globalIndex}` : `0:s:${ptSubStream.index}`;
-                    console.log(`📝 Extraindo legenda PT-BR embutida (Stream ${streamTarget} [${ptSubStream.title || ptSubStream.language}], Codec: ${ptSubStream.codec})...`);
-                    await new Promise((resolve, reject) => {
-                        let isDone = false;
-                        const extract = spawn('ffmpeg', ['-nostdin', '-v', 'error', '-y', '-i', inputPath, '-map', streamTarget, '-c:s', 'srt', srtPath]);
-
-                        const timer = setTimeout(() => {
-                            if (!isDone) {
-                                isDone = true;
-                                try { extract.kill('SIGKILL'); } catch (e) { }
-                                reject(new Error('Timeout de 60s ao extrair legenda interna'));
-                            }
-                        }, 60000);
-
-                        extract.on('close', code => {
-                            if (!isDone) {
-                                isDone = true;
-                                clearTimeout(timer);
-                                (code === 0 && fs.existsSync(srtPath)) ? resolve() : reject(new Error(`Erro ao extrair srt (código ${code})`));
-                            }
-                        });
-
-                        extract.on('error', err => {
-                            if (!isDone) {
-                                isDone = true;
-                                clearTimeout(timer);
-                                reject(err);
-                            }
-                        });
-                    });
-
-                    if (fs.existsSync(srtPath) && fs.statSync(srtPath).size > 500) {
-                        const content = await fs.readFile(srtPath, 'utf8');
-                        const langTag = (ptSubStream.language || '').toLowerCase();
-                        const titleTag = (ptSubStream.title || '').toLowerCase();
-                        const isOfficialStudioPob = ['pob', 'pt-br', 'brazilian'].includes(langTag) ||
-                            titleTag.includes('brazil') || titleTag.includes('brasil') || titleTag.includes('pob');
-
-                        const isPtPt = this.isEuropeanPortugueseSubtitle(content);
-                        const isPtBr = this.isBrazilianPortugueseSubtitle(content);
-
-                        // Se contiver traços de Português de Portugal, REJEITA imediatamente mesmo se tiver tag pob/pt-br!
-                        if (!isPtPt && (isPtBr || isOfficialStudioPob)) {
-                            console.log(`✅ Legenda PT-BR interna [${ptSubStream.title || ptSubStream.language}] extraída e validada. Sincronizando contra o vídeo...`);
-                            info._internalPtSrtPath = srtPath;
-                            break; // Sai do loop de streams PT — já temos a melhor candidata interna
-                        } else {
-                            console.warn(`⚠️ Legenda interna [${ptSubStream.title || ptSubStream.language}] extraída rejeitada: detectado Português de Portugal ou texto não autêntico PT-BR. Descartando trilha e buscando PT-BR...`);
-                            await fs.remove(srtPath).catch(() => { });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('⚠️ Falha ao extrair trilha de legenda:', e.message);
-                    await fs.remove(srtPath).catch(() => { });
-                }
-            }
-        }
-
-        // 2. Verifica se o torrent já trouxe a legenda oficial PT-BR na pasta (Companion Subs do release)
-        const companion = await this.findCompanionSubtitle(inputPath, metadata);
-        // CORREÇÃO: Não retornar companion subs direto sem sincronizar — o vídeo pode ter intro/recaps
-        // de emissora (Fox, SHOWTIME, HBO, etc.) que deslocariam a legenda. Sync obrigatório abaixo.
-
-        // Determina a melhor referência para sincronização (Sub-to-Sub ou Audio-to-Sub)
-        // CORREÇÃO: Este bloco agora roda ANTES de retornar qualquer legenda interna ou companion,
-        // garantindo que todas as fontes passem pelo ffsubsync.
-        let refSyncTarget = companion.refEnPath || null;
-        if (!refSyncTarget) {
-            // Filtra faixas Signs & Songs / Forced que são incompatíveis com alinhamento sub-to-sub
-            // Releases de anime (EMBER, Judas, SubsPlease) costumam ter stream 0/1 com apenas 3-10 cues
-            const enSubStream = (info.subtitleStreams || []).find(s => {
-                const lang = (s.language || '').toLowerCase();
-                const title = (s.title || '').toLowerCase();
-                // Bloqueia apenas trilhas puramente não-diálogo: Signs & Songs, Forced, Commentary.
-                // NOTA: 'sdh' e 'hearing' NÃO são bloqueados pois trazem todo o diálogo original em inglês dos WebRips oficiais.
-                const isBadTrack = /sign|song|s&s|forced|commentary/i.test(title);
-                const isEnglish = ['eng', 'en', 'english'].includes(lang) || title.includes('english');
-                return isEnglish && !isBadTrack;
-            });
-            if (enSubStream && ['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'text', 'webvtt'].includes((enSubStream.codec || '').toLowerCase())) {
-                const refEnSrtPath = path.join(path.dirname(inputPath), `ref_en_${Date.now()}.srt`);
-                try {
-                    const streamTarget = enSubStream.globalIndex !== undefined ? `0:${enSubStream.globalIndex}` : `0:s:${enSubStream.index}`;
-                    const extractProc = spawn('ffmpeg', ['-nostdin', '-v', 'error', '-y', '-i', inputPath, '-map', streamTarget, '-c:s', 'srt', refEnSrtPath]);
-                    await new Promise((res, rej) => {
-                        const timer = setTimeout(() => {
-                            try { extractProc.kill('SIGKILL'); } catch (e) { }
-                            rej(new Error('Timeout de 60s ao extrair ref inglesa'));
-                        }, 60000);
-                        extractProc.on('close', c => { clearTimeout(timer); c === 0 ? res() : rej(); });
-                        extractProc.on('error', err => { clearTimeout(timer); rej(err); });
-                    });
-                    if (fs.existsSync(refEnSrtPath)) {
-                        const refStats = fs.statSync(refEnSrtPath);
-                        const refContent = fs.readFileSync(refEnSrtPath, 'utf8');
-                        const cueCount = (refContent.match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/g) || []).length;
-                        // Validação: aceita episódios curtos (ex: South Park tem ~180 cues e ~12KB),
-                        // rejeitando apenas mini-tracks Signs & Songs de poucas falas (< 25 cues ou < 2.5KB)
-                        if (cueCount >= 25 && refStats.size >= 2500) {
-                            refSyncTarget = refEnSrtPath;
-                            console.log(`🎯 [SubtitleSync] Trilha de referência em inglês extraída para alinhamento sub-to-sub (${cueCount} cues, ${(refStats.size / 1024).toFixed(1)} KB)!`);
-                        } else {
-                            console.warn(`⚠️ [SubtitleSync] Trilha EN ignorada: apenas ${cueCount} cues / ${(refStats.size / 1024).toFixed(1)} KB — provavelmente Signs & Songs ou Forced. Usando VAD de áudio.`);
-                            fs.removeSync(refEnSrtPath);
-                        }
-                    }
-                } catch (e) { }
-            }
-        }
-
-        if (!refSyncTarget) {
-            refSyncTarget = inputPath; // Fallback: alinha contra o áudio do vídeo via VAD (áudio real da mídia)
-            console.log(`🎙️ [SubtitleSync] Nenhuma faixa ou companion EN embutida no release. Sincronização obrigatória via áudio real do vídeo (VAD Audio-to-Sub).`);
-        }
-
-        // Sincroniza legenda PT-BR interna (extraída do próprio vídeo) se encontrada acima
-        if (info._internalPtSrtPath && fs.existsSync(info._internalPtSrtPath)) {
-            try {
-                const syncedInternalPath = path.join(path.dirname(inputPath), `sub_pt_synced_internal_${Date.now()}.srt`);
-                const finalInternalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, info._internalPtSrtPath, syncedInternalPath, { isAnime: metadata.isAnime, videoPath: inputPath });
-                if (finalInternalSrt && fs.existsSync(finalInternalSrt)) {
-                    if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                        fs.remove(refSyncTarget).catch(() => { });
-                    }
-                    if (info._internalPtSrtPath !== finalInternalSrt) {
-                        fs.remove(info._internalPtSrtPath).catch(() => { });
-                    }
-                    console.log(`✅ Legenda PT-BR interna sincronizada com sucesso!`);
-                    return finalInternalSrt;
-                } else {
-                    // Sync falhou: usa a legenda interna sem sync como fallback (melhor que nada)
-                    console.warn(`⚠️ [SubtitleSync] Sync da legenda interna falhou. Usando legenda interna sem ajuste como fallback.`);
-                    await SubtitleSync.optimizeSubtitleFile(info._internalPtSrtPath);
-                    return info._internalPtSrtPath;
-                }
-            } catch (e) {
-                console.warn(`⚠️ [SubtitleSync] Erro ao sincronizar legenda interna: ${e.message}. Usando sem sync.`);
-                await SubtitleSync.optimizeSubtitleFile(info._internalPtSrtPath);
-                return info._internalPtSrtPath;
-            }
-        }
-
-        // Sincroniza companion sub PT-BR do torrent se encontrada
-        if (companion.ptSrtPath && fs.existsSync(companion.ptSrtPath)) {
-            try {
-                const syncedCompanionPath = path.join(path.dirname(inputPath), `sub_pt_synced_companion_${Date.now()}.srt`);
-                const finalCompanionSrt = await SubtitleSync.syncSubtitle(refSyncTarget, companion.ptSrtPath, syncedCompanionPath, { isAnime: metadata.isAnime, videoPath: inputPath });
-                if (finalCompanionSrt && fs.existsSync(finalCompanionSrt)) {
-                    if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                        fs.remove(refSyncTarget).catch(() => { });
-                    }
-                    console.log(`✅ [Companion Subs] Legenda PT-BR do torrent sincronizada com sucesso!`);
-                    return finalCompanionSrt;
-                } else {
-                    // Sync falhou: usa a companion sub sem sync como fallback
-                    console.warn(`⚠️ [SubtitleSync] Sync da companion sub falhou. Usando sem ajuste como fallback.`);
-                    await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
-                    return companion.ptSrtPath;
-                }
-            } catch (e) {
-                console.warn(`⚠️ [SubtitleSync] Erro ao sincronizar companion sub: ${e.message}. Usando sem sync.`);
-                await SubtitleSync.optimizeSubtitleFile(companion.ptSrtPath);
-                return companion.ptSrtPath;
-            }
-        }
-
-        // 3. Legenda PT-BR direta fornecida pelos metadados da busca (já selecionada especificamente para este release)
-        if (metadata.subtitleUrl || metadata.validatedSubtitleText) {
-            try {
-                const content = metadata.validatedSubtitleText || await this.fetchPortugueseSrt(metadata.subtitleUrl);
-                if (content) {
-                    await fs.writeFile(srtPath, content, 'utf8');
-                    console.log(`✅ Legenda PT-BR direta da fonte selecionada baixada e validada!`);
-
-                    const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_direct_${Date.now()}.srt`);
-                    const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, srtPath, syncedSrtPath, { isAnime: metadata.isAnime, videoPath: inputPath });
-                    if (finalSrt && fs.existsSync(finalSrt)) {
-                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                            fs.remove(refSyncTarget).catch(() => { });
-                        }
-                        return finalSrt;
-                    } else {
-                        syncFailed = true;
-                        await fs.remove(srtPath).catch(() => {});
-                    }
-                } else {
-                    console.warn(`⚠️ [SubtitleSync] Legenda direta descartada: texto não validado como PT-BR autêntico (detectado Português de Portugal ou qualidade inadequada). Recorrendo à busca completa.`);
-                }
-            } catch (e) {
-                providerUnavailable = true;
-                console.warn(`⚠️ [SubtitleSync] Falha ao baixar/sincronizar legenda direta: ${e.message}`);
-            }
-        }
-
-        // 4. Busca e validação no OpenSubtitles via IMDb ID com matching de release inteligente
-        if (!metadata.imdbId && metadata.tmdbId) {
-            try {
-                const extPath = metadata.tipo === 'serie' ? `tv/${metadata.tmdbId}` : `movie/${metadata.tmdbId}`;
-                const extRes = await axios.get(`https://api.themoviedb.org/3/${extPath}/external_ids`, {
-                    params: { api_key: config.TMDB_API_KEY },
-                    timeout: 6000
-                });
-                if (extRes.data?.imdb_id) {
-                    metadata.imdbId = extRes.data.imdb_id;
-                    console.log(`🆔 [TMDB External IDs] IMDb ID resolvido com sucesso: ${metadata.imdbId}`);
-                }
-            } catch (e) { }
-        }
-
-        if (metadata.imdbId) {
-            try {
-                const season = metadata.season || 1;
-                const episode = metadata.episode || 1;
-                const streamPath = metadata.tipo === 'serie' ? `series/${metadata.imdbId}:${season}:${episode}.json` : `movie/${metadata.imdbId}.json`;
-
-                const endpoints = [
-                    `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
-                    `https://subtitles.strem.io/subtitles/${streamPath}`,
-                    `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
-                ];
-
-                const inputFileName = path.basename(inputPath).toLowerCase();
-                const tokenize = (s) => (s || '').toLowerCase()
-                    .replace(/[^a-z0-9]/g, ' ')
-                    .split(/\s+/)
-                    .filter(t => t.length > 2);
-                const fileTokens = tokenize(inputFileName);
-                const isFile1080p = /\b(1080p|fhd)\b/i.test(inputFileName);
-                const isFile720p = /\b(720p|hd)\b/i.test(inputFileName);
-                const isFile4k = /\b(2160p|4k|uhd)\b/i.test(inputFileName);
-                const isFileWeb = /\b(web-dl|webrip|web|amzn|nf|dsnp)\b/i.test(inputFileName);
-
-                let ptSubs = [];
-                for (const osUrl of endpoints) {
-                    try {
-                        const res = await axios.get(osUrl, {
-                            timeout: 6000,
-                            httpsAgent: agent,
-                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
-                        });
-                        const subs = res.data?.subtitles || [];
-                        ptSubs = subs.filter(s => {
-                            const lang = (s.lang || s.language || '').toLowerCase();
-                            const isPtPt = lang === 'pt-pt' || lang.includes('pt-pt') || lang.includes('por-pt');
-                            if (isPtPt) return false;
-                            const rel = (s.movieReleaseName || s.releaseName || '').toLowerCase();
-                            if (rel.includes('pt-pt') || rel.includes('por.pt')) return false;
-                            return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
-                        }).sort((a, b) => {
-                            const relA = (a.movieReleaseName || a.releaseName || '').toLowerCase();
-                            const relB = (b.movieReleaseName || b.releaseName || '').toLowerCase();
-                            const tokensA = tokenize(relA);
-                            const tokensB = tokenize(relB);
-                            const commonA = tokensA.filter(t => fileTokens.includes(t)).length;
-                            const commonB = tokensB.filter(t => fileTokens.includes(t)).length;
-
-                            let scoreA = commonA * 3 + parseInt(a.g || 0);
-                            let scoreB = commonB * 3 + parseInt(b.g || 0);
-
-                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relA)) scoreA += 4;
-                            if (isFile1080p && /\b(1080p|fhd)\b/i.test(relB)) scoreB += 4;
-                            if (isFile720p && /\b(720p|hd)\b/i.test(relA)) scoreA += 4;
-                            if (isFile720p && /\b(720p|hd)\b/i.test(relB)) scoreB += 4;
-                            if (isFile4k && /\b(2160p|4k|uhd)\b/i.test(relA)) scoreA += 4;
-                            if (isFile4k && /\b(2160p|4k|uhd)\b/i.test(relB)) scoreB += 4;
-                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relA)) scoreA += 4;
-                            if (isFileWeb && /\b(web-dl|webrip|web)\b/i.test(relB)) scoreB += 4;
-
-                            // Bônus prioritário absoluto para Português Brasileiro (pob / pt-br / brazilian)
-                            if (['pob', 'pt-br', 'brazilian'].includes((a.lang || '').toLowerCase())) scoreA += 25;
-                            if (['pob', 'pt-br', 'brazilian'].includes((b.lang || '').toLowerCase())) scoreB += 25;
-
-                            return scoreB - scoreA;
-                        });
-
-                        if (ptSubs.length > 0) break;
-                    } catch (e) { providerUnavailable = true; }
-                }
-
-                if (ptSubs.length > 0) {
-                    console.log(`🌐 Testando até ${ptSubs.length} legendas candidatas no OpenSubtitles (ranqueadas para "${path.basename(inputPath)}")...`);
-
-                    // Itera pelas legendas candidatas e tenta sincronizar até achar uma correspondência ideal
-                    for (let idx = 0; idx < Math.min(ptSubs.length, 6); idx++) {
-                        const sub = ptSubs[idx];
-                        try {
-                            const content = await this.fetchPortugueseSrt(sub.url);
-                            if (!content) {
-                                console.warn(`⚠️ Legenda OpenSubtitles #${idx + 1} (${sub.lang}) descartada: texto não validado como PT-BR autêntico (ou detectado Português de Portugal).`);
-                                continue;
-                            }
-
-                            const candidateSrtPath = path.join(path.dirname(inputPath), `sub_pt_cand_${Date.now()}_${idx}.srt`);
-                            await fs.writeFile(candidateSrtPath, content, 'utf8');
-
-                            const subRel = sub.movieReleaseName || sub.releaseName || sub.id;
-                            console.log(`✅ Legenda PT-BR oficial #${idx + 1} [${subRel}] (${sub.lang}) baixada (${(Buffer.byteLength(content) / 1024).toFixed(1)} KB). Sincronizando...`);
-
-                            const syncedSrtPath = path.join(path.dirname(inputPath), `sub_pt_synced_${Date.now()}_${idx}.srt`);
-                            const finalSrt = await SubtitleSync.syncSubtitle(refSyncTarget, candidateSrtPath, syncedSrtPath, { isAnime: metadata.isAnime, videoPath: inputPath });
-
-                            if (finalSrt && fs.existsSync(finalSrt)) {
-                                console.log(`🎯 [SubtitleSync] Legenda candidata #${idx + 1} perfeitamente sincronizada com o conteúdo!`);
-                                if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                                    fs.remove(refSyncTarget).catch(() => { });
-                                }
-                                if (candidateSrtPath !== finalSrt) {
-                                    fs.remove(candidateSrtPath).catch(() => { });
-                                }
-                                return finalSrt;
-                            } else {
-                                syncFailed = true;
-                                await fs.remove(candidateSrtPath).catch(() => {});
-                                console.warn(`⚠️ Legenda candidata #${idx + 1} falhou na sincronia. Testando próxima legenda candidata do OpenSubtitles...`);
-                            }
-                        } catch (errSub) {
-                            providerUnavailable = true;
-                            console.warn(`⚠️ Falha ao baixar/testar candidata #${idx + 1}: ${errSub.message}`);
-                        }
-                    }
-
-                }
-            } catch (e) { }
-        }
-
-        // 5. AUTO-TRADUÇÃO DE EMERGÊNCIA VIA IA (Gemini Flash)
-        // Se nenhuma legenda PT-BR foi encontrada no mundo mas temos uma legenda em Inglês
-        // (do container de vídeo, companion ou do OpenSubtitles), traduz as falas mantendo 100% dos timecodes
-        try {
-            const SubtitleTranslationService = require('./SubtitleTranslationService');
-            if (SubtitleTranslationService.isAvailable()) {
-                let sourceEnSrt = (refSyncTarget && refSyncTarget !== inputPath) ? refSyncTarget : companion.refEnPath;
-
-                if (!sourceEnSrt && metadata.imdbId) {
-                    try {
-                        const season = metadata.season || 1;
-                        const episode = metadata.episode || 1;
-                        const streamPath = metadata.tipo === 'serie' ? `series/${metadata.imdbId}:${season}:${episode}.json` : `movie/${metadata.imdbId}.json`;
-                        const osEndpoints = [
-                            `https://opensubtitles-v3.strem.io/subtitles/${streamPath}`,
-                            `https://subtitles.strem.io/subtitles/${streamPath}`,
-                            `https://opensubtitles-v8.strem.io/subtitles/${streamPath}`
-                        ];
-                        for (const url of osEndpoints) {
-                            try {
-                                const res = await axios.get(url, { timeout: 6000, httpsAgent: agent, headers: { 'User-Agent': 'Mozilla/5.0' } });
-                                const enSub = (res.data?.subtitles || []).find(s => ['eng', 'en'].includes((s.lang || '').toLowerCase()));
-                                if (enSub?.url) {
-                                    const enRes = await axios.get(enSub.url, { timeout: 8000, httpsAgent: agent, responseType: 'text' });
-                                    if (enRes.data && enRes.data.length > 500) {
-                                        const downloadedEnPath = path.join(path.dirname(inputPath), `ref_en_for_trans_${Date.now()}.srt`);
-                                        await fs.writeFile(downloadedEnPath, enRes.data, 'utf8');
-                                        sourceEnSrt = downloadedEnPath;
-                                        break;
-                                    }
-                                }
-                            } catch (_) { providerUnavailable = true; }
-                        }
-                    } catch (_) {}
-                }
-
-                if (sourceEnSrt && fs.existsSync(sourceEnSrt)) {
-                    console.log(`🤖 [SubtitleTranslation] Nenhuma legenda PT-BR disponível. Realizando tradução emergencial via IA (Gemini) a partir da legenda EN...`);
-                    const translatedSrtPath = path.join(path.dirname(inputPath), `sub_pt_translated_${Date.now()}.srt`);
-                    await SubtitleTranslationService.translateSrtFile(sourceEnSrt, translatedSrtPath, { title: metadata.nome || path.basename(inputPath) });
-                    if (fs.existsSync(translatedSrtPath) && fs.statSync(translatedSrtPath).size > 200) {
-                        console.log(`🎉 [SubtitleTranslation] Legenda traduzida via IA com sucesso para PT-BR! Sincronizando contra a mídia...`);
-                        const syncedTransPath = path.join(path.dirname(inputPath), `sub_pt_trans_synced_${Date.now()}.srt`);
-                        const finalTransSrt = await SubtitleSync.syncSubtitle(refSyncTarget, translatedSrtPath, syncedTransPath, { isAnime: metadata.isAnime, videoPath: inputPath });
-                        if (refSyncTarget && refSyncTarget !== inputPath && !companion.refEnPath) {
-                            fs.remove(refSyncTarget).catch(() => {});
-                        }
-                        if (finalTransSrt && fs.existsSync(finalTransSrt)) return finalTransSrt;
-                        if (sourceEnSrt === refSyncTarget || sourceEnSrt === companion.refEnPath) return translatedSrtPath;
-                        syncFailed = true;
-                        await fs.remove(translatedSrtPath).catch(() => {});
-                    }
-                }
-            }
-        } catch (transErr) {
-            providerUnavailable = true;
-            console.warn(`⚠️ [SubtitleTranslation] Falha na auto-tradução via IA: ${transErr.message}`);
-        }
-
-        if (providerUnavailable || syncFailed) {
-            throw Object.assign(new Error(providerUnavailable ? 'Provedor de legenda temporariamente indisponível' : 'Falha de sincronização de legenda'), {
-                code: providerUnavailable ? 'SUBTITLE_PROVIDER_UNAVAILABLE' : 'SUBTITLE_SYNC_FAILED'
-            });
-        }
-        return null;
-    }
-
     async optimizeForTelegram(inputPath, outputPath, onProgress = null, metadata = {}) {
         await fs.ensureDir(path.dirname(outputPath));
         const info = await this.getVideoInfo(inputPath);
@@ -1547,7 +1106,6 @@ ${events.join('\n')}
 
         // Detectar com precisão a faixa de áudio em Português e a faixa de áudio Alvo (Dublado ou Original)
         const portugueseAudioIndex = this.detectPortugueseAudioIndex(info.audioStreams, path.basename(inputPath));
-        const hasPortugueseAudio = portugueseAudioIndex !== null;
         const targetAudioIndex = this.detectTargetAudioIndex(info.audioStreams, metadata, path.basename(inputPath));
         const selectedAudioStream = info.audioStreams[targetAudioIndex] || info.audioStreams[0] || null;
 
@@ -1614,62 +1172,9 @@ ${events.join('\n')}
         const resolvedOriginalLang = this.resolveOriginalLanguage(metadata, info.audioStreams);
         metadata.idiomaOriginal = metadata.idiomaOriginal || metadata.originalLanguage || resolvedOriginalLang || null;
         metadata.originalLanguage = metadata.idiomaOriginal;
-        // Nunca inventar o idioma da trilha a partir do idioma original da obra (causava "Coreano" com áudio inglês)
-        const detectedSelLang = this.normalizeLanguageCode(effectiveAudioStream?.language) ||
-            (this.streamMatchesLanguage(effectiveAudioStream, 'pt') ? 'pt' :
-                (this.streamMatchesLanguage(effectiveAudioStream, 'en') ? 'en' : null));
-        metadata.idiomaAudioSelecionado = detectedSelLang || 'und';
-        metadata.idiomaAudioLabel = detectedSelLang
-            ? this.describeLanguageLabel(detectedSelLang)
-            : (resolvedOriginalLang ? `${this.describeLanguageLabel(resolvedOriginalLang)}?` : 'Original');
-        console.log(`🔊 [${optTitle}] Áudio final: index=${effectiveAudioIndex} tag=${effectiveAudioStream?.language || 'und'} detectado=${metadata.idiomaAudioSelecionado} originalObra=${metadata.idiomaOriginal || 'n/a'}`);
-
-        let srtPath = null;
-        const alreadyHardsubbed = metadata.isDirect || metadata.hasEmbeddedSub || metadata.isReadySub;
-        // Só é confirmado dublado se o arquivo REALMENTE tiver áudio em português detectado via ffprobe
-        // e se o pedido NÃO for expressamente SOMENTE legendado (sem dublagem).
-        // Releases Dual com PT-BR + softsubs NÃO devem queimar legenda: dublado = áudio PT sem legenda na tela.
-        const hasVerifiedPtAudio = hasPortugueseAudio || (metadata.isDublado === true && this.hasPortugueseAudio(info, path.basename(inputPath)));
+        metadata.srtPath = null;
         const wantLegendadoOnly = metadata.isLegendado === true && metadata.isDublado === false;
-        const isConfirmedDublado = hasVerifiedPtAudio && !wantLegendadoOnly;
-
-        // Se NÃO possuir áudio em Português e for expressamente Legendado (sem áudio dublado),
-        // DEVE OBRIGATORIAMENTE obter e queimar/embutir as legendas em Português Brasileiro (PT-BR),
-        // a menos que o vídeo seja Dublado ou venha com hardsub já embutido no stream (Web Direct).
-        if (!isConfirmedDublado && (wantLegendadoOnly || !hasPortugueseAudio) && !alreadyHardsubbed) {
-            if (!hasPortugueseAudio) {
-                console.log(`💬 [${optTitle}] Áudio em Português não detectado no arquivo original. Buscando e extraindo legendas oficiais PT-BR para Hardsub obrigatório...`);
-            }
-            srtPath = await this.getOrExtractPortugueseSubtitle(inputPath, info, metadata);
-            if (!srtPath) {
-                console.error(`❌ [Bloqueio de Qualidade: "${optTitle}"] Nenhuma legenda em Português (PT-BR) encontrada ou validada para o vídeo sem dublagem.`);
-                throw new Error(`Vídeo em idioma estrangeiro sem áudio dublado e sem legenda PT-BR disponível para "${optTitle}". Abortando processamento para evitar publicação sem tradução.`);
-            } else {
-                metadata.srtPath = srtPath;
-                if (!hasPortugueseAudio) {
-                    metadata.isLegendado = true;
-                    metadata.isDublado = false;
-                }
-            }
-        } else if (alreadyHardsubbed && !isConfirmedDublado) {
-            // Vídeo Web Direct: tem hardsub/legenda embutida no stream mas SEM áudio em Português.
-            // Independentemente da preferência do job, deve ser catalogado como Legendado.
-            console.log(`💬 [${optTitle}] Vídeo Web Direct ${metadata.isLegendado ? 'legendado' : 'sem áudio PT'} — classificando como Legendado (PT-BR) (hardsub/embedded).`);
-            metadata.isLegendado = true;
-            metadata.isDublado = false;
-        } else if (isConfirmedDublado) {
-            // Dual com PT-BR (+ softsubs): cataloga/processa como Dublado limpo — sem hardsub e sem softsubs
-            metadata.isDublado = true;
-            metadata.isLegendado = false;
-            metadata.srtPath = null;
-            srtPath = null;
-            console.log(`🇧🇷 [${optTitle}] Áudio PT-BR confirmado → processando como Dublado SEM legendas (softsubs/hardsub removidos).`);
-        }
-
-        // =========================================================================
-        // 🛡️ PRÉ-VALIDAÇÃO DE QUALIDADE (ÁUDIO FALADO & HARDSUB VISUAL)
-        // Executada ANTES do Remux ou Transcode para descartar releases inválidos
-        // =========================================================================
+        let isConfirmedDublado = this.streamMatchesLanguage(effectiveAudioStream, 'pt') && !wantLegendadoOnly;
 
         // 1. Verificação do Idioma Falado Real (Speech Language ID com faster-whisper)
         try {
@@ -1714,8 +1219,6 @@ ${events.join('\n')}
                         metadata.isLegendado = false;
                         metadata.audioPreference = 'dublado';
                         isConfirmedDublado = true;
-                        metadata.srtPath = null;
-                        srtPath = null;
                     } else {
                         console.warn(`🚨 [Alerta de Áudio Original Divergente] Esperava-se ${targetSpoken.toUpperCase()}, mas o falado real é ${speechCheck.detectedLanguage.toUpperCase()} (${(speechCheck.probability * 100).toFixed(0)}%).`);
 
@@ -1745,6 +1248,15 @@ ${events.join('\n')}
             console.warn(`⚠️ [SpeechLanguage] Verificação não-bloqueante ignorada por exceção: ${speechErr.message}`);
         }
 
+        metadata.idiomaAudioSelecionado = isConfirmedDublado ? 'pt' : (this.normalizeLanguageCode(effectiveAudioStream?.language) || 'und');
+        metadata.idiomaAudioLabel = isConfirmedDublado ? this.describeLanguageLabel('pt') :
+            this.describeLanguageLabel(metadata.idiomaAudioSelecionado === 'und' ? resolvedOriginalLang : metadata.idiomaAudioSelecionado);
+        if (!isConfirmedDublado && metadata.requiresDub) {
+            throw Object.assign(new Error('A faixa selecionada não foi confirmada como dublada em português.'), { code: 'NO_DUBBED_AUDIO' });
+        }
+        metadata.isDublado = isConfirmedDublado;
+        metadata.isLegendado = !isConfirmedDublado;
+
         // 2. Verificação de Hardsub Visual na Imagem (OCR Multiponto)
         try {
             console.log(`🔍 [Validação de Hardsub] Verificando imagem em 5 pontos para detectar legendas fixas indesejadas...`);
@@ -1766,20 +1278,15 @@ ${events.join('\n')}
                     if (hardsubCheck.latinHits > 0) {
                         console.log(`ℹ️ [Hardsub Check] Texto pontual na tela aceito em dublado (${hardsubCheck.latinHits}/5 amostras). Provavelmente título ou letreiro.`);
                     }
-                } else if (srtPath) {
-                    // Filme Legendado onde vamos queimar legenda PT-BR:
-                    // Se já existir hardsub na imagem, queimar PT-BR vai gerar sobreposição ilegível (double subtitle)
-                    if (hardsubCheck.hasHardsub) {
-                        if (isBrGroup && !hardsubCheck.isForeignHardsub) {
-                            console.log(`ℹ️ [Hardsub Check] Release de grupo brasileiro verificado ("${path.basename(inputPath)}") com texto latino pontual/letterbox. Tratando como falso positivo e liberando queima da legenda.`);
-                        } else {
-                            throw new Error(`Vídeo já possui legenda fixa (${hardsubCheck.detectedScript}) na imagem para "${optTitle}". Queimar legenda PT-BR causaria sobreposição: ${hardsubCheck.textSamples}`);
-                        }
-                    }
+                } else if (hardsubCheck.hasHardsub) {
+                    throw Object.assign(
+                        new Error(`Vídeo já possui legenda fixa na imagem para "${optTitle}". É preciso revisar a fonte para evitar sobreposição.`),
+                        { code: 'SUBTITLE_SYNC_FAILED' }
+                    );
                 }
             }
         } catch (ocrErr) {
-            if (ocrErr.message && (ocrErr.message.includes('Legenda fixa') || ocrErr.message.includes('Vídeo já possui legenda fixa'))) {
+            if (ocrErr.code === 'SUBTITLE_SYNC_FAILED' || ocrErr.message?.includes('Legenda fixa')) {
                 throw ocrErr;
             }
             console.warn(`⚠️ [HardsubDetector] Verificação ignorada por exceção: ${ocrErr.message}`);
@@ -1904,17 +1411,48 @@ ${events.join('\n')}
                     this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
             });
-        } else {
+        } else if (isConfirmedDublado) {
             finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
-        }
+        } else {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // Cinema-Grade Subtitle Pipeline (4-Tier + Quality Gate + Verification)
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            let srtPath = null;
+            try {
+                const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
+                    nome: metadata.nome || metadata.title,
+                    nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
+                    imdbId: metadata.imdbId,
+                    tmdbId: metadata.tmdbId,
+                    ano: metadata.ano,
+                    idioma: 'pt-BR'
+                });
+                srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
+                if (srtPath) {
+                    console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
+                }
+            } catch (pipelineErr) {
+                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline cinema-grade: ${pipelineErr.message}. Tentando fallback SubtitleAudioService...`);
+            }
 
-        // Limpa arquivos temporários de legenda (.srt / .ass) após a codificação
-        if (srtPath && fs.existsSync(srtPath)) {
-            await fs.remove(srtPath).catch(() => { });
-        }
-        if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
-            await fs.remove(metadata._hardsubAssPath).catch(() => { });
-            delete metadata._hardsubAssPath;
+            // Fallback: SubtitleAudioService (transcrição Whisper) se pipeline falhar
+            if (!srtPath) {
+                srtPath = await SubtitleAudioService.create(inputPath, effectiveAudioIndex, {
+                    title: optTitle,
+                    onProgress,
+                    subtitleStreams: info.subtitleStreams,
+                    isEuropeanPortuguese: content => this.isEuropeanPortugueseSubtitle(content)
+                });
+            }
+
+            metadata.srtPath = srtPath;
+            try {
+                finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
+            } finally {
+                await fs.remove(path.dirname(srtPath)).catch(() => {});
+                delete metadata.srtPath;
+                delete metadata._hardsubAssPath;
+            }
         }
 
         // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
@@ -2019,7 +1557,10 @@ ${events.join('\n')}
             let hardsubPath = null;
             let tempSanitizedSrt = null;
 
-            if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+            if (metadata.srtPath) {
+                if (!fs.existsSync(metadata.srtPath)) {
+                    throw Object.assign(new Error('Arquivo de legenda indisponível na codificação.'), { code: 'SUBTITLE_SYNC_FAILED' });
+                }
                 try {
                     hardsubPath = await this.buildHardsubAssFromSrt(metadata.srtPath, outW, outH);
                     metadata._hardsubAssPath = hardsubPath;
