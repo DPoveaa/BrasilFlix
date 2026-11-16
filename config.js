@@ -87,6 +87,10 @@ module.exports = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
     GEMINI_MODEL: process.env.GEMINI_MODEL || process.env.SUBTITLE_TRANSLATION_MODEL || 'gemini-3.5-flash-lite',
 
+    // SubDL API (Tier 3.5 Fallback de Busca PT-BR com Pool de Múltiplas Chaves)
+    SUBDL_API_KEYS: process.env.SUBDL_API_KEYS || process.env.SUBDL_API_KEY || '',
+    SUBDL_API_KEY: process.env.SUBDL_API_KEY || '',
+
     // Integração Prowlarr (Agregador de Indexers e Trackers Públicos/Privados)
     PROWLARR_ENABLED: process.env.PROWLARR_ENABLED !== 'false',
     PROWLARR_URL: process.env.PROWLARR_URL || 'http://127.0.0.1:9696',

@@ -7,6 +7,7 @@ const axios = require('axios');
 const iconv = require('iconv-lite');
 const config = require('../../config');
 const SubtitleTranslationService = require('./SubtitleTranslationService');
+const SubdlService = require('./SubdlService');
 
 const execFileAsync = promisify(execFile);
 
@@ -529,8 +530,8 @@ class SubtitlePipeline {
             const isWatermark = /^\[?[a-z0-9\s\.\-_]+\]?$/.test(text) &&
                 (text.includes('english') || text.includes('sub') || text.includes('rip') || text.includes('yts') || text.includes('team') || text.includes('sync'));
             if (isWatermark) continue;
-            // Se houver um salto absurdo de mais de 300s (5 min) de silêncio absoluto entre este cue e o anterior no final do filme
-            if (i > 0 && (cues[i].startMs - cues[i - 1].endMs) > 300000) {
+            // Se houver um salto de mais de 150s (2.5 min) de silêncio absoluto entre este cue e o anterior no final do filme (ex: créditos/cartão de encerramento)
+            if (i > 0 && (cues[i].startMs - cues[i - 1].endMs) > 150000) {
                 continue;
             }
             return cues[i];
@@ -754,6 +755,181 @@ class SubtitlePipeline {
             return null;
         } catch (e) {
             console.warn(`⚠️ [Tier 3: External Search] Erro na busca externa:`, e.message);
+            return null;
+        }
+    }
+
+    /**
+     * TIER 3.5: Fallback de busca estrita PT-BR via API oficial do SubDL com pool de múltiplas chaves e rotação
+     * Acionado APENAS se os endpoints gratuitos do Stremio (Tier 3) não aprovarem nenhuma legenda PT-BR no Duration Gate,
+     * e ANTES de acionar a tradução neural via Gemini.
+     */
+    async fetchSubdlSubtitle(videoPath, metadata = {}, videoDurationSec = 0, refEnCues = null) {
+        if (!SubdlService.isAvailable()) {
+            console.log(`ℹ️ [Tier 3.5: SubDL API] Serviço indisponível: nenhuma chave configurada em SUBDL_API_KEYS.`);
+            return null;
+        }
+
+        try {
+            if (!videoDurationSec || videoDurationSec < 120) {
+                try {
+                    const { stdout } = await execFileAsync('ffprobe', [
+                        '-v', 'quiet', '-print_format', 'json', '-show_format', videoPath
+                    ], { timeout: 15000 });
+                    videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
+                } catch (_) { }
+            }
+
+            console.log(`🌐 [Tier 3.5: SubDL API] Buscando legendas PT-BR no SubDL para "${metadata.nome || metadata.title || path.basename(videoPath)}" (Duração: ${(videoDurationSec / 60).toFixed(1)}m)...`);
+
+            // Resolve IMDb ID e TMDB ID
+            let imdbId = metadata.imdbId;
+            let tmdbId = metadata.tmdbId;
+
+            if (!imdbId && tmdbId) {
+                try {
+                    const extPath = metadata.tipo === 'serie' ? `tv/${tmdbId}` : `movie/${tmdbId}`;
+                    const extRes = await axios.get(`https://api.themoviedb.org/3/${extPath}/external_ids`, {
+                        params: { api_key: config.TMDB_API_KEY },
+                        timeout: 6000
+                    });
+                    if (extRes.data?.imdb_id) {
+                        imdbId = extRes.data.imdb_id;
+                    }
+                } catch (e) { }
+            } else if (!tmdbId && imdbId) {
+                try {
+                    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+                        params: { api_key: config.TMDB_API_KEY, external_source: 'imdb_id' },
+                        timeout: 6000
+                    });
+                    const item = findRes.data?.movie_results?.[0] || findRes.data?.tv_results?.[0];
+                    if (item?.id) tmdbId = item.id;
+                } catch (e) { }
+            }
+
+            if (!imdbId && !tmdbId) {
+                console.warn(`⚠️ [Tier 3.5: SubDL API] Sem IMDb ID ou TMDB ID para consulta no SubDL.`);
+                return null;
+            }
+
+            const searchParams = {
+                imdbId,
+                tmdbId,
+                type: metadata.tipo,
+                season: metadata.season,
+                episode: metadata.episode,
+                title: metadata.nome || metadata.title || path.basename(videoPath)
+            };
+
+            const rawSubtitles = await SubdlService.searchSubtitles(searchParams);
+            if (!rawSubtitles || rawSubtitles.length === 0) {
+                console.warn(`⚠️ [Tier 3.5: SubDL API] Nenhuma legenda PT-BR encontrada no SubDL.`);
+                return null;
+            }
+
+            // Ranqueia os candidatos pelos tokens do release do vídeo antes de baixar
+            const videoFileName = path.basename(videoPath);
+            const rankedSubtitles = SubdlService.rankCandidates(rawSubtitles, videoFileName, metadata);
+
+            console.log(`🌐 [Tier 3.5: SubDL API] ${rankedSubtitles.length} legendas PT-BR encontradas. Avaliando os melhores candidatos com economia de cota...`);
+
+            const videoDir = path.dirname(videoPath);
+
+            // Economia estrita de cota: baixa no máximo os 2 melhores candidatos ranqueados
+            const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 2);
+
+            for (let i = 0; i < maxCandidatesToDownload; i++) {
+                const candidate = rankedSubtitles[i];
+                console.log(`\n📥 [Tier 3.5: SubDL API] Testando candidato #${i + 1}/${maxCandidatesToDownload}: "${candidate.release_name || candidate.name}"...`);
+
+                let extractedSrtPath = null;
+                try {
+                    extractedSrtPath = await SubdlService.downloadAndExtractSubtitle(candidate, videoDir);
+
+                    if (!fs.existsSync(extractedSrtPath)) {
+                        console.warn(`⚠️ [Tier 3.5: SubDL API] Arquivo extraído não encontrado em ${extractedSrtPath}.`);
+                        continue;
+                    }
+
+                    const rawBuffer = await fs.readFile(extractedSrtPath);
+                    const sanitized = this.sanitizeEncoding(rawBuffer);
+                    const candidateLang = candidate.language || candidate.lang || 'BR_PT';
+                    const candidateRel = candidate.release_name || candidate.name || '';
+
+                    // Validação de autenticidade PT-BR
+                    if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel)) {
+                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: texto não validado como PT-BR autêntico.`);
+                        await fs.remove(extractedSrtPath).catch(() => {});
+                        continue;
+                    }
+
+                    const cues = this.parseSrt(sanitized);
+                    if (cues.length < 30) {
+                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: apenas ${cues.length} cues.`);
+                        await fs.remove(extractedSrtPath).catch(() => {});
+                        continue;
+                    }
+
+                    // Duration Gate
+                    if (videoDurationSec > 600) {
+                        const lastPtCue = this.getLastDialogueCue(cues);
+                        const lastCueEndSec = lastPtCue ? lastPtCue.endMs / 1000 : cues[cues.length - 1].endMs / 1000;
+
+                        if (refEnCues && refEnCues.length > 0) {
+                            const lastEnCue = this.getLastDialogueCue(refEnCues);
+                            const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
+                            const endDiff = Math.abs(lastCueEndSec - enLastSec);
+                            if (endDiff > 45) {
+                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
+                                await fs.remove(extractedSrtPath).catch(() => {});
+                                continue;
+                            }
+                            const cueDiffRatio = Math.abs(cues.length - refEnCues.length) / Math.max(1, refEnCues.length);
+                            if (cueDiffRatio > 0.10) {
+                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: ${cues.length} cues PT vs ${refEnCues.length} cues EN (${(cueDiffRatio * 100).toFixed(0)}% divergência > 10% permitido).`);
+                                await fs.remove(extractedSrtPath).catch(() => {});
+                                continue;
+                            }
+                        } else {
+                            const coverageRatio = lastCueEndSec / videoDurationSec;
+                            const gapSec = videoDurationSec - lastCueEndSec;
+                            // Tolera até 12 minutos (720s) de créditos finais e créditos pós-filme em blockbusters
+                            if (coverageRatio < 0.90 && gapSec > 720) {
+                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate: cobertura ${(coverageRatio * 100).toFixed(1)}% (última fala ${(lastCueEndSec / 60).toFixed(1)}min, gap ${Math.round(gapSec)}s).`);
+                                await fs.remove(extractedSrtPath).catch(() => {});
+                                continue;
+                            }
+                        }
+
+                        if (videoDurationSec > 3600 && cues.length < 400) {
+                            console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: apenas ${cues.length} falas para longa-metragem.`);
+                            await fs.remove(extractedSrtPath).catch(() => {});
+                            continue;
+                        }
+                    }
+
+                    // Aprovado no Duration Gate!
+                    const candidateFinalPath = path.join(videoDir, `subdl_ptbr_${Date.now()}_cand${i + 1}.srt`);
+                    await fs.writeFile(candidateFinalPath, this.buildSrt(cues), 'utf8');
+                    await fs.remove(extractedSrtPath).catch(() => {});
+
+                    console.log(`✅ [Tier 3.5: SubDL API] Candidato #${i + 1} APROVADO com sucesso no Duration Gate (${cues.length} cues, release: "${candidate.release_name || candidate.name}")!`);
+                    return {
+                        srtPath: candidateFinalPath,
+                        cueCount: cues.length,
+                        source: 'subdl_api_ptbr'
+                    };
+                } catch (candErr) {
+                    console.warn(`⚠️ [Tier 3.5: SubDL API] Falha ao processar candidato #${i + 1}:`, candErr.message);
+                    if (extractedSrtPath) await fs.remove(extractedSrtPath).catch(() => {});
+                }
+            }
+
+            console.warn(`⚠️ [Tier 3.5: SubDL API] Nenhum dos candidatos testados do SubDL foi aprovado no Duration Gate.`);
+            return null;
+        } catch (err) {
+            console.warn(`⚠️ [Tier 3.5: SubDL API] Erro ao buscar legendas no SubDL:`, err.message);
             return null;
         }
     }
@@ -1101,6 +1277,18 @@ print(f"RESULT:{res}")
             if (tier3) {
                 selectedSrtPath = tier3.srtPath;
                 sourceMethod = 'Tier 3 (Strict External PT-BR Matching via OpenSubtitles)';
+                requiresSync = true;
+            }
+        }
+
+        // TIER 3.5: Fallback de busca PT-BR via SubDL API (Pool com Rotação Automática de Chaves)
+        // Acionado APENAS se os endpoints gratuitos do Stremio (Tier 3) não aprovarem nenhuma legenda PT-BR no Duration Gate,
+        // e ANTES de acionar a tradução neural via Gemini para preservar tokens e cotas.
+        if (!selectedSrtPath) {
+            const tier35 = await this.fetchSubdlSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
+            if (tier35) {
+                selectedSrtPath = tier35.srtPath;
+                sourceMethod = 'Tier 3.5 (SubDL API Official Fallback)';
                 requiresSync = true;
             }
         }

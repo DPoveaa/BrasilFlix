@@ -7,6 +7,7 @@ yarn-error.log*
 # Arquivos de dados
 data/
 *.json
+!package.json
 
 # Logs
 logs/

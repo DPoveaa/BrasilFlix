@@ -1,0 +1,45 @@
+{
+  "name": "Brasilflix-bot",
+  "version": "1.0.0",
+  "description": "Bot do Telegram para gerenciar filmes e sÃ©ries",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "nodemon main.js",
+    "clear-queue": "node clear_queue.js",
+    "deploy": "node deploy_server.js",
+    "webhook": "node webhook.js",
+    "webhook:dev": "nodemon webhook.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "filmes",
+    "series"
+  ],
+  "author": "Povea",
+  "license": "MIT",
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "axios": "^1.6.0",
+    "cheerio": "^1.1.0",
+    "cloudscraper": "^4.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "form-data": "^4.0.6",
+    "fs-extra": "^11.1.1",
+    "mercadopago": "^1.5.8",
+    "multer": "^2.2.0",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.64.0",
+    "pg": "^8.23.0",
+    "puppeteer-core": "^24.43.1",
+    "sql.js": "^1.14.2",
+    "ssh2": "^1.17.0",
+    "telegram": "^2.26.22",
+    "webtorrent": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
