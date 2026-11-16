@@ -5,24 +5,137 @@ const config = require('../../config');
 
 class SubtitleTranslationService {
     constructor() {
-        this.modelName = config.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        this.modelName = config.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
         this.batchSize = 90; // Bloco de 80 a 100 falas por requisição
         this.contextSize = 3; // Últimas 3 falas anteriores como contexto de leitura
+
+        // Gerenciamento de Pool de Chaves com Round-Robin e Failover
+        this.globalKeyCounter = 0;
+        this.cooldowns = new Map(); // key -> timestamp em ms até quando está em cooldown
     }
 
     /**
-     * Retorna a chave de API do Gemini configurada no ambiente
+     * Retorna todas as chaves de API do Gemini configuradas no pool
+     * Suporta GEMINI_API_KEYS=key1,key2,key3 com fallback para GEMINI_API_KEY única
      */
-    getApiKey() {
-        return config.GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+    getAllKeys() {
+        const raw = config.GEMINI_API_KEYS || process.env.GEMINI_API_KEYS || config.GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+        if (!raw || typeof raw !== 'string') return [];
+        return raw.split(',')
+            .map(k => k.trim())
+            .filter(k => k.length > 10);
     }
 
     /**
-     * Verifica se o serviço de IA está disponível (chave configurada)
+     * Retorna uma representação segura da chave mascarando o início (ex: '...ABCD')
+     */
+    maskKey(key) {
+        if (!key || typeof key !== 'string') return 'N/A';
+        const visible = key.slice(-4);
+        return `...${visible}`;
+    }
+
+    /**
+     * Verifica se o serviço de IA está disponível (pelo menos uma chave configurada)
      */
     isAvailable() {
-        const key = this.getApiKey();
-        return typeof key === 'string' && key.trim().length > 10;
+        const keys = this.getAllKeys();
+        return keys.length > 0;
+    }
+
+    /**
+     * Verifica se uma chave está atualmente em cooldown ativo
+     */
+    isKeyInCooldown(key) {
+        const availableAt = this.cooldowns.get(key);
+        if (!availableAt) return false;
+        if (Date.now() >= availableAt) {
+            this.cooldowns.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Atribui uma chave dedicada para um filme específico via Round-Robin.
+     * Garante que filmes em paralelo usem chaves distintas para evitar esgotamento de RPM.
+     */
+    acquireDedicatedKeyForMovie(movieIdentifier = 'default') {
+        const keys = this.getAllKeys();
+        if (keys.length === 0) {
+            throw new Error('Nenhuma chave GEMINI_API_KEY ou GEMINI_API_KEYS configurada no ambiente.');
+        }
+
+        // Tenta encontrar uma chave saudável a partir do índice de round-robin
+        const total = keys.length;
+        let chosenKey = null;
+        let chosenIndex = -1;
+
+        for (let attempt = 0; attempt < total; attempt++) {
+            const idx = (this.globalKeyCounter + attempt) % total;
+            const candidate = keys[idx];
+            if (!this.isKeyInCooldown(candidate)) {
+                chosenKey = candidate;
+                chosenIndex = idx;
+                this.globalKeyCounter = (idx + 1) % total;
+                break;
+            }
+        }
+
+        // Se todas as chaves estiverem em cooldown, seleciona a que tiver o cooldown mais próximo de expirar
+        if (!chosenKey) {
+            let earliestTime = Infinity;
+            keys.forEach((k, idx) => {
+                const t = this.cooldowns.get(k) || 0;
+                if (t < earliestTime) {
+                    earliestTime = t;
+                    chosenKey = k;
+                    chosenIndex = idx;
+                }
+            });
+            console.warn(`⚠️ [Gemini Key Manager] Todas as chaves estão em cooldown. Reutilizando Chave #${chosenIndex + 1}/${total} (${this.maskKey(chosenKey)}).`);
+        } else {
+            console.log(`🔑 [Gemini Key Manager] Filme "${movieIdentifier}": Chave dedicada atribuída #${chosenIndex + 1}/${total} (${this.maskKey(chosenKey)})`);
+        }
+
+        return { key: chosenKey, index: chosenIndex, total };
+    }
+
+    /**
+     * Executa failover automático quando uma chave sofre 429, 503 ou timeout.
+     * Coloca a chave falha em cooldown de 60s e troca para a próxima chave saudável.
+     */
+    rotateKeyOnFailure(failedKey, movieIdentifier = '', reason = '') {
+        const keys = this.getAllKeys();
+        const total = keys.length;
+        const failedIdx = keys.indexOf(failedKey);
+
+        // Aplica cooldown de 60 segundos na chave com erro
+        const cooldownMs = 60000;
+        this.cooldowns.set(failedKey, Date.now() + cooldownMs);
+
+        console.warn(`🔄 [Gemini Key Failover] Chave #${failedIdx + 1}/${total} (${this.maskKey(failedKey)}) sofreu falha [${reason}]. Colocada em cooldown de 60s.`);
+
+        if (total === 1) {
+            console.warn(`⚠️ [Gemini Key Failover] Pool possui apenas 1 chave. Aguardando 10s antes de retentar com a mesma chave...`);
+            return { key: failedKey, index: 0, total: 1, waited: true };
+        }
+
+        // Procura a próxima chave saudável
+        for (let i = 1; i <= total; i++) {
+            const nextIdx = (failedIdx + i) % total;
+            const candidate = keys[nextIdx];
+            if (!this.isKeyInCooldown(candidate)) {
+                console.log(`✅ [Gemini Key Failover] Filme "${movieIdentifier}": Alternando com sucesso para Chave #${nextIdx + 1}/${total} (${this.maskKey(candidate)}).`);
+                return { key: candidate, index: nextIdx, total, waited: false };
+            }
+        }
+
+        // Se todas estiverem em cooldown, pega a chave seguinte
+        const nextIdx = (failedIdx + 1) % total;
+        const candidate = keys[nextIdx];
+        console.warn(`⚠️ [Gemini Key Failover] Todas as chaves do pool estão em cooldown. Alternando para Chave #${nextIdx + 1}/${total} (${this.maskKey(candidate)}).`);
+        return { key: candidate, index: nextIdx, total, waited: false };
     }
 
     /**
@@ -74,15 +187,28 @@ class SubtitleTranslationService {
     }
 
     /**
+     * Converte conteúdo de SRT para WebVTT (.vtt) padronizado para o player web
+     */
+    convertSrtToVtt(srtContent) {
+        if (!srtContent) return 'WEBVTT\n\n';
+        const normalized = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        // Converte vírgula decimal de milissegundos para ponto: 00:01:23,456 -> 00:01:23.456
+        const vttBody = normalized.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+        return `WEBVTT\n\n${vttBody}\n`;
+    }
+
+    /**
      * Traduz um lote de falas via API do Google Gemini com saída estruturada.
      * ZERO envio de timecodes para a IA: envia estritamente array de { id, text }.
      * Envia também até 3 falas anteriores apenas como contexto estático de leitura.
      */
-    async translateBatchWithGemini(itemsToTranslate, previousContext = [], retry = 0) {
-        const apiKey = this.getApiKey();
-        if (!apiKey) {
-            throw new Error('GEMINI_API_KEY não configurada no ambiente.');
+    async translateBatchWithGemini(itemsToTranslate, previousContext = [], activeKeyObj, movieTitle = '', retry = 0) {
+        if (!activeKeyObj) {
+            activeKeyObj = this.acquireDedicatedKeyForMovie(movieTitle || 'default');
         }
+        const apiKey = activeKeyObj.key;
+        const keyIndex = activeKeyObj.index;
+        const totalKeys = activeKeyObj.total;
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent`;
 
@@ -169,11 +295,26 @@ class SubtitleTranslationService {
                 };
             });
         } catch (err) {
+            const statusCode = err.response?.status;
+            const isRateLimitOrTimeout = statusCode === 429 || statusCode === 503 || err.code === 'ECONNABORTED' || err.message.includes('timeout') || err.message.includes('Resource has been exhausted');
+
+            if (isRateLimitOrTimeout) {
+                if (retry >= 3) {
+                    throw new Error(`Limite de retentativas atingido para lote com chave em failover: ${err.message}`);
+                }
+                const failoverKeyObj = this.rotateKeyOnFailure(apiKey, movieTitle, `Status ${statusCode || err.code || 'timeout'}`);
+                if (failoverKeyObj.waited) {
+                    await new Promise(r => setTimeout(r, 10000));
+                }
+                // Retoma exatamente o mesmo lote com a nova chave saudável
+                return this.translateBatchWithGemini(itemsToTranslate, previousContext, failoverKeyObj, movieTitle, retry + 1);
+            }
+
             if (retry < 2) {
-                const backoffMs = (retry + 1) * 2500;
-                console.warn(`⚠️ [SubtitleTranslation] Tentativa ${retry + 1} falhou para lote (${err.message}). Retentando em ${backoffMs / 1000}s...`);
+                const backoffMs = (retry + 1) * 2000;
+                console.warn(`⚠️ [SubtitleTranslation] Tentativa ${retry + 1} falhou para lote com Chave #${keyIndex + 1}/${totalKeys} (${err.message}). Retentando em ${backoffMs / 1000}s...`);
                 await new Promise(r => setTimeout(r, backoffMs));
-                return this.translateBatchWithGemini(itemsToTranslate, previousContext, retry + 1);
+                return this.translateBatchWithGemini(itemsToTranslate, previousContext, activeKeyObj, movieTitle, retry + 1);
             }
             throw err;
         }
@@ -188,7 +329,7 @@ class SubtitleTranslationService {
      */
     async translateSrt(srtContent, options = {}) {
         if (!this.isAvailable()) {
-            throw new Error('Serviço de tradução neural indisponível: GEMINI_API_KEY não configurada no .env.');
+            throw new Error('Serviço de tradução neural indisponível: nenhuma chave GEMINI_API_KEY ou GEMINI_API_KEYS configurada no .env.');
         }
 
         const originalCues = this.parseSrt(srtContent);
@@ -197,7 +338,12 @@ class SubtitleTranslationService {
         }
 
         const title = options.title || options.nome || 'Mídia';
-        console.log(`🤖 [Neural Subtitle Translation: "${title}"] Iniciando tradução via Gemini API (${this.modelName}) | Total: ${originalCues.length} falas...`);
+
+        // 1. Atribui 1 chave dedicada por filme via round-robin
+        let activeKeyObj = this.acquireDedicatedKeyForMovie(title);
+
+        console.log(`🤖 [Neural Subtitle Translation: "${title}"] Iniciando tradução via Gemini API (${this.modelName})`);
+        console.log(`🔑 [Pool de Chaves] Chave em uso: #${activeKeyObj.index + 1}/${activeKeyObj.total} (${this.maskKey(activeKeyObj.key)}) | Total de falas: ${originalCues.length}...`);
 
         const translatedCues = [];
         const totalBatches = Math.ceil(originalCues.length / this.batchSize);
@@ -210,18 +356,18 @@ class SubtitleTranslationService {
             // Coleta até 3 falas traduzidas do lote anterior como contexto de leitura
             const prevContext = translatedCues.slice(-this.contextSize);
 
-            console.log(`🔄 [Neural Translation: "${title}"] Processando lote ${b + 1}/${totalBatches} (falas ${start + 1} a ${end})...`);
-            
-            const translatedBatch = await this.translateBatchWithGemini(batch, prevContext);
+            console.log(`🔄 [Neural Translation: "${title}"] Lote ${b + 1}/${totalBatches} (falas ${start + 1} a ${end}) | Chave #${activeKeyObj.index + 1}/${activeKeyObj.total} (${this.maskKey(activeKeyObj.key)})...`);
+
+            const translatedBatch = await this.translateBatchWithGemini(batch, prevContext, activeKeyObj, title);
             translatedCues.push(...translatedBatch);
 
             if (options.onBatch && typeof options.onBatch === 'function') {
                 options.onBatch(b + 1, totalBatches);
             }
 
-            // Intervalo suave entre requisições para evitar rate-limiting de RPM/TPM
+            // Intervalo suave entre requisições para respeitar RPM
             if (b + 1 < totalBatches) {
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 600));
             }
         }
 
@@ -231,11 +377,11 @@ class SubtitleTranslationService {
     }
 
     /**
-     * Traduz um arquivo SRT em disco e grava o resultado preservando timecodes exatos.
+     * Traduz um arquivo SRT em disco e grava os resultados em SRT e VTT preservando timecodes exatos.
      * @param {string} inputSrtPath Caminho do SRT em inglês (.srt)
      * @param {string} outputSrtPath Caminho de saída para o SRT traduzido em PT-BR (.srt)
      * @param {object} options Opções adicionais
-     * @returns {Promise<string>} Caminho do arquivo SRT gerado
+     * @returns {Promise<{ srtPath: string, vttPath: string }>} Caminhos dos arquivos gerados
      */
     async translateSrtFile(inputSrtPath, outputSrtPath, options = {}) {
         if (!fs.existsSync(inputSrtPath)) {
@@ -243,11 +389,20 @@ class SubtitleTranslationService {
         }
 
         const srtContent = await fs.readFile(inputSrtPath, 'utf8');
-        const translatedContent = await this.translateSrt(srtContent, options);
+        const translatedSrtContent = await this.translateSrt(srtContent, options);
 
         await fs.ensureDir(path.dirname(outputSrtPath));
-        await fs.writeFile(outputSrtPath, translatedContent, 'utf8');
-        return outputSrtPath;
+        await fs.writeFile(outputSrtPath, translatedSrtContent, 'utf8');
+
+        // Gera e salva automaticamente o formato .vtt lado a lado para o player web
+        const outputVttPath = outputSrtPath.replace(/\.srt$/i, '.vtt');
+        const vttContent = this.convertSrtToVtt(translatedSrtContent);
+        await fs.writeFile(outputVttPath, vttContent, 'utf8');
+
+        return {
+            srtPath: outputSrtPath,
+            vttPath: outputVttPath
+        };
     }
 }
 

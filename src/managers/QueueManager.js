@@ -2394,10 +2394,20 @@ class QueueManager extends EventEmitter {
                     const subtitleMarkerPath = `${optimizedPath}.subtitled`;
                     const hasSubMarker = fs.existsSync(subtitleMarkerPath);
 
-                    // Validação de cache para legendado/dual:
-                    // Aceita se houver marcador de conclusão de hardsub (.subtitled) OU stream embutido no container.
-                    if (needsSub && !hasSubStream && !hasSubMarker) {
-                        console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui marcador de hardsub (.subtitled) nem trilha de legendas exigida pelo job (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
+                    // Validação de cache para legendado/dual (Softsub mov_text / WebSub / Legenda embutida):
+                    let hasWebSub = false;
+                    try {
+                        const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+                        if (fs.existsSync(subtitlesDir)) {
+                            const baseId = (job.tmdbId || metadata.tmdbId || metadata.imdbId || (metadata.nome || job.title || '').toLowerCase().replace(/[^a-z0-9]/g, '_')).toString();
+                            const files = fs.readdirSync(subtitlesDir);
+                            hasWebSub = files.some(f => f.startsWith(baseId) && (f.includes('_ptbr_') || f.endsWith('.vtt') || f.endsWith('.srt')));
+                        }
+                    } catch (_) { }
+
+                    // Aceita se houver stream de legenda embutido (softsub mov_text), marcador de conclusão, ou arquivos web persistidos.
+                    if (needsSub && !hasSubStream && !hasSubMarker && !hasWebSub) {
+                        console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui faixa de legenda softsub, marcador (.subtitled) nem arquivos web persistidos para job legendado (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
                         await DownloaderManager.cleanupFile(optimizedPath);
                         await fs.remove(subtitleMarkerPath).catch(() => { });
                         optimizedPath = null;
@@ -3931,7 +3941,8 @@ class QueueManager extends EventEmitter {
                     audio: metadata.audio,
                     isDublado: metadata.isDublado,
                     isLegendado: metadata.isLegendado,
-                    tmdbId: metadata.tmdbId
+                    tmdbId: metadata.tmdbId,
+                    legendas: metadata.webSubtitles || []
                 });
             } else {
                 await this.catalogoManager.adicionarFilme(
@@ -3942,7 +3953,8 @@ class QueueManager extends EventEmitter {
                     true,
                     {
                         ...metadata,
-                        fileId: uploadResult.fileId
+                        fileId: uploadResult.fileId,
+                        legendas: metadata.webSubtitles || []
                     }
                 );
             }

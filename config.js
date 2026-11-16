@@ -83,8 +83,9 @@ module.exports = {
     ECO_TELEGRAM_SOCKETS: parseInt(process.env.ECO_TELEGRAM_SOCKETS || '1', 10),
 
     // Inteligência Artificial & Tradução de Legendas
+    GEMINI_API_KEYS: process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
-    GEMINI_MODEL: process.env.GEMINI_MODEL || process.env.SUBTITLE_TRANSLATION_MODEL || 'gemini-2.5-flash',
+    GEMINI_MODEL: process.env.GEMINI_MODEL || process.env.SUBTITLE_TRANSLATION_MODEL || 'gemini-3.5-flash-lite',
 
     // Integração Prowlarr (Agregador de Indexers e Trackers Públicos/Privados)
     PROWLARR_ENABLED: process.env.PROWLARR_ENABLED !== 'false',

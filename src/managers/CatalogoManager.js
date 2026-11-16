@@ -1419,14 +1419,16 @@ class CatalogoManager {
                 isDublado,
                 isLegendado,
                 audio: metadadosExtras.audio,
-                tmdbId: metadadosExtras.tmdbId || existente.tmdbId
+                tmdbId: metadadosExtras.tmdbId || existente.tmdbId,
+                legendas: metadadosExtras.legendas || metadadosExtras.webSubtitles || []
             });
             return { success: true, message: 'Versão atualizada no catálogo', item: existente };
         }
 
+        const legendasArray = metadadosExtras.legendas || metadadosExtras.webSubtitles || [];
         const versoes = {
             dublado: isDublado ? { messageId: messageId ? Number(messageId) : null, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null,
-            legendado: isLegendado ? { messageId: messageId ? Number(messageId) : null, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false } : null
+            legendado: isLegendado ? { messageId: messageId ? Number(messageId) : null, fileId: metadadosExtras.fileId || null, qualidade: metadadosExtras.qualidade || '1080p', isCam: metadadosExtras.isCam || false, legendas: legendasArray } : null
         };
 
         // Persistência no PostgreSQL
@@ -1437,9 +1439,9 @@ class CatalogoManager {
                 INSERT INTO filmes (
                     nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
                     nota, tmdb_id, imdb_id, message_id, file_id, qualidade, audio,
-                    is_dublado, is_legendado, is_cam, versoes, slug, created_at, updated_at
+                    is_dublado, is_legendado, is_cam, versoes, slug, legendas, created_at, updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW()
                 ) RETURNING id
             `, [
                 nome.trim(), metadadosExtras.nomeOriginal || nome.trim(),
@@ -1457,7 +1459,8 @@ class CatalogoManager {
                 metadadosExtras.audio || (isDublado && isLegendado ? 'Dub/Leg (Dublado + Legendado)' : (isDublado ? 'Dublado (Áudio PT-BR)' : (isLegendado ? 'Legendado (PT-BR)' : 'Indisponível'))),
                 isDublado, isLegendado, metadadosExtras.isCam || false,
                 JSON.stringify(versoes),
-                slugVal
+                slugVal,
+                JSON.stringify(legendasArray)
             ]);
             dbId = res.rows[0]?.id;
         } catch (e) {
@@ -1521,13 +1524,16 @@ class CatalogoManager {
         }
 
         if (isNovaLeg) {
+            const legendasArray = novaMidia.legendas || novaMidia.webSubtitles || (filme.versoes?.legendado?.legendas || filme.legendas || []);
             filme.versoes.legendado = {
                 messageId: novaMidia.messageId ? Number(novaMidia.messageId) : (filme.versoes?.legendado?.messageId || null),
                 notifMessageId: novaMidia.notifMessageId || filme.versoes?.legendado?.notifMessageId || null,
                 fileId: novaMidia.fileId || (filme.versoes?.legendado?.fileId || null),
                 qualidade: novaMidia.qualidade || filme.qualidade,
-                isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam
+                isCam: typeof novaMidia.isCam === 'boolean' ? novaMidia.isCam : filme.isCam,
+                legendas: legendasArray
             };
+            filme.legendas = legendasArray;
             if (!filme.versoes?.dublado?.messageId) {
                 filme.messageId = novaMidia.messageId || filme.messageId;
                 filme.fileId = novaMidia.fileId || filme.fileId;
@@ -1547,11 +1553,13 @@ class CatalogoManager {
             await db.query(`
                 UPDATE filmes SET 
                     message_id = $1, file_id = $2, qualidade = $3, audio = $4,
-                    is_dublado = $5, is_legendado = $6, is_cam = $7, versoes = $8, updated_at = NOW()
-                WHERE id = $9
+                    is_dublado = $5, is_legendado = $6, is_cam = $7, versoes = $8,
+                    legendas = $9, updated_at = NOW()
+                WHERE id = $10
             `, [
                 filme.messageId, filme.fileId, filme.qualidade, filme.audio,
-                filme.isDublado, filme.isLegendado, filme.isCam, JSON.stringify(filme.versoes), filme.id
+                filme.isDublado, filme.isLegendado, filme.isCam, JSON.stringify(filme.versoes),
+                JSON.stringify(filme.legendas || []), filme.id
             ]);
         } catch (e) {
             console.error('❌ Erro ao atualizar filme no PostgreSQL:', e.message);
@@ -1802,12 +1810,13 @@ class CatalogoManager {
             if (existingVersoes.legendado.notifMessageId) oldMsgIdsToDelete.push(existingVersoes.legendado.notifMessageId);
         }
 
+        const epLegendas = metadados.legendas || metadados.webSubtitles || (existingVersoes.legendado?.legendas || []);
         const versoes = {
             dublado: isDub
                 ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
                 : ((existingVersoes.dublado && (existingVersoes.dublado.messageId || existingVersoes.dublado.fileId)) ? existingVersoes.dublado : null),
             legendado: isLeg
-                ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }
+                ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p', legendas: epLegendas }
                 : ((existingVersoes.legendado && (existingVersoes.legendado.messageId || existingVersoes.legendado.fileId)) ? existingVersoes.legendado : null)
         };
 
@@ -1841,9 +1850,9 @@ class CatalogoManager {
             await db.query(`
                 INSERT INTO episodios (
                     serie_id, temporada_numero, numero, nome, sinopse,
-                    message_id, file_id, qualidade, audio, is_dublado, is_legendado, versoes, still_url, duracao, created_at
+                    message_id, file_id, qualidade, audio, is_dublado, is_legendado, versoes, still_url, duracao, legendas, created_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
                 ) ON CONFLICT (serie_id, temporada_numero, numero) DO UPDATE SET
                     nome = CASE
                         WHEN EXCLUDED.nome IS NOT NULL AND EXCLUDED.nome != '' AND EXCLUDED.nome NOT LIKE 'Episódio %' THEN EXCLUDED.nome
@@ -1859,7 +1868,8 @@ class CatalogoManager {
                     audio = EXCLUDED.audio,
                     is_dublado = EXCLUDED.is_dublado,
                     is_legendado = EXCLUDED.is_legendado,
-                    versoes = EXCLUDED.versoes
+                    versoes = EXCLUDED.versoes,
+                    legendas = EXCLUDED.legendas
             `, [
                 serie.id, temporadaNum, episodioNum,
                 metadados.episodioNome || `Episódio ${episodioNum}`,
@@ -1870,7 +1880,8 @@ class CatalogoManager {
                 finalIsDub, finalIsLeg,
                 JSON.stringify(versoes),
                 metadados.stillUrl || null,
-                metadados.duracao || null
+                metadados.duracao || null,
+                JSON.stringify(epLegendas || [])
             ]);
 
             await db.query(`

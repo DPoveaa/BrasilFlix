@@ -1125,8 +1125,29 @@ print(f"RESULT:{res}")
                     });
 
                     if (fs.existsSync(translatedPtBrPath)) {
+                        // 3. Quality Gate obrigatório na saída traduzida
+                        console.log(`🔍 [Tier 3 Fallback] Executando Quality Gate na legenda traduzida pelo Gemini...`);
+                        await this.validateAndFinalizeSubtitle(translatedPtBrPath, videoDurationSec);
+
+                        // 4. Whisper Verification obrigatória — timecodes já travados na âncora, tolerância ±1.5s
+                        console.log(`🎙️ [Tier 3 Fallback] Executando verificação Whisper ASR na legenda traduzida...`);
+                        const whisperTranslated = await this.verifySyncAtCheckpoints(
+                            videoPath, translatedPtBrPath, videoDurationSec,
+                            refEnSyncPath, // âncora para validação de conteúdo via tokens EN
+                            '1.5'
+                        );
+                        for (const cp of whisperTranslated.checkpoints || []) {
+                            const st = cp.in_sync ? '✅' : '❌';
+                            const off = cp.measured_offset_sec !== undefined ? `${cp.measured_offset_sec > 0 ? '+' : ''}${cp.measured_offset_sec}s` : 'N/A';
+                            console.log(`   ${st} ${cp.name} [${cp.cue_timecode || ''}]: Offset: ${off} | "${(cp.spoken_text || '').substring(0, 50)}"`);
+                        }
+                        if (!whisperTranslated.verified) {
+                            throw new Error(`Quality Gate: Legenda traduzida pelo Gemini reprovada no Whisper ASR (${(whisperTranslated.checkpoints || []).filter(c => !c.in_sync).map(c => c.name).join(', ')}).`);
+                        }
+                        console.log(`✅ [Tier 3 Fallback] Legenda traduzida aprovada no Quality Gate + Whisper ASR!`);
+
                         selectedSrtPath = translatedPtBrPath;
-                        sourceMethod = `Tier 3 (Neural Gemini AI Translation from English Anchor [${SubtitleTranslationService.modelName}])`;
+                        sourceMethod = `Tier 3 (Neural Gemini AI Translation from English Anchor [${SubtitleTranslationService.modelName}]) | Quality Gate ✅ | Whisper ✅`;
                         requiresSync = false; // Timecodes já estão matematicamente travados na âncora sincronizada!
                     }
                 } catch (transErr) {

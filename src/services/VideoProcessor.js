@@ -9,6 +9,7 @@ const SubtitlePipeline = require('./SubtitlePipeline');
 const SpeechLanguageService = require('./SpeechLanguageService');
 const HardsubDetectorService = require('./HardsubDetectorService');
 const BetWatermarkDetectorService = require('./BetWatermarkDetectorService');
+const SubtitleTranslationService = require('./SubtitleTranslationService');
 
 let activeTranscodes = 0;
 const transcodeWaiters = [];
@@ -1172,7 +1173,9 @@ ${events.join('\n')}
         const resolvedOriginalLang = this.resolveOriginalLanguage(metadata, info.audioStreams);
         metadata.idiomaOriginal = metadata.idiomaOriginal || metadata.originalLanguage || resolvedOriginalLang || null;
         metadata.originalLanguage = metadata.idiomaOriginal;
-        metadata.srtPath = null;
+        if (!metadata.srtPath || !fs.existsSync(metadata.srtPath)) {
+            metadata.srtPath = null;
+        }
         const wantLegendadoOnly = metadata.isLegendado === true && metadata.isDublado === false;
         let isConfirmedDublado = this.streamMatchesLanguage(effectiveAudioStream, 'pt') && !wantLegendadoOnly;
 
@@ -1257,6 +1260,44 @@ ${events.join('\n')}
         metadata.isDublado = isConfirmedDublado;
         metadata.isLegendado = !isConfirmedDublado;
 
+        // Se o release for legendado e ainda não tiver legenda definida, obtém pelo SubtitlePipeline
+        let cleanupGeneratedSrt = false;
+        if (!isConfirmedDublado && (!metadata.srtPath || !fs.existsSync(metadata.srtPath))) {
+            let srtPath = null;
+            try {
+                const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
+                    ...metadata,
+                    nome: metadata.nome || metadata.title,
+                    nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
+                    idioma: 'pt-BR'
+                });
+                srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
+                if (srtPath) {
+                    console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
+                }
+            } catch (pipelineErr) {
+                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline cinema-grade: ${pipelineErr.message}. Tentando fallback SubtitleAudioService...`);
+            }
+
+            // Fallback: SubtitleAudioService (transcrição Whisper) se pipeline falhar
+            if (!srtPath) {
+                srtPath = await SubtitleAudioService.create(inputPath, effectiveAudioIndex, {
+                    title: optTitle,
+                    onProgress,
+                    subtitleStreams: info.subtitleStreams,
+                    isEuropeanPortuguese: content => this.isEuropeanPortugueseSubtitle(content)
+                });
+            }
+
+            metadata.srtPath = srtPath;
+            cleanupGeneratedSrt = true;
+        }
+
+        // Persistência de legendas em formato .srt e .vtt para o site e painel admin
+        if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
+            await this.persistWebSubtitles(metadata, metadata.srtPath, metadata.refEnPath);
+        }
+
         // 2. Verificação de Hardsub Visual na Imagem (OCR Multiponto)
         try {
             console.log(`🔍 [Validação de Hardsub] Verificando imagem em 5 pontos para detectar legendas fixas indesejadas...`);
@@ -1308,22 +1349,41 @@ ${events.join('\n')}
 
         let finalPath;
 
-        // Se for comprovadamente Dublado (e sem necessidade de queimar legendas), faz Remux Rápido quando compatível
-        if (isConfirmedDublado && isUnderSizeLimit && isFastCodec && isResolutionFine) {
-            console.log(`⚡ [${optTitle}] Vídeo já está em 1080p H.264 compatível (${info.sizeMB} MB). Fazendo Remux Rápido com normalização universal de áudio AAC...`);
-            console.log(`🔊 Faixa de áudio selecionada: Stream 0:a:${effectiveAudioIndex} [${effectiveAudioStream?.codec?.toUpperCase()} | ${effectiveAudioStream?.channels} canais | lang: ${effectiveAudioStream?.language}]`);
+        // FIM DO HARDSUB: Vídeos H.264 compatíveis (Dublados ou Legendados) utilizam Remux Rápido em segundos sem recodificar
+        const canRemuxFast = isUnderSizeLimit && isFastCodec && isResolutionFine;
+        if (canRemuxFast) {
+            const hasSub = metadata.srtPath && fs.existsSync(metadata.srtPath);
+            console.log(`⚡ [${optTitle}] Vídeo compatível (${info.sizeMB} MB). Fazendo Remux Rápido (${hasSub ? 'Softsub mov_text' : 'Sem legendas'})...`);
+            console.log(`🔊 Faixa de áudio: Stream 0:a:${effectiveAudioIndex} [${effectiveAudioStream?.codec?.toUpperCase()} | ${effectiveAudioStream?.channels} canais | lang: ${effectiveAudioStream?.language}]`);
 
             finalPath = await new Promise((resolve, reject) => {
                 const remuxArgs = [
                     '-nostdin',
-                    '-i', inputPath,
-                    '-c:v', 'copy', // Cópia direta do vídeo sem reprocessamento
-                    '-map', '0:v:0',
-                    '-map', `0:a:${effectiveAudioIndex}`,
-                    '-disposition:a:0', 'default',
-                    '-sn' // Dublado: nunca embutir softsubs (evita PT Forced/Full na tela)
+                    '-i', inputPath
                 ];
 
+                let inputCount = 1;
+                let ptSubInputIdx = null;
+                let enSubInputIdx = null;
+
+                if (hasSub) {
+                    remuxArgs.push('-i', metadata.srtPath);
+                    ptSubInputIdx = inputCount++;
+                }
+
+                if (metadata.refEnPath && fs.existsSync(metadata.refEnPath) && metadata.refEnPath !== metadata.srtPath) {
+                    remuxArgs.push('-i', metadata.refEnPath);
+                    enSubInputIdx = inputCount++;
+                }
+
+                remuxArgs.push(
+                    '-c:v', 'copy', // Cópia direta dos frames sem perda de qualidade nem uso de CPU
+                    '-map', '0:v:0',
+                    '-map', `0:a:${effectiveAudioIndex}`,
+                    '-disposition:a:0', 'default'
+                );
+
+                // Normalização universal do áudio para AAC estéreo
                 const isSimpleAacStereo = effectiveAudioStream &&
                     effectiveAudioStream.codec === 'aac' &&
                     effectiveAudioStream.channels <= 2;
@@ -1332,6 +1392,27 @@ ${events.join('\n')}
                     remuxArgs.push('-c:a', 'copy');
                 } else {
                     remuxArgs.push('-c:a', 'aac', '-b:a', '256k', '-ac', '2', '-ar', '48000', '-af', 'aresample=async=1000:first_pts=0');
+                }
+
+                // Inserção de legendas Softsub nativas no container MP4 (mov_text)
+                if (hasSub) {
+                    remuxArgs.push('-c:s', 'mov_text');
+                    remuxArgs.push(
+                        '-map', `${ptSubInputIdx}:0`,
+                        '-metadata:s:s:0', 'language=por',
+                        '-metadata:s:s:0', 'title=Português (Brasil)',
+                        '-disposition:s:0', 'default'
+                    );
+
+                    if (enSubInputIdx !== null) {
+                        remuxArgs.push(
+                            '-map', `${enSubInputIdx}:0`,
+                            '-metadata:s:s:1', 'language=eng',
+                            '-metadata:s:s:1', 'title=English'
+                        );
+                    }
+                } else {
+                    remuxArgs.push('-sn');
                 }
 
                 const tempOutputPath = `${outputPath}.tmp.mp4`;
@@ -1411,46 +1492,9 @@ ${events.join('\n')}
                     this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata).then(resolve).catch(reject);
                 });
             });
-        } else if (isConfirmedDublado) {
-            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
         } else {
-            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // Cinema-Grade Subtitle Pipeline (4-Tier + Quality Gate + Verification)
-            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            let srtPath = null;
-            try {
-                const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
-                    ...metadata,
-                    nome: metadata.nome || metadata.title,
-                    nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
-                    idioma: 'pt-BR'
-                });
-                srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
-                if (srtPath) {
-                    console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
-                }
-            } catch (pipelineErr) {
-                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline cinema-grade: ${pipelineErr.message}. Tentando fallback SubtitleAudioService...`);
-            }
-
-            // Fallback: SubtitleAudioService (transcrição Whisper) se pipeline falhar
-            if (!srtPath) {
-                srtPath = await SubtitleAudioService.create(inputPath, effectiveAudioIndex, {
-                    title: optTitle,
-                    onProgress,
-                    subtitleStreams: info.subtitleStreams,
-                    isEuropeanPortuguese: content => this.isEuropeanPortugueseSubtitle(content)
-                });
-            }
-
-            metadata.srtPath = srtPath;
-            try {
-                finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
-            } finally {
-                await fs.remove(path.dirname(srtPath)).catch(() => { });
-                delete metadata.srtPath;
-                delete metadata._hardsubAssPath;
-            }
+            // Vídeo não compatível com Remux Rápido (ex: 4K, HEVC, perfil incompatible) -> Recodificação Full HD com softsub mov_text
+            finalPath = await this.encodeVideoFull(inputPath, outputPath, info, effectiveAudioIndex, onProgress, metadata);
         }
 
         // Validação Pós-Conversão: Duração do arquivo de saída deve ser consistente
@@ -1544,37 +1588,10 @@ ${events.join('\n')}
                 ? `${metadata.nome || metadata.title || path.basename(inputPath)} (T${metadata.season || 1}E${metadata.episode || 1})`
                 : (metadata.nome || metadata.title || path.basename(inputPath));
 
-            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${maxTranscodes}${metadata.srtPath ? ', Legenda Queimada: SIM' : ''})...\x1b[0m`);
+            const hasSub = metadata.srtPath && fs.existsSync(metadata.srtPath);
+            const hasEnSub = metadata.refEnPath && fs.existsSync(metadata.refEnPath) && metadata.refEnPath !== metadata.srtPath;
 
-            // Escala alvo para hardsub (PlayRes do ASS deve bater com o frame de saída)
-            const outW = Math.min(1920, info.width || 1920);
-            const outH = info.height && info.width
-                ? Math.round((Math.min(1920, info.width) / info.width) * info.height)
-                : (info.height || 1080);
-
-            let hardsubPath = null;
-            let tempSanitizedSrt = null;
-            const isHardsubApplied = !!(metadata.srtPath);
-
-            if (metadata.srtPath) {
-                if (!fs.existsSync(metadata.srtPath)) {
-                    throw Object.assign(new Error('Arquivo de legenda indisponível na codificação.'), { code: 'SUBTITLE_SYNC_FAILED' });
-                }
-                try {
-                    hardsubPath = await this.buildHardsubAssFromSrt(metadata.srtPath, outW, outH);
-                    metadata._hardsubAssPath = hardsubPath;
-                    console.log(`📝 [Hardsub] ASS gerado em caminho seguro com PlayRes ${outW}x${outH}: ${hardsubPath}`);
-                } catch (e) {
-                    console.warn(`⚠️ [Hardsub] Falha ao gerar ASS tipográfico, usando SRT com force_style escalado: ${e.message}`);
-                    try {
-                        const safeSrtName = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.srt`;
-                        tempSanitizedSrt = path.join(os.tmpdir(), safeSrtName);
-                        await fs.copyFile(metadata.srtPath, tempSanitizedSrt);
-                    } catch (_) {
-                        tempSanitizedSrt = metadata.srtPath;
-                    }
-                }
-            }
+            console.log(`\x1b[33m⚙️ [OTIMIZAÇÃO 1080p: "${optTitle}"] Iniciando codificação de vídeo (Preset: faster, Threads: ${safeThreads}, CRF: 20, Slots ativos: ${activeTranscodes}/${maxTranscodes}${hasSub ? ', Softsub mov_text: SIM' : ''})...\x1b[0m`);
 
             return await new Promise((resolve, reject) => {
                 const totalDuration = info.duration || 1;
@@ -1584,21 +1601,29 @@ ${events.join('\n')}
                 const audioBitrateKbps = 192;
                 const maxVideoKbps = Math.max(1500, maxTotalKbps - audioBitrateKbps);
 
-                // Monta filtros de vídeo (Escalonamento 1080p + Legendas Hardsub com PlayRes correto)
-                let vfFilter = "scale='min(1920,iw)':-2";
-                if (hardsubPath && fs.existsSync(hardsubPath)) {
-                    const assEscaped = this.escapeFFmpegFilterPath(hardsubPath);
-                    vfFilter += `,ass='${assEscaped}'`;
-                } else if (tempSanitizedSrt && fs.existsSync(tempSanitizedSrt)) {
-                    // Fallback: force_style com FontSize relativo ao PlayResY padrão (288)
-                    const scaledFont = Math.max(14, Math.min(18, Math.round(288 * 0.050)));
-                    const srtEscaped = this.escapeFFmpegFilterPath(tempSanitizedSrt);
-                    vfFilter += `,subtitles='${srtEscaped}':force_style='FontName=Arial,FontSize=${scaledFont},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,Outline=2.0,Shadow=1.0,MarginV=55,Alignment=2,Bold=0'`;
-                }
+                // Filtro de vídeo limpo: apenas escalonamento 1080p sem queimar legendas nos pixels
+                const vfFilter = "scale='min(1920,iw)':-2";
 
                 const args = [
                     '-nostdin',
-                    '-i', inputPath,
+                    '-i', inputPath
+                ];
+
+                let inputCount = 1;
+                let ptSubInputIdx = null;
+                let enSubInputIdx = null;
+
+                if (hasSub) {
+                    args.push('-i', metadata.srtPath);
+                    ptSubInputIdx = inputCount++;
+                }
+
+                if (hasEnSub) {
+                    args.push('-i', metadata.refEnPath);
+                    enSubInputIdx = inputCount++;
+                }
+
+                args.push(
                     '-vf', vfFilter,
                     '-c:v', 'libx264',
                     '-preset', 'faster',
@@ -1618,7 +1643,27 @@ ${events.join('\n')}
                     '-map', `0:a:${targetAudioIndex}`,
                     '-disposition:a:0', 'default',
                     '-max_muxing_queue_size', '1024'
-                ];
+                );
+
+                if (hasSub) {
+                    args.push('-c:s', 'mov_text');
+                    args.push(
+                        '-map', `${ptSubInputIdx}:0`,
+                        '-metadata:s:s:0', 'language=por',
+                        '-metadata:s:s:0', 'title=Português (Brasil)',
+                        '-disposition:s:0', 'default'
+                    );
+
+                    if (enSubInputIdx !== null) {
+                        args.push(
+                            '-map', `${enSubInputIdx}:0`,
+                            '-metadata:s:s:1', 'language=eng',
+                            '-metadata:s:s:1', 'title=English'
+                        );
+                    }
+                } else {
+                    args.push('-sn');
+                }
 
                 const tempOutputPath = `${outputPath}.tmp.mp4`;
                 if (fs.existsSync(tempOutputPath)) {
@@ -1746,6 +1791,78 @@ ${events.join('\n')}
         // Escapa vírgulas e pontos-e-vírgulas
         escaped = escaped.replace(/;/g, '\\;').replace(/,/g, '\\,');
         return escaped;
+    }
+
+    /**
+     * Salva as legendas finais validadas (.srt e .vtt) no diretório público persistente para o player web
+     */
+    async persistWebSubtitles(metadata, srtPath, refEnPath = null) {
+        try {
+            if (!srtPath && !refEnPath) return [];
+
+            const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+            await fs.ensureDir(subtitlesDir);
+
+            const baseId = metadata.tmdbId || metadata.imdbId || (metadata.nome || metadata.title || 'sub').toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const mediaType = metadata.tipo === 'serie' ? `s${metadata.season || 1}e${metadata.episode || 1}` : 'movie';
+            const timestamp = Date.now();
+
+            const savedTracks = [];
+
+            // 1. Trilha PT-BR
+            if (srtPath && fs.existsSync(srtPath)) {
+                const srtContent = await fs.readFile(srtPath, 'utf8');
+                const ptSrtName = `${baseId}_${mediaType}_ptbr_${timestamp}.srt`;
+                const ptVttName = `${baseId}_${mediaType}_ptbr_${timestamp}.vtt`;
+
+                const ptSrtDest = path.join(subtitlesDir, ptSrtName);
+                const ptVttDest = path.join(subtitlesDir, ptVttName);
+
+                await fs.writeFile(ptSrtDest, srtContent, 'utf8');
+                await fs.writeFile(ptVttDest, SubtitleTranslationService.convertSrtToVtt(srtContent), 'utf8');
+
+                savedTracks.push({
+                    lang: 'pt-BR',
+                    label: 'Português (Brasil)',
+                    default: true,
+                    srtUrl: `/subtitles/${ptSrtName}`,
+                    vttUrl: `/subtitles/${ptVttName}`,
+                    srtPath: ptSrtDest,
+                    vttPath: ptVttDest
+                });
+                console.log(`💾 [Web Subtitles] Legenda PT-BR persistida para o player web: ${ptVttName} (.srt e .vtt)`);
+            }
+
+            // 2. Trilha EN (se disponível)
+            if (refEnPath && fs.existsSync(refEnPath) && refEnPath !== srtPath) {
+                const enContent = await fs.readFile(refEnPath, 'utf8');
+                const enSrtName = `${baseId}_${mediaType}_en_${timestamp}.srt`;
+                const enVttName = `${baseId}_${mediaType}_en_${timestamp}.vtt`;
+
+                const enSrtDest = path.join(subtitlesDir, enSrtName);
+                const enVttDest = path.join(subtitlesDir, enVttName);
+
+                await fs.writeFile(enSrtDest, enContent, 'utf8');
+                await fs.writeFile(enVttDest, SubtitleTranslationService.convertSrtToVtt(enContent), 'utf8');
+
+                savedTracks.push({
+                    lang: 'en',
+                    label: 'English',
+                    default: false,
+                    srtUrl: `/subtitles/${enSrtName}`,
+                    vttUrl: `/subtitles/${enVttName}`,
+                    srtPath: enSrtDest,
+                    vttPath: enVttDest
+                });
+                console.log(`💾 [Web Subtitles] Legenda EN persistida para o player web: ${enVttName} (.srt e .vtt)`);
+            }
+
+            metadata.webSubtitles = savedTracks;
+            return savedTracks;
+        } catch (err) {
+            console.warn(`⚠️ [Web Subtitles] Falha ao persistir legendas para web: ${err.message}`);
+            return [];
+        }
     }
 
     formatDuration(seconds) {

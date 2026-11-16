@@ -133,6 +133,7 @@ async function createTables() {
         -- Garantir tipo BIGINT caso tabela tenha sido criada anteriormente com INTEGER
         ALTER TABLE filmes ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS legendas JSONB DEFAULT '[]';
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_anime BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
@@ -201,6 +202,7 @@ async function createTables() {
         ALTER TABLE episodios ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE episodios ALTER COLUMN serie_id TYPE BIGINT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS legendas JSONB DEFAULT '[]';
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS still_url TEXT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS formato VARCHAR(50);
