@@ -204,6 +204,10 @@ def verify_sync(video_path, srt_path, max_allowed_offset_sec=1.5, ref_en_path=No
                 if not all_words:
                     continue  # No speech detected in this clip, try next candidate
                 
+                # Ignora trechos onde o Whisper alucinou idiomas desconexos devido a ruído/trilha sonora
+                if info.language not in ('en', 'pt', 'es') and info.language_probability > 0.70:
+                    continue
+
                 spoken_text = ' '.join(s.text.strip() for s in segments)
                 spoken_tokens = extract_tokens(spoken_text, STOPWORDS_EN)
                 
@@ -213,10 +217,10 @@ def verify_sync(video_path, srt_path, max_allowed_offset_sec=1.5, ref_en_path=No
                 overlap_score = 0.0
                 
                 if en_cues:
-                    # Find EN cues in a window of ±35s around cue_start to handle slight PAL/NTSC differences
+                    # Find EN cues in a window of ±90s around cue_start to handle PAL/NTSC differences and release intro offsets
                     nearby_en = [
                         ec for ec in en_cues
-                        if abs(ec['start'] - cue_start) <= 35.0
+                        if abs(ec['start'] - cue_start) <= 90.0
                     ]
                     
                     if nearby_en:

@@ -1231,11 +1231,13 @@ print(f"RESULT:{res}")
         // AUTOMATED QUALITY GATE
         await this.validateAndFinalizeSubtitle(finalSrtPath, videoDurationSec);
 
-        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR (com ancoragem de conteúdo EN se disponível)
-        // Audio-to-Sub tem incerteza acústica inerente de ±1-2s; Sub-to-Sub (studio EN) é frame-perfect (±1.5s)
+        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR (com ancoragem de estúdio se disponível)
+        // Se a legenda EN veio do container (studio), usamos como âncora de conteúdo com tolerância ±1.5s
+        // Se foi alinhada acusticamente (Audio-to-Sub), o áudio do próprio vídeo valida o timing com tolerância ±2.5s
         const whisperTolerance = isStudioRef ? '1.5' : '2.5';
-        console.log(`🎙️ [Pipeline] Tolerância Whisper: ${whisperTolerance}s (método: ${isStudioRef ? 'Sub-to-Sub Studio' : 'Audio-to-Sub'})`);
-        const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec, refEnPath, whisperTolerance);
+        const anchorSubPath = isStudioRef ? refEnPath : null;
+        console.log(`🎙️ [Pipeline] Verificação Whisper ASR | Âncora: ${anchorSubPath ? 'Studio Sub' : 'Áudio Acústico Direto'} | Tolerância: ${whisperTolerance}s`);
+        const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec, anchorSubPath, whisperTolerance);
         console.log(`🔍 [Multi-Checkpoint Whisper Verification] Resultado: ${checkpointCheck.verified ? 'PASSED ✅' : 'FAILED ❌'}`);
         for (const cp of checkpointCheck.checkpoints || []) {
             const status = cp.in_sync ? '✅' : '❌';
