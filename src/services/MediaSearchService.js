@@ -992,13 +992,13 @@ class MediaSearchService {
                                 headers: { 'User-Agent': 'Mozilla/5.0' }
                             });
                             if (subSample.data && subSample.data.length > 150) {
-                                if (VideoProcessor.isEuropeanPortugueseSubtitle(subSample.data)) {
-                                    console.log(`⚠️ [OpenSubtitles] Legenda candidata "${s.movieReleaseName || s.releaseName || s.id}" (${s.lang}) descartada: detectado Português de Portugal.`);
+                                const subLang = (s.lang || s.language || '').toLowerCase();
+                                const relName = (s.movieReleaseName || s.releaseName || '').toLowerCase();
+                                if (!VideoProcessor.isBrazilianPortugueseSubtitle(subSample.data, subLang, relName)) {
+                                    console.log(`⚠️ [OpenSubtitles] Legenda candidata "${s.movieReleaseName || s.releaseName || s.id}" (${s.lang}) descartada: não identificada como PT-BR.`);
                                     continue;
                                 }
-                                if (VideoProcessor.isBrazilianPortugueseSubtitle(subSample.data)) {
-                                    filtered.push(s);
-                                }
+                                filtered.push(s);
                             }
                         } catch (_) { lookupIncomplete = true; }
                     }

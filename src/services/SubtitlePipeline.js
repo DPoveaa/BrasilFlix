@@ -147,55 +147,33 @@ class SubtitlePipeline {
     }
 
     /**
-     * Detecta se a legenda é predominantemente Português de Portugal (PT-PT).
-     * Implementa detecção em 5 camadas com limiares rigorosos.
+     * Detecta se a legenda é Português de Portugal com base em 2 critérios objetivos:
+     * 1. Se "você / vocês" aparecer 3 ou mais vezes E não houver saturação de construções de Portugal -> NÃO é PT-PT.
+     * 2. Rejeita como PT-PT se:
+     *    - você/vocês < 3 E houver construções típicas de Portugal:
+     *      "estou a ", "estás a ", "está a ", "estamos a ", "estão a ", "a fazer", "a dizer", "ecrã", "comboio" ou "telemóvel".
+     *    - OU se houver saturação de construções de Portugal (>= 10 ocorrências, dialeto europeu evidente).
      */
     isEuropeanPortugueseSubtitle(content) {
         if (!content || typeof content !== 'string') return false;
         const norm = content.toLowerCase();
 
-        // 1. Gerúndio perifrástico clássico de Portugal ("estou a falar", "está a ver")
-        const ptPtGerundRegex = /\b(estou|estás|estas|está|esta|estamos|estão|estao|estava|estavas|estávamos|estavamos|estavam|estive|esteve)\s+a\s+[a-zà-ú]+(?:ar|er|ir)\b/gi;
-        const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
+        // Construções típicas de Portugal:
+        // "estou a ", "estás a ", "está a ", "estamos a ", "estão a ", "a fazer", "a dizer", "ecrã", "comboio" ou "telemóvel"
+        const ptPtPattern = /(?:(?:estou|estás|estas|está|esta|estamos|estão|estao)\s+a\s+|(?<![a-zà-ú])a\s+(?:fazer|dizer)(?![a-zà-ú])|(?<![a-zà-ú])(?:ecrã|ecra|comboio|telemóvel|telemovel)(?![a-zà-ú]))/gi;
+        const ptPtMatches = (norm.match(ptPtPattern) || []).length;
 
-        // 2. Imperativo subjuntivo de 2ª pessoa singular (PT-PT exclusivo)
-        // "não toques", "não faças", "não digas", "não olhes", "não entres", "não saias"
-        const ptPtImperativeSubjRegex = /\b(não|nao)\s+(toques|faças|facas|digas|olhes|entres|saias|venhas|tenhas|sejas|estejas|vás|vas|ponhas|tragas|tiras|mexas|uses|abras|feches|comes|bebas|fujas|corras|empurres|pares|moves|chores|rias|gritas|mintas|enganes|esqueças|esquecas|tentes|desistas|percas|ganhas|gastes|quebres|partas|lances|soltes|deixes|mudes|passes|esperes|contes|digam|façam|façao)\b/gi;
-        const ptPtImperativeSubjMatches = (norm.match(ptPtImperativeSubjRegex) || []).length;
+        // Ocorrências de você / vocês
+        const voceMatches = (norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || []).length;
 
-        // 3. Clítica enclítica em construção pós-verbal PT-PT ("entrega-lhe", "diz-me", "dá-lhe", "faz-te")
-        const ptPtCliticEnclisisRegex = /\b(entrega|entreg|diz|da|dá|leva|traz|vem|vai|faz|manda|põe|tira|toma|deixa|pega|corre|foge|sai|entra|liga|desliga|chama|espera|olha|abre|fecha|corta|quebra|vende|compra|dorme|levanta|senta|cala|para|anda|volta|segura|puxa|empurra|joga|atira)(-)(me|te|lhe|nos|vos|lhes|o|a|os|as|se|nos)\b/gi;
-        const ptPtCliticMatches = (norm.match(ptPtCliticEnclisisRegex) || []).length;
+        // Saturação de construções europeias (10+ ocorrências) indica dialeto de Portugal mesmo com plural "vocês"
+        if (ptPtMatches >= 10) return true;
 
-        // 4. Vocabulário europeu expandido (uma única ocorrência já é sinal forte)
-        const ptPtVocabRegex = /\b(rapariga|raparigas|telemóvel|telemovel|telemóveis|telemoveis|comboio|comboios|ecrã|ecra|ecrãs|ecras|autocarro|autocarros|propina|propinas|pequeno[- ]almoço|pequeno[- ]almoco|paragem|paragens|miúdo|miudo|miúda|miuda|fixe|gajo|gajos|gajas|bicha|bichas|fato|fatos|hertziano|casa\s+de\s+banho|eléctrico|electrico|sumbe|malta|tipo|tasco|taberna|bica|galão|galao|chouriço|chourico|broa|bacalhau|pingo|asneira|borlas)\b/gi;
-        const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
+        // Rejeita como PT-PT somente se você/vocês < 3 E houver construções típicas de Portugal
+        if (voceMatches < 3 && ptPtMatches >= 1) return true;
 
-        // 5. Uso do 'tu' como sujeito com conjugação estrita de 2ª pessoa do singular
-        const ptPtTuSubjectRegex = /\btu\s+(?:es|és|estas|estás|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|viste|disseste|fizeste|estiveste|foste)\b/gi;
-        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
-
-        // Marcadores brasileiros (reduzem score PT-PT)
-        const ptBrMarkersRegex = /\b(voce\b|voces\b|você\b|vocês\b|[a-z]+ando\b|[a-z]+endo\b|[a-z]+indo\b|tá\b|tô\b|né\b|hein\b|oxe\b|poxa\b|puxa\b|caramba\b|meu\b|cara\b|legal\b|beleza\b|valeu\b|boa\b|firmeza\b|saudade\b|bagunça\b|bicho\b|mano\b)\b/gi;
-        const ptBrMarkers = (norm.match(ptBrMarkersRegex) || []).length;
-
-        // Score ponderado: limiares muito mais rigorosos que antes
-        // Gerúndio perifrástico: sinal muito forte (3+ ocorrências = PT-PT quase certo)
-        // Imperativo subjuntivo: sinal forte (2+ = PT-PT quase certo)
-        // Clítica enclítica: sinal forte (2+ = PT-PT quase certo)
-        // Vocabulário: sinal forte (1+ = suspeito)
-        const ptPtScore = (ptPtGerundMatches * 8) + (ptPtImperativeSubjMatches * 10) +
-            (ptPtCliticMatches * 8) + (ptPtTuSubjectMatches * 5) + (ptPtVocabMatches * 6);
-        const ptBrScore = ptBrMarkers * 3;
-
-        // Qualquer uma dessas condições é suficiente para reprovar como PT-PT:
-        if (ptPtGerundMatches >= 3) return true;       // 3+ gerúndios perifrásticos = PT-PT
-        if (ptPtImperativeSubjMatches >= 1) return true; // qualquer "não toques/faças/digas" = PT-PT
-        if (ptPtCliticMatches >= 2) return true;        // 2+ clíticas enclíticas = PT-PT
-        if (ptPtVocabMatches >= 2) return true;         // 2+ vocabulário europeu = PT-PT
-
-        // Fallback: score ponderado quando nenhuma condição isolada dispara
-        return ptPtScore >= 20 && ptPtScore > ptBrScore;
+        // Caso contrário, não é considerado PT-PT
+        return false;
     }
 
     /**
@@ -224,12 +202,42 @@ class SubtitlePipeline {
     }
 
     /**
-     * Valida se a legenda tem vocabulário autêntico de Português Brasileiro (PT-BR)
-     * Rejeita estritamente qualquer presença de dialeto ou construções de Portugal.
+     * Valida se a legenda tem vocabulário autêntico de Português Brasileiro (PT-BR).
+     *
+     * Regra ultra-simples em 2 critérios objetivos:
+     * 1. Confiança nos Metadados / Tags da Fonte:
+     *    - pob, pt-br, pt_br, brazilian, bra -> aprova imediatamente como PT-BR sem inspecionar texto.
+     *    - pt-pt, pt_pt, portugal -> rejeita imediatamente.
+     * 2. Regra Única para Código Genérico ("por" sem especificar país):
+     *    - Se você/vocês aparecer 3+ vezes -> aprova imediatamente como PT-BR.
+     *    - Rejeita como PT-PT somente se você/vocês < 3 E houver construções típicas de Portugal.
+     *
+     * @param {string} content - texto da legenda
+     * @param {string} [sourceLang] - código de idioma retornado pela API/fonte (ex: "pob", "por", "pt-pt")
+     * @param {string} [sourceFile] - nome do arquivo/release (para detectar tags no filename)
      */
-    isBrazilianPortugueseSubtitle(content) {
+    isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '') {
         if (!content || typeof content !== 'string') return false;
+
+        const lang = (sourceLang || '').toLowerCase().trim();
+        const file = (sourceFile || '').toLowerCase();
+
+        // 1. Confiança nos Metadados / Tags da Fonte
+        const ptBrTags = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra'];
+        if (ptBrTags.includes(lang)) return true;
+        if (/\b(pt[-_]br|ptbr|pob|brazilian|bra)\b/.test(file)) return true;
+
+        const ptPtTags = ['pt-pt', 'pt_pt', 'ptpt'];
+        if (ptPtTags.includes(lang)) return false;
+        if (/\b(pt[-_]pt|ptpt|portugal)\b/.test(file)) return false;
+
+        // 2. Regra Única para Código Genérico ("por" ou sem país explícito)
         if (this.isEuropeanPortugueseSubtitle(content)) return false;
+
+        const norm = content.toLowerCase();
+        const voceMatches = norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || [];
+        if (voceMatches.length >= 3) return true;
+
         return this.isPortugueseLanguage(content);
     }
 
@@ -274,6 +282,7 @@ class SubtitlePipeline {
             const videoDir = path.dirname(videoPath);
             for (const stream of ptStreams) {
                 const subIndex = stream.index;
+                const streamLang = (stream.tags?.language || stream.tags?.lang || '').toLowerCase();
                 const outPath = path.join(videoDir, `embedded_pt_${Date.now()}_stream${subIndex}.srt`);
                 try {
                     await execFileAsync('ffmpeg', [
@@ -289,7 +298,7 @@ class SubtitlePipeline {
                         const sanitized = this.sanitizeEncoding(rawBuffer);
                         const cues = this.parseSrt(sanitized);
 
-                        if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized)) {
+                        if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized, streamLang)) {
                             // Salva versão normalizada em UTF-8
                             await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
                             console.log(`✅ [Tier 1: Container Stream] Trilha PT-BR [stream 0:${subIndex}] extraída com sucesso (${cues.length} cues, 100% frame-perfect com o container)!`);
@@ -480,7 +489,7 @@ class SubtitlePipeline {
                     const buf = await fs.readFile(item.path);
                     const sanitized = this.sanitizeEncoding(buf);
                     const cues = this.parseSrt(sanitized);
-                    if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized)) {
+                    if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized, '', item.name)) {
                         companionPtSrt = item.path;
                         console.log(`✅ [Tier 2: Companion Package] Legenda PT-BR oficial encontrada no pacote: ${path.basename(item.path)} (${cues.length} cues)!`);
                         break;
@@ -672,18 +681,20 @@ class SubtitlePipeline {
 
                     const rawBuffer = Buffer.from(dlRes.data);
                     const sanitized = this.sanitizeEncoding(rawBuffer);
+                    const subLang = (sub.lang || sub.language || '').toLowerCase();
+                    const relName = (sub.movieReleaseName || sub.releaseName || sub.url || '').toLowerCase();
 
-                    // 1. FILTRO DE REJEIÇÃO ESTRITA PT-PT: Descarte sumário de legendas de Portugal
-                    if (this.isEuropeanPortugueseSubtitle(sanitized)) {
-                        console.warn(`⚠️ Candidato #${i + 1} rejeitado: detectado dialeto de Portugal (PT-PT). Rejeição estrita aplicada.`);
+                    // Filtro unificado PT-BR/PT-PT usando metadados da fonte + análise textual fallback
+                    if (!this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName)) {
+                        const reason = ['pob','pt-br','pt_br','ptbr','brazilian','bra'].includes(subLang)
+                            ? 'falha no Portuguese básico'
+                            : ['pt-pt','pt_pt','ptpt'].includes(subLang) || /\b(pt[-_]pt|portugal)\b/.test(relName)
+                                ? 'marcado explicitamente como PT-PT'
+                                : 'texto não identificado como PT-BR (você/vocês < 3 e construções PT-PT presentes)';
+                        console.warn(`⚠️ Candidato #${i + 1} rejeitado [lang=${subLang}]: ${reason}.`);
                         continue;
                     }
-
-                    // 2. Valida se é idioma português com vocabulário brasileiro
-                    if (!this.isBrazilianPortugueseSubtitle(sanitized)) {
-                        console.warn(`⚠️ Candidato #${i + 1} rejeitado: não apresenta vocabulário típico de Português do Brasil.`);
-                        continue;
-                    }
+                    console.log(`✅ Candidato #${i + 1} aprovado como PT-BR [lang=${subLang}].`);
 
                     const cues = this.parseSrt(sanitized);
                     if (cues.length < 30) {
@@ -712,7 +723,8 @@ class SubtitlePipeline {
                         } else {
                             const coverageRatio = lastCueEndSec / videoDurationSec;
                             const gapSec = videoDurationSec - lastCueEndSec;
-                            if (coverageRatio < 0.94 && gapSec > 300) {
+                            // Tolera até 12 minutos (720s) de créditos finais e créditos pós-filme em blockbusters
+                            if (coverageRatio < 0.90 && gapSec > 720) {
                                 console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate: cobertura ${(coverageRatio * 100).toFixed(1)}% (última fala ${(lastCueEndSec / 60).toFixed(1)}min, gap ${Math.round(gapSec)}s).`);
                                 continue;
                             }
