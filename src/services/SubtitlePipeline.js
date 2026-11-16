@@ -146,31 +146,69 @@ class SubtitlePipeline {
     }
 
     /**
-     * Detecta se a legenda é predominantemente Português de Portugal (PT-PT)
+     * Detecta se a legenda é predominantemente Português de Portugal (PT-PT).
+     * Implementa detecção em 5 camadas com limiares rigorosos.
      */
     isEuropeanPortugueseSubtitle(content) {
         if (!content || typeof content !== 'string') return false;
         const norm = content.toLowerCase();
 
-        // 1. Gerúndio perifrástico clássico de Portugal ("estou a falar", "está a ver", "estavam a correr")
-        const ptPtGerundRegex = /\b(estou|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estive|esteve)\s+a\s+[a-z]+(?:ar|er|ir)\b/gi;
+        // 1. Gerúndio perifrástico clássico de Portugal ("estou a falar", "está a ver")
+        const ptPtGerundRegex = /\b(estou|estás|esta|estas|estamos|estao|estava|estavas|estavamos|estavam|estive|esteve|estao)\s+a\s+[a-z]+(?:ar|er|ir)\b/gi;
         const ptPtGerundMatches = (norm.match(ptPtGerundRegex) || []).length;
 
-        // 2. Uso do pronome 'tu' como sujeito com conjugação estrita de segunda pessoa
-        const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|viste|disseste|fizeste|estiveste|foste)\b/gi;
-        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
+        // 2. Imperativo subjuntivo de 2ª pessoa singular (PT-PT exclusivo)
+        // "não toques", "não faças", "não digas", "não olhes", "não entres", "não saias"
+        const ptPtImperativeSubjRegex = /\bnao\s+(toques|faças|facas|digas|olhes|entres|saias|venhas|tenhas|sejas|estejas|vás|vas|ponhas|tragas|tiras|mexas|uses|abras|feches|comes|bebas|fujas|corras|empurres|pares|moves|chores|rias|gritas|mintas|enganes|esqueças|esquecas|tentes|desistas|percas|percas|ganhas|gastes|quebres|partas|lances|soltes|deixes|mudes|passes|esperes|contes|digam|façam|façao)\b/gi;
+        const ptPtImperativeSubjMatches = (norm.match(ptPtImperativeSubjRegex) || []).length;
 
-        // 3. Vocabulário estrito europeu
-        const ptPtVocabRegex = /\b(rapariga|raparigas|telemovel|telemoveis|comboio|comboios|ecra|ecras|autocarro|autocarros|propina|propinas|pequeno-almoco|paragem|paragens|miudo|miuda|bicha|bichas|fato|fatos|hertziano)\b/gi;
+        // 3. Clítica enclítica em construção pós-verbal PT-PT ("entrega-lhe", "diz-me", "dá-lhe", "faz-te")
+        const ptPtCliticEnclisisRegex = /\b(entrega|entreg|diz|da|dá|leva|traz|vem|vai|faz|manda|põe|tira|toma|deixa|pega|corre|foge|sai|entra|liga|desliga|chama|espera|olha|abre|fecha|corta|quebra|vende|compra|dorme|levanta|senta|cala|para|anda|volta|segura|puxa|empurra|joga|atira)(-)(me|te|lhe|nos|vos|lhes|o|a|os|as|se|nos)\b/gi;
+        const ptPtCliticMatches = (norm.match(ptPtCliticEnclisisRegex) || []).length;
+
+        // 4. Vocabulário europeu expandido (uma única ocorrência já é sinal forte)
+        const ptPtVocabRegex = /\b(rapariga|raparigas|telemovel|telemoveis|comboio|comboios|ecra|ecras|autocarro|autocarros|propina|propinas|pequeno.almoco|paragem|paragens|miudo|miuda|fixe|gajo|gajos|gajas|bicha|bichas|fato|fatos|hertziano|casa\s+de\s+banho|eléctrico|sumbe|malta|tipo|tasco|taberna|bica|galao|galão|chouriço|broa|bacalhau|pingo|asneira|borlas)\b/gi;
         const ptPtVocabMatches = (norm.match(ptPtVocabRegex) || []).length;
 
-        // 4. Marcadores brasileiros que indicam que NÃO é PT-PT ("você", "está fazendo", etc.)
-        const ptBrMarkers = (norm.match(/\b(voce|voces|estou\s+[a-z]+(?:ando|endo|indo)|esta\s+[a-z]+(?:ando|endo|indo)|legal|cara|valeu|aqui)\b/gi) || []).length;
+        // 5. Uso do 'tu' como sujeito com conjugação estrita de 2ª pessoa do singular
+        const ptPtTuSubjectRegex = /\btu\s+(?:es|estas|estás|tens|vais|fazes|dizes|sabes|podes|queres|vens|ouves|viste|disseste|fizeste|estiveste|foste|és)\b/gi;
+        const ptPtTuSubjectMatches = (norm.match(ptPtTuSubjectRegex) || []).length;
 
-        // Para ser considerado PT-PT puro, o gerúndio perifrástico deve ser recorrente (>= 8) ou vocabulário europeu denso,
-        // superando claramente os marcadores brasileiros.
-        const ptPtScore = (ptPtGerundMatches * 6) + (ptPtTuSubjectMatches * 4) + (ptPtVocabMatches * 5);
-        return (ptPtGerundMatches >= 8 || ptPtVocabMatches >= 5) && ptPtScore > 50 && ptPtScore > ptBrMarkers * 2;
+        // Marcadores brasileiros (reduzem score PT-PT)
+        const ptBrMarkersRegex = /\b(voce\b|voces\b|você\b|vocês\b|[a-z]+ando\b|[a-z]+endo\b|[a-z]+indo\b|tá\b|tô\b|né\b|hein\b|oxe\b|poxa\b|puxa\b|caramba\b|meu\b|cara\b|legal\b|beleza\b|valeu\b|boa\b|firmeza\b|saudade\b|bagunça\b|bicho\b|mano\b)\b/gi;
+        const ptBrMarkers = (norm.match(ptBrMarkersRegex) || []).length;
+
+        // Score ponderado: limiares muito mais rigorosos que antes
+        // Gerúndio perifrástico: sinal muito forte (3+ ocorrências = PT-PT quase certo)
+        // Imperativo subjuntivo: sinal forte (2+ = PT-PT quase certo)
+        // Clítica enclítica: sinal forte (2+ = PT-PT quase certo)
+        // Vocabulário: sinal forte (1+ = suspeito)
+        const ptPtScore = (ptPtGerundMatches * 8) + (ptPtImperativeSubjMatches * 10) +
+            (ptPtCliticMatches * 8) + (ptPtTuSubjectMatches * 5) + (ptPtVocabMatches * 6);
+        const ptBrScore = ptBrMarkers * 3;
+
+        // Qualquer uma dessas condições é suficiente para reprovar como PT-PT:
+        if (ptPtGerundMatches >= 3) return true;       // 3+ gerúndios perifrásticos = PT-PT
+        if (ptPtImperativeSubjMatches >= 1) return true; // qualquer "não toques/faças/digas" = PT-PT
+        if (ptPtCliticMatches >= 2) return true;        // 2+ clíticas enclíticas = PT-PT
+        if (ptPtVocabMatches >= 2) return true;         // 2+ vocabulário europeu = PT-PT
+
+        // Fallback: score ponderado quando nenhuma condição isolada dispara
+        return ptPtScore >= 20 && ptPtScore > ptBrScore;
+    }
+
+    /**
+     * Verifica se um release name/tag contém indicadores de PT-PT que devem penalizar o candidato.
+     * Retorna a penalidade de score (0 = sem penalidade, número positivo = penalidade).
+     */
+    getPtPtReleaseNamePenalty(releaseNameOrUrl) {
+        if (!releaseNameOrUrl) return 0;
+        const rel = releaseNameOrUrl.toLowerCase();
+        // Tags explícitas de PT-PT ou Portugal
+        if (/\bpt[-.]?pt\b|\bportugal\b/.test(rel)) return 300;
+        // "POR" sem "BRA" ou "BR" adjacente (legenda portuguesa sem indicação brasileira)
+        if (/\bpor\b(?!.*(?:bra|br|brasil))/.test(rel) && !/\bbra\b|\bpt[-.]?br\b|\bpob\b/.test(rel)) return 150;
+        return 0;
     }
 
     /**
@@ -191,6 +229,110 @@ class SubtitlePipeline {
         if (!content || typeof content !== 'string') return false;
         if (this.isEuropeanPortugueseSubtitle(content)) return false;
         return this.isPortugueseLanguage(content);
+    }
+
+    /**
+     * Converte e localiza construções típicas de Português de Portugal para Português do Brasil (PT-BR).
+     * Corrige gerúndios perifrásticos, imperativo subjuntivo de 2ª pessoa, ênclises e vocabulário europeu.
+     */
+    convertEuropeanToBrazilianPortuguese(text) {
+        if (!text || typeof text !== 'string') return text;
+        let s = text;
+
+        // 1. Gerúndio perifrástico: está a falar -> está falando
+        s = s.replace(/\b(estou|está|esta|estás|estas|estamos|estão|estao|estava|estavas|estávamos|estavamos|estavam|estive|esteve)\s+a\s+([a-z]+(?:ar|er|ir))\b/gi, (match, aux, verb) => {
+            let gerund = verb;
+            if (verb.endsWith('ar')) gerund = verb.slice(0, -2) + 'ando';
+            else if (verb.endsWith('er')) gerund = verb.slice(0, -2) + 'endo';
+            else if (verb.endsWith('ir')) gerund = verb.slice(0, -2) + 'indo';
+            return `${aux} ${gerund}`;
+        });
+
+        // 2. Subjuntivo imperativo 2ª pessoa singular -> imperativo PT-BR
+        const subjMap = [
+            [/\b(não|nao)\s+toques\b/gi, '$1 toque'],
+            [/\b(não|nao)\s+faças\b/gi, '$1 faça'],
+            [/\b(não|nao)\s+facas\b/gi, '$1 faça'],
+            [/\b(não|nao)\s+digas\b/gi, '$1 diga'],
+            [/\b(não|nao)\s+olhes\b/gi, '$1 olhe'],
+            [/\b(não|nao)\s+entres\b/gi, '$1 entre'],
+            [/\b(não|nao)\s+saias\b/gi, '$1 saia'],
+            [/\b(não|nao)\s+venhas\b/gi, '$1 venha'],
+            [/\b(não|nao)\s+tenhas\b/gi, '$1 tenha'],
+            [/\b(não|nao)\s+sejas\b/gi, '$1 seja'],
+            [/\b(não|nao)\s+estejas\b/gi, '$1 esteja'],
+            [/\b(não|nao)\s+vás\b/gi, '$1 vá'],
+            [/\b(não|nao)\s+vas\b/gi, '$1 vá'],
+            [/\b(não|nao)\s+ponhas\b/gi, '$1 ponha'],
+            [/\b(não|nao)\s+tragas\b/gi, '$1 traga'],
+            [/\b(não|nao)\s+mexas\b/gi, '$1 mexa'],
+            [/\b(não|nao)\s+uses\b/gi, '$1 use'],
+            [/\b(não|nao)\s+abras\b/gi, '$1 abra'],
+            [/\b(não|nao)\s+feches\b/gi, '$1 feche'],
+            [/\b(não|nao)\s+fujas\b/gi, '$1 fuja'],
+            [/\b(não|nao)\s+corras\b/gi, '$1 corra'],
+            [/\b(não|nao)\s+pares\b/gi, '$1 pare'],
+            [/\b(não|nao)\s+chores\b/gi, '$1 chore'],
+            [/\b(não|nao)\s+esqueças\b/gi, '$1 esqueça'],
+            [/\b(não|nao)\s+esquecas\b/gi, '$1 esqueça'],
+            [/\b(não|nao)\s+desistas\b/gi, '$1 desista'],
+            [/\b(não|nao)\s+percas\b/gi, '$1 perca'],
+            [/\b(não|nao)\s+esperes\b/gi, '$1 espere'],
+            [/\b(não|nao)\s+contes\b/gi, '$1 conte']
+        ];
+        for (const [re, repl] of subjMap) {
+            s = s.replace(re, repl);
+        }
+
+        // 3. Pronome clítico duplo e enclítica PT-PT
+        s = s.replace(/\b(entrega|entregue)-lhe\s+a\s+ele\b/gi, '$1 para ele');
+        s = s.replace(/\b(dá|da|dê)-lhe\s+a\s+ele\b/gi, '$1 para ele');
+        s = s.replace(/\b(diga|diz)-lhe\s+a\s+ele\b/gi, '$1 para ele');
+        s = s.replace(/\b(mostra|mostre)-lhe\s+a\s+ele\b/gi, '$1 para ele');
+
+        // Próclise natural brasileira no início de fala ou após pontuação
+        s = s.replace(/(^|[\n\.\?!-]\s*)(diz|faz|dá|deixa|conta|mostra|ajuda|escuta|olha)-me\b/gi, (match, prefix, verb) => {
+            const verbClean = verb.toLowerCase();
+            return `${prefix}me ${verbClean}`;
+        });
+
+        // 4. Vocabulário PT-PT -> PT-BR
+        const vocabMap = [
+            [/\becrã\b/gi, 'tela'],
+            [/\becrãs\b/gi, 'telas'],
+            [/\btelemóvel\b/gi, 'celular'],
+            [/\btelemóveis\b/gi, 'celulares'],
+            [/\bcomboio\b/gi, 'trem'],
+            [/\bcomboios\b/gi, 'trens'],
+            [/\bautocarro\b/gi, 'ônibus'],
+            [/\bautocarros\b/gi, 'ônibus'],
+            [/\bcasa\s+de\s+banho\b/gi, 'banheiro'],
+            [/\brapariga\b/gi, 'garota'],
+            [/\braparigas\b/gi, 'garotas'],
+            [/\bmiúdo\b/gi, 'garoto'],
+            [/\bmiúdos\b/gi, 'garotos'],
+            [/\bmiúda\b/gi, 'garota'],
+            [/\bmiúdas\b/gi, 'garotas'],
+            [/\bfixe\b/gi, 'legal'],
+            [/\bgajo\b/gi, 'cara'],
+            [/\bgajos\b/gi, 'caras'],
+            [/\bpequeno.almoço\b/gi, 'café da manhã'],
+            [/\bpequeno almoço\b/gi, 'café da manhã'],
+            [/\bparagem\b/gi, 'ponto'],
+            [/\bparagens\b/gi, 'pontos'],
+            [/\bpropina\b/gi, 'mensalidade'],
+            [/\bpropinas\b/gi, 'mensalidades'],
+            [/\bprotecção\b/gi, 'proteção'],
+            [/\bacto\b/gi, 'ato'],
+            [/\bactos\b/gi, 'atos'],
+            [/\bóptimo\b/gi, 'ótimo'],
+            [/\bóptima\b/gi, 'ótima']
+        ];
+        for (const [re, repl] of vocabMap) {
+            s = s.replace(re, repl);
+        }
+
+        return s;
     }
 
     /**
@@ -260,12 +402,12 @@ class SubtitlePipeline {
                             };
                         } else {
                             console.warn(`⚠️ [Tier 1: Container Stream] Trilha 0:${subIndex} descartada (cues: ${cues.length}, PT-BR autêntico: NÃO).`);
-                            await fs.remove(outPath).catch(() => {});
+                            await fs.remove(outPath).catch(() => { });
                         }
                     }
                 } catch (e) {
                     console.warn(`⚠️ [Tier 1: Container Stream] Erro ao extrair stream 0:${subIndex}:`, e.message);
-                    await fs.remove(outPath).catch(() => {});
+                    await fs.remove(outPath).catch(() => { });
                 }
             }
             return null;
@@ -317,7 +459,7 @@ class SubtitlePipeline {
                         return outPath;
                     }
                 }
-                await fs.remove(outPath).catch(() => {});
+                await fs.remove(outPath).catch(() => { });
             }
         } catch (e) { }
 
@@ -469,9 +611,34 @@ class SubtitlePipeline {
     }
 
     /**
-     * TIER 3: Busca externa estrita (OpenSubtitles / Stremio API) com validação de duração e release
+     * Retorna o último cue de diálogo genuíno, ignorando tags de watermark de encerramento de créditos
+     * (ex: [ENGLISH], Subtitles by..., ou saltos anômalos de mais de 5 minutos após o diálogo final).
      */
-    async fetchExternalSubtitle(videoPath, metadata = {}, videoDurationSec = 0) {
+    getLastDialogueCue(cues) {
+        if (!Array.isArray(cues) || cues.length === 0) return null;
+        for (let i = cues.length - 1; i >= 0; i--) {
+            const text = (cues[i].text || '').trim().toLowerCase();
+            // Ignora tags de release / créditos técnicos nos últimos minutos
+            const isWatermark = /^\[?[a-z0-9\s\.\-_]+\]?$/.test(text) &&
+                (text.includes('english') || text.includes('sub') || text.includes('rip') || text.includes('yts') || text.includes('team') || text.includes('sync'));
+            if (isWatermark) continue;
+            // Se houver um salto absurdo de mais de 300s (5 min) de silêncio absoluto entre este cue e o anterior no final do filme
+            if (i > 0 && (cues[i].startMs - cues[i - 1].endMs) > 300000) {
+                continue;
+            }
+            return cues[i];
+        }
+        return cues[cues.length - 1];
+    }
+
+    /**
+     * TIER 3: Busca externa estrita (OpenSubtitles / Stremio API) com validação de duração e release
+     * @param {string} videoPath
+     * @param {object} metadata
+     * @param {number} videoDurationSec
+     * @param {Array|null} refEnCues - Cues da legenda EN de referência para Duration Gate preciso
+     */
+    async fetchExternalSubtitle(videoPath, metadata = {}, videoDurationSec = 0, refEnCues = null) {
         try {
             if (!videoDurationSec || videoDurationSec < 120) {
                 try {
@@ -479,10 +646,10 @@ class SubtitlePipeline {
                         '-v', 'quiet', '-print_format', 'json', '-show_format', videoPath
                     ], { timeout: 15000 });
                     videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
-                } catch (_) {}
+                } catch (_) { }
             }
 
-            console.log(`🌐 [Tier 3: External Search] Buscando legendas externas estritas para "${metadata.nome || metadata.title || path.basename(videoPath)}" (Duração: ${(videoDurationSec/60).toFixed(1)}m)...`);
+            console.log(`🌐 [Tier 3: External Search] Buscando legendas externas estritas para "${metadata.nome || metadata.title || path.basename(videoPath)}" (Duração: ${(videoDurationSec / 60).toFixed(1)}m)...`);
 
             // Resolve IMDb ID se ausente
             let imdbId = metadata.imdbId;
@@ -531,7 +698,12 @@ class SubtitlePipeline {
                     const filtered = subs.filter(s => {
                         const lang = (s.lang || s.language || '').toLowerCase();
                         if (lang.includes('pt-pt') || lang.includes('por-pt')) return false;
-                        const rel = (s.movieReleaseName || s.releaseName || '').toLowerCase();
+                        const rel = (s.movieReleaseName || s.releaseName || s.url || '').toLowerCase();
+                        // Rejeição imediata por tags explícitas de PT-PT no release name
+                        if (/\bpt[-.]?pt\b|\bportugal\b/.test(rel)) {
+                            console.warn(`⚠️ [Tier 3: PT-PT tag] Rejeitado por tag PT-PT explícita no release: "${rel.substring(0, 60)}"`);
+                            return false;
+                        }
                         if (rel.includes('pt-pt') || rel.includes('por.pt')) return false;
                         return ['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang);
                     });
@@ -548,8 +720,10 @@ class SubtitlePipeline {
             }
 
             // Ranqueia por compatibilidade com release e prioridade PT-BR
+            // Aplica penalidade pesada a suspeitos de PT-PT via release name
             const scored = ptSubs.map(sub => {
                 const rel = (sub.movieReleaseName || sub.releaseName || '').toLowerCase();
+                const subUrl = (sub.url || '').toLowerCase();
                 const subTokens = tokenize(rel);
                 const common = subTokens.filter(t => fileTokens.includes(t)).length;
                 let score = common * 4;
@@ -557,6 +731,14 @@ class SubtitlePipeline {
                 const lang = (sub.lang || sub.language || '').toLowerCase();
                 if (['pob', 'pt-br', 'brazilian'].includes(lang)) score += 50;
                 score += parseInt(sub.g || 0, 10);
+
+                // Penalidade de PT-PT por release name ou URL
+                const ptPtPenalty = this.getPtPtReleaseNamePenalty(rel) || this.getPtPtReleaseNamePenalty(subUrl);
+                if (ptPtPenalty > 0) {
+                    console.warn(`⚠️ [Tier 3: PT-PT penalty] Sub penalizado em ${ptPtPenalty} pts por release name suspeito: "${rel.substring(0, 60)}"`);
+                    score -= ptPtPenalty;
+                }
+
                 return { sub, score };
             }).sort((a, b) => b.score - a.score);
 
@@ -586,18 +768,38 @@ class SubtitlePipeline {
                         continue;
                     }
 
-                    // Strict Duration Gate: se a duração do vídeo for conhecida (> 600s), valida última fala
+                    // Strict Duration Gate com suporte a âncora EN
                     if (videoDurationSec > 600) {
-                        const lastCueEndSec = cues[cues.length - 1].endMs / 1000;
-                        const durationDiff = Math.abs(lastCueEndSec - videoDurationSec);
-                        // Subtitle must span to within 420s (7 minutes) of the end of the video, OR at least 90% of duration
-                        if (lastCueEndSec < (videoDurationSec - 420) && lastCueEndSec < videoDurationSec * 0.90) {
-                            console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate: última fala em ${(lastCueEndSec/60).toFixed(1)}min vs filme de ${(videoDurationSec/60).toFixed(1)}min (diff: ${Math.round(durationDiff)}s). Possível arquivo incompleto/split (CD1).`);
-                            continue;
+                        const lastPtCue = this.getLastDialogueCue(cues);
+                        const lastCueEndSec = lastPtCue ? lastPtCue.endMs / 1000 : cues[cues.length - 1].endMs / 1000;
+
+                        if (refEnCues && refEnCues.length > 0) {
+                            // Modo com âncora EN: compara contra o último diálogo da âncora EN (tolerância ±45s)
+                            const lastEnCue = this.getLastDialogueCue(refEnCues);
+                            const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
+                            const endDiff = Math.abs(lastCueEndSec - enLastSec);
+                            if (endDiff > 45) {
+                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s do diálogo final da âncora EN (${(enLastSec / 60).toFixed(1)}min). Possível legenda cortada/errada.`);
+                                continue;
+                            }
+                            // Verifica divergência de quantidade de cues (tolerância máxima de ±10% no total de cues)
+                            const cueDiffRatio = Math.abs(cues.length - refEnCues.length) / Math.max(1, refEnCues.length);
+                            if (cueDiffRatio > 0.10) {
+                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: ${cues.length} cues PT vs ${refEnCues.length} cues EN (${(cueDiffRatio * 100).toFixed(0)}% divergência > 10% permitido).`);
+                                continue;
+                            }
+                        } else {
+                            // Modo sem âncora EN: exige >=94% cobertura E gap máximo de 300s (5 min)
+                            const coverageRatio = lastCueEndSec / videoDurationSec;
+                            const gapSec = videoDurationSec - lastCueEndSec;
+                            if (coverageRatio < 0.94 && gapSec > 300) {
+                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate: cobertura ${(coverageRatio * 100).toFixed(1)}% (última fala ${(lastCueEndSec / 60).toFixed(1)}min, filme ${(videoDurationSec / 60).toFixed(1)}min, gap ${Math.round(gapSec)}s > 300s permitido).`);
+                                continue;
+                            }
                         }
                         // Para longas (> 60 min), exige no mínimo 400 falas
                         if (videoDurationSec > 3600 && cues.length < 400) {
-                            console.warn(`⚠️ Candidato #${i + 1} rejeitado: apenas ${cues.length} falas para um longa-metragem de ${(videoDurationSec/60).toFixed(0)} min.`);
+                            console.warn(`⚠️ Candidato #${i + 1} rejeitado: apenas ${cues.length} falas para um longa-metragem de ${(videoDurationSec / 60).toFixed(0)} min.`);
                             continue;
                         }
                     }
@@ -621,12 +823,16 @@ class SubtitlePipeline {
                             source: 'external_opensubtitles'
                         };
                     } else if (!fallbackCandidate) {
-                        const candidatePath = path.join(path.dirname(videoPath), `external_pt_fallback_${Date.now()}_cand${i + 1}.srt`);
-                        await fs.writeFile(candidatePath, this.buildSrt(cues), 'utf8');
+                        // Converte o candidato PT-PT para Português do Brasil autêntico antes de salvar
+                        const localized = this.convertEuropeanToBrazilianPortuguese(sanitized);
+                        const localizedCues = this.parseSrt(localized);
+                        const candidatePath = path.join(path.dirname(videoPath), `external_pt_localized_${Date.now()}_cand${i + 1}.srt`);
+                        await fs.writeFile(candidatePath, this.buildSrt(localizedCues), 'utf8');
+                        console.log(`🇧🇷 [Tier 3: Localização PT-PT -> PT-BR] Candidato #${i + 1} convertido e localizado para Português Brasileiro (${localizedCues.length} cues)!`);
                         fallbackCandidate = {
                             srtPath: candidatePath,
-                            cueCount: cues.length,
-                            source: 'external_opensubtitles_fallback_pt',
+                            cueCount: localizedCues.length,
+                            source: 'external_opensubtitles_localized_ptbr',
                             index: i + 1,
                             score
                         };
@@ -694,7 +900,7 @@ class SubtitlePipeline {
                     await execFileAsync('ffmpeg', [
                         '-nostdin', '-v', 'error', '-y',
                         '-i', videoPath,
-                        '-map', `0:a:${targetAudio.index !== undefined ? targetAudio.index : 0}`,
+                        '-map', `0:${targetAudio.index !== undefined ? targetAudio.index : 'a:0'}`,
                         '-af', filterChain,
                         '-ac', '1',
                         '-ar', '16000',
@@ -747,7 +953,7 @@ print(f"RESULT:{res}")
                     if (!finished) {
                         finished = true;
                         try { pyProc.kill('SIGKILL'); } catch (e) { }
-                        console.warn(`⚠️ [Tier 4: Sync Engine] Timeout de ${(timeoutMs/1000)}s.`);
+                        console.warn(`⚠️ [Tier 4: Sync Engine] Timeout de ${(timeoutMs / 1000)}s.`);
                         resolve(false);
                     }
                 }, timeoutMs);
@@ -797,7 +1003,7 @@ print(f"RESULT:{res}")
             }
         } finally {
             if (cleanAudioWav && fs.existsSync(cleanAudioWav)) {
-                await fs.remove(cleanAudioWav).catch(() => {});
+                await fs.remove(cleanAudioWav).catch(() => { });
             }
         }
     }
@@ -810,7 +1016,8 @@ print(f"RESULT:{res}")
 
         const rawContent = await fs.readFile(srtPath, 'utf8');
         const sanitized = this.sanitizeEncoding(rawContent);
-        const rawCues = this.parseSrt(sanitized);
+        const localized = this.convertEuropeanToBrazilianPortuguese(sanitized);
+        const rawCues = this.parseSrt(localized);
 
         if (rawCues.length < 20) {
             throw new Error(`Quality Gate falhou: legenda contém apenas ${rawCues.length} falas (mínimo 20).`);
@@ -882,7 +1089,7 @@ print(f"RESULT:{res}")
     /**
      * VERIFICAÇÃO MULTI-CHECKPOINT: Inspeciona sincronia com Whisper ASR em 3 pontos (Início, Miolo, Fim)
      */
-    async verifySyncAtCheckpoints(videoPath, srtPath, videoDurationSec) {
+    async verifySyncAtCheckpoints(videoPath, srtPath, videoDurationSec, refEnPath = null, toleranceSec = '1.5') {
         if (!fs.existsSync(videoPath) || !fs.existsSync(srtPath)) {
             return { verified: false, reason: 'Arquivo de vídeo ou legenda inexistente', checkpoints: [] };
         }
@@ -894,13 +1101,18 @@ print(f"RESULT:{res}")
         }
 
         try {
-            console.log(`🎙️ [Quality Gate: Whisper Speech Verification] Executando verificação de voz real nos checkpoints (Início, Miolo, Clímax)...`);
-            const { stdout } = await execFileAsync(this.pythonExec, [
+            console.log(`🎙️ [Quality Gate: Whisper Speech Verification] Executando verificação de voz real nos checkpoints (Início, Miolo, Clímax) | Tolerância: ±${toleranceSec}s ...`);
+            const args = [
                 scriptPath,
                 videoPath,
                 srtPath,
-                '1.5' // Tolerância máxima em segundos
-            ], { timeout: 120000 });
+                toleranceSec
+            ];
+            if (refEnPath && fs.existsSync(refEnPath)) {
+                args.push(refEnPath);
+            }
+
+            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 120000 });
 
             const jsonMatch = stdout.match(/\{[\s\S]*"verified"[\s\S]*\}/);
             if (jsonMatch) {
@@ -911,7 +1123,7 @@ print(f"RESULT:{res}")
             if (e.stdout) {
                 const jsonMatch = e.stdout.match(/\{[\s\S]*"verified"[\s\S]*\}/);
                 if (jsonMatch) {
-                    try { return JSON.parse(jsonMatch[0]); } catch (_) {}
+                    try { return JSON.parse(jsonMatch[0]); } catch (_) { }
                 }
             }
             console.warn(`⚠️ [Quality Gate] Reprovação ou falha na verificação Whisper: ${e.message}`);
@@ -937,7 +1149,7 @@ print(f"RESULT:{res}")
                 videoPath
             ], { timeout: 15000 });
             videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
-        } catch (e) {}
+        } catch (e) { }
 
         const videoDir = path.dirname(videoPath);
         let selectedSrtPath = null;
@@ -969,9 +1181,19 @@ print(f"RESULT:{res}")
             refEnPath = await this.extractEnglishReferenceSubtitle(videoPath, metadata, videoDurationSec);
         }
 
+        // Parse dos cues da legenda EN de referência (se disponível) para validar o Duration Gate
+        let refEnCues = null;
+        if (refEnPath && fs.existsSync(refEnPath)) {
+            try {
+                const enRaw = await fs.readFile(refEnPath, 'utf8');
+                refEnCues = this.parseSrt(this.sanitizeEncoding(enRaw));
+                if (refEnCues.length < 30) refEnCues = null;
+            } catch (_) { }
+        }
+
         // TIER 3: Se não tem Tier 1 nem Tier 2, busca externa estrita
         if (!selectedSrtPath) {
-            const tier3 = await this.fetchExternalSubtitle(videoPath, metadata, videoDurationSec);
+            const tier3 = await this.fetchExternalSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
             if (tier3) {
                 selectedSrtPath = tier3.srtPath;
                 sourceMethod = 'Tier 3 (Strict External Matching via OpenSubtitles)';
@@ -985,15 +1207,22 @@ print(f"RESULT:{res}")
 
         // TIER 4: Sincronização Acústica / Sub-to-Sub (se necessário)
         let finalSrtPath = selectedSrtPath;
+        // isStudioRef: true se a legenda EN de referência veio do container (softsub de estúdio, frame-perfect)
+        // false se veio da internet (OpenSubtitles, pode ter fps diferente) → usa Audio-to-Sub
+        const isStudioRef = refEnPath && !path.basename(refEnPath).startsWith('ref_en_ext_');
         if (requiresSync) {
             const syncedOutPath = path.join(videoDir, `synced_final_${Date.now()}.srt`);
+            // Se a legenda EN de referência veio do CONTAINER (softsub embutida de estúdio),
+            // ela é garantidamente frame-perfect com o vídeo -> Sub-to-Sub é seguro e instantâneo.
+            // Se veio da internet (OpenSubtitles), ela pode ter framerate diferente (ex: 25fps PAL)
+            // -> Usa Audio-to-Sub (alinhamento acústico direto na fala do vídeo) para sincronia de cinema absoluta!
             const syncResult = await this.alignSubtitle(videoPath, selectedSrtPath, syncedOutPath, {
-                refSubPath: refEnPath
+                refSubPath: isStudioRef ? refEnPath : null
             });
 
             if (syncResult && fs.existsSync(syncResult)) {
                 finalSrtPath = syncResult;
-                console.log(`🎯 [Pipeline] Alinhamento concluído com sucesso via ${refEnPath ? 'Sub-to-Sub' : 'Audio-to-Sub'}!`);
+                console.log(`🎯 [Pipeline] Alinhamento concluído com sucesso via ${isStudioRef ? 'Sub-to-Sub (Container Studio)' : 'Audio-to-Sub (Voz Acústica)'}!`);
             } else {
                 console.warn(`⚠️ [Pipeline] Alinhamento falhou; testando qualidade com Whisper ASR antes de aceitar.`);
             }
@@ -1002,8 +1231,11 @@ print(f"RESULT:{res}")
         // AUTOMATED QUALITY GATE
         await this.validateAndFinalizeSubtitle(finalSrtPath, videoDurationSec);
 
-        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR
-        const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec);
+        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR (com ancoragem de conteúdo EN se disponível)
+        // Audio-to-Sub tem incerteza acústica inerente de ±1-2s; Sub-to-Sub (studio EN) é frame-perfect (±1.5s)
+        const whisperTolerance = isStudioRef ? '1.5' : '2.5';
+        console.log(`🎙️ [Pipeline] Tolerância Whisper: ${whisperTolerance}s (método: ${isStudioRef ? 'Sub-to-Sub Studio' : 'Audio-to-Sub'})`);
+        const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec, refEnPath, whisperTolerance);
         console.log(`🔍 [Multi-Checkpoint Whisper Verification] Resultado: ${checkpointCheck.verified ? 'PASSED ✅' : 'FAILED ❌'}`);
         for (const cp of checkpointCheck.checkpoints || []) {
             const status = cp.in_sync ? '✅' : '❌';

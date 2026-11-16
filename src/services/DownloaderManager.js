@@ -581,7 +581,6 @@ class DownloaderManager extends EventEmitter {
             let targetEpisodeFile = null;
             let preflightComplete = false;
             let subtitleFiles = [];
-            let validatedSubtitleText = null;
 
 
             torrent.on('wire', (wire, addr) => {
@@ -904,68 +903,31 @@ class DownloaderManager extends EventEmitter {
 
                     if (needsAudioProbe || isLegendadoRequested) {
                         console.log(`🔍 [Pré-Download: "${displayTitle}"] Sondando cabeçalho de "${fileToProbe.name}" (~1.5MB) para validação precoce de áudio/legendas...`);
-                        const hasPtSubInTorrent = subtitleFiles.some(f => /\b(pt[-_]?br|pob|por|portuguese|portugu[eê]s|brazilian)\b/i.test(f.path));
-                        const hasEnSubInTorrent = subtitleFiles.some(f => /\b(en|eng|english)\b/i.test(f.path));
-
-                        const MediaSearchService = require('./MediaSearchService');
-                        const SubtitleTranslationService = require('./SubtitleTranslationService');
-
-                        const targetImdbId = options.imdbId || options.metaDetails?.imdbId;
-                        const lookupArgs = [targetImdbId, options.type, options.season || 1, options.episode || 1];
-                        const translationAvailable = SubtitleTranslationService.isAvailable();
-                        const [probeRes, ptSubs, enSubs] = await Promise.all([
-                            this.probeVideoHeader(fileToProbe, 20000),
-                            targetImdbId ? MediaSearchService.getOpenSubtitlesPT(...lookupArgs, { requireProviderResponse: true }).catch(() => null) : null,
-                            targetImdbId && translationAvailable ? MediaSearchService.getOpenSubtitlesEN(...lookupArgs, { requireProviderResponse: true }).catch(() => null) : []
-                        ]);
+                        const translator = require('./SubtitleTranslationService');
+                        const probeRes = await this.probeVideoHeader(fileToProbe, 20000);
                         if (finished) return;
 
                         const fallbackBlocked = options.onlyDublado || options.ignorarFallbackLegendado;
-                        let externalLookupIncomplete = ptSubs === null;
-                        let externalSubtitle = false;
-                        if (!probeRes.hasPortugueseAudio && !probeRes.hasPortugueseSub && !hasPtSubInTorrent &&
-                            (!fallbackBlocked || isLegendadoRequested)) {
-                            const urls = [...new Set([options.subtitleUrl, ...(ptSubs || []).map(sub => sub.url)].filter(Boolean))];
-                            const checks = await Promise.allSettled(urls.slice(0, 3).map(url => VideoProcessor.fetchPortugueseSrt(url)));
-                            if (finished) return;
-                            validatedSubtitleText = checks.find(result => result.status === 'fulfilled' && result.value)?.value || null;
-                            externalSubtitle = Boolean(validatedSubtitleText);
-                            externalLookupIncomplete ||= urls.length > checks.length || checks.some(result => result.status === 'rejected');
-                        }
-                        const hasValidPtSub = probeRes.hasPortugueseSub || hasPtSubInTorrent || externalSubtitle;
-                        const hasEnSubForAi = translationAvailable && (probeRes.hasEnglishSub || hasEnSubInTorrent || Boolean(enSubs?.length));
                         const hasUnknownAudio = probeRes.audioStreams?.some(s => !s.tags?.language || /^(und|unk|unknown)$/i.test(s.tags.language));
                         const knownForeignAudio = probeRes.success && probeRes.audioStreams.length > 0 &&
                             !probeRes.hasPortugueseAudio && (!hasUnknownAudio || probeRes.spokenLanguage === 'foreign');
 
-                        if (needsAudioProbe && knownForeignAudio) {
-                            console.warn(`⚠️ [PRÉ-DOWNLOAD: ÁUDIO INCOMPATÍVEL] Nenhuma faixa em Português detectada no cabeçalho (${probeRes.audioLangs}).`);
-
-                            if (!fallbackBlocked && (hasValidPtSub || hasEnSubForAi)) {
-                                console.log(`🔄 [PRÉ-DOWNLOAD: CONVERSÃO AUTOMÁTICA] Áudio PT ausente, mas legendas ${hasValidPtSub ? 'PT-BR' : 'EN (com tradução IA)'} confirmadas. Convertendo job para Legendado sem reiniciar download.`);
-                                options.audioPreference = 'legendado';
-                                options.isDublado = false;
-                                options.isLegendado = true;
-                            } else if (fallbackBlocked || (!externalLookupIncomplete && enSubs)) {
-                                const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Arquivo "${fileToProbe.name}" não contém áudio dublado em Português (${probeRes.audioLangs}) e não possui legendas PT-BR disponíveis.`;
-                                console.warn(reasonMsg);
+                        if (knownForeignAudio) {
+                            const requiresDub = options.audioPreference !== 'legendado' && fallbackBlocked;
+                            if (requiresDub || !translator.isAvailable()) {
+                                const reasonMsg = requiresDub
+                                    ? `Áudio PT-BR ausente no cabeçalho de "${fileToProbe.name}" (${probeRes.audioLangs}).`
+                                    : 'Tradução PT-BR indisponível. GEMINI_API_KEY ausente.';
                                 finished = true;
                                 safeCleanup();
-                                return reject(Object.assign(new Error(reasonMsg), { code: 'TORRENT_TRANSLATION_UNAVAILABLE' }));
+                                return reject(Object.assign(new Error(reasonMsg), {
+                                    code: requiresDub ? 'TORRENT_TRANSLATION_UNAVAILABLE' : 'SUBTITLE_PROVIDER_UNAVAILABLE'
+                                }));
                             }
-                        }
-
-                        if (isLegendadoRequested && knownForeignAudio &&
-                            !hasValidPtSub && !hasEnSubForAi && !externalLookupIncomplete && enSubs) {
-                            const reasonMsg = `🚫 [PRÉ-DOWNLOAD ABORTADO] Release em idioma original sem nenhuma legenda PT-BR disponível (embutida ou OpenSubtitles) e sem legenda EN para tradução IA.`;
-                            console.warn(reasonMsg);
-                            finished = true;
-                            safeCleanup();
-                            return reject(Object.assign(new Error(reasonMsg), { code: 'TORRENT_TRANSLATION_UNAVAILABLE' }));
-                        }
-
-                        if (probeRes.success) {
-                            console.log(`🔍 [Pré-Download: "${displayTitle}"] Tags de áudio: [${probeRes.audioLangs}] | Indício de legenda PT: ${hasValidPtSub ? 'SIM' : 'NÃO'} | Indício de legenda EN para IA: ${hasEnSubForAi ? 'SIM' : 'NÃO'}`);
+                            options.audioPreference = 'legendado';
+                            options.isDublado = false;
+                            options.isLegendado = true;
+                            console.log(`[Pré-Download: "${displayTitle}"] A legenda PT-BR será gerada a partir do áudio.`);
                         }
                     }
                 }
@@ -1165,7 +1127,6 @@ class DownloaderManager extends EventEmitter {
                     console.log(`✅ Download concluído e validado 100% em disco (${this.formatBytes(stat.size)}): ${selectedFile.name}`);
 
                     const fileInfo = {
-                        validatedSubtitleText,
                         filePath: fullPath,
                         fileName: selectedFile.name,
                         sizeBytes: stat.size,

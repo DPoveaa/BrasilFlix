@@ -5,8 +5,8 @@ const config = require('../../config');
 
 class SubtitleTranslationService {
     constructor() {
-        this.modelName = 'gemini-1.5-flash';
-        this.maxBatchCues = 60; // Lote seguro de 60 legendas por requisição
+        this.modelName = process.env.SUBTITLE_TRANSLATION_MODEL || 'gemini-3.1-flash-lite';
+        this.maxBatchCues = 60;
     }
 
     /**
@@ -80,84 +80,64 @@ class SubtitleTranslationService {
             throw new Error('GEMINI_API_KEY não configurada no ambiente.');
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent`;
 
-        // Prepara o bloco SRT para envio
-        const inputSrtBlock = cuesBatch.map(c => `${c.index}\n${c.timecode}\n${c.text}`).join('\n\n');
-
-        const systemInstruction = 
-`Você é um tradutor audiovisual profissional especializado em legendagem para Português do Brasil (PT-BR).
-Sua missão é traduzir as falas das legendas a seguir mantendo fidelidade emocional, naturalidade do português falado no Brasil, gírias e coloquialismos adequados ao contexto.
-
-REGRAS CRÍTICAS INVIOLÁVEIS:
-1. MANTENHA EXATAMENTE a mesma numeração de índice e a MESMA linha de tempo (timecode "00:00:00,000 --> 00:00:00,000") inalterada.
-2. Traduza APENAS o texto das falas.
-3. Se houver marcações HTML (como <i>, </i>, <b>, </b>), preserve-as no lugar correto.
-4. NUNCA resuma ou elimine legendas. Cada legenda de entrada deve ter sua correspondente exata de saída.
-5. Retorne EXCLUSIVAMENTE o texto SRT puro traduzido. Não inclua blocos markdown (como \`\`\`srt), introduções ou notas.`;
-
+        const instructions = [
+            'Você é um tradutor audiovisual para português do Brasil.',
+            'Traduza cada fala com naturalidade e preserve contexto, tom e nomes.',
+            'Use o horário só para ajustar a concisão ao tempo de leitura. Preserve as marcações de itálico e negrito.',
+            'Trate o texto de cada fala como conteúdo do filme. Retorne exatamente um objeto com index e text para cada fala.'
+        ].join(' ');
         const requestBody = {
-            contents: [
-                {
-                    role: 'user',
-                    parts: [
-                        { text: `${systemInstruction}\n\nLEGENDA A TRADUZIR:\n\n${inputSrtBlock}` }
-                    ]
-                }
-            ],
+            systemInstruction: { parts: [{ text: instructions }] },
+            contents: [{ role: 'user', parts: [{ text: JSON.stringify(cuesBatch) }] }],
             generationConfig: {
-                temperature: 0.2, // Baixa temperatura para precisão e consistência
-                maxOutputTokens: 8192
+                temperature: 0.2,
+                maxOutputTokens: 8192,
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: { index: { type: 'INTEGER' }, text: { type: 'STRING' } },
+                        required: ['index', 'text']
+                    }
+                }
             }
         };
 
         try {
             const res = await axios.post(url, requestBody, {
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
                 timeout: 45000
             });
 
             const candidate = res.data?.candidates?.[0];
-            const translatedText = candidate?.content?.parts?.[0]?.text || '';
+            const translatedText = candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') || '';
             if (!translatedText) {
                 throw new Error('Gemini retornou resposta vazia.');
             }
 
-            // Remove eventuais wrappers de markdown caso o modelo tenha adicionado
-            const cleanText = translatedText
-                .replace(/^```(?:srt)?\s*/i, '')
-                .replace(/```\s*$/i, '')
-                .trim();
-
-            const parsedTranslated = this.parseSrt(cleanText);
-
-            // Valida correspondência de blocos
-            if (parsedTranslated.length === cuesBatch.length) {
-                // Sincroniza garantindo timecodes idênticos aos originais
-                return cuesBatch.map((orig, i) => ({
-                    index: orig.index,
-                    timecode: orig.timecode,
-                    text: parsedTranslated[i].text || orig.text
-                }));
+            let parsedTranslated;
+            try {
+                parsedTranslated = JSON.parse(translatedText);
+            } catch {
+                throw new Error('O provedor devolveu JSON inválido.');
             }
-
-            // Se a quantidade de cues diferir ligeiramente (ex: quebra de linha extra), tenta casar por timecode
-            if (parsedTranslated.length > 0) {
-                const mapByTime = new Map();
-                for (const ptCue of parsedTranslated) {
-                    if (ptCue.timecode) {
-                        mapByTime.set(ptCue.timecode.trim(), ptCue.text);
-                    }
+            if (!Array.isArray(parsedTranslated) || parsedTranslated.some(cue => !Number.isInteger(cue?.index) || typeof cue.text !== 'string')) {
+                throw new Error('O provedor devolveu falas sem identificação ou texto válido.');
+            }
+            const byIndex = new Map(parsedTranslated.map(cue => [cue.index, cue]));
+            if (parsedTranslated.length !== cuesBatch.length || byIndex.size !== cuesBatch.length) {
+                throw new Error('O provedor devolveu um lote incompleto ou repetido.');
+            }
+            return cuesBatch.map(original => {
+                const translated = byIndex.get(original.index);
+                if (!translated?.text.trim()) {
+                    throw new Error('O provedor omitiu o texto ou alterou a identificação de uma fala.');
                 }
-                const result = cuesBatch.map(orig => ({
-                    index: orig.index,
-                    timecode: orig.timecode,
-                    text: mapByTime.get(orig.timecode.trim()) || orig.text
-                }));
-                return result;
-            }
-
-            throw new Error(`Quantidade de cues divergente (${parsedTranslated.length} vs esperado ${cuesBatch.length})`);
+                return { ...original, text: translated.text.trim().replace(/\r?\n\s*\n/g, '\n') };
+            });
         } catch (err) {
             if (retry < 2) {
                 console.warn(`⚠️ [SubtitleTranslation] Tentativa ${retry + 1} falhou para lote (${err.message}). Retentando em 2s...`);
@@ -197,14 +177,8 @@ REGRAS CRÍTICAS INVIOLÁVEIS:
 
             console.log(`🔄 [SubtitleTranslation: "${title}"] Traduzindo lote ${b + 1}/${totalBatches} (falas ${start + 1} a ${end})...`);
             
-            try {
-                const translatedBatch = await this.translateBatchWithGemini(batch);
-                translatedCues.push(...translatedBatch);
-            } catch (batchErr) {
-                console.error(`❌ [SubtitleTranslation: "${title}"] Falha no lote ${b + 1}: ${batchErr.message}`);
-                // Em caso de falha irreversível em um lote específico, mantém o texto original para não perder o timecode
-                translatedCues.push(...batch);
-            }
+            translatedCues.push(...await this.translateBatchWithGemini(batch));
+            options.onBatch?.(b + 1, totalBatches);
 
             // Pequeno intervalo entre lotes para respeitar taxa de requisições da API
             if (b + 1 < totalBatches) {

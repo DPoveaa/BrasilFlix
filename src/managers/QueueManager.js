@@ -2355,7 +2355,7 @@ class QueueManager extends EventEmitter {
         if (isForceReprocess && optimizedPath) {
             if (fs.existsSync(optimizedPath)) {
                 console.log(`🔄 [Reprocessamento] Job de upgrade/reprocessamento: descartando arquivo otimizado anterior para recodificação limpa: ${require('path').basename(optimizedPath)}`);
-                await DownloaderManager.cleanupFile(optimizedPath).catch(() => {});
+                await DownloaderManager.cleanupFile(optimizedPath).catch(() => { });
             }
             optimizedPath = null;
             job.optimizedPath = null;
@@ -2390,11 +2390,16 @@ class QueueManager extends EventEmitter {
                     }
 
                     const needsSub = (job.audioPreference === 'legendado' || job.audioPreference === 'dual');
-                    const hasSub = optInfo && optInfo.subtitleStreams && optInfo.subtitleStreams.length > 0;
+                    const hasSubStream = optInfo && optInfo.subtitleStreams && optInfo.subtitleStreams.length > 0;
+                    const subtitleMarkerPath = `${optimizedPath}.subtitled`;
+                    const hasSubMarker = fs.existsSync(subtitleMarkerPath);
 
-                    if (needsSub && !hasSub) {
-                        console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui trilha de legendas exigida pelo job (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
+                    // Validação de cache para legendado/dual:
+                    // Aceita se houver marcador de conclusão de hardsub (.subtitled) OU stream embutido no container.
+                    if (needsSub && !hasSubStream && !hasSubMarker) {
+                        console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui marcador de hardsub (.subtitled) nem trilha de legendas exigida pelo job (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
                         await DownloaderManager.cleanupFile(optimizedPath);
+                        await fs.remove(subtitleMarkerPath).catch(() => { });
                         optimizedPath = null;
                         job.optimizedPath = null;
                     } else if (optInfo && optInfo.duration >= requiredOptDurationSec) {
@@ -3565,10 +3570,10 @@ class QueueManager extends EventEmitter {
                         const bytes = fs.statSync(rawFilePath).size;
                         this.ingestionMetrics.discardedBytes.noSubtitle = (this.ingestionMetrics.discardedBytes.noSubtitle || 0) + bytes;
                         console.log(`🧹 [Limpeza] Removendo arquivo sem legenda PT-BR disponível (${path.basename(rawFilePath)})...`);
-                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => {});
+                        await DownloaderManager.cleanupFile(rawFilePath).catch(() => { });
                         rawFilePath = null;
                         job.rawFilePath = null;
-                        await this.saveJob(job).catch(() => {});
+                        await this.saveJob(job).catch(() => { });
                     }
 
                     // Se o item já possui versão Dublada no catálogo e o job buscava Legendado,
