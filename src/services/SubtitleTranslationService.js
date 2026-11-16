@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../config');
+const SubtitleUtils = require('../utils/SubtitleUtils');
 
 class SubtitleTranslationService {
     constructor() {
@@ -223,8 +224,9 @@ class SubtitleTranslationService {
             '   - NUNCA use vocabulário europeu (PROIBIDO: ecrã, comboio, autocarro, telemóvel, casa de banho, frigorífico, fato, miúdo, gajo). Use: tela, trem, ônibus, celular, banheiro, geladeira, terno, garoto, cara.',
             '3. PRESERVAÇÃO DE TAGS: Mantenha rigorosamente quaisquer tags de formatação como <i>...</i>, <b>...</b>, <u>...</u>.',
             '4. QUEBRA DE LINHAS: Falas longas devem ser divididas em no máximo 2 linhas breves (idealmente até ~42 caracteres por linha, separadas por \\n). Falas curtas devem ficar em linha única.',
-            '5. COERÊNCIA DE CONTEXTO: Utilize os diálogos anteriores fornecidos em "contexto_anterior" apenas para manter a consistência de gênero dos personagens (ele/ela), pronomes e nomes próprios.',
-            '6. FORMATO DE SAÍDA: Retorne estritamente um array JSON contendo exatamente os mesmos IDs recebidos em "falas_para_traduzir", cada qual com seu "id" numérico correspondente e "text" com a tradução em PT-BR.'
+            '5. PROIBIÇÃO DE ASPAS EXTERNAS: NUNCA envolva as falas traduzidas em aspas adicionais (como "..." ou “...”). Retorne diretamente o texto puro da fala.',
+            '6. COERÊNCIA DE CONTEXTO: Utilize os diálogos anteriores fornecidos em "contexto_anterior" apenas para manter a consistência de gênero dos personagens (ele/ela), pronomes e nomes próprios.',
+            '7. FORMATO DE SAÍDA: Retorne estritamente um array JSON contendo exatamente os mesmos IDs recebidos em "falas_para_traduzir", cada qual com seu "id" numérico correspondente e "text" com a tradução em PT-BR.'
         ].join('\n');
 
         const payloadObj = {
@@ -284,10 +286,11 @@ class SubtitleTranslationService {
                 throw new Error(`Gemini omitiu ${missingIds.length} falas do lote (ex: IDs ${missingIds.slice(0, 3).map(m => m.id).join(', ')}).`);
             }
 
-            // Remonta o lote com o texto traduzido limpo
+            // Remonta o lote com o texto traduzido limpo e sem aspas externas
             return itemsToTranslate.map(orig => {
                 const item = byId.get(orig.id);
-                const cleanText = item.text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                const rawText = (item.text || '').trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                const cleanText = SubtitleUtils.stripOuterQuotes(rawText);
                 return {
                     id: orig.id,
                     timecode: orig.timecode,

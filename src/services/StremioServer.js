@@ -17,6 +17,7 @@ const RemovalQueueManager = require('../managers/RemovalQueueManager');
 const db = require('../database/db');
 const auditService = require('./AuditService');
 const logBroadcaster = require('../utils/LogBroadcaster');
+const SubtitleUtils = require('../utils/SubtitleUtils');
 
 function isWebRequestBatchId(id) {
     return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
@@ -1200,6 +1201,355 @@ class StremioServer {
                 });
             } catch (e) {
                 console.error('❌ [MergeDuplicate]', e.message);
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 💬 GERENCIAMENTO ADMINISTRATIVO DE LEGENDAS (SRT / WEBVTT)
+        // ═══════════════════════════════════════════════════════════════════════
+
+        const uploadSubtitleFile = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 10 * 1024 * 1024 }
+        });
+
+        // 1. Obter legendas e falas estruturadas
+        this.app.get('/api/admin/subtitles/:type/:id', auth, async (req, res) => {
+            try {
+                const { type, id } = req.params;
+                const reqLang = (req.query.lang || 'pt-BR').trim();
+
+                let row = null;
+                let title = '';
+                let tmdbId = null;
+                let sNum = null;
+                let eNum = null;
+
+                if (type === 'filme') {
+                    const r = await db.query(`SELECT id, nome, tmdb_id, imdb_id, legendas FROM filmes WHERE id = $1`, [id]);
+                    if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
+                    row = r.rows[0];
+                    title = row.nome;
+                    tmdbId = row.tmdb_id;
+                } else if (type === 'episodio') {
+                    const r = await db.query(`
+                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.legendas, s.nome as serie_nome, s.tmdb_id 
+                        FROM episodios e 
+                        JOIN series s ON s.id = e.serie_id 
+                        WHERE e.id = $1
+                    `, [id]);
+                    if (r.rows.length === 0) return res.status(404).json({ error: 'Episódio não encontrado.' });
+                    row = r.rows[0];
+                    title = `${row.serie_nome} T${row.temporada_numero}E${row.numero} - ${row.nome || `Episódio ${row.numero}`}`;
+                    tmdbId = row.tmdb_id;
+                    sNum = row.temporada_numero;
+                    eNum = row.numero;
+                } else {
+                    return res.status(400).json({ error: 'Tipo inválido. Use "filme" ou "episodio".' });
+                }
+
+                let tracks = row.legendas || [];
+                if (typeof tracks === 'string') {
+                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                }
+                if (!Array.isArray(tracks)) tracks = [];
+
+                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+                await fs.ensureDir(subtitlesDir);
+
+                if (tracks.length === 0) {
+                    const files = await fs.readdir(subtitlesDir);
+                    const basePattern = type === 'filme'
+                        ? new RegExp(`^(${tmdbId || row.id})_movie_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i')
+                        : new RegExp(`^(${tmdbId || row.serie_id})_s${sNum}e${eNum}_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i');
+
+                    const matchingPt = files.filter(f => basePattern.test(f) && /ptbr/i.test(f));
+                    if (matchingPt.length > 0) {
+                        const vttF = matchingPt.find(f => f.endsWith('.vtt')) || matchingPt[0];
+                        const srtF = matchingPt.find(f => f.endsWith('.srt')) || matchingPt[0];
+                        tracks.push({
+                            lang: 'pt-BR',
+                            label: 'Português (Brasil)',
+                            default: true,
+                            srtUrl: `/subtitles/${srtF}`,
+                            vttUrl: `/subtitles/${vttF}`,
+                            srtPath: path.join(subtitlesDir, srtF),
+                            vttPath: path.join(subtitlesDir, vttF),
+                            version: Date.now()
+                        });
+                        const table = type === 'filme' ? 'filmes' : 'episodios';
+                        await db.query(`UPDATE ${table} SET legendas = $1 WHERE id = $2`, [JSON.stringify(tracks), id]);
+                    }
+                }
+
+                let track = tracks.find(t => t.lang.toLowerCase() === reqLang.toLowerCase()) || tracks[0] || null;
+
+                let cues = [];
+                if (track) {
+                    let subPath = null;
+                    if (track.vttPath && fs.existsSync(track.vttPath)) subPath = track.vttPath;
+                    else if (track.srtPath && fs.existsSync(track.srtPath)) subPath = track.srtPath;
+                    else if (track.vttUrl) {
+                        const cand = path.join(__dirname, '../../public', track.vttUrl.split('?')[0]);
+                        if (fs.existsSync(cand)) subPath = cand;
+                    } else if (track.srtUrl) {
+                        const cand = path.join(__dirname, '../../public', track.srtUrl.split('?')[0]);
+                        if (fs.existsSync(cand)) subPath = cand;
+                    }
+
+                    if (subPath && fs.existsSync(subPath)) {
+                        const content = await fs.readFile(subPath, 'utf8');
+                        cues = SubtitleUtils.parseSubtitles(content);
+                    }
+                }
+
+                res.json({
+                    success: true,
+                    type,
+                    id: row.id,
+                    title,
+                    tracks,
+                    selectedTrack: track?.lang || null,
+                    cues,
+                    totalCues: cues.length
+                });
+            } catch (e) {
+                console.error('❌ [AdminSubtitles:GET]', e.message);
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 2. Ajuste rápido de sincronia (Shift temporal em milissegundos)
+        this.app.post('/api/admin/subtitles/:type/:id/shift', auth, async (req, res) => {
+            try {
+                const { type, id } = req.params;
+                const offsetMs = parseInt(req.body.offsetMs, 10);
+                const reqLang = (req.body.lang || 'pt-BR').trim();
+
+                if (isNaN(offsetMs)) {
+                    return res.status(400).json({ error: 'Parâmetro offsetMs numérico é obrigatório.' });
+                }
+
+                const table = type === 'filme' ? 'filmes' : 'episodios';
+                const r = await db.query(`SELECT id, nome, legendas FROM ${table} WHERE id = $1`, [id]);
+                if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+
+                let tracks = r.rows[0].legendas || [];
+                if (typeof tracks === 'string') {
+                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                }
+                if (!Array.isArray(tracks) || tracks.length === 0) {
+                    return res.status(400).json({ error: 'Nenhuma trilha de legenda cadastrada para este item.' });
+                }
+
+                const trackIdx = tracks.findIndex(t => t.lang.toLowerCase() === reqLang.toLowerCase());
+                const track = trackIdx >= 0 ? tracks[trackIdx] : tracks[0];
+
+                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+                await fs.ensureDir(subtitlesDir);
+
+                let sourcePath = null;
+                if (track.srtPath && fs.existsSync(track.srtPath)) sourcePath = track.srtPath;
+                else if (track.vttPath && fs.existsSync(track.vttPath)) sourcePath = track.vttPath;
+                else if (track.srtUrl) {
+                    const c = path.join(__dirname, '../../public', track.srtUrl.split('?')[0]);
+                    if (fs.existsSync(c)) sourcePath = c;
+                } else if (track.vttUrl) {
+                    const c = path.join(__dirname, '../../public', track.vttUrl.split('?')[0]);
+                    if (fs.existsSync(c)) sourcePath = c;
+                }
+
+                if (!sourcePath || !fs.existsSync(sourcePath)) {
+                    return res.status(404).json({ error: 'Arquivo de legenda não encontrado no servidor.' });
+                }
+
+                const content = await fs.readFile(sourcePath, 'utf8');
+                const cues = SubtitleUtils.parseSubtitles(content);
+                if (cues.length === 0) {
+                    return res.status(400).json({ error: 'Arquivo de legenda vazio ou inválido.' });
+                }
+
+                const shiftedCues = SubtitleUtils.shiftCues(cues, offsetMs);
+                const newSrt = SubtitleUtils.cuesToSrt(shiftedCues);
+                const newVtt = SubtitleUtils.cuesToVtt(shiftedCues);
+
+                const baseName = path.basename(sourcePath).replace(/\.(srt|vtt)$/i, '');
+                const srtDest = path.join(subtitlesDir, `${baseName}.srt`);
+                const vttDest = path.join(subtitlesDir, `${baseName}.vtt`);
+
+                await fs.writeFile(srtDest, newSrt, 'utf8');
+                await fs.writeFile(vttDest, newVtt, 'utf8');
+
+                const newVersion = Date.now();
+                track.version = newVersion;
+                track.srtPath = srtDest;
+                track.vttPath = vttDest;
+                track.srtUrl = `/subtitles/${path.basename(srtDest)}`;
+                track.vttUrl = `/subtitles/${path.basename(vttDest)}`;
+
+                await db.query(`UPDATE ${table} SET legendas = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+
+                res.json({
+                    success: true,
+                    message: `Legenda deslocada em ${offsetMs > 0 ? '+' : ''}${offsetMs}ms com sucesso (${shiftedCues.length} falas sincronizadas)!`,
+                    offsetMs,
+                    tracks,
+                    cues: shiftedCues
+                });
+            } catch (e) {
+                console.error('❌ [AdminSubtitles:SHIFT]', e.message);
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 3. Edição inline das falas da legenda
+        this.app.put('/api/admin/subtitles/:type/:id/cues', auth, async (req, res) => {
+            try {
+                const { type, id } = req.params;
+                const { cues, lang } = req.body;
+                const reqLang = (lang || 'pt-BR').trim();
+
+                if (!Array.isArray(cues) || cues.length === 0) {
+                    return res.status(400).json({ error: 'Array de falas (cues) inválido ou vazio.' });
+                }
+
+                const table = type === 'filme' ? 'filmes' : 'episodios';
+                const r = await db.query(`SELECT id, nome, legendas FROM ${table} WHERE id = $1`, [id]);
+                if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+
+                let tracks = r.rows[0].legendas || [];
+                if (typeof tracks === 'string') {
+                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                }
+                if (!Array.isArray(tracks) || tracks.length === 0) {
+                    return res.status(400).json({ error: 'Nenhuma trilha de legenda cadastrada.' });
+                }
+
+                const trackIdx = tracks.findIndex(t => t.lang.toLowerCase() === reqLang.toLowerCase());
+                const track = trackIdx >= 0 ? tracks[trackIdx] : tracks[0];
+
+                const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
+                const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
+                const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
+
+                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+                await fs.ensureDir(subtitlesDir);
+
+                const baseName = track.vttUrl ? path.basename(track.vttUrl.split('?')[0]).replace(/\.(srt|vtt)$/i, '') : `sub_${type}_${id}_${Date.now()}`;
+                const srtDest = path.join(subtitlesDir, `${baseName}.srt`);
+                const vttDest = path.join(subtitlesDir, `${baseName}.vtt`);
+
+                await fs.writeFile(srtDest, newSrt, 'utf8');
+                await fs.writeFile(vttDest, newVtt, 'utf8');
+
+                const newVersion = Date.now();
+                track.version = newVersion;
+                track.srtPath = srtDest;
+                track.vttPath = vttDest;
+                track.srtUrl = `/subtitles/${path.basename(srtDest)}`;
+                track.vttUrl = `/subtitles/${path.basename(vttDest)}`;
+
+                await db.query(`UPDATE ${table} SET legendas = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+
+                res.json({
+                    success: true,
+                    message: `Legenda salva com sucesso (${sanitizedCues.length} falas salvas)!`,
+                    tracks,
+                    cues: sanitizedCues
+                });
+            } catch (e) {
+                console.error('❌ [AdminSubtitles:CUES]', e.message);
+                res.status(500).json({ error: e.message });
+            }
+        });
+
+        // 4. Upload manual de arquivo substituto (.srt ou .vtt)
+        this.app.post('/api/admin/subtitles/:type/:id/upload', auth, uploadSubtitleFile.single('file'), async (req, res) => {
+            try {
+                const { type, id } = req.params;
+                const lang = (req.body.lang || 'pt-BR').trim();
+                const label = (req.body.label || (lang === 'en' ? 'English' : 'Português (Brasil)')).trim();
+
+                let rawContent = '';
+                if (req.file && req.file.buffer) {
+                    rawContent = req.file.buffer.toString('utf8');
+                } else if (req.body.content) {
+                    rawContent = String(req.body.content);
+                }
+
+                if (!rawContent || !rawContent.trim()) {
+                    return res.status(400).json({ error: 'Arquivo ou conteúdo de legenda não fornecido.' });
+                }
+
+                const cues = SubtitleUtils.parseSubtitles(rawContent);
+                if (cues.length === 0) {
+                    return res.status(400).json({ error: 'Arquivo de legenda inválido ou não foi possível identificar as falas.' });
+                }
+
+                const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
+                const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
+                const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
+
+                const table = type === 'filme' ? 'filmes' : 'episodios';
+                const r = await db.query(`SELECT id, nome, ${type === 'filme' ? 'tmdb_id' : 'serie_id, temporada_numero, numero'} FROM ${table} WHERE id = $1`, [id]);
+                if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+                const row = r.rows[0];
+
+                const baseId = type === 'filme' ? (row.tmdb_id || row.id) : (row.serie_id || 'serie');
+                const mediaType = type === 'filme' ? 'movie' : `s${row.temporada_numero || 1}e${row.numero || 1}`;
+                const safeLang = lang.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const timestamp = Date.now();
+
+                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+                await fs.ensureDir(subtitlesDir);
+
+                const srtFilename = `${baseId}_${mediaType}_${safeLang}_${timestamp}.srt`;
+                const vttFilename = `${baseId}_${mediaType}_${safeLang}_${timestamp}.vtt`;
+                const srtDest = path.join(subtitlesDir, srtFilename);
+                const vttDest = path.join(subtitlesDir, vttFilename);
+
+                await fs.writeFile(srtDest, newSrt, 'utf8');
+                await fs.writeFile(vttDest, newVtt, 'utf8');
+
+                const currentTracksRes = await db.query(`SELECT legendas FROM ${table} WHERE id = $1`, [id]);
+                let tracks = currentTracksRes.rows[0]?.legendas || [];
+                if (typeof tracks === 'string') {
+                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                }
+                if (!Array.isArray(tracks)) tracks = [];
+
+                const trackIdx = tracks.findIndex(t => t.lang.toLowerCase() === lang.toLowerCase());
+                const newTrack = {
+                    lang,
+                    label,
+                    default: lang.startsWith('pt'),
+                    srtUrl: `/subtitles/${srtFilename}`,
+                    vttUrl: `/subtitles/${vttFilename}`,
+                    srtPath: srtDest,
+                    vttPath: vttDest,
+                    version: timestamp
+                };
+
+                if (trackIdx >= 0) {
+                    tracks[trackIdx] = newTrack;
+                } else {
+                    tracks.push(newTrack);
+                }
+
+                await db.query(`UPDATE ${table} SET legendas = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
+                if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
+
+                res.json({
+                    success: true,
+                    message: `Legenda ${label} (${sanitizedCues.length} falas) enviada e vinculada com sucesso!`,
+                    tracks,
+                    cues: sanitizedCues
+                });
+            } catch (e) {
+                console.error('❌ [AdminSubtitles:UPLOAD]', e.message);
                 res.status(500).json({ error: e.message });
             }
         });

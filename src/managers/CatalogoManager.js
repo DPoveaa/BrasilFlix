@@ -833,6 +833,7 @@ class CatalogoManager {
                 versoes: versoesFiltradas,
                 audio: (hasDub && hasLeg ? 'Dub/Leg (Dublado + Legendado)' : (hasDub ? 'Dublado (Áudio PT-BR)' : 'Legendado (PT-BR)')),
                 audioBadge: (hasDub && hasLeg ? 'D/L' : (hasDub ? 'D' : (hasLeg ? 'L' : ''))),
+                legendas: ep.legendas || [],
                 dataAdicionado: ep.created_at || ep.dataAdicionado || new Date().toISOString()
             };
         }).filter(Boolean);
@@ -1057,6 +1058,7 @@ class CatalogoManager {
                         isDublado: hasDub,
                         isLegendado: hasLeg,
                         versoes: versoes,
+                        legendas: ep.legendas || [],
                         dataAdicionado: ep.created_at
                     });
                 }
@@ -1134,6 +1136,7 @@ class CatalogoManager {
                         messageId: f.message_id ? Number(f.message_id) : null,
                         notifMessageId: f.notif_message_id ? Number(f.notif_message_id) : null,
                         fileId: f.file_id,
+                        legendas: f.legendas || [],
                         slug: f.slug || CatalogoManager.generateSlug(f.nome || f.nome_original || ''),
                         dataAdicionado: f.created_at,
                         tags: this.extrairTags(f.nome + ' ' + (f.sinopse || '') + ' ' + (f.generos || []).toString())
@@ -3040,6 +3043,11 @@ class CatalogoManager {
                 isDublado: f.isDublado,
                 isLegendado: f.isLegendado,
                 versoes: f.versoes || {},
+                legendas: (f.legendas || []).map(l => ({
+                    ...l,
+                    vttUrl: l.vttUrl ? `${l.vttUrl.split('?')[0]}?v=${l.version || Date.now()}` : l.vttUrl,
+                    srtUrl: l.srtUrl ? `${l.srtUrl.split('?')[0]}?v=${l.version || Date.now()}` : l.srtUrl
+                })),
                 audio: f.audio || null,
                 isCam: f.isCam,
                 audioBadge: this.getAudioBadge(f)
@@ -3063,8 +3071,8 @@ class CatalogoManager {
                 isDorama: s.isDorama || false,
                 emLancamento: s.emLancamento || false,
                 statusSerie: s.statusSerie || s.status_serie || 'Ended',
-                totalTemporadas: (s.temporadas || []).length,
-                totalEpisodios: (s.temporadas || []).reduce((a, t) => a + (t.episodios ? t.episodios.filter(e => !e._isPending).length : 0), 0) || 1,
+                totalTemporadas: s.totalTemporadas || s.total_temporadas || (s.temporadas || []).length,
+                totalEpisodios: s.totalEpisodios || s.total_episodios || (s.temporadas || []).reduce((a, t) => a + (t.episodios ? t.episodios.filter(e => !e._isPending).length : 0), 0) || 1,
                 exigirTemporadaCompleta: s.exigirTemporadaCompleta !== false,
                 audioBadge: s.audioBadge || ((s.isDublado && s.isLegendado) ? 'D/L' : (s.isDublado ? 'D' : (s.isLegendado ? 'L' : ''))),
                 temporadas: (s.temporadas || []).map(t => ({
@@ -3086,6 +3094,11 @@ class CatalogoManager {
                         isDublado: ep.isDublado,
                         isLegendado: ep.isLegendado,
                         versoes: ep.versoes || {},
+                        legendas: (ep.legendas || []).map(l => ({
+                            ...l,
+                            vttUrl: l.vttUrl ? `${l.vttUrl.split('?')[0]}?v=${l.version || Date.now()}` : l.vttUrl,
+                            srtUrl: l.srtUrl ? `${l.srtUrl.split('?')[0]}?v=${l.version || Date.now()}` : l.srtUrl
+                        })),
                         audio: ep.audio,
                         audioBadge: ep.audioBadge
                     }))

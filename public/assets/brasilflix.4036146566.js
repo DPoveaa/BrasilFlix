@@ -1214,18 +1214,18 @@
                 return item.ano || '2026';
             }
 
-            const tempCount = (item.temporadas && item.temporadas.length > 0)
-                ? item.temporadas.length
-                : (item.totalTemporadas || 1);
+            const tempCount = (item.totalTemporadas && item.totalTemporadas > 0)
+                ? item.totalTemporadas
+                : ((item.temporadas && item.temporadas.length > 0) ? item.temporadas.length : (item.total_temporadas || 1));
 
-            let epCount = 0;
-            if (item.temporadas && item.temporadas.length > 0) {
+            let epCount = item.totalEpisodios || item.total_episodios || 0;
+            if (!epCount && item.temporadas && item.temporadas.length > 0) {
                 epCount = item.temporadas.reduce((a, t) => {
                     const available = (t.episodios || []).filter(e => !e._isPending);
                     return a + available.length;
                 }, 0);
             }
-            if (epCount === 0) {
+            if (!epCount) {
                 epCount = 1;
             }
 
@@ -6063,6 +6063,7 @@
                 audio: chosenAudio,
                 hasDub,
                 hasLeg,
+                legendas: movie.legendas || [],
                 posterUrl: movie.backdropUrl || movie.posterUrl,
                 qualidade: movie.qualidade || '1080p Full HD',
                 streamUrl,
@@ -6271,6 +6272,7 @@
                 subtipo: serie.subtipo || (isMicro ? 'microdrama' : 'serie'),
                 hasDub,
                 hasLeg,
+                legendas: episode.legendas || [],
                 posterUrl: episode.stillUrl || episode.thumbUrl || serie.backdropUrl || serie.posterUrl,
                 qualidade: episode.qualidade || '1080p Full HD',
                 streamUrl,
@@ -6789,6 +6791,11 @@
         function closeAllPlayerDropdowns() {
             document.getElementById('player-audio-menu')?.classList.remove('visible');
             document.getElementById('player-speed-menu')?.classList.remove('visible');
+            const subMenu = document.getElementById('player-subtitles-menu');
+            if (subMenu) {
+                subMenu.classList.remove('visible');
+                subMenu.style.display = 'none';
+            }
         }
 
         function toggleAudioDropdown(e) {
@@ -7105,6 +7112,9 @@
             // Configura UI de áudio no player
             // Usa !!hasDub/!!hasLeg: false quando undefined, ao invés de !==false que trata undefined como true
             updatePlayerAudioUI(mediaInfo.audio || 'dublado', !!mediaInfo.hasDub, !!mediaInfo.hasLeg);
+
+            // Configura UI de legendas no player
+            updatePlayerSubtitlesUI(mediaInfo.legendas || []);
 
             // Configura velocidade salva
             const savedSpeed = parseFloat(localStorage.getItem('bf_player_speed')) || 1.0;
@@ -9179,6 +9189,8 @@
             if (!str) return '';
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
+
+        function escapeAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
         function escapeJsStr(str) {
             if (!str) return '';
@@ -11885,6 +11897,9 @@
                             </div>
                             <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
                                 ${epRebaixarBtns}
+                                <button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('episodio', '${e.id || e.messageId}', '${(e.nome || `T${e.temporadaNumero}E${e.numero}`).replace(/'/g, "\\'")}')" title="Gerenciar Legendas">
+                                    💬
+                                </button>
                                 <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
                                     🗑️
                                 </button>
@@ -12103,6 +12118,8 @@
                     ? `<button class="btn-action btn-action-primary btn-icon-compact" onclick="openAdminSerieEpisodesModal('${item.serieId}')" title="Ver todos os episódios desta série">📂 Ver Série</button>`
                     : '';
 
+                const subBtn = `<button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('${item.kind}', '${item.id}', '${(item.nome || item.episodioNome || '').replace(/'/g, "\\'")}')" title="Gerenciar Legendas">💬</button>`;
+
                 const titleHtml = item.kind === 'episodio'
                     ? `<span style="color:#60a5fa; font-weight:700;">${item.serieNome}</span> <span style="color:var(--text-muted); font-size:12px;">•</span> <span style="background:rgba(59,130,246,0.18); color:#93c5fd; padding:1px 6px; border-radius:5px; font-weight:800; font-size:12px; border:1px solid rgba(59,130,246,0.35);">T${item.temporadaNum}E${item.episodioNum}</span> <span style="color:#fff; font-weight:800;">${item.episodioNome}</span>`
                     : `<span style="color:#fff; font-weight:800;">${item.nome}</span> <span style="color:var(--text-muted); font-size:12px;">(${item.ano})</span>`;
@@ -12128,6 +12145,7 @@
                                 <div class="admin-catalog-card-actions">
                                     ${openSerieBtn}
                                     ${rebaixarBtns}
+                                    ${subBtn}
                                     ${deleteBtn}
                                 </div>
                             </div>
@@ -12271,6 +12289,9 @@
                                     </div>
                                     <div class="admin-catalog-card-actions">
                                         ${rebaixarButtons}
+                                        <button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('filme', '${i.id}', '${(i.nome || '').replace(/'/g, "\\'")}')" title="Gerenciar Legendas">
+                                            💬
+                                        </button>
                                         <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo">
                                             🗑️
                                         </button>
@@ -14014,5 +14035,495 @@
                 }
             } catch (e) {
                 showToast('Erro ao excluir ticket.', 'error');
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           💬 PLAYER WEB — CONTROLES E PERSONALIZAÇÃO VISUAL DE LEGENDAS
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        function toggleSubtitlesDropdown(event) {
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('player-subtitles-menu');
+            const audioMenu = document.getElementById('player-audio-menu');
+            const speedMenu = document.getElementById('player-speed-menu');
+            if (audioMenu) audioMenu.classList.remove('visible');
+            if (speedMenu) speedMenu.classList.remove('visible');
+            if (menu) {
+                const isVis = menu.classList.contains('visible') || menu.style.display === 'block';
+                menu.classList.toggle('visible', !isVis);
+                menu.style.display = isVis ? 'none' : 'block';
+            }
+        }
+
+        function updatePlayerSubtitlesUI(tracks = []) {
+            const listEl = document.getElementById('player-subtitle-tracks-list');
+            const btnBox = document.getElementById('player-subtitles-box');
+            const btnLabel = document.getElementById('player-subtitles-label');
+            const video = document.getElementById('html5-video-player');
+
+            if (!listEl) return;
+
+            // Remove faixas <track> anteriores
+            if (video) {
+                const oldTracks = video.querySelectorAll('track');
+                oldTracks.forEach(t => t.remove());
+            }
+
+            let availableTracks = Array.isArray(tracks) ? tracks : [];
+            const savedLang = localStorage.getItem('bf_sub_lang');
+
+            // Determina a trilha ativa:
+            // 1. Preferência salva do usuário se ainda existir
+            // 2. Ou PT-BR (default)
+            // 3. Ou 'off'
+            let activeLang = 'off';
+            if (savedLang === 'off') {
+                activeLang = 'off';
+            } else if (savedLang && availableTracks.some(t => t.lang?.toLowerCase() === savedLang.toLowerCase())) {
+                activeLang = savedLang;
+            } else {
+                const defaultTrack = availableTracks.find(t => t.default) || availableTracks.find(t => t.lang?.toLowerCase().startsWith('pt'));
+                if (defaultTrack) activeLang = defaultTrack.lang;
+            }
+
+            // Injeta elementos <track>
+            if (video && availableTracks.length > 0) {
+                availableTracks.forEach(track => {
+                    const trackEl = document.createElement('track');
+                    trackEl.kind = 'subtitles';
+                    trackEl.srclang = track.lang;
+                    trackEl.label = track.label || track.lang;
+                    const vttUrl = track.vttUrl ? (track.vttUrl.includes('?') ? track.vttUrl : `${track.vttUrl}?v=${track.version || Date.now()}`) : '';
+                    trackEl.src = vttUrl;
+                    if (track.lang?.toLowerCase() === activeLang.toLowerCase()) {
+                        trackEl.default = true;
+                    }
+                    video.appendChild(trackEl);
+                });
+            }
+
+            // Renderiza lista no menu
+            let html = `
+                <button class="speed-opt-btn ${activeLang === 'off' ? 'active' : ''}" onclick="switchPlayerSubtitleTrack('off')">
+                    <span>✕ Desativada</span>
+                    <span class="opt-check">✓</span>
+                </button>
+            `;
+
+            availableTracks.forEach(track => {
+                const isSelected = track.lang?.toLowerCase() === activeLang.toLowerCase();
+                const flag = track.lang?.toLowerCase().startsWith('pt') ? '🇧🇷' : (track.lang?.toLowerCase().startsWith('en') ? '🇺🇸' : '💬');
+                html += `
+                    <button class="speed-opt-btn ${isSelected ? 'active' : ''}" onclick="switchPlayerSubtitleTrack('${track.lang}')">
+                        <span>${flag} ${track.label || track.lang}</span>
+                        <span class="opt-check">✓</span>
+                    </button>
+                `;
+            });
+
+            listEl.innerHTML = html;
+
+            if (btnLabel) {
+                if (activeLang === 'off') {
+                    btnLabel.innerText = 'Legenda: Off';
+                } else {
+                    const actObj = availableTracks.find(t => t.lang?.toLowerCase() === activeLang.toLowerCase());
+                    btnLabel.innerText = actObj?.label || activeLang.toUpperCase();
+                }
+            }
+
+            if (btnBox) {
+                btnBox.style.display = availableTracks.length > 0 ? 'block' : 'none';
+            }
+
+            // Sincroniza textTracks nativo
+            applyVideoTextTrack(activeLang);
+
+            // Sincroniza botões de estilização (tamanho, cor, fundo) com o localStorage
+            syncSubtitleStyleButtonsUI();
+
+            // Aplica estilos visuais salvos via CSS ::cue
+            applySubtitleStyles();
+        }
+
+        function applyVideoTextTrack(targetLang) {
+            const video = document.getElementById('html5-video-player');
+            if (!video || !video.textTracks) return;
+
+            for (let i = 0; i < video.textTracks.length; i++) {
+                const tt = video.textTracks[i];
+                if (targetLang !== 'off' && tt.language && tt.language.toLowerCase() === targetLang.toLowerCase()) {
+                    tt.mode = 'showing';
+                } else {
+                    tt.mode = 'disabled';
+                }
+            }
+        }
+
+        function switchPlayerSubtitleTrack(lang) {
+            const menu = document.getElementById('player-subtitles-menu');
+            if (menu) {
+                menu.classList.remove('visible');
+                menu.style.display = 'none';
+            }
+
+            localStorage.setItem('bf_sub_lang', lang);
+
+            const listEl = document.getElementById('player-subtitle-tracks-list');
+            if (listEl) {
+                const btns = listEl.querySelectorAll('.speed-opt-btn');
+                btns.forEach(btn => {
+                    const isMatch = (lang === 'off' && btn.innerText.includes('Desativada')) ||
+                                    (btn.getAttribute('onclick')?.includes(`'${lang}'`));
+                    btn.classList.toggle('active', isMatch);
+                });
+            }
+
+            const btnLabel = document.getElementById('player-subtitles-label');
+            if (btnLabel) {
+                if (lang === 'off') {
+                    btnLabel.innerText = 'Legenda: Off';
+                } else {
+                    const tracks = currentPlayingMedia?.legendas || [];
+                    const t = tracks.find(x => x.lang?.toLowerCase() === lang.toLowerCase());
+                    btnLabel.innerText = t?.label || lang.toUpperCase();
+                }
+            }
+
+            applyVideoTextTrack(lang);
+            showToast(lang === 'off' ? '💬 Legenda desativada' : `💬 Legenda ativada: ${lang.toUpperCase()}`, 'info');
+        }
+
+        function syncSubtitleStyleButtonsUI() {
+            const size = localStorage.getItem('bf_sub_size') || 'md';
+            const color = localStorage.getItem('bf_sub_color') || 'white';
+            const bg = localStorage.getItem('bf_sub_bg') || 'translucent';
+
+            const sizeBtns = document.querySelectorAll('#player-sub-size-buttons .sub-style-opt-btn');
+            sizeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${size}'`)));
+
+            const colorBtns = document.querySelectorAll('#player-sub-color-buttons .sub-color-opt-btn');
+            colorBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${color}'`)));
+
+            const bgBtns = document.querySelectorAll('#player-sub-bg-buttons .sub-style-opt-btn');
+            bgBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${bg}'`)));
+        }
+
+        function setSubtitleSize(size) {
+            localStorage.setItem('bf_sub_size', size);
+            syncSubtitleStyleButtonsUI();
+            applySubtitleStyles();
+        }
+
+        function setSubtitleColor(color) {
+            localStorage.setItem('bf_sub_color', color);
+            syncSubtitleStyleButtonsUI();
+            applySubtitleStyles();
+        }
+
+        function setSubtitleBackground(bg) {
+            localStorage.setItem('bf_sub_bg', bg);
+            syncSubtitleStyleButtonsUI();
+            applySubtitleStyles();
+        }
+
+        function applySubtitleStyles() {
+            const size = localStorage.getItem('bf_sub_size') || 'md';
+            const color = localStorage.getItem('bf_sub_color') || 'white';
+            const bg = localStorage.getItem('bf_sub_bg') || 'translucent';
+
+            const sizeMap = {
+                sm: 'clamp(14px, 2.2vw, 18px)',
+                md: 'clamp(18px, 3.0vw, 24px)',
+                lg: 'clamp(22px, 3.8vw, 32px)',
+                xl: 'clamp(28px, 4.8vw, 40px)'
+            };
+
+            const colorMap = {
+                white: '#ffffff',
+                yellow: '#facc15',
+                cyan: '#22d3ee'
+            };
+
+            const bgMap = {
+                none: 'transparent',
+                translucent: 'rgba(0, 0, 0, 0.75)',
+                solid: '#000000'
+            };
+
+            const fontSize = sizeMap[size] || sizeMap.md;
+            const fontColor = colorMap[color] || colorMap.white;
+            const bgColor = bgMap[bg] || bgMap.translucent;
+            const textShadow = bg === 'none'
+                ? '0 0 4px #000, 0 0 8px #000, 0 2px 4px #000'
+                : '0 1px 3px rgba(0,0,0,0.95)';
+
+            let styleEl = document.getElementById('bf-subtitle-dynamic-styles');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'bf-subtitle-dynamic-styles';
+                document.head.appendChild(styleEl);
+            }
+
+            styleEl.textContent = `
+                #html5-video-player::cue {
+                    font-size: ${fontSize} !important;
+                    color: ${fontColor} !important;
+                    background-color: ${bgColor} !important;
+                    text-shadow: ${textShadow} !important;
+                    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+                    font-weight: 700 !important;
+                    line-height: 1.35 !important;
+                }
+            `;
+        }
+
+        // Aplica estilos iniciais no carregamento
+        applySubtitleStyles();
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           📝 PAINEL ADMIN — ÁREA DE GERENCIAMENTO E EDIÇÃO DE LEGENDAS
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        const adminSubState = {
+            type: null,
+            id: null,
+            title: '',
+            tracks: [],
+            selectedLang: 'pt-BR',
+            cues: [],
+            searchQuery: ''
+        };
+
+        async function openAdminSubtitleModal(type, id, title = '') {
+            adminSubState.type = type;
+            adminSubState.id = id;
+            adminSubState.title = title || `${type === 'filme' ? 'Filme' : 'Episódio'} #${id}`;
+            adminSubState.searchQuery = '';
+            adminSubState.selectedLang = 'pt-BR';
+
+            const modal = document.getElementById('admin-modal-subtitles');
+            const titleEl = document.getElementById('admin-sub-modal-title');
+            const subTitleEl = document.getElementById('admin-sub-modal-subtitle');
+            const searchInput = document.getElementById('admin-sub-search-input');
+            const shiftInput = document.getElementById('admin-sub-shift-input');
+
+            if (titleEl) titleEl.innerText = `💬 Gerenciar Legendas • ${adminSubState.title}`;
+            if (subTitleEl) subTitleEl.innerText = 'Carregando faixas e sincronia...';
+            if (searchInput) searchInput.value = '';
+            if (shiftInput) shiftInput.value = '';
+
+            if (modal) {
+                modal.classList.add('visible');
+                modal.style.display = 'flex';
+            }
+
+            await loadAdminSubtitles(type, id, 'pt-BR');
+        }
+
+        async function loadAdminSubtitles(type, id, lang = 'pt-BR') {
+            const subTitleEl = document.getElementById('admin-sub-modal-subtitle');
+            const cuesCountEl = document.getElementById('admin-sub-cues-count');
+            const tracksBox = document.getElementById('admin-sub-tracks-container');
+            const tbody = document.getElementById('admin-sub-cues-tbody');
+
+            if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#94a3b8;">⏳ Carregando falas da legenda...</td></tr>`;
+
+            try {
+                const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(type)}/${encodeURIComponent(id)}?lang=${encodeURIComponent(lang)}`, {
+                    headers: getAuthHeaders()
+                });
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Falha ao carregar legendas.');
+                }
+
+                adminSubState.tracks = data.tracks || [];
+                adminSubState.selectedLang = data.selectedTrack || lang;
+                adminSubState.cues = data.cues || [];
+
+                if (subTitleEl) {
+                    subTitleEl.innerText = `${adminSubState.tracks.length} trilha(s) disponível(is) • Editando: ${adminSubState.selectedLang.toUpperCase()}`;
+                }
+                if (cuesCountEl) {
+                    cuesCountEl.innerText = `${adminSubState.cues.length} falas carregadas`;
+                }
+
+                // Renderiza botões de trilha
+                if (tracksBox) {
+                    if (adminSubState.tracks.length === 0) {
+                        tracksBox.innerHTML = `<span style="font-size:12px; color:#ef4444;">⚠️ Nenhuma legenda vinculada a esta mídia. Envie um arquivo abaixo.</span>`;
+                    } else {
+                        tracksBox.innerHTML = adminSubState.tracks.map(t => {
+                            const isSel = t.lang.toLowerCase() === adminSubState.selectedLang.toLowerCase();
+                            return `
+                                <button class="btn-action ${isSel ? 'btn-action-primary' : ''}" style="padding:4px 10px; font-size:11px;" onclick="loadAdminSubtitles('${adminSubState.type}', '${adminSubState.id}', '${t.lang}')">
+                                    ${t.lang.toUpperCase()} • ${t.label || t.lang} ${t.default ? '★' : ''}
+                                </button>
+                            `;
+                        }).join('');
+                    }
+                }
+
+                renderAdminSubtitleCuesTable();
+            } catch (err) {
+                console.error('Erro ao carregar legendas:', err);
+                if (subTitleEl) subTitleEl.innerText = `Erro: ${err.message}`;
+                if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#ef4444;">❌ ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderAdminSubtitleCuesTable() {
+            const tbody = document.getElementById('admin-sub-cues-tbody');
+            if (!tbody) return;
+
+            const q = (adminSubState.searchQuery || '').toLowerCase().trim();
+            const cues = adminSubState.cues.filter(c => {
+                if (!q) return true;
+                return (c.text || '').toLowerCase().includes(q) || (c.startTime || '').includes(q) || String(c.index) === q;
+            });
+
+            if (cues.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">${adminSubState.cues.length === 0 ? 'Nenhuma fala encontrada nesta legenda.' : 'Nenhuma fala corresponde ao filtro.'}</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = cues.map(c => {
+                const srtStart = c.startTime || '00:00:00,000';
+                const srtEnd = c.endTime || '00:00:00,000';
+                return `
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); background: rgba(0,0,0,0.1);">
+                        <td style="padding: 8px 10px; color: #94a3b8; font-weight: 700;">${c.index}</td>
+                        <td style="padding: 6px 10px;">
+                            <input type="text" class="settings-input" style="padding: 4px 6px; font-size: 11px; width: 100px; font-family: monospace;" value="${escapeAttr(srtStart)}" data-cue-index="${c.index}" data-field="startTime" onchange="updateAdminCueField(${c.index}, 'startTime', this.value)">
+                        </td>
+                        <td style="padding: 6px 10px;">
+                            <input type="text" class="settings-input" style="padding: 4px 6px; font-size: 11px; width: 100px; font-family: monospace;" value="${escapeAttr(srtEnd)}" data-cue-index="${c.index}" data-field="endTime" onchange="updateAdminCueField(${c.index}, 'endTime', this.value)">
+                        </td>
+                        <td style="padding: 6px 10px;">
+                            <textarea class="settings-input" rows="2" style="padding: 4px 6px; font-size: 12px; width: 100%; box-sizing: border-box; resize: vertical;" data-cue-index="${c.index}" data-field="text" onchange="updateAdminCueField(${c.index}, 'text', this.value)">${escapeHtml(c.text || '')}</textarea>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateAdminCueField(cueIndex, field, value) {
+            const cue = adminSubState.cues.find(c => c.index === cueIndex);
+            if (cue) {
+                cue[field] = value;
+            }
+        }
+
+        function filterAdminSubtitleCues(query) {
+            adminSubState.searchQuery = query || '';
+            renderAdminSubtitleCuesTable();
+        }
+
+        async function handleAdminSubtitleShift(offsetMs) {
+            if (!adminSubState.id || !adminSubState.type) return;
+
+            try {
+                showToast(`⏳ Deslocando legenda em ${offsetMs > 0 ? '+' : ''}${offsetMs}ms...`, 'info');
+                const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/shift`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        offsetMs,
+                        lang: adminSubState.selectedLang
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Erro ao sincronizar.');
+                }
+
+                adminSubState.cues = data.cues || [];
+                renderAdminSubtitleCuesTable();
+                showToast(data.message, 'success');
+            } catch (err) {
+                showToast(`Erro ao deslocar legenda: ${err.message}`, 'error');
+            }
+        }
+
+        function handleAdminSubtitleCustomShift() {
+            const input = document.getElementById('admin-sub-shift-input');
+            const val = parseInt(input?.value, 10);
+            if (isNaN(val) || val === 0) {
+                showToast('Informe um valor de offset numérico diferente de zero (ex: +300 ou -500).', 'warning');
+                return;
+            }
+            handleAdminSubtitleShift(val);
+        }
+
+        async function handleAdminSubtitleSaveCues() {
+            if (!adminSubState.id || !adminSubState.type) return;
+            if (!adminSubState.cues || adminSubState.cues.length === 0) {
+                showToast('Nenhuma fala para salvar.', 'warning');
+                return;
+            }
+
+            try {
+                showToast('⏳ Salvando falas e atualizando arquivos...', 'info');
+                const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/cues`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        cues: adminSubState.cues,
+                        lang: adminSubState.selectedLang
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Erro ao salvar alterações.');
+                }
+
+                adminSubState.cues = data.cues || [];
+                renderAdminSubtitleCuesTable();
+                showToast(data.message, 'success');
+            } catch (err) {
+                showToast(`Erro ao salvar falas: ${err.message}`, 'error');
+            }
+        }
+
+        async function handleAdminSubtitleUploadSubmit() {
+            if (!adminSubState.id || !adminSubState.type) return;
+            const fileInput = document.getElementById('admin-sub-file-input');
+            const file = fileInput?.files?.[0];
+
+            if (!file) {
+                showToast('Selecione um arquivo .srt ou .vtt para enviar.', 'warning');
+                return;
+            }
+
+            try {
+                showToast('⏳ Enviando e validando nova legenda...', 'info');
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('lang', adminSubState.selectedLang || 'pt-BR');
+                formData.append('label', adminSubState.selectedLang === 'en' ? 'English' : 'Português (Brasil)');
+
+                const headers = {
+                    'Authorization': `Bearer ${adminToken || ''}`,
+                    'x-admin-token': adminToken || ''
+                };
+
+                const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/upload`, {
+                    method: 'POST',
+                    headers,
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Erro ao fazer upload da legenda.');
+                }
+
+                showToast(data.message, 'success');
+                if (fileInput) fileInput.value = '';
+                await loadAdminSubtitles(adminSubState.type, adminSubState.id, adminSubState.selectedLang);
+            } catch (err) {
+                showToast(`Erro no upload: ${err.message}`, 'error');
             }
         }
