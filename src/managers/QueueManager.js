@@ -1033,7 +1033,6 @@ class QueueManager extends EventEmitter {
                         bestSource: job.bestSource,
                         rejectedSubtitleSources: job.rejectedSubtitleSources,
                         pendingUpload: job.pendingUpload,
-                        validatedSubtitleText: job.validatedSubtitleText,
                         langInfo: job.langInfo,
                         customMagnet: job.customMagnet || null,
                         isManualAdd: job.isManualAdd || false,
@@ -1088,7 +1087,6 @@ class QueueManager extends EventEmitter {
             bestSource: extra.bestSource || null,
             rejectedSubtitleSources: extra.rejectedSubtitleSources || [],
             pendingUpload: extra.pendingUpload || null,
-            validatedSubtitleText: extra.validatedSubtitleText || null,
             langInfo: extra.langInfo || null,
             customMagnet: extra.customMagnet || null,
             isManualAdd: extra.isManualAdd || false,
@@ -1989,6 +1987,7 @@ class QueueManager extends EventEmitter {
             // Incrementa o contador de tentativas
             nextJob.attemptCount = (nextJob.attemptCount || 0) + 1;
 
+            const subtitleFailure = ['SUBTITLE_PROVIDER_UNAVAILABLE', 'SUBTITLE_SYNC_FAILED'].includes(reason);
             if (nextJob.attemptCount < this.MAX_JOB_ATTEMPTS) {
                 // Ainda tem tentativas restantes: move para o FINAL da fila para garantir rotatividade
                 // Outros conteúdos serão processados antes da próxima tentativa deste job
@@ -2006,7 +2005,7 @@ class QueueManager extends EventEmitter {
                 nextJob.progress = 0;
                 nextJob.retryAfter = new Date(Date.now() + 45 * 60 * 1000).toISOString();
                 nextJob.error = `Tentativa ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}: ${error.message}`;
-                nextJob.progressDetails = ['SUBTITLE_PROVIDER_UNAVAILABLE', 'SUBTITLE_SYNC_FAILED'].includes(error.code)
+                nextJob.progressDetails = subtitleFailure
                     ? `Aguardando legenda: ${error.message}`
                     : `Aguardando nova tentativa (${attemptsLeft} restante(s))...`;
 
@@ -2028,6 +2027,13 @@ class QueueManager extends EventEmitter {
                     this.queue.push(nextJob);
                 }
                 this.sortQueue();
+            } else if (subtitleFailure) {
+                nextJob.status = 'failed';
+                nextJob.progress = 0;
+                nextJob.retryAfter = null;
+                nextJob.error = error.message;
+                nextJob.progressDetails = 'Legenda pendente de revisão. Use Tentar novamente após corrigir a causa.';
+                await this.saveJob(nextJob);
             } else {
                 // Atingiu 3 tentativas com falha: DESCARTA DEFINITIVAMENTE O JOB PARA LIBERAR A FILA
                 console.warn(`🛑 [DESCARTE DEFINITIVO ${nextJob.attemptCount}/${this.MAX_JOB_ATTEMPTS}] "${nextJob.title}" atingiu o limite de ${this.MAX_JOB_ATTEMPTS} tentativas com falha (${error.message}). Descartando da esteira para liberar espaço.`);
@@ -2383,7 +2389,15 @@ class QueueManager extends EventEmitter {
                         requiredOptDurationSec = isMicro ? 40 : (baseExpectedMin * 60 * 0.85);
                     }
 
-                    if (optInfo && optInfo.duration >= requiredOptDurationSec) {
+                    const needsSub = (job.audioPreference === 'legendado' || job.audioPreference === 'dual');
+                    const hasSub = optInfo && optInfo.subtitleStreams && optInfo.subtitleStreams.length > 0;
+
+                    if (needsSub && !hasSub) {
+                        console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui trilha de legendas exigida pelo job (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
+                        await DownloaderManager.cleanupFile(optimizedPath);
+                        optimizedPath = null;
+                        job.optimizedPath = null;
+                    } else if (optInfo && optInfo.duration >= requiredOptDurationSec) {
                         console.log(`⚡ Retomando envio a partir de arquivo otimizado existente (${(optStat.size / (1024 * 1024 * 1024)).toFixed(2)} GB, ${optInfo.durationFormatted}): ${path.basename(optimizedPath)}`);
                         resumeFromOptimized = true;
                         videoInfo = optInfo;
@@ -2937,6 +2951,7 @@ class QueueManager extends EventEmitter {
                     (job.customMagnet === source.magnet || !blockedSources.has(sourceHash(source))) &&
                     !(job.rejectedSubtitleSources || []).includes(releaseKey(source));
                 const recordSourceFailure = async (source, error) => {
+                    if (error.code === 'SUBTITLE_PROVIDER_UNAVAILABLE') return;
                     const reason = error.code || 'TRANSFER_FAILED';
                     const hours = reason === 'TORRENT_WRONG_MEDIA' ? 24 * 30 :
                         reason === 'TORRENT_TRANSLATION_UNAVAILABLE' ? 6 : 1;
@@ -3063,6 +3078,9 @@ class QueueManager extends EventEmitter {
                             break;
                         }
                     } catch (err) {
+                        if (err.code === 'SUBTITLE_PROVIDER_UNAVAILABLE' && job.audioPreference === 'legendado') {
+                            throw err;
+                        }
                         if (err.code === 'PACK_TARGET_INCOMPLETE') {
                             await this.enqueueRecoveredPackEpisodes(job, metadata, currentSource, err.episodeMap);
                         }
@@ -3185,7 +3203,8 @@ class QueueManager extends EventEmitter {
 
 
                 if (!downloadedMedia || !bestSource) {
-                    if (lastError?.code === 'TORRENT_TRANSLATION_UNAVAILABLE' ||
+                    if (lastError?.code === 'SUBTITLE_PROVIDER_UNAVAILABLE' ||
+                        lastError?.code === 'TORRENT_TRANSLATION_UNAVAILABLE' ||
                         lastError?.code === 'TORRENT_WRONG_MEDIA' ||
                         (!lastError && (blockedSources.size || job.rejectedSubtitleSources?.length))) {
                         throw lastError || new Error('As fontes disponíveis já falharam ou estão no intervalo de retentativa.');
@@ -3215,7 +3234,6 @@ class QueueManager extends EventEmitter {
                 job.rawFilePath = rawFilePath;
                 job.expectedSize = downloadedMedia.sizeBytes;
                 job.bestSource = bestSource;
-                job.validatedSubtitleText = downloadedMedia.validatedSubtitleText || null;
                 await this.saveJob(job);
 
                 // Se for um Season Pack com múltiplos episódios indexados, enfileira e vincula os outros episódios ao SSD local
@@ -3422,81 +3440,23 @@ class QueueManager extends EventEmitter {
                 langInfo = VideoProcessor.validatePortugueseContent(videoInfo, path.basename(rawFilePath), effectiveSource, metadata);
 
                 if (!langInfo.isValid) {
-                    // Se foi rejeitado por conter áudio russo ou scam em filme ocidental, não aplica fallback e descarta imediatamente
-                    if (langInfo.isRussianScam) {
-                        console.warn(`⚠️ Arquivo descartado: Release com áudio Russo / Scam detectado para "${job.title}".`);
+                    if (langInfo.isRussianScam || VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata)) {
                         await DownloaderManager.cleanupFile(rawFilePath);
-                        throw new Error(`Vídeo com áudio em Russo/Scam descartado.`);
+                        throw new Error('Vídeo com áudio em Russo/Scam descartado.');
                     }
 
-                    // 1. Verifica se o torrent já trouxe legenda companion PT-BR na pasta (Companion Subs do pack)
-                    const companion = await VideoProcessor.findCompanionSubtitle(rawFilePath, { season: job.season || 1, episode: job.episode || 1 });
-                    if (companion && companion.ptSrtPath && !VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata) && !job.isUpgrade) {
-                        console.log(`📦 [Companion Subs] Legenda local PT-BR encontrada no pacote para "${job.title}" T${job.season || 1}E${job.episode || 1}: ${path.basename(companion.ptSrtPath)}`);
-                        langInfo = {
-                            isValid: true,
-                            isDublado: false,
-                            isLegendado: true,
-                            hasBoth: false,
-                            audioText: 'Legendado (PT-BR)'
-                        };
-                        job.audioPreference = 'legendado';
-                    } else {
-                        // 2. Se o arquivo não tiver áudio PT-BR embutido nem legenda local, verifica OpenSubtitles (apenas se o áudio original for genuíno)
-                        if (VideoProcessor.isRussianOrScamAudio(videoInfo, path.basename(rawFilePath), metadata)) {
-                            console.warn(`⚠️ Fallback abortado: Áudio em idioma Russo / Scam detectado para "${job.title}".`);
-                            await DownloaderManager.cleanupFile(rawFilePath);
-                            throw new Error(`Vídeo com áudio em Russo/Scam descartado.`);
-                        }
-
-                        let imdbId = metadata.imdbId || job.metaDetails?.imdbId;
-                        if (!imdbId && metadata.tmdbId && job.type === 'serie') {
-                            try {
-                                const extIds = await TMDBService.getTVExternalIds(metadata.tmdbId);
-                                if (extIds && extIds.imdb_id) imdbId = extIds.imdb_id;
-                            } catch (e) { }
-                        }
-                        const ptSubs = imdbId ? await MediaSearchService.getOpenSubtitlesPT(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []) : [];
-                        const SubtitleTranslationService = require('../services/SubtitleTranslationService');
-                        let canTranslateAi = false;
-                        if ((!ptSubs || ptSubs.length === 0) && SubtitleTranslationService.isAvailable() && imdbId) {
-                            const enSubs = await MediaSearchService.getOpenSubtitlesEN(imdbId, job.type, job.season || 1, job.episode || 1).catch(() => []);
-                            canTranslateAi = enSubs && enSubs.length > 0;
-                        }
-
-                        // Permite fallback para Legendado via OpenSubtitles se:
-                        // - há legendas PT-BR disponíveis no OpenSubtitles (ou legenda EN para tradução IA), E
-                        // - não é um upgrade e não foi explicitamente marcado como apenas-dublado
-                        // NOTA: remove bloqueio por jaPossuiLegendado para doramas/animes/conteúdo asiático
-                        //       pois o episódio anterior pode ter falhado e ficado com estado incorreto
-                        const isBlockedUpgrade = job.isUpgrade && jaPossuiLegendado;
-                        if ((ptSubs && ptSubs.length > 0 || canTranslateAi) && !job.ignorarFallbackLegendado && !job.onlyDublado && !isBlockedUpgrade) {
-                            const subOrigin = ptSubs?.length > 0 ? `${ptSubs.length} legenda(s) PT-BR encontradas` : 'legenda EN para tradução inteligente via IA';
-                            console.log(`ℹ️ [Fallback Legendado] Arquivo em idioma original sem áudio PT-BR embutido, mas com ${subOrigin} no OpenSubtitles. Processando como Legendado (PT-BR)...`);
-                            langInfo = {
-                                isValid: true,
-                                isDublado: false,
-                                isLegendado: true,
-                                hasBoth: false,
-                                audioText: 'Legendado (PT-BR)'
-                            };
-                            job.audioPreference = 'legendado';
-                        } else {
-                            const motivo = isBlockedUpgrade ? 'já possui Legendado e é upgrade' : 'sem legendas PT-BR no OpenSubtitles';
-                            console.log(`⚠️ Arquivo descartado: Nenhuma faixa de áudio dublado em Português detectada no download de "${job.title}" (${motivo}).`);
-                            if (rawFilePath && fs.existsSync(rawFilePath)) {
-                                await DownloaderManager.cleanupFile(rawFilePath);
-                            }
-                            if (job.type === 'serie') {
-                                this.recordSkippedEpisode(metadata.nome || job.title, job.season || 1, job.episode || 1, 'dublado');
-                            }
-                            const failedSource = bestSource || job.bestSource;
-                            await this.rememberSourceFailure(sourceFailureKey(job, metadata), failedSource, 'NO_DUBBED_AUDIO', 24);
-                            job.rawFilePath = null;
-                            await this.saveJob(job);
-                            throw Object.assign(new Error('O arquivo baixado não contém áudio dublado em Português.'), { code: 'NO_DUBBED_AUDIO' });
-                        }
+                    const explicitSub = job.audioPreference === 'legendado';
+                    const allowsSub = explicitSub || (!job.ignorarFallbackLegendado && !job.onlyDublado && !(job.isUpgrade && jaPossuiLegendado));
+                    if (!allowsSub) {
+                        await DownloaderManager.cleanupFile(rawFilePath);
+                        await this.rememberSourceFailure(sourceFailureKey(job, metadata), bestSource || job.bestSource, 'NO_DUBBED_AUDIO', 24);
+                        job.rawFilePath = null;
+                        await this.saveJob(job);
+                        throw Object.assign(new Error('O arquivo baixado não contém áudio dublado em Português.'), { code: 'NO_DUBBED_AUDIO' });
                     }
+
+                    langInfo = { isValid: true, isDublado: false, isLegendado: true, hasBoth: false, audioText: 'Legendado (PT-BR)' };
+                    job.audioPreference = 'legendado';
                 }
 
                 console.log(`🎙️ Duração conferida: ${videoInfo.durationFormatted}${tmdbExpectedDurationMin ? ` / Esperado TMDB: ~${tmdbExpectedDurationMin} min` : ''}. Classificação inicial: ${langInfo.audioText}. Conferência final de áudio e legenda pendente.`);
@@ -3541,11 +3501,7 @@ class QueueManager extends EventEmitter {
             setImmediate(() => this.processNext());
 
             try {
-                await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
-                    job.progress = percent;
-                    job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
-                    this.activeTask = job;
-                }, {
+                const processingMetadata = {
                     nome: job.title,
                     tipo: job.type,
                     season: job.season,
@@ -3554,25 +3510,30 @@ class QueueManager extends EventEmitter {
                     totalEpisodios: metadata.totalEpisodios,
                     imdbId: metadata.imdbId,
                     tmdbId: metadata.tmdbId,
-                    subtitleUrl: bestSource?.subtitleUrl || job.bestSource?.subtitleUrl,
-                    validatedSubtitleText: job.validatedSubtitleText,
-                    isDirect: bestSource?.isDirect || job.bestSource?.isDirect || false,
-                    hasEmbeddedSub: bestSource?.hasEmbeddedSub || job.bestSource?.hasEmbeddedSub || false,
-                    isReadySub: bestSource?.isReadySub || job.bestSource?.isReadySub || false,
                     // Preferência do job manda: Dual com PT+subs em pedido dublado => dublado limpo (sem legenda)
                     isDublado: (job.audioPreference === 'legendado') ? false : (langInfo?.isDublado ?? true),
                     isLegendado: (job.audioPreference === 'legendado') ? true : !!(langInfo?.isLegendado && !langInfo?.isDublado),
+                    requiresDub: job.audioPreference !== 'legendado' && !!(job.onlyDublado || job.ignorarFallbackLegendado),
                     idiomaOriginal: job.idiomaOriginal || job.originalLanguage || metadata.idiomaOriginal || metadata.originalLanguage || metadata.original_language || null,
                     originalLanguage: job.originalLanguage || job.idiomaOriginal || metadata.originalLanguage || metadata.idiomaOriginal || metadata.original_language || null,
                     isAnime: !!(job.isAnime || metadata.isAnime || metadata.is_anime || job.extraData?.isAnime),
                     isDorama: !!(job.isDorama || metadata.isDorama || metadata.is_dorama || job.extraData?.isDorama),
                     category: job.category || metadata.category || null
-                });
+                };
+                await VideoProcessor.optimizeForTelegram(rawFilePath, optimizedPath, (percent, details) => {
+                    job.progress = percent;
+                    job.progressDetails = details || `Otimizando 1080p: ${percent}%`;
+                    this.activeTask = job;
+                }, processingMetadata);
+                const { isDublado, isLegendado, idiomaAudioLabel } = processingMetadata;
+                Object.assign(metadata, { isDublado, isLegendado, idiomaAudioLabel });
+                langInfo = { ...langInfo, isDublado, isLegendado, hasBoth: false };
+                job.langInfo = langInfo;
+                await this.saveJob(job);
 
-                // Assim que a otimização 1080p finaliza com sucesso, deleta imediatamente o arquivo bruto original
                 this.recordIngestionTiming('optimization', optimizeStartedAt);
-                // para não manter cópias duplicadas ocupando espaço durante a fase de upload
-                if (rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
+                // A versão legendada preserva o original até concluir o envio e o registro no catálogo.
+                if (isDublado && rawFilePath && optimizedPath && rawFilePath !== optimizedPath && fs.existsSync(optimizedPath)) {
                     console.log(`🧹 [Otimização Concluída] Liberando espaço em disco: removendo arquivo bruto original (${path.basename(rawFilePath)})...`);
                     await DownloaderManager.cleanupFile(rawFilePath);
                     rawFilePath = null;
