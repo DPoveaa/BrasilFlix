@@ -3619,6 +3619,85 @@ class StremioServer {
             }
         });
 
+        // 🎬 API Pública: Resolve trilhas de legenda para o player (fonte única de verdade — igual ao Admin modal)
+        this.app.get('/api/media/:type/:id/subtitles', async (req, res) => {
+            try {
+                const { type, id } = req.params;
+                if (type !== 'filme' && type !== 'episodio') {
+                    return res.status(400).json({ error: 'Tipo inválido. Use "filme" ou "episodio".' });
+                }
+
+                const table = type === 'filme' ? 'filmes' : 'episodios';
+                const cols = type === 'filme'
+                    ? 'id, nome, tmdb_id, legendas, is_hardsub'
+                    : 'id, nome, temporada_numero, numero, serie_id, legendas, is_hardsub';
+
+                const r = await db.query(`SELECT ${cols} FROM ${table} WHERE id = $1`, [id]);
+                if (r.rows.length === 0) return res.status(404).json({ tracks: [] });
+
+                const row = r.rows[0];
+
+                let tracks = row.legendas || [];
+                if (typeof tracks === 'string') {
+                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                }
+                if (!Array.isArray(tracks)) tracks = [];
+
+                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+
+                // ── Disk discovery: mesma lógica do Admin modal ───────────────────────
+                if (tracks.length === 0 && fs.existsSync(subtitlesDir)) {
+                    let tmdbId = row.tmdb_id;
+                    let sNum = row.temporada_numero;
+                    let eNum = row.numero;
+                    const baseId = type === 'filme' ? (tmdbId || row.id) : (tmdbId || row.serie_id);
+
+                    const basePattern = type === 'filme'
+                        ? new RegExp(`^(${baseId})_movie_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i')
+                        : new RegExp(`^(${baseId})_s${sNum}e${eNum}_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i');
+
+                    let files = [];
+                    try { files = await fs.readdir(subtitlesDir); } catch (_) { }
+
+                    const matchingPt = files.filter(f => basePattern.test(f) && /ptbr/i.test(f));
+                    if (matchingPt.length > 0) {
+                        const vttF = matchingPt.find(f => f.endsWith('.vtt')) || matchingPt[0];
+                        const srtF = matchingPt.find(f => f.endsWith('.srt')) || matchingPt[0];
+                        const newTrack = {
+                            lang: 'pt-BR',
+                            label: 'Português (Brasil)',
+                            default: true,
+                            srtUrl: `/subtitles/${srtF}`,
+                            vttUrl: `/subtitles/${vttF}`,
+                            version: Date.now()
+                        };
+                        tracks.push(newTrack);
+                        // Persiste no banco e recarrega catálogo para corrigir stale data
+                        await db.query(`UPDATE ${table} SET legendas = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
+                        if (this.catalogoManager) {
+                            this.catalogoManager.loadCatalogo().catch(() => { });
+                        }
+                    }
+                }
+
+                // Sanitiza vttUrl/srtUrl sem expor srtPath/vttPath (caminhos do servidor)
+                const publicTracks = tracks.map(t => ({
+                    lang: t.lang,
+                    label: t.label || t.lang,
+                    default: t.default || false,
+                    vttUrl: t.vttUrl ? `${t.vttUrl.split('?')[0]}?v=${t.version || Date.now()}` : null,
+                    srtUrl: t.srtUrl ? `${t.srtUrl.split('?')[0]}?v=${t.version || Date.now()}` : null,
+                    version: t.version || Date.now()
+                }));
+
+                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                res.json({ tracks: publicTracks });
+            } catch (e) {
+                console.error('❌ [SubtitleTracks:GET]', e.message);
+                res.status(500).json({ tracks: [] });
+            }
+        });
+
         // 💬 APIs de Avaliações & Comentários da Comunidade
         this.app.get('/api/media/:type/:id/comentarios', async (req, res) => {
             const { type, id } = req.params;

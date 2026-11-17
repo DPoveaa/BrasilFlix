@@ -6122,23 +6122,53 @@
             const _mainAreaMoviePb = document.getElementById('app-main-area');
             if (_mainAreaMoviePb) _mainAreaMoviePb.scrollTo({ top: 0, behavior: 'smooth' });
 
-            // Abre o player armado com a Capa + Botão de Play (NÃO começa sozinho)
-            openWebPlayer(movie.nome, `Filme • ${movie.ano || ''}`, streamUrl, {
-                type: 'filme',
-                id: movie.id,
-                title: movie.nome,
-                sub: `Filme • ${movie.ano || ''}`,
-                audio: chosenAudio,
-                hasDub,
-                hasLeg,
-                isHardsub: movie.isHardsub !== undefined ? movie.isHardsub : isItemHardsub(movie),
-                createdAt: movie.createdAt || movie.dataAdicionado,
-                legendas: movie.legendas || [],
-                posterUrl: movie.backdropUrl || movie.posterUrl,
-                qualidade: movie.qualidade || '1080p Full HD',
-                streamUrl,
-                autoPlay: false
-            });
+            // Busca as trilhas de legenda frescas do backend (resolve stale cache do catálogo)
+            // e só então abre o player — assim PT-BR aparece mesmo quando catálogo estava stale
+            const knownLegendas = movie.legendas || [];
+            fetch(`/api/media/filme/${encodeURIComponent(movie.id)}/subtitles`)
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownLegendas;
+                    // Atualiza o catálogo em memória para esta entrada para evitar nova busca
+                    if (freshTracks.length > knownLegendas.length) {
+                        movie.legendas = freshTracks;
+                    }
+                    openWebPlayer(movie.nome, `Filme • ${movie.ano || ''}`, streamUrl, {
+                        type: 'filme',
+                        id: movie.id,
+                        title: movie.nome,
+                        sub: `Filme • ${movie.ano || ''}`,
+                        audio: chosenAudio,
+                        hasDub,
+                        hasLeg,
+                        isHardsub: movie.isHardsub !== undefined ? movie.isHardsub : isItemHardsub(movie),
+                        createdAt: movie.createdAt || movie.dataAdicionado,
+                        legendas: freshTracks,
+                        posterUrl: movie.backdropUrl || movie.posterUrl,
+                        qualidade: movie.qualidade || '1080p Full HD',
+                        streamUrl,
+                        autoPlay: false
+                    });
+                })
+                .catch(() => {
+                    // Fallback: usa legendas do catálogo (pode estar stale, mas melhor do que nada)
+                    openWebPlayer(movie.nome, `Filme • ${movie.ano || ''}`, streamUrl, {
+                        type: 'filme',
+                        id: movie.id,
+                        title: movie.nome,
+                        sub: `Filme • ${movie.ano || ''}`,
+                        audio: chosenAudio,
+                        hasDub,
+                        hasLeg,
+                        isHardsub: movie.isHardsub !== undefined ? movie.isHardsub : isItemHardsub(movie),
+                        createdAt: movie.createdAt || movie.dataAdicionado,
+                        legendas: knownLegendas,
+                        posterUrl: movie.backdropUrl || movie.posterUrl,
+                        qualidade: movie.qualidade || '1080p Full HD',
+                        streamUrl,
+                        autoPlay: false
+                    });
+                });
         }
 
         async function openPlaybackPageForEpisode(serieId, seasonNum, epNum, explicitAudio = null, updateUrl = true, retryCount = 0) {
@@ -6329,28 +6359,61 @@
 
             const isMicro = serie.subtipo === 'microdrama' || serie.isMicrodrama || serie.formato === 'vertical';
 
-            // Abre o player armado com a Capa + Botão de Play (NÃO começa sozinho)
-            openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
-                type: 'serie',
-                id: serie.id,
-                episodeId: episode.id,
-                season: sNum,
-                episode: eNum,
-                title: serie.nome,
-                sub: `T${sNum}E${eNum} • ${epTitleStr}`,
-                audio: chosenAudio,
-                formato: serie.formato || (isMicro ? 'vertical' : 'horizontal'),
-                subtipo: serie.subtipo || (isMicro ? 'microdrama' : 'serie'),
-                hasDub,
-                hasLeg,
-                isHardsub: episode.isHardsub !== undefined ? episode.isHardsub : isItemHardsub(episode),
-                createdAt: episode.createdAt || episode.dataAdicionado || serie.createdAt,
-                legendas: episode.legendas || [],
-                posterUrl: episode.stillUrl || episode.thumbUrl || serie.backdropUrl || serie.posterUrl,
-                qualidade: episode.qualidade || '1080p Full HD',
-                streamUrl,
-                autoPlay: false
-            });
+            // Busca as trilhas de legenda frescas do backend para o episódio (resolve stale cache do catálogo)
+            const episodeDbId = episode.id;
+            const knownEpLegendas = episode.legendas || [];
+            fetch(`/api/media/episodio/${encodeURIComponent(episodeDbId)}/subtitles`)
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownEpLegendas;
+                    if (freshTracks.length > knownEpLegendas.length) {
+                        episode.legendas = freshTracks;
+                    }
+                    openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
+                        type: 'serie',
+                        id: serie.id,
+                        episodeId: episode.id,
+                        season: sNum,
+                        episode: eNum,
+                        title: serie.nome,
+                        sub: `T${sNum}E${eNum} • ${epTitleStr}`,
+                        audio: chosenAudio,
+                        formato: serie.formato || (isMicro ? 'vertical' : 'horizontal'),
+                        subtipo: serie.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                        hasDub,
+                        hasLeg,
+                        isHardsub: episode.isHardsub !== undefined ? episode.isHardsub : isItemHardsub(episode),
+                        createdAt: episode.createdAt || episode.dataAdicionado || serie.createdAt,
+                        legendas: freshTracks,
+                        posterUrl: episode.stillUrl || episode.thumbUrl || serie.backdropUrl || serie.posterUrl,
+                        qualidade: episode.qualidade || '1080p Full HD',
+                        streamUrl,
+                        autoPlay: false
+                    });
+                })
+                .catch(() => {
+                    openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
+                        type: 'serie',
+                        id: serie.id,
+                        episodeId: episode.id,
+                        season: sNum,
+                        episode: eNum,
+                        title: serie.nome,
+                        sub: `T${sNum}E${eNum} • ${epTitleStr}`,
+                        audio: chosenAudio,
+                        formato: serie.formato || (isMicro ? 'vertical' : 'horizontal'),
+                        subtipo: serie.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                        hasDub,
+                        hasLeg,
+                        isHardsub: episode.isHardsub !== undefined ? episode.isHardsub : isItemHardsub(episode),
+                        createdAt: episode.createdAt || episode.dataAdicionado || serie.createdAt,
+                        legendas: knownEpLegendas,
+                        posterUrl: episode.stillUrl || episode.thumbUrl || serie.backdropUrl || serie.posterUrl,
+                        qualidade: episode.qualidade || '1080p Full HD',
+                        streamUrl,
+                        autoPlay: false
+                    });
+                });
         }
 
         let currentPlaybackBatchIndex = null;
