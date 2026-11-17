@@ -89,3 +89,14 @@
         } else {
             setTimeout(initBrasilFlixAds, 200);
         }
+
+        // Sincronização do escalonamento dinâmico de legendas com o container do player
+        function syncPlayerSubtitleScale() {
+            if (typeof window.applySubtitleStyles === 'function') {
+                window.applySubtitleStyles();
+            }
+        }
+        window.addEventListener('resize', syncPlayerSubtitleScale);
+        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
+            document.addEventListener(evt, syncPlayerSubtitleScale);
+        });

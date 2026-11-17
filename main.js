@@ -30,6 +30,13 @@ async function bootstrap() {
     // 2. Sobe o site IMEDIATAMENTE no ar, depois carrega banco, catálogo e inicia esteira
     await botInstance.init();
 
+    // Sincroniza regra de corte temporal de hardsubs (<= 14/11/2026 legado vs >= 15/11/2026 pipeline externo)
+    try {
+        await db.syncHardsubCutoff();
+    } catch (e) {
+        console.warn('⚠️ [HardsubCutoff] Falha ao sincronizar corte de hardsubs no banco:', e.message);
+    }
+
     // 3. Inicializa polling e handlers do bot
     botInstance.start();
 

@@ -138,6 +138,7 @@ async function createTables() {
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_dorama BOOLEAN DEFAULT false;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
         ALTER TABLE filmes ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
+        ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_hardsub BOOLEAN DEFAULT false;
 
         CREATE TABLE IF NOT EXISTS series (
             id BIGSERIAL PRIMARY KEY,
@@ -207,6 +208,7 @@ async function createTables() {
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS formato VARCHAR(50);
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS notif_message_id BIGINT;
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS is_hardsub BOOLEAN DEFAULT false;
 
         CREATE TABLE IF NOT EXISTS pedidos (
             id VARCHAR(50) PRIMARY KEY,
@@ -865,12 +867,78 @@ async function migrateSlugs() {
     }
 }
 
+async function syncHardsubCutoff() {
+    try {
+        console.log('⏱️ [HardsubCutoff] Sincronizando regra de corte temporal de legendas (14/11/2026)...');
+
+        // Garante que as colunas is_hardsub existam
+        await query(`
+            ALTER TABLE filmes ADD COLUMN IF NOT EXISTS is_hardsub BOOLEAN DEFAULT false;
+            ALTER TABLE episodios ADD COLUMN IF NOT EXISTS is_hardsub BOOLEAN DEFAULT false;
+        `);
+
+        // 1. Marca itens legados (upload até 14/11/2026 23:59:59 América/São Paulo) legendados como hardsub
+        const fLegacy = await query(`
+            UPDATE filmes 
+            SET is_hardsub = true 
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%') 
+              AND created_at <= '2026-11-14 23:59:59.999-03'::timestamptz
+              AND (is_hardsub IS NULL OR is_hardsub = false)
+        `);
+
+        const eLegacy = await query(`
+            UPDATE episodios 
+            SET is_hardsub = true 
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%') 
+              AND created_at <= '2026-11-14 23:59:59.999-03'::timestamptz
+              AND (is_hardsub IS NULL OR is_hardsub = false)
+        `);
+
+        // 2. Limpa falso-positivos em itens pós-cutoff (>= 15/11/2026 00:00:00 América/São Paulo)
+        const fPost = await query(`
+            UPDATE filmes 
+            SET is_hardsub = false 
+            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
+              AND is_hardsub = true
+        `);
+
+        const ePost = await query(`
+            UPDATE episodios 
+            SET is_hardsub = false 
+            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
+              AND is_hardsub = true
+        `);
+
+        // 3. Remove flags residuais de hardsub dentro de versoes->'legendado' para pós-cutoff
+        await query(`
+            UPDATE filmes 
+            SET versoes = jsonb_set(versoes, '{legendado,hardsub}', 'false'::jsonb, false)
+            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
+              AND versoes->'legendado' ? 'hardsub'
+              AND versoes->'legendado'->>'hardsub' = 'true'
+        `);
+
+        await query(`
+            UPDATE episodios 
+            SET versoes = jsonb_set(versoes, '{legendado,hardsub}', 'false'::jsonb, false)
+            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
+              AND versoes->'legendado' ? 'hardsub'
+              AND versoes->'legendado'->>'hardsub' = 'true'
+        `);
+
+        console.log(`✅ [HardsubCutoff] Sincronização concluída: ${fLegacy.rowCount || 0} filmes e ${eLegacy.rowCount || 0} eps legados marcados; ${fPost.rowCount || 0} filmes e ${ePost.rowCount || 0} eps pós-cutoff limpos.`);
+    } catch (e) {
+        console.warn('⚠️ [HardsubCutoff] Erro ao sincronizar corte de hardsubs:', e.message);
+    }
+}
+
 async function initDb() {
     try {
         await ensureDatabaseExists();
         await createTables();
         await migrateJsonData();
         await migrateSlugs();
+        await syncHardsubCutoff();
         console.log('🚀 Banco de dados PostgreSQL BrasilFlix 100% conectado e operacional!');
         return true;
     } catch (error) {
@@ -885,5 +953,6 @@ module.exports = {
     initDb,
     autoDeduplicateSeries,
     slugify,
-    migrateSlugs
+    migrateSlugs,
+    syncHardsubCutoff
 };

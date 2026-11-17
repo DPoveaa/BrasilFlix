@@ -1245,6 +1245,36 @@
             return false;
         }
 
+        // Regra de corte temporal estrita para Hardsubs (14/11/2026 23:59:59 horário de Brasília / UTC-3)
+        const HARDSUB_CUTOFF_DATE = new Date('2026-11-14T23:59:59.999-03:00');
+
+        function isItemHardsub(item) {
+            if (!item) return false;
+            // Flag explícita do item / banco de dados
+            if (item.isHardsub !== undefined && item.isHardsub !== null) return !!item.isHardsub;
+            if (item.is_hardsub !== undefined && item.is_hardsub !== null) return !!item.is_hardsub;
+            if (item.hardsub !== undefined && item.hardsub !== null) return !!item.hardsub;
+            if (item.versoes?.legendado?.isHardsub !== undefined) return !!item.versoes.legendado.isHardsub;
+            if (item.versoes?.legendado?.hardsub !== undefined) return !!item.versoes.legendado.hardsub;
+
+            const dateVal = item.createdAt || item.created_at || item.dataAdicionado;
+            if (!dateVal) return false;
+            const itemDate = new Date(dateVal);
+            if (isNaN(itemDate.getTime())) return false;
+
+            const isLeg = !!(
+                item.isLegendado ||
+                item.is_legendado ||
+                item.audio === 'legendado' ||
+                item.versoes?.legendado ||
+                item.hasLeg
+            );
+            if (!isLeg) return false;
+
+            // Legado: adicionado até 14/11/2026 tem legenda embutida no vídeo
+            return itemDate <= HARDSUB_CUTOFF_DATE;
+        }
+
         function getSerieSubtitleMeta(item) {
             if (!item) return '';
             const isSerie = (item.itemType === 'serie' || !!item.temporadas || item.tipo === 'serie');
@@ -6101,6 +6131,8 @@
                 audio: chosenAudio,
                 hasDub,
                 hasLeg,
+                isHardsub: movie.isHardsub !== undefined ? movie.isHardsub : isItemHardsub(movie),
+                createdAt: movie.createdAt || movie.dataAdicionado,
                 legendas: movie.legendas || [],
                 posterUrl: movie.backdropUrl || movie.posterUrl,
                 qualidade: movie.qualidade || '1080p Full HD',
@@ -6311,6 +6343,8 @@
                 subtipo: serie.subtipo || (isMicro ? 'microdrama' : 'serie'),
                 hasDub,
                 hasLeg,
+                isHardsub: episode.isHardsub !== undefined ? episode.isHardsub : isItemHardsub(episode),
+                createdAt: episode.createdAt || episode.dataAdicionado || serie.createdAt,
                 legendas: episode.legendas || [],
                 posterUrl: episode.stillUrl || episode.thumbUrl || serie.backdropUrl || serie.posterUrl,
                 qualidade: episode.qualidade || '1080p Full HD',
@@ -7416,6 +7450,9 @@
             if (label) label.textContent = isFs ? ' Sair da Tela Cheia' : ' Tela Cheia';
             if (icon) icon.textContent = isFs ? '🗗' : '⛶';
             if (btn) btn.title = isFs ? 'Sair da Tela Cheia (F)' : 'Tela Cheia (F)';
+            if (typeof applySubtitleStyles === 'function') {
+                applySubtitleStyles();
+            }
         }
 
         if (!window._fullscreenListenersBound) {
@@ -7504,6 +7541,9 @@
                 btn.style.background = isTheaterMode ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)';
                 btn.style.color = isTheaterMode ? '#60a5fa' : '#fff';
                 btn.innerText = isTheaterMode ? '💡 Janela Padrão' : '💡 Modo Cinema';
+            }
+            if (typeof applySubtitleStyles === 'function') {
+                setTimeout(applySubtitleStyles, 50);
             }
             showToast(isTheaterMode ? '💡 Modo Cinema Imersivo (Tela Expandida)' : '💡 Modo Janela Padrão', 'info');
         }
@@ -11949,9 +11989,11 @@
                             </div>
                             <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
                                 ${epRebaixarBtns}
+                                ${!isItemHardsub(e) ? `
                                 <button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('episodio', '${e.id || e.messageId}', '${(e.nome || `T${e.temporadaNumero}E${e.numero}`).replace(/'/g, "\\'")}')" title="Gerenciar Legendas">
                                     💬
                                 </button>
+                                ` : ''}
                                 <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteEpisode('${e.id || e.messageId}', false)" title="Excluir Episódio Definitivo">
                                     🗑️
                                 </button>
@@ -12170,7 +12212,9 @@
                     ? `<button class="btn-action btn-action-primary btn-icon-compact" onclick="openAdminSerieEpisodesModal('${item.serieId}')" title="Ver todos os episódios desta série">📂 Ver Série</button>`
                     : '';
 
-                const subBtn = `<button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('${item.kind}', '${item.id}', '${(item.nome || item.episodioNome || '').replace(/'/g, "\\'")}')" title="Gerenciar Legendas">💬</button>`;
+                const subBtn = !isItemHardsub(item)
+                    ? `<button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('${item.kind}', '${item.id}', '${(item.nome || item.episodioNome || '').replace(/'/g, "\\'")}')" title="Gerenciar Legendas">💬</button>`
+                    : '';
 
                 const titleHtml = item.kind === 'episodio'
                     ? `<span style="color:#60a5fa; font-weight:700;">${item.serieNome}</span> <span style="color:var(--text-muted); font-size:12px;">•</span> <span style="background:rgba(59,130,246,0.18); color:#93c5fd; padding:1px 6px; border-radius:5px; font-weight:800; font-size:12px; border:1px solid rgba(59,130,246,0.35);">T${item.temporadaNum}E${item.episodioNum}</span> <span style="color:#fff; font-weight:800;">${item.episodioNome}</span>`
@@ -12341,9 +12385,11 @@
                                     </div>
                                     <div class="admin-catalog-card-actions">
                                         ${rebaixarButtons}
+                                        ${!isItemHardsub(i) ? `
                                         <button class="btn-action btn-icon-compact" onclick="openAdminSubtitleModal('filme', '${i.id}', '${(i.nome || '').replace(/'/g, "\\'")}')" title="Gerenciar Legendas">
                                             💬
                                         </button>
+                                        ` : ''}
                                         <button class="btn-action btn-action-danger btn-icon-compact" onclick="handleDeleteCatalogItem('${i.id}', 'filme', false)" title="Excluir Filme Completo">
                                             🗑️
                                         </button>
@@ -14116,8 +14162,8 @@
                             (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
                             (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
                         );
-                        const hasExternalSubs = !!(currentPlayingMedia && Array.isArray(currentPlayingMedia.legendas) && currentPlayingMedia.legendas.length > 0);
-                        adminEditEl.style.display = (isAdmin && hasExternalSubs) ? 'block' : 'none';
+                        const isHardsub = isItemHardsub(currentPlayingMedia);
+                        adminEditEl.style.display = (isAdmin && !isHardsub) ? 'block' : 'none';
                     }
                     menu.style.display = 'block';
                     menu.classList.add('visible');
@@ -14214,14 +14260,10 @@
                 </button>
             `;
 
+            const isHardsub = isItemHardsub(currentPlayingMedia);
+
             if (availableTracks.length === 0) {
-                const isLegendado = !!(currentPlayingMedia && (
-                    currentPlayingMedia.isLegendado ||
-                    currentPlayingMedia.is_legendado ||
-                    currentPlayingMedia.audio === 'legendado' ||
-                    currentPlayingMedia.hasLeg
-                ));
-                const badgeText = isLegendado ? 'Legenda embutida no vídeo (Hardsub)' : 'Sem legenda externa';
+                const badgeText = isHardsub ? 'Legenda embutida no vídeo (Hardsub)' : 'Sem legenda externa disponível';
                 html += `
                     <div style="font-size:11px; color:#94a3b8; padding:8px 10px; font-style:italic; text-align:center; background:rgba(255,255,255,0.03); border-radius:6px; margin:4px 0; border:1px solid rgba(255,255,255,0.06);">
                         ${badgeText}
@@ -14245,7 +14287,7 @@
 
             listEl.innerHTML = html;
 
-            // Renderiza botão de edição admin (apenas se usuário for admin E mídia possuir legendas externas)
+            // Renderiza botão de edição admin (apenas se usuário for admin E mídia NÃO for hardsub legado)
             const adminEditEl = document.getElementById('player-subtitle-admin-edit-row');
             if (adminEditEl) {
                 const isAdmin = !!(
@@ -14254,9 +14296,7 @@
                     (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
                     (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
                 );
-                const hasExternalSubs = (Array.isArray(availableTracks) && availableTracks.length > 0) ||
-                                        (currentPlayingMedia && Array.isArray(currentPlayingMedia.legendas) && currentPlayingMedia.legendas.length > 0);
-                adminEditEl.style.display = (isAdmin && hasExternalSubs) ? 'block' : 'none';
+                adminEditEl.style.display = (isAdmin && !isHardsub) ? 'block' : 'none';
             }
 
             if (btnLabel) {
@@ -14491,18 +14531,82 @@
             applySubtitleStyles();
         }
 
+        function getPlayerContainerWidth() {
+            try {
+                const fsEl = document.fullscreenElement ||
+                    document.webkitFullscreenElement ||
+                    document.mozFullScreenElement ||
+                    document.msFullscreenElement;
+                if (fsEl) {
+                    return fsEl.clientWidth || window.innerWidth || screen.width || 1920;
+                }
+                const video = document.getElementById('html5-video-player');
+                if (video && video.webkitDisplayingFullscreen) {
+                    return window.innerWidth || screen.width || 1920;
+                }
+                if (video && video.clientWidth > 80) {
+                    return video.clientWidth;
+                }
+                const card = document.getElementById('player-card-container');
+                if (card && card.clientWidth > 80) {
+                    return card.clientWidth;
+                }
+                const stage = document.getElementById('playback-player-stage');
+                if (stage && stage.clientWidth > 80) {
+                    return stage.clientWidth;
+                }
+            } catch (_) {}
+            return window.innerWidth || 1280;
+        }
+
+        function computeSubtitleFontSize(sizeKey, containerWidth) {
+            const width = containerWidth || getPlayerContainerWidth();
+            const config = {
+                sm: { ratio: 0.0185, min: 13, max: 64 },
+                md: { ratio: 0.0240, min: 15, max: 84 },
+                lg: { ratio: 0.0300, min: 18, max: 104 },
+                xl: { ratio: 0.0375, min: 21, max: 130 }
+            };
+            const cfg = config[sizeKey] || config.md;
+            return Math.round(Math.min(Math.max(width * cfg.ratio, cfg.min), cfg.max));
+        }
+
+        let _playerResizeObserver = null;
+        function ensurePlayerSubtitleObserver() {
+            if (typeof ResizeObserver === 'undefined') return;
+            if (!_playerResizeObserver) {
+                let rAF = null;
+                _playerResizeObserver = new ResizeObserver(() => {
+                    if (rAF) cancelAnimationFrame(rAF);
+                    rAF = requestAnimationFrame(() => {
+                        applySubtitleStyles();
+                    });
+                });
+            }
+            const ids = ['player-card-container', 'html5-video-player', 'playback-player-stage'];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el._bfSubObserved) {
+                    el._bfSubObserved = true;
+                    _playerResizeObserver.observe(el);
+                }
+            });
+        }
+
         function applySubtitleStyles() {
+            ensurePlayerSubtitleObserver();
+
             const prefs = getSubtitlePrefs();
             const size = prefs.size || 'md';
             const color = prefs.color || 'white';
             const bg = prefs.bg || 'none';
 
-            const sizeMap = {
-                sm: 'clamp(14px, 2.2vw, 18px)',
-                md: 'clamp(18px, 3.0vw, 24px)',
-                lg: 'clamp(22px, 3.8vw, 32px)',
-                xl: 'clamp(28px, 4.8vw, 40px)'
-            };
+            const containerWidth = getPlayerContainerWidth();
+            const fontSizePx = computeSubtitleFontSize(size, containerWidth);
+
+            // Calcula também o tamanho proporcional para tela cheia considerando a resolução do display
+            const fsWidth = Math.max(window.innerWidth || 0, screen.width || 0, 1920);
+            const fsFontSizePx = computeSubtitleFontSize(size, fsWidth);
 
             const colorMap = {
                 white: '#ffffff',
@@ -14516,12 +14620,18 @@
                 solid: '#000000'
             };
 
-            const fontSize = sizeMap[size] || sizeMap.md;
             const fontColor = colorMap[color] || colorMap.white;
             const bgColor = bgMap[bg] || bgMap.none;
             const textShadow = bg === 'none'
                 ? '0 2px 4px rgba(0,0,0,0.95), 0 0 2px #000'
                 : (bg === 'translucent' ? '0 1px 3px rgba(0,0,0,0.95)' : 'none');
+
+            // Propaga variáveis CSS para compatibilidade
+            const root = document.documentElement;
+            if (root) {
+                root.style.setProperty('--player-sub-font-size', `${fontSizePx}px`);
+                root.style.setProperty('--player-sub-fs-size', `${fsFontSizePx}px`);
+            }
 
             let styleEl = document.getElementById('bf-subtitle-dynamic-styles');
             if (!styleEl) {
@@ -14533,7 +14643,7 @@
             styleEl.textContent = `
                 #html5-video-player::cue,
                 video::cue {
-                    font-size: ${fontSize} !important;
+                    font-size: ${fontSizePx}px !important;
                     color: ${fontColor} !important;
                     background-color: ${bgColor} !important;
                     text-shadow: ${textShadow} !important;
@@ -14541,8 +14651,20 @@
                     font-weight: 700 !important;
                     line-height: 1.35 !important;
                 }
+                :fullscreen #html5-video-player::cue,
+                :fullscreen video::cue,
+                #html5-video-player:fullscreen::cue,
+                video:fullscreen::cue,
+                :-webkit-full-screen #html5-video-player::cue,
+                :-webkit-full-screen video::cue,
+                #html5-video-player:-webkit-full-screen::cue,
+                video:-webkit-full-screen::cue {
+                    font-size: ${fsFontSizePx}px !important;
+                }
             `;
         }
+
+        window.applySubtitleStyles = applySubtitleStyles;
 
         // Aplica estilos e preferências iniciais no carregamento
         getSubtitlePrefs();

@@ -1253,14 +1253,14 @@ class StremioServer {
                 let eNum = null;
 
                 if (type === 'filme') {
-                    const r = await db.query(`SELECT id, nome, tmdb_id, imdb_id, legendas FROM filmes WHERE id = $1`, [id]);
+                    const r = await db.query(`SELECT id, nome, tmdb_id, imdb_id, legendas, created_at, is_legendado, is_hardsub, audio FROM filmes WHERE id = $1`, [id]);
                     if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
                     row = r.rows[0];
                     title = row.nome;
                     tmdbId = row.tmdb_id;
                 } else if (type === 'episodio') {
                     const r = await db.query(`
-                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.legendas, s.nome as serie_nome, s.tmdb_id 
+                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.legendas, e.created_at, e.is_legendado, e.is_hardsub, e.audio, s.nome as serie_nome, s.tmdb_id 
                         FROM episodios e 
                         JOIN series s ON s.id = e.serie_id 
                         WHERE e.id = $1
@@ -1330,11 +1330,14 @@ class StremioServer {
                     }
                 }
 
+                const isHardsub = CatalogoManager.isItemLegacyHardsub(row);
+
                 res.json({
                     success: true,
                     type,
                     id: row.id,
                     title,
+                    isHardsub,
                     tracks,
                     selectedTrack: track?.lang || null,
                     cues,
@@ -1598,7 +1601,7 @@ class StremioServer {
 
                 if (type === 'filme') {
                     const r = await db.query(`
-                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado
+                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio
                         FROM filmes WHERE id = $1
                     `, [id]);
                     if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
@@ -1608,7 +1611,7 @@ class StremioServer {
                     imdbId = row.imdb_id;
                 } else {
                     const r = await db.query(`
-                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.message_id, e.file_id, e.versoes, e.legendas, e.duracao, e.is_legendado,
+                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.message_id, e.file_id, e.versoes, e.legendas, e.duracao, e.is_legendado, e.is_hardsub, e.created_at, e.audio,
                                s.nome as serie_nome, s.nome_original as serie_nome_original, s.tmdb_id, s.imdb_id
                         FROM episodios e
                         JOIN series s ON s.id = e.serie_id
@@ -1622,6 +1625,12 @@ class StremioServer {
                     tmdbId = row.tmdb_id;
                     imdbId = row.imdb_id;
                     durationSec = row.duracao ? row.duracao * 60 : 0;
+                }
+
+                if (CatalogoManager.isItemLegacyHardsub(row)) {
+                    return res.status(400).json({
+                        error: 'Esta mídia possui legenda fixa embutida na imagem (Hardsub legado anterior a 15/11/2026) e não utiliza faixas de legenda externas.'
+                    });
                 }
 
                 const jobKey = `${type}_${id}`;

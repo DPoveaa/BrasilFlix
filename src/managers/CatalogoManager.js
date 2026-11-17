@@ -529,6 +529,34 @@ class CatalogoManager {
     }
 
     /**
+     * Regra de corte temporal para Hardsubs:
+     * - Mídias legendadas cadastradas até 14/11/2026 23:59:59 (America/Sao_Paulo / UTC-3) possuem legenda fixa na imagem (hardsub = true).
+     * - Mídias cadastradas a partir de 15/11/2026 00:00:00 utilizam o pipeline externo de WebVTT e não devem ser presumidas como hardsub.
+     */
+    static isItemLegacyHardsub(item) {
+        if (!item) return false;
+        if (item.is_hardsub === true || item.isHardsub === true) return true;
+        if (item.is_hardsub === false || item.isHardsub === false) return false;
+
+        const dateVal = item.created_at || item.createdAt || item.dataAdicionado;
+        if (!dateVal) return false;
+        const itemTime = new Date(dateVal).getTime();
+        if (isNaN(itemTime)) return false;
+
+        const isLeg = !!(
+            item.is_legendado ||
+            item.isLegendado ||
+            (item.audio && /\b(legenda|legendas|legendado|sub)\b/i.test(item.audio)) ||
+            item.versoes?.legendado
+        );
+        if (!isLeg) return false;
+
+        // Cutoff: 2026-11-14 23:59:59.999 (America/Sao_Paulo / UTC-3)
+        const cutoffTime = new Date('2026-11-14T23:59:59.999-03:00').getTime();
+        return itemTime <= cutoffTime;
+    }
+
+    /**
      * Verifica de forma estrita e centralizada se um pedido de usuário foi genuinamente atendido no catálogo.
      * Considera tipo, identidade confiável, escopo de temporadas/episódios e presença real e reproduzível
      * das versões de áudio solicitadas (Dublado, Legendado ou ambos/Dual Áudio).
@@ -2765,6 +2793,9 @@ class CatalogoManager {
             const hasLeg = !!(ep.is_legendado || (versoes.legendado && (versoes.legendado.messageId || versoes.legendado.fileId)));
             const primaryMsgId = ep.message_id || versoes.dublado?.messageId || versoes.legendado?.messageId || null;
             const primaryFileId = ep.file_id || versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+            const isHardsub = ep.is_hardsub !== null && ep.is_hardsub !== undefined
+                ? !!ep.is_hardsub
+                : CatalogoManager.isItemLegacyHardsub(ep);
 
             const epObj = {
                 id: ep.id,
@@ -2779,7 +2810,9 @@ class CatalogoManager {
                 audio: ep.audio,
                 isDublado: hasDub,
                 isLegendado: hasLeg,
+                isHardsub: isHardsub,
                 versoes: versoes,
+                legendas: ep.legendas || versoes.legendado?.legendas || [],
                 stillUrl: ep.still_url,
                 duracao: ep.duracao,
                 formato: ep.formato,
@@ -2928,6 +2961,9 @@ class CatalogoManager {
             }
             const primaryMsgId = f.message_id || versoes.dublado?.messageId || versoes.legendado?.messageId || null;
             const primaryFileId = f.file_id || versoes.dublado?.fileId || versoes.legendado?.fileId || null;
+            const isHardsub = f.is_hardsub !== null && f.is_hardsub !== undefined
+                ? !!f.is_hardsub
+                : CatalogoManager.isItemLegacyHardsub(f);
 
             return {
                 id: f.id,
@@ -2947,8 +2983,10 @@ class CatalogoManager {
                 audio: f.audio,
                 isDublado: f.is_dublado,
                 isLegendado: f.is_legendado,
+                isHardsub: isHardsub,
                 isCam: f.is_cam,
                 versoes: versoes,
+                legendas: f.legendas || versoes.legendado?.legendas || [],
                 isAnime: f.is_anime,
                 isDorama: f.is_dorama,
                 createdAt: f.created_at,

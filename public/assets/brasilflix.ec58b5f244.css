@@ -3469,6 +3469,12 @@
         /* ═══════════════════════════════════════════════════════════════════════
            🎬 POSICIONAMENTO E ESTILIZAÇÃO CINEMATOGRÁFICA DE LEGENDAS (VTT)
            ═══════════════════════════════════════════════════════════════════════ */
+        .playback-player-stage,
+        #player-card-container {
+            container-type: inline-size;
+            container-name: player-container;
+        }
+
         #html5-video-player::cue,
         video::cue {
             opacity: 1 !important;
@@ -3477,6 +3483,19 @@
             font-weight: 700 !important;
             line-height: 1.35 !important;
             white-space: pre-line !important;
+            font-size: var(--player-sub-font-size, clamp(15px, 2.4cqw, 84px));
+        }
+
+        /* Escalonamento proporcional em tela cheia (fullscreen) nativo */
+        :fullscreen #html5-video-player::cue,
+        :fullscreen video::cue,
+        #html5-video-player:fullscreen::cue,
+        video:fullscreen::cue,
+        :-webkit-full-screen #html5-video-player::cue,
+        :-webkit-full-screen video::cue,
+        #html5-video-player:-webkit-full-screen::cue,
+        video:-webkit-full-screen::cue {
+            font-size: var(--player-sub-fs-size, clamp(20px, 2.4vw, 84px)) !important;
         }
 
         /* Eleva o container nativo de legendas para altura padrão de cinema */
