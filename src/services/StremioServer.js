@@ -1614,7 +1614,7 @@ class StremioServer {
 
                 if (type === 'filme') {
                     const r = await db.query(`
-                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio, duracao
+                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio
                         FROM filmes WHERE id = $1
                     `, [id]);
                     if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
@@ -1622,7 +1622,7 @@ class StremioServer {
                     mediaTitle = row.nome;
                     tmdbId = row.tmdb_id;
                     imdbId = row.imdb_id;
-                    durationSec = row.duracao ? row.duracao * 60 : 0;
+                    // filmes table has no duracao column — ffprobe will probe from stream
                 } else {
                     const r = await db.query(`
                         SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.message_id, e.file_id, e.versoes, e.legendas, e.duracao, e.is_legendado, e.is_hardsub, e.created_at, e.audio,
