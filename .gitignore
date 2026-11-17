@@ -34,6 +34,8 @@ Thumbs.db
 tmp/
 temp/
 scratch/
+__pycache__/
+*.pyc
 
 # Arquivos de backup
 *.bak
