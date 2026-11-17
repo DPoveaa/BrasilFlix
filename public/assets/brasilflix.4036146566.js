@@ -14137,8 +14137,10 @@
                 btnBox.style.display = availableTracks.length > 0 ? 'block' : 'none';
             }
 
-            // Sincroniza textTracks nativo
+            // Sincroniza textTracks nativo (imediato + fallbacks após render/parse de faixas do DOM)
             applyVideoTextTrack(activeLang);
+            setTimeout(() => applyVideoTextTrack(activeLang), 150);
+            setTimeout(() => applyVideoTextTrack(activeLang), 500);
 
             // Sincroniza botões de estilização (tamanho, cor, fundo) com o localStorage
             syncSubtitleStyleButtonsUI();
@@ -14151,13 +14153,18 @@
             const video = document.getElementById('html5-video-player');
             if (!video || !video.textTracks) return;
 
+            const target = (targetLang || 'off').toLowerCase();
             for (let i = 0; i < video.textTracks.length; i++) {
                 const tt = video.textTracks[i];
-                if (targetLang !== 'off' && tt.language && tt.language.toLowerCase() === targetLang.toLowerCase()) {
-                    tt.mode = 'showing';
-                } else {
-                    tt.mode = 'disabled';
-                }
+                const lang = (tt.language || '').toLowerCase();
+                const isMatch = target !== 'off' && (
+                    lang === target ||
+                    (target.startsWith('pt') && (lang.startsWith('pt') || !lang)) ||
+                    (target.startsWith('en') && lang.startsWith('en'))
+                );
+                try {
+                    tt.mode = isMatch ? 'showing' : 'disabled';
+                } catch (_) { }
             }
         }
 
@@ -14267,7 +14274,8 @@
             }
 
             styleEl.textContent = `
-                #html5-video-player::cue {
+                #html5-video-player::cue,
+                video::cue {
                     font-size: ${fontSize} !important;
                     color: ${fontColor} !important;
                     background-color: ${bgColor} !important;

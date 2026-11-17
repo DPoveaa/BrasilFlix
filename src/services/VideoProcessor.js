@@ -1797,7 +1797,8 @@ ${events.join('\n')}
                     srtUrl: `/subtitles/${ptSrtName}`,
                     vttUrl: `/subtitles/${ptVttName}`,
                     srtPath: ptSrtDest,
-                    vttPath: ptVttDest
+                    vttPath: ptVttDest,
+                    version: timestamp
                 });
                 console.log(`💾 [Web Subtitles] Legenda PT-BR persistida para o player web: ${ptVttName} (.srt e .vtt)`);
             }
@@ -1821,7 +1822,8 @@ ${events.join('\n')}
                     srtUrl: `/subtitles/${enSrtName}`,
                     vttUrl: `/subtitles/${enVttName}`,
                     srtPath: enSrtDest,
-                    vttPath: enVttDest
+                    vttPath: enVttDest,
+                    version: timestamp
                 });
                 console.log(`💾 [Web Subtitles] Legenda EN persistida para o player web: ${enVttName} (.srt e .vtt)`);
             }

@@ -250,6 +250,12 @@ function validateAndSanitizeCues(cues) {
         }
 
         let text = stripOuterQuotes(raw.text || '');
+        // Filtro Quality Gate: descarta inserções evidentes de spam de sites de torrent no início ou fim
+        const isSpamText = /(opensubtitles|legendas\.tv|pipocas\.tv|yts\.mx|yts\.ag|yify|comandotorrents|bludv|lapumia|baixarfilmes|acesse:|visite:|anuncie aqui|subtitles by|tradução:|ripada por:)/i.test(text);
+        if (isSpamText && (startMs < 120000 || i >= cues.length - 3)) {
+            continue;
+        }
+
         // Limita a 2 linhas se necessário (~42 caracteres por linha)
         const lines = text.split('\n').filter(Boolean);
         if (lines.length > 2) {
