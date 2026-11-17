@@ -6263,6 +6263,7 @@
             openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
                 type: 'serie',
                 id: serie.id,
+                episodeId: episode.id,
                 season: sNum,
                 episode: eNum,
                 title: serie.nome,
@@ -6819,8 +6820,10 @@
             document.addEventListener(evtName, (e) => {
                 const audioBox = document.getElementById('player-audio-box');
                 const speedBox = document.getElementById('player-speed-box');
+                const subtitlesBox = document.getElementById('player-subtitles-box');
                 const audioMenu = document.getElementById('player-audio-menu');
                 const speedMenu = document.getElementById('player-speed-menu');
+                const subtitlesMenu = document.getElementById('player-subtitles-menu');
 
                 if (audioMenu && audioMenu.classList.contains('visible')) {
                     if (!audioBox || !audioBox.contains(e.target)) {
@@ -6831,6 +6834,13 @@
                 if (speedMenu && speedMenu.classList.contains('visible')) {
                     if (!speedBox || !speedBox.contains(e.target)) {
                         speedMenu.classList.remove('visible');
+                    }
+                }
+
+                if (subtitlesMenu && (subtitlesMenu.classList.contains('visible') || subtitlesMenu.style.display === 'block')) {
+                    if (!subtitlesBox || !subtitlesBox.contains(e.target)) {
+                        subtitlesMenu.classList.remove('visible');
+                        subtitlesMenu.style.display = 'none';
                     }
                 }
             }, { passive: true });
@@ -6895,6 +6905,10 @@
 
                 const onMetaLoaded = () => {
                     video.currentTime = Math.max(0, curTime);
+                    const currentSubLang = localStorage.getItem('bf_sub_lang');
+                    if (currentSubLang) {
+                        applyVideoTextTrack(currentSubLang);
+                    }
                     if (wasPlaying) {
                         video.play().catch(() => { });
                     }
@@ -9675,12 +9689,15 @@
            ═══════════════════════════════════════════════════════════════════════ */
 
         function getAuthHeaders() {
-            const token = adminToken;
-            return {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token || ''}`,
-                'x-admin-token': token || ''
+            const token = adminToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('bf_admin_token') || sessionStorage.getItem('bf_admin_token')) : null);
+            const headers = {
+                'Content-Type': 'application/json'
             };
+            if (token && token !== 'session') {
+                headers['Authorization'] = `Bearer ${token}`;
+                headers['x-admin-token'] = token;
+            }
+            return headers;
         }
 
         async function handleAdminLogin(e) {
@@ -11531,71 +11548,6 @@
             });
         }
 
-        async function loadAdminRequests() {
-            if (!adminToken) return;
-            const tbody = document.getElementById('admin-requests-tbody');
-            if (!tbody) return;
-
-            try {
-                const res = await fetch('/api/admin/pedidos', { headers: getAuthHeaders() });
-                if (!res.ok) return;
-                const data = await res.json();
-                const list = data.pedidos || [];
-
-                if (list.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Nenhum pedido de usuário registrado.</td></tr>';
-                    return;
-                }
-
-                tbody.innerHTML = list.slice(-50).reverse().map(p => {
-                    const status = p.status || (p.processado ? 'adicionado' : 'pendente');
-                    const isProc = status === 'adicionado';
-                    const isProcessing = status === 'em_processamento' || status === 'na_fila';
-                    const dataStr = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
-
-                    let statusLabel = '⏳ PENDENTE';
-                    let statusColor = '#f59e0b';
-                    if (isProc) {
-                        statusLabel = '✓ ATENDIDO';
-                        statusColor = '#34d399';
-                    } else if (isProcessing) {
-                        statusLabel = '⚡ NA FILA';
-                        statusColor = '#38bdf8';
-                    } else if (status === 'recusado') {
-                        statusLabel = '✕ RECUSADO';
-                        statusColor = '#f87171';
-                    }
-
-                    return `
-                        <tr>
-                            <td>
-                                <strong>${p.nome}</strong>
-                                <div style="font-size: 10px; color: var(--text-muted);">${p.tipo === 'serie' ? '📺 Série' : (p.tipo === 'anime' ? '🌸 Anime' : (p.tipo === 'dorama' ? '🇰🇷 Dorama' : '🎬 Filme'))}</div>
-                            </td>
-                            <td>
-                                <div>@${p.username || 'Usuário'}</div>
-                                <span style="font-size: 10px; color: ${p.isAssinante ? '#fbbf24' : '#9ca3af'}; font-weight: 700;">
-                                    ${p.isAssinante ? '👑 VIP Assinante' : '👤 Usuário Grátis'}
-                                </span>
-                            </td>
-                            <td>
-                                <span style="color: ${statusColor}; font-weight: 800; font-size: 11px;">
-                                    ${statusLabel}
-                                </span>
-                            </td>
-                            <td>${dataStr}</td>
-                            <td style="text-align: right; white-space: nowrap;">
-                                ${!isProc && !isProcessing ? `<button class="btn-action btn-action-primary" onclick="handleEnqueueRequest('${p.id}')">🚀 Baixar Agora</button>` : ''}
-                                <button class="btn-action btn-action-danger" onclick="handleDeleteRequest('${p.id}')">✕</button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-            } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Falha ao carregar pedidos.</td></tr>';
-            }
-        }
-
         async function handleEnqueueRequest(pedidoId) {
             try {
                 const res = await fetch(`/api/admin/pedidos/${pedidoId}/enfileirar`, {
@@ -12579,7 +12531,11 @@
 
         function closeAdminModal(modalId) {
             const modal = document.getElementById(modalId);
-            if (modal) modal.classList.remove('active');
+            if (modal) {
+                modal.classList.remove('active');
+                modal.classList.remove('visible');
+                modal.style.display = 'none';
+            }
             if (modalId === 'admin-modal-serie-episodes') {
                 currentModalSerieId = null;
             }
@@ -14051,6 +14007,18 @@
             if (speedMenu) speedMenu.classList.remove('visible');
             if (menu) {
                 const isVis = menu.classList.contains('visible') || menu.style.display === 'block';
+                if (!isVis) {
+                    const adminEditEl = document.getElementById('player-subtitle-admin-edit-row');
+                    if (adminEditEl) {
+                        const isAdmin = !!(
+                            (typeof currentUser !== 'undefined' && currentUser && (currentUser.role === 'admin' || currentUser.isAdmin)) ||
+                            (typeof adminToken !== 'undefined' && adminToken) ||
+                            (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
+                            (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
+                        );
+                        adminEditEl.style.display = isAdmin ? 'block' : 'none';
+                    }
+                }
                 menu.classList.toggle('visible', !isVis);
                 menu.style.display = isVis ? 'none' : 'block';
             }
@@ -14075,7 +14043,7 @@
 
             // Determina a trilha ativa:
             // 1. Preferência salva do usuário se ainda existir
-            // 2. Ou PT-BR (default)
+            // 2. Ou PT-BR (default) se disponível
             // 3. Ou 'off'
             let activeLang = 'off';
             if (savedLang === 'off') {
@@ -14087,14 +14055,17 @@
                 if (defaultTrack) activeLang = defaultTrack.lang;
             }
 
-            // Injeta elementos <track>
+            // Injeta elementos <track> — disponível para Dublado e Legendado
             if (video && availableTracks.length > 0) {
                 availableTracks.forEach(track => {
                     const trackEl = document.createElement('track');
                     trackEl.kind = 'subtitles';
                     trackEl.srclang = track.lang;
                     trackEl.label = track.label || track.lang;
-                    const vttUrl = track.vttUrl ? (track.vttUrl.includes('?') ? track.vttUrl : `${track.vttUrl}?v=${track.version || Date.now()}`) : '';
+                    const ts = track.version || Date.now();
+                    const vttUrl = track.vttUrl
+                        ? (track.vttUrl.includes('?') ? track.vttUrl : `${track.vttUrl}?v=${ts}`)
+                        : '';
                     trackEl.src = vttUrl;
                     if (track.lang?.toLowerCase() === activeLang.toLowerCase()) {
                         trackEl.default = true;
@@ -14111,30 +14082,57 @@
                 </button>
             `;
 
-            availableTracks.forEach(track => {
-                const isSelected = track.lang?.toLowerCase() === activeLang.toLowerCase();
-                const flag = track.lang?.toLowerCase().startsWith('pt') ? '🇧🇷' : (track.lang?.toLowerCase().startsWith('en') ? '🇺🇸' : '💬');
+            if (availableTracks.length === 0) {
                 html += `
-                    <button class="speed-opt-btn ${isSelected ? 'active' : ''}" onclick="switchPlayerSubtitleTrack('${track.lang}')">
-                        <span>${flag} ${track.label || track.lang}</span>
-                        <span class="opt-check">✓</span>
-                    </button>
+                    <div style="font-size:11px; color:#94a3b8; padding:8px 10px; font-style:italic; text-align:center; background:rgba(255,255,255,0.03); border-radius:6px; margin:4px 0;">
+                        Sem legenda externa disponível
+                    </div>
                 `;
-            });
+            } else {
+                availableTracks.forEach(track => {
+                    const isSelected = track.lang?.toLowerCase() === activeLang.toLowerCase();
+                    const isPt = track.lang?.toLowerCase().startsWith('pt');
+                    const isEn = track.lang?.toLowerCase().startsWith('en');
+                    const flag = isPt ? '🇧🇷' : (isEn ? '🇺🇸' : '💬');
+                    const trackName = isPt ? 'PT-BR' : (isEn ? 'Inglês' : (track.label || track.lang));
+                    html += `
+                        <button class="speed-opt-btn ${isSelected ? 'active' : ''}" onclick="switchPlayerSubtitleTrack('${track.lang}')">
+                            <span>${flag} ${trackName}</span>
+                            <span class="opt-check">✓</span>
+                        </button>
+                    `;
+                });
+            }
 
             listEl.innerHTML = html;
 
+            // Renderiza botão de edição admin (apenas se usuário for admin)
+            const adminEditEl = document.getElementById('player-subtitle-admin-edit-row');
+            if (adminEditEl) {
+                const isAdmin = !!(
+                    (typeof currentUser !== 'undefined' && currentUser && (currentUser.role === 'admin' || currentUser.isAdmin)) ||
+                    (typeof adminToken !== 'undefined' && adminToken) ||
+                    (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
+                    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
+                );
+                adminEditEl.style.display = isAdmin ? 'block' : 'none';
+            }
+
             if (btnLabel) {
                 if (activeLang === 'off') {
-                    btnLabel.innerText = 'Legenda: Off';
+                    btnLabel.innerText = 'Legenda ⌄';
                 } else {
                     const actObj = availableTracks.find(t => t.lang?.toLowerCase() === activeLang.toLowerCase());
-                    btnLabel.innerText = actObj?.label || activeLang.toUpperCase();
+                    const isPt = actObj?.lang?.toLowerCase().startsWith('pt');
+                    const isEn = actObj?.lang?.toLowerCase().startsWith('en');
+                    const labelName = isPt ? 'PT-BR' : (isEn ? 'Inglês' : (actObj?.label || activeLang.toUpperCase()));
+                    btnLabel.innerText = labelName + ' ⌄';
                 }
             }
 
+            // Botão de legenda SEMPRE visível (independente de ter faixas)
             if (btnBox) {
-                btnBox.style.display = availableTracks.length > 0 ? 'block' : 'none';
+                btnBox.style.display = 'block';
             }
 
             // Sincroniza textTracks nativo (imediato + fallbacks após render/parse de faixas do DOM)
@@ -14190,11 +14188,14 @@
             const btnLabel = document.getElementById('player-subtitles-label');
             if (btnLabel) {
                 if (lang === 'off') {
-                    btnLabel.innerText = 'Legenda: Off';
+                    btnLabel.innerText = 'Legenda ⌄';
                 } else {
                     const tracks = currentPlayingMedia?.legendas || [];
                     const t = tracks.find(x => x.lang?.toLowerCase() === lang.toLowerCase());
-                    btnLabel.innerText = t?.label || lang.toUpperCase();
+                    const isPt = t?.lang?.toLowerCase().startsWith('pt');
+                    const isEn = t?.lang?.toLowerCase().startsWith('en');
+                    const labelName = isPt ? 'PT-BR' : (isEn ? 'Inglês' : (t?.label || lang.toUpperCase()));
+                    btnLabel.innerText = labelName + ' ⌄';
                 }
             }
 
@@ -14304,7 +14305,80 @@
             searchQuery: ''
         };
 
+        function reloadActivePlayerSubtitleTrack() {
+            const video = document.getElementById('html5-video-player');
+            if (!video) return;
+            const ts = Date.now();
+            let existingTracks = video.querySelectorAll('track');
+
+            if (existingTracks.length === 0 && adminSubState.tracks && adminSubState.tracks.length > 0) {
+                updatePlayerSubtitlesUI(adminSubState.tracks);
+                return;
+            }
+
+            existingTracks.forEach(trackEl => {
+                const langMatch = !adminSubState.selectedLang || trackEl.srclang?.toLowerCase() === adminSubState.selectedLang.toLowerCase();
+                if (langMatch || existingTracks.length === 1) {
+                    const rawSrc = (trackEl.src || '').split('?')[0];
+                    if (rawSrc) {
+                        trackEl.src = `${rawSrc}?v=${ts}`;
+                        try {
+                            trackEl.track.mode = 'showing';
+                        } catch (_) {}
+                    }
+                }
+            });
+
+            if (currentPlayingMedia && adminSubState.tracks) {
+                currentPlayingMedia.legendas = adminSubState.tracks.map(t => ({
+                    ...t,
+                    vttUrl: t.vttUrl ? `${t.vttUrl.split('?')[0]}?v=${t.version || ts}` : t.vttUrl
+                }));
+            }
+        }
+
+        function openPlayerAdminSubtitleEditor(event) {
+            if (event) event.stopPropagation();
+            closeAllPlayerDropdowns();
+
+            const video = document.getElementById('html5-video-player');
+            if (video && !video.paused) {
+                video.pause();
+            }
+
+            if (!currentPlayingMedia) {
+                showToast('Nenhuma mídia em reprodução no momento.', 'warning');
+                return;
+            }
+
+            let type = currentPlayingMedia.type;
+            let id = currentPlayingMedia.id;
+            let title = currentPlayingMedia.title || '';
+
+            if (type === 'serie') {
+                type = 'episodio';
+                if (currentPlayingMedia.episodeId) {
+                    id = currentPlayingMedia.episodeId;
+                } else if (currentPlaybackSerie) {
+                    const season = (currentPlaybackSerie.temporadas || []).find(t => t.numero === currentPlayingMedia.season);
+                    const ep = (season?.episodios || []).find(e => e.numero === currentPlayingMedia.episode);
+                    if (ep && (ep.id || ep.messageId)) {
+                        id = ep.id || ep.messageId;
+                    }
+                }
+                title = `${currentPlayingMedia.title} ${currentPlayingMedia.sub || ''}`;
+            }
+
+            openAdminSubtitleModal(type, id, title);
+        }
+
         async function openAdminSubtitleModal(type, id, title = '') {
+            // Pausa automaticamente a reprodução para edição em tempo real
+            const video = document.getElementById('html5-video-player');
+            if (video && !video.paused) {
+                video.pause();
+            }
+
             adminSubState.type = type;
             adminSubState.id = id;
             adminSubState.title = title || `${type === 'filme' ? 'Filme' : 'Episódio'} #${id}`;
@@ -14323,6 +14397,7 @@
             if (shiftInput) shiftInput.value = '';
 
             if (modal) {
+                modal.classList.add('active');
                 modal.classList.add('visible');
                 modal.style.display = 'flex';
             }
@@ -14340,7 +14415,8 @@
 
             try {
                 const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(type)}/${encodeURIComponent(id)}?lang=${encodeURIComponent(lang)}`, {
-                    headers: getAuthHeaders()
+                    headers: getAuthHeaders(),
+                    credentials: 'same-origin'
                 });
                 const data = await res.json();
 
@@ -14438,6 +14514,7 @@
                 const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/shift`, {
                     method: 'POST',
                     headers: getAuthHeaders(),
+                    credentials: 'same-origin',
                     body: JSON.stringify({
                         offsetMs,
                         lang: adminSubState.selectedLang
@@ -14449,7 +14526,12 @@
                 }
 
                 adminSubState.cues = data.cues || [];
+                if (data.tracks) {
+                    adminSubState.tracks = data.tracks;
+                    if (currentPlayingMedia) currentPlayingMedia.legendas = data.tracks;
+                }
                 renderAdminSubtitleCuesTable();
+                reloadActivePlayerSubtitleTrack();
                 showToast(data.message, 'success');
             } catch (err) {
                 showToast(`Erro ao deslocar legenda: ${err.message}`, 'error');
@@ -14478,6 +14560,7 @@
                 const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/cues`, {
                     method: 'PUT',
                     headers: getAuthHeaders(),
+                    credentials: 'same-origin',
                     body: JSON.stringify({
                         cues: adminSubState.cues,
                         lang: adminSubState.selectedLang
@@ -14489,7 +14572,12 @@
                 }
 
                 adminSubState.cues = data.cues || [];
+                if (data.tracks) {
+                    adminSubState.tracks = data.tracks;
+                    if (currentPlayingMedia) currentPlayingMedia.legendas = data.tracks;
+                }
                 renderAdminSubtitleCuesTable();
+                reloadActivePlayerSubtitleTrack();
                 showToast(data.message, 'success');
             } catch (err) {
                 showToast(`Erro ao salvar falas: ${err.message}`, 'error');
@@ -14513,14 +14601,13 @@
                 formData.append('lang', adminSubState.selectedLang || 'pt-BR');
                 formData.append('label', adminSubState.selectedLang === 'en' ? 'English' : 'Português (Brasil)');
 
-                const headers = {
-                    'Authorization': `Bearer ${adminToken || ''}`,
-                    'x-admin-token': adminToken || ''
-                };
+                const authHeaders = getAuthHeaders();
+                delete authHeaders['Content-Type'];
 
                 const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/upload`, {
                     method: 'POST',
-                    headers,
+                    headers: authHeaders,
+                    credentials: 'same-origin',
                     body: formData
                 });
                 const data = await res.json();
@@ -14530,7 +14617,13 @@
 
                 showToast(data.message, 'success');
                 if (fileInput) fileInput.value = '';
+                if (data.tracks) {
+                    adminSubState.tracks = data.tracks;
+                    if (currentPlayingMedia) currentPlayingMedia.legendas = data.tracks;
+                }
                 await loadAdminSubtitles(adminSubState.type, adminSubState.id, adminSubState.selectedLang);
+                reloadActivePlayerSubtitleTrack();
+                updatePlayerSubtitlesUI(adminSubState.tracks);
             } catch (err) {
                 showToast(`Erro no upload: ${err.message}`, 'error');
             }
