@@ -3466,6 +3466,40 @@
             -webkit-tap-highlight-color: transparent !important;
         }
 
+        /* ═══════════════════════════════════════════════════════════════════════
+           🎬 POSICIONAMENTO E ESTILIZAÇÃO CINEMATOGRÁFICA DE LEGENDAS (VTT)
+           ═══════════════════════════════════════════════════════════════════════ */
+        #html5-video-player::cue,
+        video::cue {
+            opacity: 1 !important;
+            visibility: visible !important;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+            font-weight: 700 !important;
+            line-height: 1.35 !important;
+            white-space: pre-line !important;
+        }
+
+        /* Eleva o container nativo de legendas para altura padrão de cinema */
+        #html5-video-player::-webkit-media-text-track-container,
+        video::-webkit-media-text-track-container {
+            bottom: 8% !important;
+            transform: translateY(-16px) !important;
+            z-index: 50 !important;
+            pointer-events: none !important;
+        }
+
+        #html5-video-player::-webkit-media-text-track-display,
+        video::-webkit-media-text-track-display {
+            opacity: 1 !important;
+            pointer-events: none !important;
+        }
+
+        /* Garante que overlays e o gradiente do rodapé não fiquem sobrepondo/escurecendo as legendas */
+        #playback-player-stage.theater-mode .player-footer-bar {
+            z-index: 40 !important;
+            pointer-events: auto !important;
+        }
+
         /* ⏱️ Badges de Timestamp e Botões de Marcação em Comentários */
         .comment-time-tag {
             display: inline-flex;
@@ -9906,4 +9940,36 @@
 
         .admin-modal-episode-row:hover {
             background: rgba(255, 255, 255, 0.06);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════════
+           📱 TELEGRAM MINI APP (TMA) ADAPTIVE STYLES
+           ═══════════════════════════════════════════════════════════════════════ */
+        body.telegram-mini-app {
+            padding-top: env(safe-area-inset-top, 0px) !important;
+            padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+            overflow-x: hidden !important;
+            background-color: var(--tg-theme-bg-color, #07090e) !important;
+            color: var(--tg-theme-text-color, #f1f5f9) !important;
+        }
+
+        body.telegram-mini-app .navbar-header {
+            padding-top: max(6px, env(safe-area-inset-top, 6px)) !important;
+        }
+
+        body.telegram-mini-app .playback-header-bar {
+            padding-top: max(8px, env(safe-area-inset-top, 8px)) !important;
+        }
+
+        body.telegram-mini-app .player-card {
+            width: 100% !important;
+            max-width: 100% !important;
+            border-radius: 0 !important;
+            border-left: none !important;
+            border-right: none !important;
+        }
+
+        body.telegram-mini-app .playback-player-stage {
+            padding: 0 !important;
+            margin: 0 !important;
         }

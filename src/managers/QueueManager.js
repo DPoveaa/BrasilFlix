@@ -1408,7 +1408,10 @@ class QueueManager extends EventEmitter {
                     this.bot.sendMessage(p.userId, msgPedido, {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            inline_keyboard: [[{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]]
+                            inline_keyboard: [
+                                [{ text: '🎬 Assistir com Legenda (Player)', web_app: { url: `https://brasilflix.kapsu.com.br/#${targetIsSerie ? 'serie' : 'filme'}/${sId}${targetIsSerie ? '/temporada/1/episodio/1' : '/assistir'}` } }],
+                                [{ text: '▶️ Assistir Agora (Bot)', callback_data: callbackAssistir }]
+                            ]
                         }
                     }).catch(() => { });
                 }
@@ -4135,7 +4138,8 @@ class QueueManager extends EventEmitter {
 
                 const keyboard = {
                     inline_keyboard: [
-                        [{ text: '▶️ Assistir Agora', callback_data: callbackAssistir }]
+                        [{ text: '🎬 Assistir com Legenda (Player)', web_app: { url: `https://brasilflix.kapsu.com.br/#filme/${itemId}/assistir` } }],
+                        [{ text: '▶️ Assistir Agora (Bot)', callback_data: callbackAssistir }]
                     ]
                 };
 

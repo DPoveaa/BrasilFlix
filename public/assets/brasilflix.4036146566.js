@@ -526,6 +526,43 @@
         }
 
         function initApp() {
+            // ═══════════════════════════════════════════════════════════════
+            // 📱 TELEGRAM MINI APP (TMA) — Inicialização e deep-link
+            // ═══════════════════════════════════════════════════════════════
+            const twa = window.Telegram?.WebApp;
+            if (twa && twa.initData) {
+                try {
+                    twa.ready();
+                    twa.expand();
+                    document.body.classList.add('telegram-mini-app');
+
+                    // Deep-link via startapp param: filme_128  ou  serie_456_1_2
+                    const startParam = twa.initDataUnsafe?.start_param || '';
+                    if (startParam) {
+                        // Suporta: filme_<id>  |  movie_<id>  |  serie_<id>_<s>_<ep>
+                        const filmeMatch = startParam.match(/^(?:filme|movie|film)_(\d+)/i);
+                        const serieMatch = startParam.match(/^(?:serie|series|ep)_(\d+)(?:_(\d+)(?:_(\d+))?)?/i);
+                        if (filmeMatch) {
+                            // Abre direto no player do filme
+                            setTimeout(() => openPlaybackPageForMovie(filmeMatch[1], null, false), 600);
+                        } else if (serieMatch) {
+                            const sId = serieMatch[1];
+                            const season = parseInt(serieMatch[2] || '1', 10);
+                            const ep = parseInt(serieMatch[3] || '1', 10);
+                            setTimeout(() => openPlaybackPageForEpisode(sId, season, ep, null, false), 600);
+                        }
+                    }
+
+                    // Adapta tema ao esquema de cores do Telegram
+                    const tgBg = twa.themeParams?.bg_color;
+                    if (tgBg) {
+                        document.documentElement.style.setProperty('--tg-bg', tgBg);
+                    }
+                } catch (twaErr) {
+                    console.warn('[TMA] Inicialização parcial:', twaErr.message);
+                }
+            }
+
             // Sincroniza login vindo do Telegram via link direto (?auth_jwt=...&token=...)
             const urlParams = new URLSearchParams(window.location.search);
             const authJwtFromUrl = urlParams.get('auth_jwt') || urlParams.get('jwt');
@@ -7293,6 +7330,15 @@
 
                 if (currentPartyRoom) {
                     sendPartyAction('member_ready_state', { inPlayer: true, isReady: true, isLoading: false, audio: mediaInfo.audio });
+                }
+
+                // Força a trilha de legenda correta após loadedmetadata para evitar race conditions entre
+                // Chrome/Firefox que podem resetar textTrack.mode para 'disabled' durante o src load
+                const activeSub = localStorage.getItem('bf_sub_lang') || 'off';
+                if (activeSub !== 'off') {
+                    setTimeout(() => applyVideoTextTrack(activeSub), 50);
+                    setTimeout(() => applyVideoTextTrack(activeSub), 350);
+                    setTimeout(() => applyVideoTextTrack(activeSub), 900);
                 }
             };
 
@@ -14067,9 +14113,20 @@
                         ? (track.vttUrl.includes('?') ? track.vttUrl : `${track.vttUrl}?v=${ts}`)
                         : '';
                     trackEl.src = vttUrl;
-                    if (track.lang?.toLowerCase() === activeLang.toLowerCase()) {
+                    const isActive = track.lang?.toLowerCase() === activeLang.toLowerCase();
+                    if (isActive) {
                         trackEl.default = true;
                     }
+                    // Força modo 'showing' após carregamento do track para evitar race condition
+                    trackEl.addEventListener('load', () => {
+                        try {
+                            if (isActive) {
+                                trackEl.track.mode = 'showing';
+                            } else {
+                                trackEl.track.mode = 'disabled';
+                            }
+                        } catch (_) {}
+                    });
                     video.appendChild(trackEl);
                 });
             }

@@ -63,6 +63,29 @@ class StremioServer {
             next();
         });
 
+        // Intercepta e sanitiza arquivos WebVTT (.vtt) automaticamente ao servir para players web
+        this.app.get('/subtitles/:filename', async (req, res, next) => {
+            const filename = req.params.filename;
+            if (!filename || !filename.toLowerCase().endsWith('.vtt')) {
+                return next();
+            }
+            const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
+            const filePath = path.join(subtitlesDir, path.basename(filename));
+            try {
+                if (await fs.pathExists(filePath)) {
+                    const rawContent = await fs.readFile(filePath, 'utf8');
+                    const cleanVtt = SubtitleUtils.sanitizeVtt(rawContent);
+                    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+                    res.setHeader('Access-Control-Allow-Origin', '*');
+                    res.setHeader('Cache-Control', 'public, max-age=3600');
+                    return res.send(cleanVtt);
+                }
+            } catch (err) {
+                console.warn(`⚠️ [VTT Sanitizer] Erro ao processar ${filename}:`, err.message);
+            }
+            next();
+        });
+
         const publicDir = path.resolve(__dirname, '../../public');
         this.app.use(express.static(publicDir, {
             index: false,

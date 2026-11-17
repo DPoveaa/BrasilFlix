@@ -259,6 +259,16 @@ class BrasilFlixBot {
                 { command: 'ajuda', description: '❓ Dúvidas e Suporte' }
             ]);
             console.log('✅ Comandos do bot configurados no Telegram com sucesso!');
+
+            // Configura o botão de Menu Web App (Telegram Mini App) — abre o player diretamente
+            await this.bot.setChatMenuButton({
+                menu_button: {
+                    type: 'web_app',
+                    text: '🎬 BrasilFlix Player',
+                    web_app: { url: 'https://brasilflix.kapsu.com.br' }
+                }
+            });
+            console.log('✅ Botão de Menu Web App configurado (Telegram Mini App)!');
         } catch (e) {
             if (retryCount < 3) {
                 const waitMs = (retryCount + 1) * 3000;

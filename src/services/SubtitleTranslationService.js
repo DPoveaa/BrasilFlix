@@ -189,13 +189,15 @@ class SubtitleTranslationService {
 
     /**
      * Converte conteúdo de SRT para WebVTT (.vtt) padronizado para o player web
+     * com validação estrita de timecodes, pontuação decimal e line:85%
      */
     convertSrtToVtt(srtContent) {
         if (!srtContent) return 'WEBVTT\n\n';
-        const normalized = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-        // Converte vírgula decimal de milissegundos para ponto: 00:01:23,456 -> 00:01:23.456
-        const vttBody = normalized.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-        return `WEBVTT\n\n${vttBody}\n`;
+        const parsed = SubtitleUtils.parseSubtitles(srtContent);
+        if (parsed && parsed.length > 0) {
+            return SubtitleUtils.cuesToVtt(parsed);
+        }
+        return SubtitleUtils.sanitizeVtt(srtContent);
     }
 
     /**

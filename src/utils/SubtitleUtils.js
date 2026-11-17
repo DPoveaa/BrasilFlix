@@ -191,11 +191,76 @@ function cuesToVtt(cues) {
         const end = msToVttTimecode(cue.endMs !== undefined ? cue.endMs : timecodeToMs(cue.endTime));
         const text = stripOuterQuotes(cue.text || '');
         lines.push(`${idx + 1}`);
-        lines.push(`${start} --> ${end}`);
+        lines.push(`${start} --> ${end} line:85%`);
         lines.push(text);
         lines.push('');
     });
     return lines.join('\n');
+}
+
+/**
+ * Sanitiza e normaliza rigorosamente qualquer conteúdo WebVTT:
+ * - Garante ausência de BOM UTF-8 (\uFEFF)
+ * - Garante cabeçalho estrito WEBVTT seguido de linha em branco (\n\n)
+ * - Garante separador decimal de ponto (.) nos milissegundos (nunca vírgula)
+ * - Garante posicionamento vertical cinema line:85% acima da barra de controles
+ * - Descarta blocos de fala órfãos ou corrompidos
+ */
+function sanitizeVtt(vttContent) {
+    if (!vttContent || typeof vttContent !== 'string') return 'WEBVTT\n\n';
+
+    // 1. Remove BOM UTF-8 e normaliza quebras de linha
+    let clean = vttContent.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+    // 2. Remove cabeçalho WEBVTT e metadados anteriores
+    clean = clean.replace(/^WEBVTT[^\n]*\n*/i, '').trim();
+
+    // 3. Divide blocos por linhas em branco
+    const rawBlocks = clean.split(/\n\s*\n/);
+    const validCues = [];
+    let cueNum = 1;
+
+    for (const block of rawBlocks) {
+        const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) continue;
+
+        let timecodeLine = '';
+        let textLines = [];
+
+        if (lines[0].includes('-->')) {
+            timecodeLine = lines[0];
+            textLines = lines.slice(1);
+        } else if (lines.length >= 2 && lines[1].includes('-->')) {
+            timecodeLine = lines[1];
+            textLines = lines.slice(2);
+        } else {
+            continue;
+        }
+
+        const match = timecodeLine.match(/(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})/);
+        if (!match) continue;
+
+        const startMs = timecodeToMs(match[1]);
+        const endMs = timecodeToMs(match[2]);
+        if (endMs <= startMs) continue;
+
+        const startVtt = msToVttTimecode(startMs);
+        const endVtt = msToVttTimecode(endMs);
+
+        // Posicionamento vertical para altura de cinema (line:85%)
+        let cueSettings = 'line:85%';
+        const remainder = timecodeLine.slice(timecodeLine.indexOf(match[2]) + match[2].length).trim();
+        if (remainder) {
+            cueSettings = remainder.includes('line:') ? remainder : `${remainder} line:85%`;
+        }
+
+        const text = stripOuterQuotes(textLines.join('\n'));
+        if (!text) continue;
+
+        validCues.push(`${cueNum++}\n${startVtt} --> ${endVtt} ${cueSettings}\n${text}`);
+    }
+
+    return `WEBVTT\n\n${validCues.join('\n\n')}\n`;
 }
 
 function shiftCues(cues, offsetMs) {
@@ -288,5 +353,6 @@ module.exports = {
     cuesToSrt,
     cuesToVtt,
     shiftCues,
-    validateAndSanitizeCues
+    validateAndSanitizeCues,
+    sanitizeVtt
 };

@@ -1291,6 +1291,9 @@ class CommandHandler {
 
         keyboard.inline_keyboard.push([favBtn]);
         keyboard.inline_keyboard.push([
+            { text: '🎬 Assistir com Legenda (Player)', web_app: { url: `https://brasilflix.kapsu.com.br/#filme/${filme.id}/assistir` } }
+        ]);
+        keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
             { text: '🔙 Voltar à Lista', callback_data: 'catalogo_filmes' }
         ]);
@@ -1341,6 +1344,9 @@ class CommandHandler {
         if (row.length > 0) keyboard.inline_keyboard.push(row);
 
         keyboard.inline_keyboard.push([favBtn]);
+        keyboard.inline_keyboard.push([
+            { text: '🎬 Assistir com Legenda (Player)', web_app: { url: `https://brasilflix.kapsu.com.br/#serie/${serie.id}/temporada/1/episodio/1` } }
+        ]);
         keyboard.inline_keyboard.push([
             { text: '🔍 Fazer Busca', callback_data: 'buscar' },
             { text: '🔙 Voltar à Lista', callback_data: 'catalogo_series' }

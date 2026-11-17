@@ -176,16 +176,21 @@ class TelegramNotificationFormatter {
     static buildInlineKeyboard(tipo, id, seasonNum = 1) {
         let siteUrl = `https://brasilflix.kapsu.com.br/#filme/${id}`;
         let botUrl = `https://t.me/BrasilFlix_bot?start=ver_${id}`;
+        let playerWebAppUrl = `https://brasilflix.kapsu.com.br/#filme/${id}/assistir`;
 
         if (tipo === 'serie') {
             siteUrl = `https://brasilflix.kapsu.com.br/#serie/${id}/temporada/${seasonNum}/episodio/1`;
             botUrl = `https://t.me/BrasilFlix_bot?start=ver_${id}`;
+            playerWebAppUrl = `https://brasilflix.kapsu.com.br/#serie/${id}/temporada/${seasonNum}/episodio/1`;
         }
 
         return {
             inline_keyboard: [
                 [
-                    { text: '🌐 Assistir no Site', url: siteUrl },
+                    { text: '🎬 Assistir com Legenda (Player)', web_app: { url: playerWebAppUrl } }
+                ],
+                [
+                    { text: '🌐 Ver no Site', url: siteUrl },
                     { text: '📱 Assistir pelo Bot', url: botUrl }
                 ]
             ]
