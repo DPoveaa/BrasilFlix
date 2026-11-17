@@ -1614,7 +1614,7 @@ class StremioServer {
 
                 if (type === 'filme') {
                     const r = await db.query(`
-                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio
+                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio, duracao
                         FROM filmes WHERE id = $1
                     `, [id]);
                     if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
@@ -1622,6 +1622,7 @@ class StremioServer {
                     mediaTitle = row.nome;
                     tmdbId = row.tmdb_id;
                     imdbId = row.imdb_id;
+                    durationSec = row.duracao ? row.duracao * 60 : 0;
                 } else {
                     const r = await db.query(`
                         SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.message_id, e.file_id, e.versoes, e.legendas, e.duracao, e.is_legendado, e.is_hardsub, e.created_at, e.audio,
@@ -1771,10 +1772,16 @@ class StremioServer {
                         job.completedAt = Date.now();
                         console.log(`✅ [AdminSubtitles:REPROCESS] Concluído com sucesso para "${mediaTitle}"! (${parsedCues.length} falas salvas)`);
                     } catch (bgErr) {
-                        console.error(`❌ [AdminSubtitles:REPROCESS] Erro em segundo plano:`, bgErr.message);
+                        // Surface FFmpeg stderr if available so the Admin modal shows the real root cause
+                        const ffStderr = bgErr.ffmpegStderr || bgErr.stderr || '';
+                        const stderrSnippet = ffStderr
+                            ? `\n[FFmpeg stderr] ${ffStderr.trim().split('\n').slice(-8).join(' | ')}`
+                            : '';
+                        const fullMsg = `${bgErr.message}${stderrSnippet}`;
+                        console.error(`❌ [AdminSubtitles:REPROCESS] Erro em segundo plano: ${fullMsg}`);
                         job.status = 'error';
-                        job.error = bgErr.message;
-                        job.message = `Falha ao reprocessar: ${bgErr.message}`;
+                        job.error = fullMsg;
+                        job.message = `Falha ao reprocessar: ${fullMsg}`;
                         job.completedAt = Date.now();
                     }
                 });

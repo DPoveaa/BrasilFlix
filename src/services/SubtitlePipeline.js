@@ -284,18 +284,37 @@ class SubtitlePipeline {
     }
 
     /**
-     * Mede a duração real do stream de vídeo com precisão cirúrgica via ffprobe
+     * Builds the array of FFmpeg/FFprobe input flags required before `-i <url>`.
+     * For HTTP(S) URLs, injects reconnect flags so transient TCP drops do not abort
+     * a full-movie audio extraction. For local files, returns an empty array.
+     */
+    _buildInputFlags(videoPath) {
+        const isHttp = typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath);
+        if (!isHttp) return [];
+        return [
+            '-reconnect', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5'
+        ];
+    }
+
+    /**
+     * Mede a duração real do stream de vídeo com precisão cirúrgica via ffprobe.
+     * Para URLs HTTP (stream do Telegram via StremioServer interno) injeta flags de
+     * reconnect para tolerar quedas transitórias de TCP durante a sondagem.
      */
     async probeActualVideoDuration(videoPath) {
         if (!videoPath) return 0;
         try {
             console.log(`⏱️ [Video Probe] Medindo duração real da mídia com ffprobe: ${videoPath.substring(0, 80)}...`);
+            const inputFlags = this._buildInputFlags(videoPath);
             const { stdout } = await execFileAsync('ffprobe', [
+                ...inputFlags,
                 '-v', 'error',
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
                 videoPath
-            ], { timeout: 35000 });
+            ], { timeout: 60000 });
             const dur = parseFloat(stdout.trim());
             if (!isNaN(dur) && dur > 60) {
                 console.log(`⏱️ [Video Probe] Duração real medida: ${dur.toFixed(1)}s (${(dur / 60).toFixed(1)}min)`);
@@ -411,12 +430,14 @@ class SubtitlePipeline {
     async probeAndExtractContainerSubtitle(videoPath, metadata = {}) {
         try {
             console.log(`🔍 [Tier 1: Container Stream] Sondando trilhas de legenda embutidas em "${path.basename(videoPath)}"...`);
+            const inputFlags = this._buildInputFlags(videoPath);
             const { stdout } = await execFileAsync('ffprobe', [
+                ...inputFlags,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_streams',
                 videoPath
-            ], { timeout: 30000 });
+            ], { timeout: inputFlags.length > 0 ? 60000 : 30000 });
 
             const data = JSON.parse(stdout);
             const streams = data.streams || [];
@@ -451,6 +472,7 @@ class SubtitlePipeline {
                 try {
                     await execFileAsync('ffmpeg', [
                         '-nostdin', '-v', 'error', '-y',
+                        ...inputFlags,
                         '-i', videoPath,
                         '-map', `0:${subIndex}`,
                         '-c:s', 'srt',
@@ -494,12 +516,14 @@ class SubtitlePipeline {
      */
     async probeAndExtractContainerForeignSubtitle(videoPath) {
         try {
+            const inputFlags = this._buildInputFlags(videoPath);
             const { stdout } = await execFileAsync('ffprobe', [
+                ...inputFlags,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_streams',
                 videoPath
-            ], { timeout: 30000 });
+            ], { timeout: inputFlags.length > 0 ? 60000 : 30000 });
 
             const data = JSON.parse(stdout);
             const subStreams = (data.streams || []).filter(s => s.codec_type === 'subtitle');
@@ -525,6 +549,7 @@ class SubtitlePipeline {
                 try {
                     await execFileAsync('ffmpeg', [
                         '-nostdin', '-v', 'error', '-y',
+                        ...inputFlags,
                         '-i', videoPath,
                         '-map', `0:${stream.index}`,
                         '-c:s', 'srt',
@@ -564,12 +589,14 @@ class SubtitlePipeline {
     async extractEnglishReferenceSubtitle(videoPath, metadata = {}, videoDurationSec = 0) {
         // 1. Tenta extrair do container
         try {
+            const inputFlags = this._buildInputFlags(videoPath);
             const { stdout } = await execFileAsync('ffprobe', [
+                ...inputFlags,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_streams',
                 videoPath
-            ], { timeout: 30000 });
+            ], { timeout: inputFlags.length > 0 ? 60000 : 30000 });
 
             const data = JSON.parse(stdout);
             const subStreams = (data.streams || []).filter(s => s.codec_type === 'subtitle');
@@ -586,6 +613,7 @@ class SubtitlePipeline {
                 const outPath = path.join(this.getWorkingDir(videoPath), `ref_en_${Date.now()}.srt`);
                 await execFileAsync('ffmpeg', [
                     '-nostdin', '-v', 'error', '-y',
+                    ...inputFlags,
                     '-i', videoPath,
                     '-map', `0:${enStream.index}`,
                     '-c:s', 'srt',
@@ -1558,21 +1586,35 @@ print(f"RESULT:{res}")
      * Extrai áudio leve 16kHz mono WAV/PCM across 100% da duração do vídeo com compensação de offset PTS.
      * Sonda start_time do vídeo e do áudio e aplica `aresample=async=1:first_pts=0`
      * para garantir que t=0.000s no Whisper case cirurgicamente com t=0.000s no player HTML5.
+     *
+     * Para URLs HTTP (Telegram stream interno via StremioServer):
+     *  - Injeta -reconnect/-reconnect_streamed/-reconnect_delay_max antes de -i
+     *  - Usa índice relativo de stream de áudio (`0:a:N`) em vez do índice global (`0:N`)
+     *    para evitar que o índice errado seja selecionado quando a sondagem falha.
+     *  - Captura e loga o stderr completo do FFmpeg em vez de engolir a mensagem genérica.
      */
     async extractCleanAudioWav(videoPath, outputWavPath, videoDurationSec = 0) {
-        await fs.ensureDir(path.dirname(outputWavPath));
+        // Garante que o diretório de destino existe antes de spawnar o FFmpeg
+        const outputDir = path.dirname(outputWavPath);
+        fs.mkdirSync(outputDir, { recursive: true });
+
+        const inputFlags = this._buildInputFlags(videoPath);
+        const isHttp = inputFlags.length > 0;
 
         let channels = 2;
-        let selectedAudioIndex = null;
+        // relativeAudioIdx: índice RELATIVO dentro dos streams de áudio (0:a:N), sempre seguro.
+        // O índice global (0:N) pode ser incorreto se o ffprobe falhar e cair no default.
+        let relativeAudioIdx = 0;
         let ptsDelaySec = 0;
 
         try {
             const { stdout: probeOut } = await execFileAsync('ffprobe', [
+                ...inputFlags,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_streams',
                 videoPath
-            ], { timeout: 25000 });
+            ], { timeout: isHttp ? 60000 : 25000 });
             const data = JSON.parse(probeOut);
             const streams = data.streams || [];
             const vStream = streams.find(s => s.codec_type === 'video');
@@ -1580,7 +1622,8 @@ print(f"RESULT:{res}")
             const aStream = audioStreams[0];
 
             if (aStream) {
-                selectedAudioIndex = aStream.index;
+                // Use relative audio index (0:a:N) — safe even when stream ordering is unusual
+                relativeAudioIdx = 0; // first audio stream is always 0:a:0 in relative terms
                 channels = parseInt(aStream.channels, 10) || 2;
                 const vStart = parseFloat(vStream?.start_time || '0') || 0;
                 const aStart = parseFloat(aStream.start_time || '0') || 0;
@@ -1590,7 +1633,8 @@ print(f"RESULT:{res}")
                 }
             }
         } catch (e) {
-            console.warn(`⚠️ [Audio Extractor] Aviso ao sondar streams do vídeo:`, e.message);
+            const probeStderr = e.stderr ? `\n  stderr: ${e.stderr.trim().split('\n').slice(-5).join(' | ')}` : '';
+            console.warn(`⚠️ [Audio Extractor] Aviso ao sondar streams do vídeo (fallback para 0:a:0): ${e.message}${probeStderr}`);
         }
 
         // Sincroniza audio samples com aresample=async=1:first_pts=0 para garantir que t=0.000s no Whisper
@@ -1608,16 +1652,19 @@ print(f"RESULT:{res}")
         }
 
         const filterChain = filterParts.join(',');
-        const mapArg = selectedAudioIndex !== null ? `0:${selectedAudioIndex}` : '0:a:0';
+        // Always use relative audio stream index (0:a:N) — never the global stream index.
+        // 0:a:0 = first audio track; safe even if ffprobe succeeded and confirmed index 0.
+        const mapArg = `0:a:${relativeAudioIdx}`;
 
-        console.log(`🎙️ [Audio Extractor] Extraindo áudio mono 16kHz across 100% da duração com PTS sync (async=1:first_pts=0, stream ${mapArg}, ${channels} canais)...`);
+        console.log(`🎙️ [Audio Extractor] Extraindo áudio mono 16kHz across 100% da duração com PTS sync (async=1:first_pts=0, stream ${mapArg}, ${channels} canais${isHttp ? ', HTTP reconnect: ON' : ''})...`);
 
-        const ffmpegArgs = [
+        const buildFfmpegArgs = (filterArg) => [
             '-nostdin', '-v', 'error', '-y',
+            ...inputFlags,
             '-i', videoPath,
             '-map', mapArg,
             '-vn',
-            '-af', filterChain,
+            '-af', filterArg,
             '-ac', '1',
             '-ar', '16000',
             '-c:a', 'pcm_s16le',
@@ -1625,20 +1672,23 @@ print(f"RESULT:{res}")
         ];
 
         try {
-            await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 300000 });
+            await execFileAsync('ffmpeg', buildFfmpegArgs(filterChain), { timeout: 300000 });
         } catch (err) {
-            console.warn(`⚠️ [Audio Extractor] Falha no filtro vocal (${err.message}). Tentando fallback direto com aresample=async=1:first_pts=0...`);
-            await execFileAsync('ffmpeg', [
-                '-nostdin', '-v', 'error', '-y',
-                '-i', videoPath,
-                '-map', mapArg,
-                '-vn',
-                '-af', 'aresample=async=1:first_pts=0',
-                '-ac', '1',
-                '-ar', '16000',
-                '-c:a', 'pcm_s16le',
-                outputWavPath
-            ], { timeout: 300000 });
+            // Surface the full FFmpeg stderr in PM2 logs so the real error is immediately visible
+            const ffmpegStderr = err.stderr ? err.stderr.trim().split('\n').slice(-15).join('\n  ') : '(sem stderr)';
+            console.warn(`⚠️ [Audio Extractor] Falha no filtro vocal. Tentando fallback direto com aresample=async=1:first_pts=0...`);
+            console.warn(`  FFmpeg stderr (últimas 15 linhas):\n  ${ffmpegStderr}`);
+            try {
+                await execFileAsync('ffmpeg', buildFfmpegArgs('aresample=async=1:first_pts=0'), { timeout: 300000 });
+            } catch (fallbackErr) {
+                const fallbackStderr = fallbackErr.stderr ? fallbackErr.stderr.trim().split('\n').slice(-15).join('\n  ') : '(sem stderr)';
+                console.error(`❌ [Audio Extractor] Falha também no fallback FFmpeg.`);
+                console.error(`  FFmpeg stderr (fallback, últimas 15 linhas):\n  ${fallbackStderr}`);
+                // Re-throw with the stderr so callers (and PM2 logs) see the root cause
+                const enriched = new Error(`FFmpeg falhou ao extrair áudio: ${fallbackErr.message}\nstderr: ${fallbackStderr}`);
+                enriched.ffmpegStderr = fallbackStderr;
+                throw enriched;
+            }
         }
 
         if (!fs.existsSync(outputWavPath) || fs.statSync(outputWavPath).size < 10000) {
