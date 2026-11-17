@@ -214,6 +214,76 @@ class SubtitlePipeline {
     }
 
     /**
+     * LANGUAGE SAFETY GATE: Detecta e rejeita legendas em Romeno ou outros idiomas
+     * do Leste Europeu que podem ter sido tagueados erroneamente como "por"/"pt"/"und".
+     *
+     * Critérios:
+     *  1. Rejeição imediata se contiver diacríticos típicos do Romeno / Leste-Europeu
+     *     (ă Ă ș Ș ț Ț î Î) — esses caracteres são INEXISTENTES no português.
+     *     Diacríticos adicionais do Polonês/Tcheco/Eslovaco (ł ń ż ź č ř ě) também rejeitam.
+     *  2. Exige taxa de acerto >= 1.5% de stopwords INCONFUNDÍVEIS do PT-BR
+     *     (não, você, está, para, com, que, uma, isso, aqui, muito, mas, por,
+     *      como, também, já) em amostragem de até 120 cues.
+     *     Essa taxa garante que o texto é genuinamente português e não
+     *     um idioma que coincidentemente passa pelo filtro léxico básico.
+     *
+     * @param {string} content   - texto bruto/completo da legenda (SRT ou plain)
+     * @param {string[]} [cueTexts] - array opcional de textos dos cues já parseados
+     * @returns {{ valid: boolean, reason: string }}
+     */
+    validatePtBrTextSafety(content, cueTexts = null) {
+        if (!content || typeof content !== 'string') {
+            return { valid: false, reason: 'Conteúdo vazio' };
+        }
+
+        // --- 1. Rejeição imediata por diacríticos inexistentes no Português ---
+        // Romeno: ă Ă ș Ș ț Ț î Î  (note: î é diferente de í/ì)
+        // Polonês/Tcheco: ł ń ż ź č ř ě
+        const easternEuropeanDiacritics = /[ăĂșȘțȚîÎłńżźčřě]/;
+        if (easternEuropeanDiacritics.test(content)) {
+            // Conta ocorrências para evitar falso-positivo por caractere único
+            const hits = (content.match(/[ăĂșȘțȚîÎłńżźčřě]/g) || []).length;
+            if (hits >= 2) {
+                return {
+                    valid: false,
+                    reason: `Detectado ${hits} diacrítico(s) de idioma Leste-Europeu (Romeno/Polonês) inexistente(s) em Português: "${content.match(/[ăĂșȘțȚîÎłńżźčřě]/g).slice(0, 5).join(' ')}"`
+                };
+            }
+        }
+
+        // --- 2. Taxa mínima de stopwords PT-BR inconfundíveis ---
+        // Amostra até 120 cues distribuídos pelo arquivo
+        const textToSample = cueTexts
+            ? (() => {
+                const step = Math.max(1, Math.floor(cueTexts.length / 120));
+                const sampled = [];
+                for (let i = 0; i < cueTexts.length; i += step) sampled.push(cueTexts[i]);
+                return sampled.join(' ');
+            })()
+            : content.slice(0, 40000); // fallback: primeiros 40k chars
+
+        const norm = textToSample.toLowerCase();
+
+        // Stopwords absolutamente inequívocas do Português (incluindo formas acentuadas e não-acentuadas)
+        const ptStopwordPattern = /\b(não|nao|você|voce|está|esta\b|para\b|com\b|que\b|uma\b|isso|aqui|muito|mas\b|por\b|como\b|também|tambem|já\b|ja\b|ele\b|ela\b|nos\b|seu\b|sua\b|são|sao\b|ter\b|ser\b|por\b|mais\b)\b/gi;
+        const stopwordHits = (norm.match(ptStopwordPattern) || []).length;
+
+        // Conta palavras totais no sample (aproximação)
+        const totalWords = (norm.match(/\b\w{2,}\b/g) || []).length || 1;
+        const hitRate = stopwordHits / totalWords;
+
+        // Exige pelo menos 1.5% de stopwords PT — textos romenos típicos ficam abaixo de 0.3%
+        if (hitRate < 0.015 && stopwordHits < 8) {
+            return {
+                valid: false,
+                reason: `Taxa de stopwords PT-BR insuficiente: ${stopwordHits} hits em ${totalWords} palavras (${(hitRate * 100).toFixed(2)}% < 1.5%). Provável idioma não-português.`
+            };
+        }
+
+        return { valid: true, reason: 'OK' };
+    }
+
+    /**
      * Mede a duração real do stream de vídeo com precisão cirúrgica via ffprobe
      */
     async probeActualVideoDuration(videoPath) {
@@ -279,19 +349,33 @@ class SubtitlePipeline {
     /**
      * Valida se a legenda tem vocabulário autêntico de Português Brasileiro (PT-BR).
      *
-     * 1. Confiança nos Metadados / Tags da Fonte:
-     *    - pob, pt-br, pt_br, ptbr, brazilian, bra, br_pt, br-pt, por_br -> aprova imediatamente como PT-BR.
-     *    - pt-pt, pt_pt, portugal -> rejeita imediatamente.
-     * 2. Regra para Código Genérico ("por" ou sem país explícito):
-     *    - Se você/vocês aparecer 2+ vezes -> aprova imediatamente como PT-BR.
-     *    - Rejeita como PT-PT se você/vocês < 2 E houver pelo menos 3 construções típicas de Portugal.
+     * FLUXO DE VALIDAÇÃO (ordem de verificação):
+     *  0. SAFETY GATE ESTRITO: detecta e rejeita diacríticos romenos/leste-europeus e
+     *     exige taxa mínima de stopwords PT — aplicado a TODOS os candidatos, sem exceção,
+     *     antes de qualquer análise de metadados/tags. Isso evita que uma trilha romena
+     *     tagueada como "por" ou "und" passe pela validação.
+     *  1. Confiança nos Metadados / Tags da Fonte (após passar o Safety Gate):
+     *     - pob, pt-br, pt_br, ptbr, brazilian, bra, br_pt, br-pt, por_br -> aprova como PT-BR.
+     *     - pt-pt, pt_pt, portugal -> rejeita imediatamente.
+     *  2. Análise textual para código genérico ("por" ou sem país explícito):
+     *     - Se você/vocês aparecer 2+ vezes -> aprova como PT-BR.
+     *     - Rejeita como PT-PT se houver pelo menos 3 construções europeias.
      *
      * @param {string} content - texto da legenda
      * @param {string} [sourceLang] - código de idioma retornado pela API/fonte (ex: "pob", "por", "pt-pt")
      * @param {string} [sourceFile] - nome do arquivo/release (para detectar tags no filename)
+     * @param {string[]} [cueTexts] - array opcional de textos dos cues já parseados (para o safety gate)
      */
-    isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '') {
+    isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '', cueTexts = null) {
         if (!content || typeof content !== 'string') return false;
+
+        // 0. SAFETY GATE ESTRITO (roda SEMPRE, independentemente de tags/metadados)
+        //    Detecta Romeno, Polonês e outros idiomas E-Europeus; exige taxa mínima de stopwords PT.
+        const safetyCheck = this.validatePtBrTextSafety(content, cueTexts);
+        if (!safetyCheck.valid) {
+            console.warn(`🚫 [PT-BR Safety Gate] Candidato REJEITADO: ${safetyCheck.reason}`);
+            return false;
+        }
 
         const lang = (sourceLang || '').toLowerCase().trim();
         const file = (sourceFile || '').toLowerCase();
@@ -377,8 +461,9 @@ class SubtitlePipeline {
                         const rawBuffer = await fs.readFile(outPath);
                         const sanitized = this.sanitizeEncoding(rawBuffer);
                         const cues = this.parseSrt(sanitized);
+                        const cueTexts = cues.map(c => c.text);
 
-                        if (cues.length >= 20 && this.isBrazilianPortugueseSubtitle(sanitized, streamLang)) {
+                        if (cues.length >= 20 && this.isBrazilianPortugueseSubtitle(sanitized, streamLang, '', cueTexts)) {
                             // Salva versão normalizada em UTF-8
                             await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
                             console.log(`✅ [Tier 1: Container Stream] Trilha PT-BR [stream 0:${subIndex}] extraída com sucesso (${cues.length} cues, 100% frame-perfect com o container)!`);
@@ -687,7 +772,8 @@ class SubtitlePipeline {
                     const buf = await fs.readFile(item.path);
                     const sanitized = this.sanitizeEncoding(buf);
                     const cues = this.parseSrt(sanitized);
-                    if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized, '', item.name)) {
+                    const cueTexts = cues.map(c => c.text);
+                    if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized, '', item.name, cueTexts)) {
                         companionPtSrt = item.path;
                         console.log(`✅ [Tier 2: Companion Package] Legenda PT-BR oficial encontrada no pacote: ${path.basename(item.path)} (${cues.length} cues)!`);
                         break;
@@ -948,11 +1034,14 @@ class SubtitlePipeline {
                     const subLang = (sub.lang || sub.language || '').toLowerCase();
                     const relName = (sub.movieReleaseName || sub.releaseName || sub.url || '').toLowerCase();
 
-                    if (!this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName)) {
+                    const cues = this.parseSrt(sanitized);
+                    const cueTexts = cues.map(c => c.text);
+
+                    if (!this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName, cueTexts)) {
+                        console.warn(`⚠️ [Tier 3: OpenSubtitles] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${subLang}, release: ${relName.slice(0, 60)}).`);
                         continue;
                     }
 
-                    const cues = this.parseSrt(sanitized);
                     const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `OpenSubtitles #${i + 1}`);
                     if (!gate.valid) {
                         console.warn(`⚠️ Candidato OpenSubtitles #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
@@ -1055,12 +1144,15 @@ class SubtitlePipeline {
                     const candidateLang = candidate.language || candidate.lang || 'BR_PT';
                     const candidateRel = candidate.release_name || candidate.name || '';
 
-                    if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel)) {
+                    const cues = this.parseSrt(sanitized);
+                    const cueTexts = cues.map(c => c.text);
+
+                    if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel, cueTexts)) {
+                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${candidateLang}, release: ${candidateRel.slice(0, 60)}).`);
                         await fs.remove(extractedSrtPath).catch(() => { });
                         continue;
                     }
 
-                    const cues = this.parseSrt(sanitized);
                     const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `SubDL #${i + 1}`);
                     if (!gate.valid) {
                         console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
