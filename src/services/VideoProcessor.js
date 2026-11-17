@@ -1672,13 +1672,9 @@ ${events.join('\n')}
                 });
 
                 const cleanupSubtitleFiles = () => {
-                    // Note: hardsubPath was removed with the legacy hardsub heuristic.
-                    // Remaining temp files cleaned up below.
+                    // Remaining temp files cleaned up below
                     if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
                         fs.remove(metadata._hardsubAssPath).catch(() => { });
-                    }
-                    if (tempSanitizedSrt && fs.existsSync(tempSanitizedSrt)) {
-                        fs.remove(tempSanitizedSrt).catch(() => { });
                     }
                     if (metadata.srtPath && fs.existsSync(metadata.srtPath)) {
                         fs.remove(metadata.srtPath).catch(() => { });
@@ -1691,14 +1687,6 @@ ${events.join('\n')}
                     if (code === 0 && fs.existsSync(tempOutputPath)) {
                         try {
                             await fs.promises.rename(tempOutputPath, outputPath);
-                            if (isHardsubApplied) {
-                                try {
-                                    await fs.writeFile(`${outputPath}.subtitled`, new Date().toISOString(), 'utf8');
-                                    console.log(`✅ [Hardsub] Marcador .subtitled criado para crash recovery: ${path.basename(outputPath)}.subtitled`);
-                                } catch (mErr) {
-                                    console.warn(`⚠️ [Hardsub] Não foi possível criar marcador .subtitled: ${mErr.message}`);
-                                }
-                            }
                             process.stdout.write('\n');
                             console.log(`\x1b[32m✅ Otimização 1080p concluída com sucesso e máxima fidelidade visual!\x1b[0m`);
                             if (onProgress) onProgress(100, 'Otimização Concluída');
