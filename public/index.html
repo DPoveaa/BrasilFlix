@@ -21,55 +21,101 @@
         rel="stylesheet">
     <!-- Telegram Mini App SDK — carregado incondicionalmente (inerte fora do Telegram) -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="/assets/brasilflix.ec58b5f244.css?v=1794892030000">
+    <link rel="stylesheet" href="/assets/brasilflix.ec58b5f244.css?v=1794895200000">
     <style id="bf-subtitles-base-css">
         .subtitle-dropdown-menu {
-            min-width: 250px;
-            padding: 10px;
-            background: rgba(13, 18, 29, 0.98);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 10px;
-            backdrop-filter: blur(14px);
-            box-shadow: 0 12px 30px rgba(0,0,0,0.85);
-            z-index: 100;
+            position: absolute;
+            bottom: calc(100% + 10px);
+            right: 0;
+            width: 285px;
+            max-width: calc(100vw - 24px);
+            max-height: min(520px, calc(100vh - 120px));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+            padding: 12px 14px;
+            background: rgba(13, 19, 33, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 14px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            z-index: 1000;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+        .subtitle-dropdown-menu::-webkit-scrollbar {
+            width: 5px;
+        }
+        .subtitle-dropdown-menu::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        .sub-popover-section-title {
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 4px 2px 5px 2px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sub-popover-divider {
+            height: 1px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
+            margin: 8px 0 6px 0;
         }
         .sub-style-opt-btn {
             flex: 1;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
             color: #cbd5e1;
-            padding: 5px 8px;
-            border-radius: 6px;
+            padding: 6px 6px;
+            border-radius: 7px;
             font-size: 11px;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
             text-align: center;
+            user-select: none;
+            white-space: nowrap;
         }
         .sub-style-opt-btn:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: #fff;
+            background: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.22);
+            transform: translateY(-1px);
         }
         .sub-style-opt-btn.active {
-            background: #0ea5e9;
-            border-color: #38bdf8;
-            color: #fff;
+            background: linear-gradient(135deg, #0ea5e9, #0284c7);
+            border-color: rgba(56, 189, 248, 0.6);
+            color: #ffffff;
+            box-shadow: 0 2px 10px rgba(2, 132, 199, 0.45);
         }
         .sub-color-opt-btn {
-            width: 24px;
-            height: 24px;
+            width: 26px;
+            height: 26px;
             border-radius: 50%;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.25);
             cursor: pointer;
-            transition: transform 0.15s ease, border-color 0.15s ease;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .sub-color-opt-btn:hover {
-            transform: scale(1.1);
+            transform: scale(1.15);
+            border-color: rgba(255, 255, 255, 0.6);
         }
         .sub-color-opt-btn.active {
-            border-color: #fff;
-            box-shadow: 0 0 0 2px #0ea5e9;
-            transform: scale(1.15);
+            border-color: #ffffff;
+            box-shadow: 0 0 0 2px #0ea5e9, 0 4px 10px rgba(0,0,0,0.6);
+            transform: scale(1.18);
+        }
+        @media (max-width: 480px) {
+            .subtitle-dropdown-menu {
+                width: calc(100vw - 20px) !important;
+                max-width: 310px !important;
+            }
         }
     </style>
     <style id="bf-subtitle-dynamic-styles"></style>
@@ -1263,6 +1309,10 @@
                                 onclick="togglePictureInPicture()" title="Janela Flutuante (Picture-in-Picture)">
                                 Popout
                             </button>
+                            <button class="speed-badge-btn" id="playback-btn-download" onclick="handleDownloadCurrentMedia()"
+                                title="Baixar Vídeo Diretamente">
+                                <span class="btn-icon">⬇️</span> <span class="playback-btn-text">Baixar</span>
+                            </button>
                             <button class="speed-badge-btn" onclick="handleShareCurrentMedia()"
                                 title="Compartilhar Link">
                                 <span class="btn-icon">🔗</span> <span class="playback-btn-text">Compartilhar</span>
@@ -1447,9 +1497,9 @@
                                         <span id="player-subtitles-icon">💬</span> <span id="player-subtitles-label"
                                             class="footer-btn-label">Legenda ⌄</span>
                                     </button>
-                                    <div class="speed-dropdown-menu subtitle-dropdown-menu" id="player-subtitles-menu" style="display: none; min-width: 250px;">
-                                        <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 4px 8px 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 4px;">
-                                            Trilha de Legenda
+                                    <div class="speed-dropdown-menu subtitle-dropdown-menu" id="player-subtitles-menu" style="display: none;" onclick="event.stopPropagation()">
+                                        <div class="sub-popover-section-title">
+                                            <span>💬</span> <span>Trilha de Legenda</span>
                                         </div>
                                         <div id="player-subtitle-tracks-list">
                                             <button class="speed-opt-btn active" onclick="switchPlayerSubtitleTrack('off')">
@@ -1458,31 +1508,48 @@
                                             </button>
                                         </div>
 
-                                        <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 8px 8px 4px 8px; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 4px;">
-                                            Tamanho do Texto
+                                        <div class="sub-popover-divider"></div>
+
+                                        <div class="sub-popover-section-title">
+                                            <span>📐</span> <span>Posição Vertical</span>
                                         </div>
-                                        <div style="display: flex; gap: 4px; padding: 4px 8px;" id="player-sub-size-buttons">
+                                        <div style="display: flex; gap: 4px; padding: 2px 2px 6px 2px;" id="player-sub-pos-buttons">
+                                            <button class="sub-style-opt-btn" onclick="setSubtitlePosition('low')" title="Baixa (92%)">Baixa</button>
+                                            <button class="sub-style-opt-btn active" onclick="setSubtitlePosition('default')" title="Padrão (85%)">Padrão</button>
+                                            <button class="sub-style-opt-btn" onclick="setSubtitlePosition('high')" title="Alta (76%)">Alta</button>
+                                        </div>
+
+                                        <div class="sub-popover-divider"></div>
+
+                                        <div class="sub-popover-section-title">
+                                            <span>🔤</span> <span>Tamanho do Texto</span>
+                                        </div>
+                                        <div style="display: flex; gap: 4px; padding: 2px 2px 6px 2px;" id="player-sub-size-buttons">
                                             <button class="sub-style-opt-btn" onclick="setSubtitleSize('sm')" title="Pequeno">P</button>
                                             <button class="sub-style-opt-btn active" onclick="setSubtitleSize('md')" title="Médio (Padrão)">M</button>
                                             <button class="sub-style-opt-btn" onclick="setSubtitleSize('lg')" title="Grande">G</button>
                                             <button class="sub-style-opt-btn" onclick="setSubtitleSize('xl')" title="Extra Grande">XG</button>
                                         </div>
 
-                                        <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 8px 8px 4px 8px; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 4px;">
-                                            Cor do Texto
+                                        <div class="sub-popover-divider"></div>
+
+                                        <div class="sub-popover-section-title">
+                                            <span>🎨</span> <span>Cor do Texto</span>
                                         </div>
-                                        <div style="display: flex; gap: 8px; padding: 4px 8px; align-items: center;" id="player-sub-color-buttons">
+                                        <div style="display: flex; gap: 10px; padding: 4px 6px 6px 6px; align-items: center;" id="player-sub-color-buttons">
                                             <button class="sub-color-opt-btn active" onclick="setSubtitleColor('white')" title="Branco" style="background:#ffffff;"></button>
                                             <button class="sub-color-opt-btn" onclick="setSubtitleColor('yellow')" title="Amarelo" style="background:#facc15;"></button>
                                             <button class="sub-color-opt-btn" onclick="setSubtitleColor('cyan')" title="Ciano" style="background:#22d3ee;"></button>
                                         </div>
 
-                                        <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 8px 8px 4px 8px; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 4px;">
-                                            Fundo da Legenda
+                                        <div class="sub-popover-divider"></div>
+
+                                        <div class="sub-popover-section-title">
+                                            <span>⬛</span> <span>Fundo da Legenda</span>
                                         </div>
-                                        <div style="display: flex; gap: 4px; padding: 4px 8px;" id="player-sub-bg-buttons">
-                                            <button class="sub-style-opt-btn" onclick="setSubtitleBackground('none')" title="Sem Fundo (Apenas Contorno)">Sem Fundo</button>
-                                            <button class="sub-style-opt-btn active" onclick="setSubtitleBackground('translucent')" title="Translúcido (Padrão)">Translúcido</button>
+                                        <div style="display: flex; gap: 4px; padding: 2px 2px 6px 2px;" id="player-sub-bg-buttons">
+                                            <button class="sub-style-opt-btn active" onclick="setSubtitleBackground('none')" title="Sem Fundo (Padrão)">Sem Fundo</button>
+                                            <button class="sub-style-opt-btn" onclick="setSubtitleBackground('translucent')" title="Translúcido">Translúcido</button>
                                             <button class="sub-style-opt-btn" onclick="setSubtitleBackground('solid')" title="Preto Sólido">Preto Sólido</button>
                                         </div>
 
@@ -4913,7 +4980,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.4036146566.js?v=1794894451655"></script>
+    <script src="/assets/brasilflix.4036146566.js?v=1794895200000"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)

@@ -22,6 +22,7 @@
 
         const bfVisitorId = getOrCreateVisitorId();
         const bfSessionId = getOrCreateSessionId();
+        try { localStorage.removeItem('bf_player_speed'); } catch (_) {}
 
         let _auditDebounceTimers = {};
         function trackAuditEventDebounced(eventType, data = {}, delay = 400) {
@@ -6833,6 +6834,7 @@
             if (subMenu) {
                 subMenu.classList.remove('visible');
                 subMenu.style.display = 'none';
+                subMenu.style.transform = '';
             }
         }
 
@@ -7167,11 +7169,16 @@
             // Configura UI de legendas no player
             updatePlayerSubtitlesUI(mediaInfo.legendas || []);
 
-            // Configura velocidade salva
-            const savedSpeed = parseFloat(localStorage.getItem('bf_player_speed')) || 1.0;
-            video.playbackRate = savedSpeed;
-            const speedLabel = document.getElementById('player-speed-label');
-            if (speedLabel) speedLabel.innerText = `${savedSpeed}x`;
+            // Configura velocidade inicial (estritamente 1.0x Normal para novas sessões/mídias)
+            video.playbackRate = 1.0;
+            syncPlayerSpeedUI(1.0);
+
+            if (!video._rateChangeListenerBound) {
+                video._rateChangeListenerBound = true;
+                video.addEventListener('ratechange', () => {
+                    syncPlayerSpeedUI(video.playbackRate);
+                });
+            }
 
             video.pause();
 
@@ -7538,18 +7545,25 @@
                 }
             }
             if (video) video.playbackRate = speed;
-            const label = document.getElementById('player-speed-label');
-            if (label) label.innerText = `${speed}x`;
-            document.querySelectorAll('.speed-opt-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.innerText.includes(`${speed}x`));
-            });
-            localStorage.setItem('bf_player_speed', speed);
+            syncPlayerSpeedUI(speed);
             const menu = document.getElementById('player-speed-menu');
             if (menu) menu.classList.remove('visible');
             showToast(`⚡ Velocidade ajustada para ${speed}x`, 'info');
             if (currentPartyRoom && partyIsHost) {
                 sendPartyAction('set_speed', { speed });
             }
+        }
+
+        function syncPlayerSpeedUI(speed) {
+            const rate = Number(speed) || 1.0;
+            const rateStr = (Math.round(rate * 100) / 100).toString();
+            const label = document.getElementById('player-speed-label');
+            if (label) label.innerText = `${rateStr}x`;
+            document.querySelectorAll('#player-speed-menu .speed-opt-btn').forEach(btn => {
+                const btnSpeed = parseFloat(btn.innerText);
+                const isActive = !isNaN(btnSpeed) && Math.abs(btnSpeed - rate) < 0.01;
+                btn.classList.toggle('active', isActive);
+            });
         }
 
         function handleZoneTap(e, seconds) {
@@ -7893,6 +7907,40 @@
                 return `${hrs}:${remMins < 10 ? '0' : ''}${remMins}:${secs < 10 ? '0' : ''}${secs}`;
             }
             return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        function handleDownloadCurrentMedia() {
+            if (!currentPlayingMedia || !currentPlayingMedia.streamUrl) {
+                showToast('⚠️ Inicie a reprodução do vídeo para baixar.', 'warning');
+                return;
+            }
+
+            const token = getUserStreamingToken();
+            const isVip = localStorage.getItem('bf_user_is_vip') === 'true' ||
+                          (typeof currentUser !== 'undefined' && currentUser && (currentUser.is_vip || currentUser.role === 'admin' || currentUser.isAdmin)) ||
+                          (token && token !== 'public');
+
+            const overlay = document.getElementById('player-vip-limit-overlay');
+            if (overlay && overlay.classList.contains('visible') && !isVip) {
+                showVipLimitOverlay('Downloads diretos e reprodução ilimitada são benefícios exclusivos para assinantes VIP.');
+                return;
+            }
+
+            const title = currentPlayingMedia.title || 'video';
+            const sub = currentPlayingMedia.sub ? ` - ${currentPlayingMedia.sub}` : '';
+            const safeName = `${title}${sub}`.replace(/[/\\?%*:|"<>]/g, '_') + '.mp4';
+
+            showToast('⬇️ Iniciando download do vídeo...', 'info');
+
+            const a = document.createElement('a');
+            a.href = currentPlayingMedia.streamUrl;
+            a.download = safeName;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                try { document.body.removeChild(a); } catch (_) {}
+            }, 100);
         }
 
         function handleShareCurrentMedia() {
@@ -9564,8 +9612,14 @@
         function closeAllPlayerDropdowns() {
             const audioMenu = document.getElementById('player-audio-menu');
             const speedMenu = document.getElementById('player-speed-menu');
+            const subMenu = document.getElementById('player-subtitles-menu');
             if (audioMenu) audioMenu.classList.remove('visible');
             if (speedMenu) speedMenu.classList.remove('visible');
+            if (subMenu) {
+                subMenu.classList.remove('visible');
+                subMenu.style.display = 'none';
+                subMenu.style.transform = '';
+            }
         }
 
         window.addEventListener('click', () => {
@@ -14065,9 +14119,28 @@
                         const hasExternalSubs = !!(currentPlayingMedia && Array.isArray(currentPlayingMedia.legendas) && currentPlayingMedia.legendas.length > 0);
                         adminEditEl.style.display = (isAdmin && hasExternalSubs) ? 'block' : 'none';
                     }
+                    menu.style.display = 'block';
+                    menu.classList.add('visible');
+
+                    // Previne overflow horizontal fora da tela em dispositivos móveis / Mini App
+                    requestAnimationFrame(() => {
+                        const rect = menu.getBoundingClientRect();
+                        const pad = 10;
+                        if (rect.left < pad) {
+                            const offset = pad - rect.left;
+                            menu.style.transform = `translateX(${offset}px)`;
+                        } else if (rect.right > window.innerWidth - pad) {
+                            const offset = rect.right - (window.innerWidth - pad);
+                            menu.style.transform = `translateX(-${offset}px)`;
+                        } else {
+                            menu.style.transform = '';
+                        }
+                    });
+                } else {
+                    menu.classList.remove('visible');
+                    menu.style.display = 'none';
+                    menu.style.transform = '';
                 }
-                menu.classList.toggle('visible', !isVis);
-                menu.style.display = isVis ? 'none' : 'block';
             }
         }
 
@@ -14127,6 +14200,7 @@
                                 trackEl.track.mode = 'disabled';
                             }
                         } catch (_) {}
+                        applySubtitlePosition();
                     });
                     video.appendChild(trackEl);
                 });
@@ -14204,14 +14278,23 @@
 
             // Sincroniza textTracks nativo (imediato + fallbacks após render/parse de faixas do DOM)
             applyVideoTextTrack(activeLang);
-            setTimeout(() => applyVideoTextTrack(activeLang), 150);
-            setTimeout(() => applyVideoTextTrack(activeLang), 500);
+            setTimeout(() => {
+                applyVideoTextTrack(activeLang);
+                applySubtitlePosition();
+            }, 150);
+            setTimeout(() => {
+                applyVideoTextTrack(activeLang);
+                applySubtitlePosition();
+            }, 500);
 
-            // Sincroniza botões de estilização (tamanho, cor, fundo) com o localStorage
+            // Sincroniza botões de estilização (tamanho, cor, fundo, posição) com o schema v2
             syncSubtitleStyleButtonsUI();
 
             // Aplica estilos visuais salvos via CSS ::cue
             applySubtitleStyles();
+
+            // Aplica posição vertical inicial
+            applySubtitlePosition();
         }
 
         function applyVideoTextTrack(targetLang) {
@@ -14230,7 +14313,28 @@
                 try {
                     tt.mode = isMatch ? 'showing' : 'disabled';
                 } catch (_) { }
+
+                // Mantém a posição vertical dos cues em tempo real
+                if (!tt._posHandlerBound) {
+                    tt._posHandlerBound = true;
+                    tt.addEventListener('cuechange', () => {
+                        const prefs = getSubtitlePrefs();
+                        const lineMap = { low: 92, default: 85, high: 76 };
+                        const lineVal = lineMap[prefs.pos] !== undefined ? lineMap[prefs.pos] : 85;
+                        if (tt.activeCues) {
+                            for (let j = 0; j < tt.activeCues.length; j++) {
+                                try {
+                                    if (tt.activeCues[j].line !== lineVal) {
+                                        tt.activeCues[j].snapToLines = false;
+                                        tt.activeCues[j].line = lineVal;
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+                    });
+                }
             }
+            applySubtitlePosition();
         }
 
         function switchPlayerSubtitleTrack(lang) {
@@ -14238,6 +14342,7 @@
             if (menu) {
                 menu.classList.remove('visible');
                 menu.style.display = 'none';
+                menu.style.transform = '';
             }
 
             localStorage.setItem('bf_sub_lang', lang);
@@ -14270,43 +14375,127 @@
             showToast(lang === 'off' ? '💬 Legenda desativada' : `💬 Legenda ativada: ${lang.toUpperCase()}`, 'info');
         }
 
+        /* ═══════════════════════════════════════════════════════════════════════
+           💬 GERENCIAMENTO DE PREFERÊNCIAS E ESTILOS DE LEGENDA (SCHEMA V2)
+           ═══════════════════════════════════════════════════════════════════════ */
+
+        function getSubtitlePrefs() {
+            let prefs = null;
+            try {
+                const raw = localStorage.getItem('bf_sub_prefs_v2');
+                if (raw) prefs = JSON.parse(raw);
+            } catch (_) {}
+
+            if (!prefs || typeof prefs !== 'object') {
+                const legacySize = localStorage.getItem('bf_sub_size') || 'md';
+                const legacyColor = localStorage.getItem('bf_sub_color') || 'white';
+                // Ignora o 'translucent' legado salvo nos testes anteriores e garante 'none' (Sem Fundo) como padrão
+                let bg = 'none';
+                const legacyBg = localStorage.getItem('bf_sub_bg');
+                if (legacyBg === 'solid') {
+                    bg = 'solid';
+                }
+                const pos = localStorage.getItem('bf_sub_pos') || 'default';
+
+                prefs = {
+                    size: legacySize,
+                    color: legacyColor,
+                    bg,
+                    pos
+                };
+                try {
+                    localStorage.setItem('bf_sub_prefs_v2', JSON.stringify(prefs));
+                    localStorage.setItem('bf_sub_bg', prefs.bg);
+                    localStorage.setItem('bf_sub_size', prefs.size);
+                    localStorage.setItem('bf_sub_color', prefs.color);
+                    localStorage.setItem('bf_sub_pos', prefs.pos);
+                } catch (_) {}
+            }
+            return prefs;
+        }
+
+        function saveSubtitlePrefs(updates = {}) {
+            const current = getSubtitlePrefs();
+            const updated = { ...current, ...updates };
+            try {
+                localStorage.setItem('bf_sub_prefs_v2', JSON.stringify(updated));
+                if (updated.size) localStorage.setItem('bf_sub_size', updated.size);
+                if (updated.color) localStorage.setItem('bf_sub_color', updated.color);
+                if (updated.bg) localStorage.setItem('bf_sub_bg', updated.bg);
+                if (updated.pos) localStorage.setItem('bf_sub_pos', updated.pos);
+            } catch (_) {}
+            return updated;
+        }
+
+        function applySubtitlePosition(posKey) {
+            const prefs = getSubtitlePrefs();
+            const pos = posKey || prefs.pos || 'default';
+            const lineMap = { low: 92, default: 85, high: 76 };
+            const lineVal = lineMap[pos] !== undefined ? lineMap[pos] : 85;
+
+            const video = document.getElementById('html5-video-player');
+            if (!video || !video.textTracks) return;
+
+            for (let i = 0; i < video.textTracks.length; i++) {
+                const tt = video.textTracks[i];
+                if (tt.cues) {
+                    for (let j = 0; j < tt.cues.length; j++) {
+                        try {
+                            tt.cues[j].snapToLines = false;
+                            tt.cues[j].line = lineVal;
+                        } catch (_) {}
+                    }
+                }
+            }
+        }
+
         function syncSubtitleStyleButtonsUI() {
-            const size = localStorage.getItem('bf_sub_size') || 'md';
-            const color = localStorage.getItem('bf_sub_color') || 'white';
-            const bg = localStorage.getItem('bf_sub_bg') || 'translucent';
+            const prefs = getSubtitlePrefs();
+
+            const posBtns = document.querySelectorAll('#player-sub-pos-buttons .sub-style-opt-btn');
+            posBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${prefs.pos}'`)));
 
             const sizeBtns = document.querySelectorAll('#player-sub-size-buttons .sub-style-opt-btn');
-            sizeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${size}'`)));
+            sizeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${prefs.size}'`)));
 
             const colorBtns = document.querySelectorAll('#player-sub-color-buttons .sub-color-opt-btn');
-            colorBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${color}'`)));
+            colorBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${prefs.color}'`)));
 
             const bgBtns = document.querySelectorAll('#player-sub-bg-buttons .sub-style-opt-btn');
-            bgBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${bg}'`)));
+            bgBtns.forEach(b => b.classList.toggle('active', b.getAttribute('onclick')?.includes(`'${prefs.bg}'`)));
+        }
+
+        function setSubtitlePosition(pos) {
+            saveSubtitlePrefs({ pos });
+            syncSubtitleStyleButtonsUI();
+            applySubtitlePosition(pos);
+            const labels = { low: 'Baixa (92%)', default: 'Padrão (85%)', high: 'Alta (76%)' };
+            showToast(`📐 Posição da legenda: ${labels[pos] || pos}`, 'info');
         }
 
         function setSubtitleSize(size) {
-            localStorage.setItem('bf_sub_size', size);
+            saveSubtitlePrefs({ size });
             syncSubtitleStyleButtonsUI();
             applySubtitleStyles();
         }
 
         function setSubtitleColor(color) {
-            localStorage.setItem('bf_sub_color', color);
+            saveSubtitlePrefs({ color });
             syncSubtitleStyleButtonsUI();
             applySubtitleStyles();
         }
 
         function setSubtitleBackground(bg) {
-            localStorage.setItem('bf_sub_bg', bg);
+            saveSubtitlePrefs({ bg });
             syncSubtitleStyleButtonsUI();
             applySubtitleStyles();
         }
 
         function applySubtitleStyles() {
-            const size = localStorage.getItem('bf_sub_size') || 'md';
-            const color = localStorage.getItem('bf_sub_color') || 'white';
-            const bg = localStorage.getItem('bf_sub_bg') || 'translucent';
+            const prefs = getSubtitlePrefs();
+            const size = prefs.size || 'md';
+            const color = prefs.color || 'white';
+            const bg = prefs.bg || 'none';
 
             const sizeMap = {
                 sm: 'clamp(14px, 2.2vw, 18px)',
@@ -14329,10 +14518,10 @@
 
             const fontSize = sizeMap[size] || sizeMap.md;
             const fontColor = colorMap[color] || colorMap.white;
-            const bgColor = bgMap[bg] || bgMap.translucent;
+            const bgColor = bgMap[bg] || bgMap.none;
             const textShadow = bg === 'none'
-                ? '0 0 4px #000, 0 0 8px #000, 0 2px 4px #000'
-                : '0 1px 3px rgba(0,0,0,0.95)';
+                ? '0 2px 4px rgba(0,0,0,0.95), 0 0 2px #000'
+                : (bg === 'translucent' ? '0 1px 3px rgba(0,0,0,0.95)' : 'none');
 
             let styleEl = document.getElementById('bf-subtitle-dynamic-styles');
             if (!styleEl) {
@@ -14355,7 +14544,8 @@
             `;
         }
 
-        // Aplica estilos iniciais no carregamento
+        // Aplica estilos e preferências iniciais no carregamento
+        getSubtitlePrefs();
         applySubtitleStyles();
 
         /* ═══════════════════════════════════════════════════════════════════════
