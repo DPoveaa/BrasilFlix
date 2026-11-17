@@ -8,7 +8,7 @@ async function deployToServer() {
 
     conn.on('ready', () => {
         console.log(`🔌 Conectado via SSH (${host}:22). Executando deploy seguro (preservando catálogo)...`);
-        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git fetch origin main && git config pull.ff only && git pull --ff-only origin main && npm install --omit=dev && node -e "require(\'./src/database/db\').initDb().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(0); })" && pm2 restart brasilflix --update-env && pm2 status';
+        const cmd = 'cd /mnt/ssd500/projetos/BrasilFlix && git fetch origin main && git config pull.ff only && git pull --ff-only origin main && npm install --omit=dev && node -e "require(\'./src/utils/AssetManager\').syncAssets(); process.exit(0);" && node -e "require(\'./src/database/db\').initDb().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(0); })" && pm2 restart brasilflix --update-env && pm2 status';
 
         conn.exec(cmd, (err, stream) => {
             if (err) {

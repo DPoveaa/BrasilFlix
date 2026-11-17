@@ -16,6 +16,14 @@ logBroadcaster.install();
 // Configurar o caminho para os módulos
 process.env.NODE_PATH = path.join(__dirname, 'src');
 
+// 🔄 Sincroniza e resolve hashes de assets estáticos (CSS/JS) para cache-busting imediato
+const AssetManager = require('./src/utils/AssetManager');
+try {
+    AssetManager.syncAssets();
+} catch (assetErr) {
+    console.warn('⚠️ [AssetManager] Falha ao sincronizar assets:', assetErr.message);
+}
+
 const db = require('./src/database/db');
 const { BrasilFlixBot } = require('./src/index.js');
 

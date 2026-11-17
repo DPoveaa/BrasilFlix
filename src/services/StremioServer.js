@@ -20,6 +20,7 @@ const logBroadcaster = require('../utils/LogBroadcaster');
 const SubtitleUtils = require('../utils/SubtitleUtils');
 const SubtitlePipeline = require('./SubtitlePipeline');
 const SubtitleTranslationService = require('./SubtitleTranslationService');
+const AssetManager = require('../utils/AssetManager');
 
 function isWebRequestBatchId(id) {
     return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
@@ -40,8 +41,8 @@ class StremioServer {
         this.app = express();
         this.setupMiddlewares();
         this.setupRoutes();
-        this.progressManager.init().catch(() => {});
-        authService.initAdminUser().catch(() => {});
+        this.progressManager.init().catch(() => { });
+        authService.initAdminUser().catch(() => { });
     }
 
     setupMiddlewares() {
@@ -89,12 +90,22 @@ class StremioServer {
             next();
         });
 
+        // Cache-Control headers dedicados para assets estáticos versionados
+        this.app.use('/assets', (req, res, next) => {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            next();
+        });
+
         const publicDir = path.resolve(__dirname, '../../public');
         this.app.use(express.static(publicDir, {
             index: false,
             redirect: false,
-            setHeaders(res, filename) {
-                if (/\.[a-f0-9]{10}\.(js|css)$/.test(filename)) {
+            setHeaders(res, filePath) {
+                if (filePath.endsWith('.html')) {
+                    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                    res.setHeader('Pragma', 'no-cache');
+                    res.setHeader('Expires', '0');
+                } else if (filePath.includes(path.sep + 'assets' + path.sep) || /\.[a-f0-9]{10}\.(js|css)$/i.test(filePath)) {
                     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
                 }
             }
@@ -133,7 +144,7 @@ class StremioServer {
         // 1. APIs Publicas Seguras (Zero dados sensiveis)
         this.app.get('/api/status', async (req, res) => {
             if (this.catalogoManager?.checkAndSyncDbIfChanged) {
-                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => { });
             }
             const queueStatus = this.queueManager ? this.queueManager.getPublicStatus(this.catalogoManager) : { isProcessing: false, activeTask: null, activeTasks: [], maxConcurrentJobs: 4, queue: [], recentCompleted: [], totalQueued: 0 };
             const stats = this.catalogoManager ? this.catalogoManager.getEstatisticas() : {};
@@ -154,7 +165,7 @@ class StremioServer {
 
         this.app.get('/api/catalogo/version', async (req, res) => {
             if (this.catalogoManager?.checkAndSyncDbIfChanged) {
-                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+                await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => { });
             }
             const version = this.catalogoManager ? this.catalogoManager.getVersion() : Date.now();
             res.json({ version });
@@ -406,7 +417,7 @@ class StremioServer {
             // Valida token – aceita Authorization: Bearer <token> OU ?token=<jwt>
             // (EventSource da W3C não suporta headers customizados, por isso aceitamos query param)
             const rawToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() ||
-                             authService.readSessionCookie(req, 'admin');
+                authService.readSessionCookie(req, 'admin');
             if (!rawToken) return res.status(401).json({ error: 'Token obrigatório.' });
 
             // verifyToken retorna null em caso de token inválido/expirado (não lança exceção)
@@ -415,9 +426,9 @@ class StremioServer {
             if (decoded.role !== 'admin') return res.status(403).json({ error: 'Acesso restrito para administradores.' });
 
             // Cabeçalhos SSE
-            res.setHeader('Content-Type',  'text/event-stream');
+            res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection',    'keep-alive');
+            res.setHeader('Connection', 'keep-alive');
             res.setHeader('X-Accel-Buffering', 'no'); // necessário no Nginx/proxy reverso
             res.flushHeaders();
 
@@ -425,7 +436,7 @@ class StremioServer {
             logBroadcaster.addClient(clientId, res);
 
             // Remove cliente ao desconectar (normal ou abrupto)
-            req.on('close',   () => logBroadcaster.removeClient(clientId));
+            req.on('close', () => logBroadcaster.removeClient(clientId));
             req.on('aborted', () => logBroadcaster.removeClient(clientId));
         });
 
@@ -480,12 +491,12 @@ class StremioServer {
                 const targetMode = req.body?.mode || 'performance';
                 const durationHours = parseInt(req.body?.durationHours || 4, 10);
                 schedulerService.forceStart(req.body?.reason || 'Acionado via Painel Admin', targetMode, durationHours);
-                res.json({ 
-                    success: true, 
-                    message: targetMode === 'eco' 
-                        ? 'Modo Econômico ativado (sem interferir na rede da casa)!' 
-                        : 'Modo Desempenho Máximo ativado!', 
-                    scheduler: schedulerService.getStatus() 
+                res.json({
+                    success: true,
+                    message: targetMode === 'eco'
+                        ? 'Modo Econômico ativado (sem interferir na rede da casa)!'
+                        : 'Modo Desempenho Máximo ativado!',
+                    scheduler: schedulerService.getStatus()
                 });
             } catch (e) {
                 res.status(500).json({ error: e.message });
@@ -944,7 +955,7 @@ class StremioServer {
         this.app.get('/api/admin/catalogo', auth, async (req, res) => {
             try {
                 if (this.catalogoManager?.checkAndSyncDbIfChanged) {
-                    await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => {});
+                    await this.catalogoManager.checkAndSyncDbIfChanged().catch(() => { });
                 }
                 if (this.catalogoManager && typeof this.catalogoManager.getCatalogoDetalhado === 'function') {
                     const data = await this.catalogoManager.getCatalogoDetalhado();
@@ -1025,10 +1036,10 @@ class StremioServer {
                 `, [novoEstado, id]);
 
                 if (this.catalogoManager) await this.catalogoManager.loadCatalogo();
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     message: `Regra de temporadas completas ${novoEstado ? 'ativada' : 'desativada'} com sucesso!`,
-                    exigirTemporadaCompleta: novoEstado 
+                    exigirTemporadaCompleta: novoEstado
                 });
             } catch (e) {
                 res.status(500).json({ error: e.message });
@@ -1100,11 +1111,13 @@ class StremioServer {
                     return res.status(404).json({ error: result.error || 'Série não encontrada.' });
                 }
 
-                res.json({ success: true, message: result.message, details: {
-                    totalEpisodios: result.totalEpisodios,
-                    totalReenfileirados: result.totalReenfileirados,
-                    totalMensagensAgendadas: result.totalMensagensAgendadas
-                }});
+                res.json({
+                    success: true, message: result.message, details: {
+                        totalEpisodios: result.totalEpisodios,
+                        totalReenfileirados: result.totalReenfileirados,
+                        totalMensagensAgendadas: result.totalMensagensAgendadas
+                    }
+                });
             } catch (e) {
                 res.status(500).json({ error: e.message });
             }
@@ -1996,7 +2009,7 @@ class StremioServer {
                         source: 'website',
                         title: item.nome,
                         metadata: { tipo: item.tipo, ano: item.ano, idioma: item.idioma }
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
 
                 const total = createdList.length;
@@ -2132,7 +2145,7 @@ class StremioServer {
         const broadcastToRoom = (room, data) => {
             const payload = `data: ${JSON.stringify(data)}\n\n`;
             for (const m of room.members.values()) {
-                try { if (m.res && !m.res.writableEnded) m.res.write(payload); } catch(e) {}
+                try { if (m.res && !m.res.writableEnded) m.res.write(payload); } catch (e) { }
             }
         };
 
@@ -2226,7 +2239,7 @@ class StremioServer {
             if (!roomId) return;
             try {
                 await db.query(`DELETE FROM watch_party_rooms WHERE id = $1`, [roomId]);
-            } catch (e) {}
+            } catch (e) { }
         };
 
         // Timeout de inatividade: fecha sala se inativa por 1 hora
@@ -2256,15 +2269,15 @@ class StremioServer {
                 for (const row of res.rows) {
                     let mediaInfo = row.media_info;
                     if (typeof mediaInfo === 'string') {
-                        try { mediaInfo = JSON.parse(mediaInfo); } catch(e) { mediaInfo = null; }
+                        try { mediaInfo = JSON.parse(mediaInfo); } catch (e) { mediaInfo = null; }
                     }
                     let wheelItems = row.wheel_items;
                     if (typeof wheelItems === 'string') {
-                        try { wheelItems = JSON.parse(wheelItems); } catch(e) { wheelItems = []; }
+                        try { wheelItems = JSON.parse(wheelItems); } catch (e) { wheelItems = []; }
                     }
                     let permissions = row.permissions;
                     if (typeof permissions === 'string') {
-                        try { permissions = JSON.parse(permissions); } catch(e) { permissions = null; }
+                        try { permissions = JSON.parse(permissions); } catch (e) { permissions = null; }
                     }
 
                     const room = {
@@ -2506,7 +2519,7 @@ class StremioServer {
             // Heartbeat
             const heartbeat = setInterval(() => {
                 try { if (!res.writableEnded) res.write(': heartbeat\n\n'); }
-                catch(e) { clearInterval(heartbeat); }
+                catch (e) { clearInterval(heartbeat); }
             }, 25000);
 
             req.on('close', () => {
@@ -2907,10 +2920,10 @@ class StremioServer {
                         });
                         if (job) jobsAdded.push(job);
                     }
-                    return res.json({ 
-                        success: true, 
-                        message: `Temporada ${sNum} de "${cleanTitle}" (${jobsAdded.length} episódios) enviada para a fila de downloads com Prioridade ${mediaPriority}!`, 
-                        jobs: jobsAdded 
+                    return res.json({
+                        success: true,
+                        message: `Temporada ${sNum} de "${cleanTitle}" (${jobsAdded.length} episódios) enviada para a fila de downloads com Prioridade ${mediaPriority}!`,
+                        jobs: jobsAdded
                     });
                 }
 
@@ -3190,7 +3203,7 @@ class StremioServer {
         });
 
         // 2. Dashboard Web e Rotas de Navegacao (SEO friendly)
-        this.app.get('/', (req, res) => this.renderLandingPage(req, res, 'public'));
+        this.app.get(['/', '/index.html'], (req, res) => this.renderLandingPage(req, res, 'public'));
         this.app.get([
             '/status',
             '/fila',
@@ -3216,6 +3229,9 @@ class StremioServer {
         // Rota oficial de Checkout e Assinatura Web
         this.app.get('/assinar', (req, res) => {
             const assinarPath = path.resolve(__dirname, '../../public/assinar.html');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             if (fs.existsSync(assinarPath)) {
                 return res.sendFile(assinarPath);
             }
@@ -3295,7 +3311,7 @@ class StremioServer {
         this.app.get('/api/user/me', authService.userAuthMiddleware(), async (req, res) => {
             const user = await authService.getUserProfile(req.user.id);
             if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
-            
+
             // Verifica status VIP atualizado
             const auth = this.assinaturaManager.verificarAcessoStremio(user.telegram_id || user.id, true);
             const isVip = auth.authorized || user.is_vip;
@@ -3416,7 +3432,7 @@ class StremioServer {
                     mediaId: String(itemId),
                     title: resolvedTitle,
                     metadata: { itemType: itemType || 'filme' }
-                }).catch(() => {});
+                }).catch(() => { });
             }
             res.json(result);
         });
@@ -3465,7 +3481,7 @@ class StremioServer {
                 const userId = req.user ? req.user.id : null;
                 const guestToken = req.headers['x-guest-token'] || req.body.guestToken || 'guest_default';
                 const { mediaId, mediaType, seasonNum, epNum, epName, currentTime, duration, completed } = req.body;
-                
+
                 const result = await this.progressManager.saveProgress({
                     userId,
                     guestToken,
@@ -3489,7 +3505,7 @@ class StremioServer {
                 const userId = req.user ? req.user.id : null;
                 const guestToken = req.headers['x-guest-token'] || req.body.guestToken || 'guest_default';
                 const { mediaId, mediaType, seasonNum, epNum, completed } = req.body;
-                
+
                 const result = await this.progressManager.toggleWatched({
                     userId,
                     guestToken,
@@ -3559,7 +3575,7 @@ class StremioServer {
             try {
                 const { token, type } = req.body;
                 if (!token) return res.status(400).json({ error: 'Token obrigatório.' });
-                
+
                 const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(token, type || 'filme');
                 if (!consumo.permitido) {
                     return res.status(403).json({
@@ -3632,7 +3648,7 @@ class StremioServer {
                 mediaId: String(id),
                 title: title || `${type} #${id}`,
                 metadata: { rating, type, hasComment: !!comentario }
-            }).catch(() => {});
+            }).catch(() => { });
 
             res.json(result);
         });
@@ -3663,6 +3679,9 @@ class StremioServer {
         // Rota oficial de configuração do Stremio (compatível com botão "Configure" do aplicativo Stremio)
         this.app.get(['/configure', '/:userToken/configure'], (req, res) => {
             const configPath = path.resolve(__dirname, '../../public/configure.html');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             if (fs.existsSync(configPath)) {
                 return res.sendFile(configPath);
             }
@@ -3726,7 +3745,7 @@ class StremioServer {
                 mediaId: String(id),
                 title: media?.nome || `${type} #${id}`,
                 metadata: { type, client: 'stremio' }
-            }).catch(() => {});
+            }).catch(() => { });
 
             res.json(data);
         });
@@ -3750,7 +3769,7 @@ class StremioServer {
                 mediaId: String(id),
                 title: media?.nome || `${type} #${id}`,
                 metadata: { type, userToken: strToken, client: 'stremio' }
-            }).catch(() => {});
+            }).catch(() => { });
 
             res.json(data);
         });
@@ -3879,7 +3898,7 @@ class StremioServer {
                 return res.status(503).send('Serviço de streaming temporariamente indisponível.');
             }
             if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
-                this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                this.autoHealMissingMedia(rawMsgId).catch(() => { });
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
             const verifiedFileId = msgInfo.docId || versaoEscolhida.fileId.trim();
@@ -3908,7 +3927,7 @@ class StremioServer {
                 duration: filme.duracao ? filme.duracao * 60 : 7200,
                 platform: 'stremio',
                 device: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 100) : 'Stremio TV'
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
@@ -4009,7 +4028,7 @@ class StremioServer {
                 return res.status(503).send('Serviço de streaming temporariamente indisponível.');
             }
             if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
-                this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                this.autoHealMissingMedia(rawMsgId).catch(() => { });
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
             const verifiedFileId = msgInfo.docId || versaoEscolhida.fileId.trim();
@@ -4040,7 +4059,7 @@ class StremioServer {
                 duration: ep.duracao ? ep.duracao * 60 : 3000,
                 platform: 'stremio',
                 device: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 100) : 'Stremio TV'
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         await this.streamTelegramMedia(req, res, { ...versaoEscolhida, messageId: rawMsgId });
@@ -4079,7 +4098,7 @@ class StremioServer {
 
             if (msgInfo.status === 'NOT_FOUND' || msgInfo.status === 'INVALID_MEDIA' || !msgInfo.doc) {
                 // Auto-healing ativado apenas para mídias confirmadamente ausentes ou corrompidas no Telegram
-                this.autoHealMissingMedia(rawMsgId).catch(() => {});
+                this.autoHealMissingMedia(rawMsgId).catch(() => { });
                 return res.status(404).send('Mídia de vídeo não encontrada no servidor de armazenamento.');
             }
 
@@ -4149,7 +4168,7 @@ class StremioServer {
                     isAborted = true;
                     try {
                         if (typeof downloadIter.return === 'function') downloadIter.return();
-                    } catch (e) {}
+                    } catch (e) { }
                 };
                 res.on('close', onClose);
 
@@ -4202,7 +4221,7 @@ class StremioServer {
                     isAborted = true;
                     try {
                         if (typeof downloadIter.return === 'function') downloadIter.return();
-                    } catch (e) {}
+                    } catch (e) { }
                 };
                 res.on('close', onClose);
 
@@ -4269,7 +4288,7 @@ class StremioServer {
             `, [msgId, String(msgId)]);
             for (const f of filmesRes.rows) {
                 let versoes = f.versoes || {};
-                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
+                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { }
 
                 if (versoes.dublado && String(versoes.dublado.messageId) === String(msgId)) {
                     versoes.dublado = null;
@@ -4304,7 +4323,7 @@ class StremioServer {
             for (const ep of epsRes.rows) {
                 affectedSerieIds.add(ep.serie_id);
                 let versoes = ep.versoes || {};
-                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) {}
+                if (typeof versoes === 'string') try { versoes = JSON.parse(versoes); } catch (e) { }
 
                 if (versoes.dublado && Number(versoes.dublado.messageId) === msgId) {
                     versoes.dublado = null;
@@ -4354,12 +4373,21 @@ class StremioServer {
     renderLandingPage(req, res, userToken) {
         const indexPath = path.resolve(__dirname, '../../public/index.html');
         if (!fs.existsSync(indexPath)) {
-            res.setHeader('Content-Type', 'text/html');
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             return res.send('<h1>BrasilFlix Online</h1>');
         }
 
         try {
-            let html = this.landingTemplate ??= fs.readFileSync(indexPath, 'utf8');
+            const stat = fs.statSync(indexPath);
+            if (!this.landingTemplate || this.landingTemplateMtime !== stat.mtimeMs) {
+                const rawHtml = fs.readFileSync(indexPath, 'utf8');
+                this.landingTemplate = AssetManager.injectAssets(rawHtml);
+                this.landingTemplateMtime = stat.mtimeMs;
+            }
+            let html = this.landingTemplate;
             const baseUrl = config.STREMIO_BASE_URL || 'https://brasilflix.kapsu.com.br';
 
             // Identifica rota de mídia (filme, serie, anime, dorama, assistir)
@@ -4424,8 +4452,15 @@ class StremioServer {
             }
 
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             return res.send(html);
         } catch (e) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             return res.sendFile(indexPath);
         }
     }
