@@ -1672,9 +1672,8 @@ ${events.join('\n')}
                 });
 
                 const cleanupSubtitleFiles = () => {
-                    if (hardsubPath && fs.existsSync(hardsubPath)) {
-                        fs.remove(hardsubPath).catch(() => { });
-                    }
+                    // Note: hardsubPath was removed with the legacy hardsub heuristic.
+                    // Remaining temp files cleaned up below.
                     if (metadata._hardsubAssPath && fs.existsSync(metadata._hardsubAssPath)) {
                         fs.remove(metadata._hardsubAssPath).catch(() => { });
                     }

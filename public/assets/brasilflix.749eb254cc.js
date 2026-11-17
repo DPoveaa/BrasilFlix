@@ -6125,9 +6125,14 @@
             // Busca as trilhas de legenda frescas do backend (resolve stale cache do catálogo)
             // e só então abre o player — assim PT-BR aparece mesmo quando catálogo estava stale
             const knownLegendas = movie.legendas || [];
-            fetch(`/api/media/filme/${encodeURIComponent(movie.id)}/subtitles`)
+            // Cancel any previous in-flight subtitle request before starting a new one.
+            if (_subtitleFetchController) { try { _subtitleFetchController.abort(); } catch (_) {} }
+            _subtitleFetchController = new AbortController();
+            const _filmSubSignal = _subtitleFetchController.signal;
+            fetch(`/api/media/filme/${encodeURIComponent(movie.id)}/subtitles`, { signal: _filmSubSignal })
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
+                    if (_filmSubSignal.aborted) return;
                     const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownLegendas;
                     // Atualiza o catálogo em memória para esta entrada para evitar nova busca
                     if (freshTracks.length > knownLegendas.length) {
@@ -6150,7 +6155,9 @@
                         autoPlay: false
                     });
                 })
-                .catch(() => {
+                .catch((err) => {
+                    // AbortError means a newer media request superseded this one — do nothing.
+                    if (err && err.name === 'AbortError') return;
                     // Fallback: usa legendas do catálogo (pode estar stale, mas melhor do que nada)
                     openWebPlayer(movie.nome, `Filme • ${movie.ano || ''}`, streamUrl, {
                         type: 'filme',
@@ -6362,9 +6369,14 @@
             // Busca as trilhas de legenda frescas do backend para o episódio (resolve stale cache do catálogo)
             const episodeDbId = episode.id;
             const knownEpLegendas = episode.legendas || [];
-            fetch(`/api/media/episodio/${encodeURIComponent(episodeDbId)}/subtitles`)
+            // Cancel any previous in-flight subtitle request before starting a new one.
+            if (_subtitleFetchController) { try { _subtitleFetchController.abort(); } catch (_) {} }
+            _subtitleFetchController = new AbortController();
+            const _epSubSignal = _subtitleFetchController.signal;
+            fetch(`/api/media/episodio/${encodeURIComponent(episodeDbId)}/subtitles`, { signal: _epSubSignal })
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
+                    if (_epSubSignal.aborted) return;
                     const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownEpLegendas;
                     if (freshTracks.length > knownEpLegendas.length) {
                         episode.legendas = freshTracks;
@@ -6391,7 +6403,9 @@
                         autoPlay: false
                     });
                 })
-                .catch(() => {
+                .catch((err) => {
+                    // AbortError means a newer media request superseded this one — do nothing.
+                    if (err && err.name === 'AbortError') return;
                     openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
                         type: 'serie',
                         id: serie.id,
@@ -6856,6 +6870,10 @@
         }
 
         let currentPlayingMedia = null;
+        // AbortController for in-flight subtitle fetch requests (film or episode).
+        // Aborted whenever a new media is initialized so a slow response from title A
+        // never overwrites the subtitle state of title B.
+        let _subtitleFetchController = null;
         let autoPlayNextTimer = null;
         let autoPlayNextSeconds = 10;
         let autoPlayCancelled = false;
@@ -7206,6 +7224,38 @@
             }
         }
 
+        // ── Subtitle Full Reset ──────────────────────────────────────────────
+        // Call before loading any new media to guarantee zero bleed-through of
+        // cues, in-memory state, or pending network responses from the previous title.
+        function resetSubtitleState() {
+            // 1. Abort any in-flight subtitle fetch so a slow response from the
+            //    previous title never overwrites the new title's tracks.
+            if (_subtitleFetchController) {
+                try { _subtitleFetchController.abort(); } catch (_) {}
+                _subtitleFetchController = null;
+            }
+
+            // 2. Remove all <track> child elements from the video element and
+            //    disable every residual textTrack to clear parsed VTT cues.
+            const video = document.getElementById('html5-video-player');
+            if (video) {
+                const oldTracks = video.querySelectorAll('track');
+                oldTracks.forEach(t => t.remove());
+                if (video.textTracks) {
+                    for (let i = 0; i < video.textTracks.length; i++) {
+                        try { video.textTracks[i].mode = 'disabled'; } catch (_) {}
+                    }
+                }
+            }
+
+            // 3. Clear the native cue rendering immediately so no text is visible
+            //    at t=0 of the new title.  The CSS ::cue overlay is controlled by
+            //    the browser's textTrack engine — disabling all tracks above is
+            //    sufficient; the subtitle-menu UI reset below clears the list HTML.
+            const listEl = document.getElementById('player-subtitle-tracks-list');
+            if (listEl) listEl.innerHTML = '';
+        }
+
         function openWebPlayer(title, subTitle, streamUrl, mediaInfo = {}) {
             const card = document.getElementById('player-card-container');
             const video = document.getElementById('html5-video-player');
@@ -7214,6 +7264,10 @@
             const badgeEl = document.getElementById('player-auth-badge');
 
             if (!video) return;
+
+            // Reset all subtitle state before loading new media so no cue text
+            // from the previous title bleeds through at t=0 of the new one.
+            resetSubtitleState();
 
             hideVipLimitOverlay();
 
@@ -7488,6 +7542,7 @@
             if (card) card.classList.remove('controls-hidden');
             hideAutoPlayNextCard();
             dismissResumePlayback();
+            resetSubtitleState();
             currentPlayingMedia = null;
         }
 
