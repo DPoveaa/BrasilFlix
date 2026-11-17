@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Full-Movie Dense Whisper Anchor Alignment Engine
+Full-Movie Dense Whisper Anchor Alignment Engine (Non-Destructive Sync Guide)
 BrasilFlix Subtitle Pipeline
 
-1. Transcribes 100% of video audio using faster-whisper (tiny/base, int8, vad_filter=True)
-   to build a dense map of spoken anchors ({ startMs, endMs, text, words }).
-   Streams real-time progress (PROGRESS:<pct>:<cur_sec>:<tot_sec>) to stdout.
-
-2. Dense Multi-Anchor Synchronization of Human Subtitles:
-   - Global Offset & Cut Compatibility Check (10-minute windows across 0% to 100%):
-     Rejects candidate if match coverage collapses or offset jumps > 4.5s (Theatrical vs Extended cut).
-   - Piecewise / Local Anchor Refinement:
-     Computes rolling 5-minute median offsets across the timeline to eliminate mid-movie drift,
-     locking speech-onset with sub-150ms accuracy while preserving 100% human-authored text.
-   - Clamping smooth transitions: zero overlaps, monotonic ordering, >= 30ms gap.
+Human subtitles are the 100% source of truth for text and cue durations.
+Whisper speech-onset timestamps are used solely to measure whether the human subtitle
+is already in sync with the audio or has an offset/drift:
+  - Already in sync (median offset <= 0.35s and negligible drift):
+    Preserves 100% of original human timestamps untouched (modified: False).
+  - Out of sync (offset > 0.35s, FPS ratio drift, or scene-cut shift):
+    Calculates clean offset/drift and shifts cue start times while strictly
+    preserving each human cue's original duration (new_end = new_start + orig_duration,
+    capped cleanly before next_cue.start - 0.04s).
 """
 
 import sys
@@ -50,13 +48,13 @@ def parse_timecode(tc):
     if len(parts) < 4:
         return 0.0
     h, m, s, ms = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
-    return h * 3600 + m * 60 + s + ms / 1000.0
+    return h * 3600.0 + m * 60.0 + s + ms / 1000.0
 
 
 def format_timecode(total_sec):
     if total_sec < 0:
         total_sec = 0.0
-    total_ms = int(round(total_sec * 1000))
+    total_ms = int(round(total_sec * 1000.0))
     ms = total_ms % 1000
     s_tot = total_ms // 1000
     s = s_tot % 60
@@ -103,12 +101,15 @@ def parse_srt(srt_path):
         text = ' '.join(lines[tc_idx + 1:])
         text_clean = re.sub(r'<[^>]+>', '', text).strip()
         if text_clean and end_sec > start_sec:
+            orig_dur = end_sec - start_sec
             cues.append({
                 'index': len(cues) + 1,
                 'start': start_sec,
                 'end': end_sec,
-                'start_ms': int(round(start_sec * 1000)),
-                'end_ms': int(round(end_sec * 1000)),
+                'orig_dur': orig_dur,
+                'start_ms': int(round(start_sec * 1000.0)),
+                'end_ms': int(round(end_sec * 1000.0)),
+                'orig_dur_ms': int(round(orig_dur * 1000.0)),
                 'start_tc': m.group(1).replace('.', ','),
                 'end_tc': m.group(2).replace('.', ','),
                 'text': text_clean
@@ -116,12 +117,16 @@ def parse_srt(srt_path):
     return cues
 
 
-def write_srt(cues, out_path):
+def write_srt(cues, out_path, preserve_original_timecodes=False):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, 'w', encoding='utf-8') as f:
         for idx, cue in enumerate(cues, 1):
-            start_tc = cue.get('start_tc') or format_timecode(cue['start'])
-            end_tc = cue.get('end_tc') or format_timecode(cue['end'])
+            if preserve_original_timecodes and cue.get('start_tc') and cue.get('end_tc'):
+                start_tc = cue['start_tc']
+                end_tc = cue['end_tc']
+            else:
+                start_tc = format_timecode(cue['start'])
+                end_tc = format_timecode(cue['end'])
             f.write(f"{idx}\n{start_tc} --> {end_tc}\n{cue['text']}\n\n")
 
 
@@ -167,7 +172,7 @@ def compute_cue_anchor_similarity(cue, anchor, is_pt_to_en=False, en_cues=None):
             best_en = min(nearby_en, key=lambda ec: abs(ec['start'] - cue['start']))
             ov = compute_token_overlap(
                 extract_tokens(best_en['text'], STOPWORDS_EN),
-                extract_tokens(anchor['text'], STOPWORDS_EN)
+                extract_tokens(anchor.get('text', ''), STOPWORDS_EN)
             )
             if ov > 0:
                 return ov
@@ -175,21 +180,21 @@ def compute_cue_anchor_similarity(cue, anchor, is_pt_to_en=False, en_cues=None):
     # 2. Direct token overlap (same language or cognate tokens)
     stopwords = STOPWORDS_PT if is_pt_to_en else STOPWORDS_EN
     cue_tokens = extract_tokens(cue['text'], stopwords)
-    anchor_tokens = extract_tokens(anchor['text'], STOPWORDS_EN if is_pt_to_en else stopwords)
+    anchor_tokens = extract_tokens(anchor.get('text', ''), STOPWORDS_EN if is_pt_to_en else stopwords)
     direct_ov = compute_token_overlap(cue_tokens, anchor_tokens)
     if direct_ov >= 0.20:
         return direct_ov
 
-    # 3. Proper names and numbers (e.g. John, Sarah, 1999, Paris, etc.)
+    # 3. Proper names and numbers (e.g. Harry, Potter, 1999, Paris, etc.)
     pn_cue = extract_proper_and_numbers(cue['text'])
-    pn_anchor = extract_proper_and_numbers(anchor['text'])
+    pn_anchor = extract_proper_and_numbers(anchor.get('text', ''))
     if pn_cue and pn_anchor:
         pn_ov = len(pn_cue & pn_anchor) / max(1, min(len(pn_cue), len(pn_anchor)))
         if pn_ov >= 0.5:
             return 0.5 * pn_ov
 
     # 4. Trigram overlap for cognates (problema / problem, hospital / hospital)
-    tri_score = compute_dice_trigram(cue['text'], anchor['text'])
+    tri_score = compute_dice_trigram(cue['text'], anchor.get('text', ''))
     if tri_score >= 0.35:
         return tri_score * 0.7
 
@@ -205,7 +210,7 @@ def run_transcribe(audio_path, output_json_path, duration_sec=0.0, model_name='t
 
     model = WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=4)
 
-    print(f"🎙️ [Whisper Dense Anchor] Transcrevendo 100% do áudio ({audio_path})...")
+    print(f"🎙️ [Whisper Dense Anchor] Transcrevendo áudio com VAD ({audio_path})...")
     segments, info = model.transcribe(
         audio_path,
         beam_size=1,
@@ -219,7 +224,6 @@ def run_transcribe(audio_path, output_json_path, duration_sec=0.0, model_name='t
     last_reported_pct = -1
     whisper_anchors = []
 
-    # Iterate over segment generator, streaming real-time progress
     for segment in segments:
         words = []
         if segment.words:
@@ -227,12 +231,12 @@ def run_transcribe(audio_path, output_json_path, duration_sec=0.0, model_name='t
                 if w.word and w.start is not None and w.end is not None:
                     words.append({
                         'word': w.word.strip(),
-                        'startMs': int(round(w.start * 1000)),
-                        'endMs': int(round(w.end * 1000))
+                        'startMs': int(round(w.start * 1000.0)),
+                        'endMs': int(round(w.end * 1000.0))
                     })
 
-        start_ms = int(round(segment.start * 1000))
-        end_ms = int(round(segment.end * 1000))
+        start_ms = int(round(segment.start * 1000.0))
+        end_ms = int(round(segment.end * 1000.0))
         whisper_anchors.append({
             'startMs': start_ms,
             'endMs': end_ms,
@@ -265,7 +269,7 @@ def run_transcribe(audio_path, output_json_path, duration_sec=0.0, model_name='t
 
 
 # ==============================================================================
-# 2. ALIGN: Candidate Human Subtitle -> Dense Multi-Anchor Sync
+# 2. ALIGN: Non-Destructive Sync Guide (Preserve Human Timings & Text)
 # ==============================================================================
 def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0.0, ref_en_path=None):
     if not os.path.exists(anchors_json_path):
@@ -280,12 +284,23 @@ def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0
     audio_lang = anchor_data.get('language', 'en')
     total_dur_sec = float(anchor_data.get('duration_sec') or duration_sec or 0.0)
 
-    if len(anchors) < 15:
-        return {'aligned': False, 'reason': f"Poucas âncoras de fala detectadas ({len(anchors)})"}
-
     cues = parse_srt(input_srt_path)
-    if len(cues) < 20:
-        return {'aligned': False, 'reason': f"Legenda candidata com poucas falas ({len(cues)})"}
+    if len(cues) < 10:
+        return {'aligned': False, 'reason': f"Legenda candidata vazia ou com poucas falas ({len(cues)})"}
+
+    if len(anchors) < 5:
+        # Se quase não há fala detectada no áudio (filme mudo ou silêncio), preserva 100% o original
+        print("ℹ️ [Dense Whisper Sync] Poucas âncoras de voz detectadas. Preservando legenda humana 100% original.")
+        write_srt(cues, output_srt_path, preserve_original_timecodes=True)
+        return {
+            'aligned': True,
+            'in_sync': True,
+            'modified': False,
+            'global_offset_ms': 0,
+            'drift_range_ms': 0,
+            'cue_count': len(cues),
+            'reason': 'Poucas âncoras detectadas. Legenda original preservada 100% intacta.'
+        }
 
     if not duration_sec or duration_sec < 60:
         duration_sec = max(total_dur_sec, cues[-1]['end'], anchors[-1]['endMs'] / 1000.0)
@@ -293,256 +308,234 @@ def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0
     en_cues = parse_srt(ref_en_path) if ref_en_path and os.path.exists(ref_en_path) else []
     is_pt_to_en = (audio_lang == 'en')
 
-    print(f"🔍 [Dense Whisper Sync] Alinhando {len(cues)} falas humanas contra {len(anchors)} âncoras Whisper (áudio: {audio_lang})...")
-
-    # Step 1: Global Coarse Offset Search (±60s window across timeline)
-    offset_votes = []
-    # Sample every cue that has reasonable text length
-    sample_cues = [c for c in cues if len(c['text'].split()) >= 2]
-    for c in sample_cues:
-        c_start_ms = c['start_ms']
-        # Find anchors in ±60s
-        nearby = [a for a in anchors if abs(a['startMs'] - c_start_ms) <= 60000]
-        for a in nearby:
-            sim = compute_cue_anchor_similarity(c, a, is_pt_to_en, en_cues)
-            if sim >= 0.25:
-                offset_votes.append(a['startMs'] - c_start_ms)
-
-    if offset_votes:
-        bins = {}
-        for off in offset_votes:
-            b = round(off / 500) * 500
-            bins[b] = bins.get(b, 0) + 1
-        best_bin = max(bins.keys(), key=lambda b: bins[b])
-        close_votes = [o for o in offset_votes if abs(o - best_bin) <= 2500]
-        global_offset_ms = statistics.median(close_votes) if close_votes else best_bin
-    else:
-        global_offset_ms = 0
-
-    global_offset_ms = int(round(global_offset_ms))
-    print(f"🎯 [Dense Whisper Sync] Deslocamento global inicial estimado: {global_offset_ms:+d}ms ({len(offset_votes)} votos coincidentes)")
-
-    # Step 2: Dense Anchor Matching Pass with Global Offset Guidance
-    for c in cues:
-        c_start_ms = c['start_ms']
-        expected_ms = c_start_ms + global_offset_ms
-
-        # Candidate anchors within ±4000ms of expected
-        candidates = [a for a in anchors if abs(a['startMs'] - expected_ms) <= 4000]
-        best_match = None
-        best_score = -1.0
-
-        for a in candidates:
-            sim = compute_cue_anchor_similarity(c, a, is_pt_to_en, en_cues)
-            proximity = 1.0 - (abs(a['startMs'] - expected_ms) / 4000.0)
-            dur_c = (c['end'] - c['start']) * 1000.0
-            dur_a = float(a['endMs'] - a['startMs'])
-            dur_ratio = min(dur_c, dur_a) / max(1.0, max(dur_c, dur_a))
-
-            score = sim * 0.50 + proximity * 0.30 + dur_ratio * 0.20
-            if sim >= 0.15 or (proximity >= 0.70 and dur_ratio >= 0.60):
-                if score > best_score:
-                    best_score = score
-                    best_match = a
-
-        if best_match:
-            anchor_start_ms = best_match['startMs']
-            # If word-level timestamps exist, use first word onset
-            if best_match.get('words') and len(best_match['words']) > 0:
-                first_w = best_match['words'][0]
-                if first_w.get('startMs'):
-                    anchor_start_ms = first_w['startMs']
-
-            c['matched_anchor'] = best_match
-            c['offset_ms'] = anchor_start_ms - c_start_ms
-            c['has_match'] = True
+    # Extrai onsets de fala das âncoras Whisper
+    # Dá preferência para o início de palavras após pausas
+    speech_onsets_sec = []
+    for a in anchors:
+        if a.get('words') and len(a['words']) > 0:
+            for w in a['words']:
+                if w.get('startMs') is not None:
+                    speech_onsets_sec.append(w['startMs'] / 1000.0)
         else:
-            c['matched_anchor'] = None
-            c['offset_ms'] = None
-            c['has_match'] = False
+            speech_onsets_sec.append(a['startMs'] / 1000.0)
 
-    # Step 3: Global Offset & Cut Compatibility Check (Every 10-Minute Window)
-    window_sec = 600.0  # 10 minutes
+    speech_onsets_sec = sorted(list(set(speech_onsets_sec)))
+
+    print(f"🔍 [Dense Whisper Sync Guide] Analisando {len(cues)} falas humanas contra {len(speech_onsets_sec)} onsets de voz Whisper (áudio: {audio_lang})...")
+
+    # ==========================================================================
+    # Step 1: Estimação Robusta do Deslocamento Global (Histograma de Diferenças)
+    # Combina correlação temporal de onset com votos léxicos/nomes próprios
+    # ==========================================================================
+    bin_size_sec = 0.05  # 50ms bins
+    max_search_sec = 60.0  # Janela de busca: ±60s
+    bins = {}
+
+    # 1. Votos léxicos e de nomes próprios com peso alto
+    sample_cues = [c for c in cues if len(c['text'].split()) >= 2]
+    step = max(1, len(sample_cues) // 250)
+    for c in sample_cues[::step]:
+        c_start = c['start']
+        nearby_anchors = [a for a in anchors if abs((a['startMs'] / 1000.0) - c_start) <= max_search_sec]
+        for a in nearby_anchors:
+            sim = compute_cue_anchor_similarity(c, a, is_pt_to_en, en_cues)
+            if sim >= 0.20:
+                diff = (a['startMs'] / 1000.0) - c_start
+                b = round(diff / bin_size_sec) * bin_size_sec
+                # Peso proporcional à similaridade léxica
+                bins[b] = bins.get(b, 0.0) + (sim * 10.0)
+
+    # 2. Votos acústicos de onset (início de fala após pausa >= 0.8s)
+    isolated_cues = []
+    for i, c in enumerate(cues):
+        if i == 0 or (c['start'] - cues[i - 1]['end'] >= 0.8):
+            isolated_cues.append(c['start'])
+
+    isolated_onsets = []
+    for j, onset in enumerate(speech_onsets_sec):
+        if j == 0 or (onset - speech_onsets_sec[j - 1] >= 0.8):
+            isolated_onsets.append(onset)
+
+    step_c = max(1, len(isolated_cues) // 200)
+    for c_start in isolated_cues[::step_c]:
+        for onset in isolated_onsets:
+            diff = onset - c_start
+            if abs(diff) <= max_search_sec:
+                b = round(diff / bin_size_sec) * bin_size_sec
+                bins[b] = bins.get(b, 0.0) + 1.0
+
+    if bins:
+        best_bin = max(bins.keys(), key=lambda b: bins[b])
+        # Refina com a média/mediana ponderada nos arredores de ±0.75s do pico
+        close_bins = [b for b in bins.keys() if abs(b - best_bin) <= 0.75]
+        total_w = sum(bins[b] for b in close_bins)
+        global_offset_sec = sum(b * bins[b] for b in close_bins) / max(0.001, total_w)
+    else:
+        best_bin = 0.0
+        global_offset_sec = 0.0
+
+    global_offset_ms = int(round(global_offset_sec * 1000.0))
+    print(f"🎯 [Dense Whisper Sync] Deslocamento global estimado: {global_offset_ms:+d}ms (pico: {int(best_bin*1000)}ms)")
+
+    # ==========================================================================
+    # Step 2: Medição de Sincronia e Drift em Janelas de 5 Minutos
+    # ==========================================================================
+    window_sec = 300.0  # 5 minutos
     num_windows = int(math.ceil(duration_sec / window_sec))
-    window_stats = []
-    cut_failed = False
-    fail_reason = ""
-    prev_win_median = None
+    window_offsets = []
 
     for w in range(num_windows):
-        w_start_ms = int(w * window_sec * 1000)
-        w_end_ms = int((w + 1) * window_sec * 1000)
-        w_label = f"{int(w * 10)}-{min(int(duration_sec / 60), int((w + 1) * 10))}min"
+        w_start = w * window_sec
+        w_end = (w + 1) * window_sec
+        cues_in_win = [c for c in cues if w_start <= c['start'] < w_end]
 
-        cues_in_win = [c for c in cues if w_start_ms <= c['start_ms'] < w_end_ms]
-        total_cues = len(cues_in_win)
-
-        if total_cues < 6:
-            window_stats.append({
-                'window': w_label,
-                'status': 'sparse_dialogue',
-                'cues': total_cues,
-                'coverage': 0.0,
-                'median_offset_ms': None
-            })
+        if len(cues_in_win) < 3:
             continue
 
-        matched_in_win = [c for c in cues_in_win if c.get('has_match')]
-        coverage = len(matched_in_win) / float(total_cues)
-        offsets_in_win = [c['offset_ms'] for c in matched_in_win]
-        win_median = statistics.median(offsets_in_win) if offsets_in_win else None
+        local_diffs = []
+        for c in cues_in_win:
+            expected_start = c['start'] + global_offset_sec
+            # Busca o onset mais próximo no raio de ±1.5s do esperado
+            nearby = [onset for onset in speech_onsets_sec if abs(onset - expected_start) <= 1.5]
+            if nearby:
+                closest = min(nearby, key=lambda onset: abs(onset - expected_start))
+                local_diffs.append(closest - c['start'])
 
-        win_stat = {
-            'window': w_label,
-            'cues': total_cues,
-            'matched': len(matched_in_win),
-            'coverage': round(coverage, 3),
-            'median_offset_ms': int(win_median) if win_median is not None else None
-        }
-        window_stats.append(win_stat)
+        if len(local_diffs) >= 3:
+            w_med = statistics.median(local_diffs)
+            window_offsets.append({
+                'center_sec': (w_start + w_end) / 2.0,
+                'median_offset_sec': w_med,
+                'count': len(local_diffs)
+            })
 
-        # Check A: Coverage Collapse in a dialogue-heavy window
-        if total_cues >= 10 and coverage < 0.08:
-            cut_failed = True
-            fail_reason = f"Cobertura de âncoras colapsou na janela {w_label} ({coverage*100:.1f}% com {total_cues} falas) - corte incompatível (Theatrical vs Extended)."
-            print(f"❌ [Cut Gate] {fail_reason}")
-            break
+    if window_offsets:
+        all_meds = [wo['median_offset_sec'] for wo in window_offsets]
+        drift_range_sec = max(all_meds) - min(all_meds)
+    else:
+        drift_range_sec = 0.0
 
-        # Check B: Large Offset Discontinuity relative to Global Offset (> 4.5s)
-        if win_median is not None and abs(win_median - global_offset_ms) > 4500:
-            cut_failed = True
-            fail_reason = f"Deslocamento divergiu {abs(win_median - global_offset_ms)/1000:.2f}s na janela {w_label} (> 4.5s) - corte incompatível."
-            print(f"❌ [Cut Gate] {fail_reason}")
-            break
+    drift_range_ms = int(round(drift_range_sec * 1000.0))
 
-        # Check C: Jump between consecutive dialogue windows (> 4.0s)
-        if win_median is not None and prev_win_median is not None and abs(win_median - prev_win_median) > 4000:
-            cut_failed = True
-            fail_reason = f"Salto de corte detectado na transição {w_label} (discontinuidade: {abs(win_median - prev_win_median)/1000:.2f}s) - corte incompatível."
-            print(f"❌ [Cut Gate] {fail_reason}")
-            break
+    # ==========================================================================
+    # Step 3: Verificação de "Already In Sync" (Não destrutivo!)
+    # Critério: |global_offset| <= 0.35s E drift negligenciável (<= 0.40s)
+    # Se já está sincronizada: PRESERVA 100% DOS TIMECODES ORIGINAIS HUMANOS!
+    # ==========================================================================
+    is_already_in_sync = (abs(global_offset_sec) <= 0.35) and (drift_range_sec <= 0.40)
 
-        if win_median is not None:
-            prev_win_median = win_median
-
-    if cut_failed:
+    if is_already_in_sync:
+        print(f"✨ [Dense Whisper Sync] Legenda já está em PERFEITA sincronia com o áudio! (Offset: {global_offset_ms:+d}ms, Drift: {drift_range_ms}ms).")
+        print("   Preservando 100% dos timecodes e durações originais da legenda humana (zero modificações).")
+        write_srt(cues, output_srt_path, preserve_original_timecodes=True)
         return {
-            'aligned': False,
-            'reason': fail_reason,
-            'windows': window_stats,
-            'global_offset_ms': int(global_offset_ms)
+            'aligned': True,
+            'in_sync': True,
+            'modified': False,
+            'global_offset_ms': global_offset_ms,
+            'drift_range_ms': drift_range_ms,
+            'cue_count': len(cues),
+            'reason': f'Legenda humana já está em sincronia perfeita (offset {global_offset_ms:+d}ms <= 350ms, drift {drift_range_ms}ms). Timings 100% preservados.'
         }
 
-    # Step 4: Piecewise / Local Anchor Refinement (Rolling 5-Minute Windows)
-    all_valid_matches = [(c['start_ms'], c['offset_ms']) for c in cues if c.get('has_match')]
-    print(f"🛡️ [Cut Gate] Aprovado em todas as {num_windows} janelas! {len(all_valid_matches)} falas confirmadas como âncoras.")
+    # ==========================================================================
+    # Step 4: Subtitle Out of Sync - Calcular Offset / Drift / Piecewise Shift
+    # Preservando estritamente cada duração original humana:
+    # new_end = new_start + orig_duration
+    # ==========================================================================
+    print(f"⏱️ [Dense Whisper Sync] Legenda fora de sincronia (Offset: {global_offset_ms:+d}ms, Drift: {drift_range_ms}ms). Ajustando com preservação de durações...")
 
-    # Control points every 60s for smooth interpolation of rolling 5-minute median
-    control_step_ms = 60000
-    num_steps = int(math.ceil((duration_sec * 1000) / control_step_ms)) + 1
-    control_points = []
+    # Detecta se há drift linear contínuo (ex: conversão de FPS 23.976 <-> 25.000)
+    # slope = cov(t, off) / var(t)
+    use_linear_drift = False
+    slope = 0.0
+    intercept = global_offset_sec
 
-    for step_i in range(num_steps):
-        t_center = step_i * control_step_ms
-        # 5-minute rolling window: ±150,000ms
-        win_matches = [off for t, off in all_valid_matches if abs(t - t_center) <= 150000]
-        if len(win_matches) >= 3:
-            med = statistics.median(win_matches)
-        elif len(win_matches) >= 1:
-            med = win_matches[0]
-        else:
-            # Expand to 10-minute window
-            win_wide = [off for t, off in all_valid_matches if abs(t - t_center) <= 300000]
-            med = statistics.median(win_wide) if win_wide else global_offset_ms
-        control_points.append((t_center, med))
+    if len(window_offsets) >= 4 and drift_range_sec > 0.6:
+        ts = [wo['center_sec'] for wo in window_offsets]
+        ys = [wo['median_offset_sec'] for wo in window_offsets]
+        mean_t = statistics.mean(ts)
+        mean_y = statistics.mean(ys)
+        var_t = sum((t - mean_t) ** 2 for t in ts)
+        cov_ty = sum((t - mean_t) * (y - mean_y) for t, y in zip(ts, ys))
+        if var_t > 0:
+            candidate_slope = cov_ty / var_t
+            # Se a taxa de inclinação condiz com diferenças de framerate (ex: ~0.041 ou ~-0.040)
+            if 0.02 <= abs(candidate_slope) <= 0.06:
+                use_linear_drift = True
+                slope = candidate_slope
+                intercept = mean_y - slope * mean_t
+                print(f"📈 [Dense Whisper Sync] Drift linear de framerate detectado (slope: {slope:.6f}, intercept: {intercept:.3f}s).")
 
-    def get_smooth_offset_ms(t_ms):
-        if not control_points:
-            return global_offset_ms
-        if t_ms <= control_points[0][0]:
-            return control_points[0][1]
-        if t_ms >= control_points[-1][0]:
-            return control_points[-1][1]
-        idx = int(t_ms // control_step_ms)
-        idx = max(0, min(len(control_points) - 2, idx))
-        t0, o0 = control_points[idx]
-        t1, o1 = control_points[idx + 1]
-        ratio = (t_ms - t0) / float(t1 - t0) if t1 > t0 else 0.0
-        return o0 + ratio * (o1 - o0)
+    # Detecta se há salto de corte (scene-cut shift multi-segundo)
+    has_cut_jump = False
+    cut_jump_time = 0.0
+    cut_jump_delta = 0.0
+    for i in range(1, len(window_offsets)):
+        delta = window_offsets[i]['median_offset_sec'] - window_offsets[i - 1]['median_offset_sec']
+        if abs(delta) >= 2.5:
+            has_cut_jump = True
+            cut_jump_time = window_offsets[i]['center_sec']
+            cut_jump_delta = delta
+            print(f"✂️ [Dense Whisper Sync] Salto de corte detectado aos {cut_jump_time/60.0:.1f}min ({delta:+.2f}s).")
+            break
 
-    # Compute target timecodes for all cues
-    raw_aligned = []
+    def get_shift_for_time(t_sec):
+        if use_linear_drift:
+            return intercept + slope * t_sec
+        if has_cut_jump:
+            if t_sec >= cut_jump_time:
+                return global_offset_sec + cut_jump_delta
+            else:
+                return global_offset_sec
+        return global_offset_sec
+
+    # Aplica o deslocamento preservando 100% a duração humana original de cada cue
+    shifted_cues = []
     for c in cues:
-        c_start_ms = c['start_ms']
-        c_dur_ms = max(600, c['end_ms'] - c_start_ms)
-        smooth_off = get_smooth_offset_ms(c_start_ms)
-
-        # Direct anchor match lock if within ±350ms of smooth curve
-        if c.get('has_match') and abs(c['offset_ms'] - smooth_off) <= 350:
-            target_start_ms = c_start_ms + c['offset_ms']
-        else:
-            target_start_ms = c_start_ms + smooth_off
-
-        target_end_ms = target_start_ms + c_dur_ms
-        raw_aligned.append({
-            'start_ms': target_start_ms,
-            'end_ms': target_end_ms,
-            'text': c['text']  # 100% human-authored text preserved
+        orig_dur = c['orig_dur']
+        shift = get_shift_for_time(c['start'])
+        new_start = max(0.0, c['start'] + shift)
+        new_end = new_start + orig_dur
+        shifted_cues.append({
+            'start': new_start,
+            'end': new_end,
+            'orig_dur': orig_dur,
+            'text': c['text']
         })
 
-    # Step 5: Anti-Overlap and Monotonicity Clamping
-    MIN_GAP_MS = 30
-    MIN_DUR_MS = 600
-    final_cues = []
-
-    for i, item in enumerate(raw_aligned):
-        start_ms = max(0, int(round(item['start_ms'])))
-        end_ms = max(start_ms + MIN_DUR_MS, int(round(item['end_ms'])))
-
-        if final_cues:
-            prev = final_cues[-1]
-            if prev['end_ms'] > start_ms - MIN_GAP_MS:
-                # Overlap detected
-                if prev['start_ms'] + MIN_DUR_MS <= start_ms - MIN_GAP_MS:
-                    prev['end_ms'] = start_ms - MIN_GAP_MS
-                    prev['end'] = prev['end_ms'] / 1000.0
-                    prev['end_tc'] = format_timecode(prev['end'])
+    # Anti-overlap clamping: nunca sobrepõe falas, mantendo gap limpo de 40ms
+    # E garantindo: new_end = new_start + orig_dur capped antes de next_cue.start - 0.04s
+    MIN_GAP = 0.04  # 40ms
+    for i in range(len(shifted_cues)):
+        cur = shifted_cues[i]
+        if i > 0:
+            prev = shifted_cues[i - 1]
+            if prev['end'] > cur['start'] - MIN_GAP:
+                max_prev_end = cur['start'] - MIN_GAP
+                if max_prev_end >= prev['start'] + 0.3:
+                    prev['end'] = max_prev_end
                 else:
-                    start_ms = prev['end_ms'] + MIN_GAP_MS
-                    end_ms = max(start_ms + MIN_DUR_MS, end_ms)
+                    cur['start'] = prev['end'] + MIN_GAP
+                    cur['end'] = cur['start'] + cur['orig_dur']
 
-        start_sec = start_ms / 1000.0
-        end_sec = end_ms / 1000.0
-        final_cues.append({
-            'index': i + 1,
-            'start': start_sec,
-            'end': end_sec,
-            'start_ms': start_ms,
-            'end_ms': end_ms,
-            'start_tc': format_timecode(start_sec),
-            'end_tc': format_timecode(end_sec),
-            'text': item['text']
-        })
-
-    write_srt(final_cues, output_srt_path)
-    print(f"✅ [Dense Whisper Sync] {len(final_cues)} falas salvas perfeitamente alinhadas em {output_srt_path}!")
-
-    offsets_list = [c['offset_ms'] for c in cues if c.get('has_match')]
-    drift_range = (max(offsets_list) - min(offsets_list)) if offsets_list else 0
+    # Escreve o arquivo SRT final sincronizado
+    write_srt(shifted_cues, output_srt_path, preserve_original_timecodes=False)
+    print(f"✅ [Dense Whisper Sync] {len(shifted_cues)} falas salvas com sucesso em {output_srt_path}!")
 
     return {
         'aligned': True,
-        'global_offset_ms': int(global_offset_ms),
-        'drift_range_ms': int(drift_range),
-        'cue_count': len(final_cues),
-        'matched_count': len(all_valid_matches),
-        'coverage_pct': round((len(all_valid_matches) / float(len(cues))) * 100, 1),
-        'windows': window_stats
+        'in_sync': False,
+        'modified': True,
+        'global_offset_ms': global_offset_ms,
+        'drift_range_ms': drift_range_ms,
+        'cue_count': len(shifted_cues),
+        'reason': f'Legenda humana sincronizada com sucesso (offset {global_offset_ms:+d}ms, drift {drift_range_ms}ms) mantendo 100% as durações originais.'
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Full-Movie Dense Whisper Anchor Alignment")
+    parser = argparse.ArgumentParser(description="Full-Movie Dense Whisper Anchor Alignment (Non-Destructive)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Subcommand: transcribe

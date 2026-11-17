@@ -1245,17 +1245,7 @@ ${events.join('\n')}
                     console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
                 }
             } catch (pipelineErr) {
-                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline cinema-grade: ${pipelineErr.message}. Tentando fallback SubtitleAudioService...`);
-            }
-
-            // Fallback: SubtitleAudioService (transcrição Whisper) se pipeline falhar
-            if (!srtPath) {
-                srtPath = await SubtitleAudioService.create(inputPath, effectiveAudioIndex, {
-                    title: optTitle,
-                    onProgress,
-                    subtitleStreams: info.subtitleStreams,
-                    isEuropeanPortuguese: content => this.isEuropeanPortugueseSubtitle(content)
-                });
+                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline: ${pipelineErr.message}. Whisper ASR translation desativada conforme diretriz humana.`);
             }
 
             metadata.srtPath = srtPath;

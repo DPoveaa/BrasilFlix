@@ -170,76 +170,96 @@ class SubdlService {
     }
 
     /**
-     * Busca metadados de legendas na API oficial do SubDL com estrito filtro BR_PT
-     * @param {object} params - { imdbId, tmdbId, type, season, episode, title }
+     * Busca metadados de legendas na API oficial do SubDL com suporte a múltiplos identificadores,
+     * título original em inglês, título traduzido em português e tolerância de ano ±1.
+     * @param {object} params - { imdbId, tmdbId, type, season, episode, title, originalTitle, year, languages }
      */
     async searchSubtitles(params = {}) {
-        const { imdbId, tmdbId, type, season, episode, title } = params;
+        const { imdbId, tmdbId, type, season, episode, title, originalTitle, year, languages } = params;
+        const searchLang = languages || 'BR_PT';
 
         return await this.executeWithFailover(async (apiKey, keyInfo) => {
-            const queryParams = {
-                api_key: apiKey,
-                languages: 'BR_PT',
-                subs_per_page: 30
+            const doQuery = async (querySpecifics, label) => {
+                const queryParams = {
+                    api_key: apiKey,
+                    languages: searchLang,
+                    subs_per_page: 30,
+                    ...querySpecifics
+                };
+
+                if (type === 'serie' && season && episode) {
+                    queryParams.type = 'tv';
+                    queryParams.season = season;
+                    queryParams.episode = episode;
+                }
+
+                console.log(`🌐 [SubDL API] Consultando [${label}] [Chave #${keyInfo.index + 1}/${keyInfo.total} (${this.maskKey(apiKey)})] lang: ${searchLang}...`);
+                try {
+                    const res = await axios.get(this.apiBaseUrl, {
+                        params: queryParams,
+                        timeout: 10000,
+                        headers: { 'User-Agent': 'BrasilFlix/1.0.0' }
+                    });
+
+                    if (res.data?.status === false) {
+                        if (this.isQuotaOrRateLimitError(res.data)) {
+                            const err = new Error(res.data.error || res.data.message || 'SubDL Quota Exceeded');
+                            err.response = { status: 429, data: res.data };
+                            throw err;
+                        }
+                        return [];
+                    }
+                    return res.data?.subtitles || [];
+                } catch (err) {
+                    if (this.isQuotaOrRateLimitError(err)) throw err;
+                    console.warn(`⚠️ [SubDL API] Erro na consulta [${label}]:`, err.message);
+                    return [];
+                }
             };
 
+            let subtitles = [];
+
+            // 1. Busca por IMDb ID (se disponível)
             if (imdbId) {
-                queryParams.imdb_id = imdbId;
-            } else if (tmdbId) {
-                queryParams.tmdb_id = tmdbId;
+                subtitles = await doQuery({ imdb_id: imdbId }, `imdb_id: ${imdbId}`);
             }
 
-            if (type === 'serie' && season && episode) {
-                queryParams.type = 'tv';
-                queryParams.season = season;
-                queryParams.episode = episode;
+            // 2. Fallback por TMDB ID (se disponível e sem resultados)
+            if (subtitles.length === 0 && tmdbId) {
+                subtitles = await doQuery({ tmdb_id: tmdbId }, `tmdb_id: ${tmdbId}`);
             }
 
-            console.log(`🌐 [SubDL API] Consultando legendas PT-BR [Chave #${keyInfo.index + 1}/${keyInfo.total} (${this.maskKey(apiKey)})] id: ${queryParams.imdb_id || queryParams.tmdb_id}...`);
-            const res = await axios.get(this.apiBaseUrl, {
-                params: queryParams,
-                timeout: 10000,
-                headers: { 'User-Agent': 'BrasilFlix/1.0.0' }
-            });
-
-            if (res.data?.status === false) {
-                if (this.isQuotaOrRateLimitError(res.data)) {
-                    const err = new Error(res.data.error || res.data.message || 'SubDL Quota Exceeded');
-                    err.response = { status: 429, data: res.data };
-                    throw err;
-                }
-                console.warn(`⚠️ [SubDL API] Resposta negativa da API:`, res.data.error || res.data.message || 'Sem resultados');
-                return [];
+            // 3. Fallback por Título Original em Inglês (ex: "Ice Age", "Harry Potter and the Goblet of Fire")
+            const cleanEngTitle = (originalTitle || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (subtitles.length === 0 && cleanEngTitle.length >= 2) {
+                subtitles = await doQuery({ film_name: cleanEngTitle }, `film_name (EN): "${cleanEngTitle}"`);
             }
 
-            let subtitles = res.data?.subtitles || [];
+            // 4. Fallback por Título Localizado em Português (ex: "A Era do Gelo")
+            const cleanPtTitle = (title || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (subtitles.length === 0 && cleanPtTitle.length >= 2 && cleanPtTitle.toLowerCase() !== cleanEngTitle.toLowerCase()) {
+                subtitles = await doQuery({ film_name: cleanPtTitle }, `film_name (PT): "${cleanPtTitle}"`);
+            }
 
-            // Se a busca por imdb_id não retornou legendas e temos tmdb_id, tenta fallback por tmdb_id
-            if (subtitles.length === 0 && imdbId && tmdbId) {
-                console.log(`🌐 [SubDL API] Nenhuma legenda por imdb_id (${imdbId}). Tentando fallback por tmdb_id (${tmdbId})...`);
-                const fallbackParams = {
-                    api_key: apiKey,
-                    tmdb_id: tmdbId,
-                    languages: 'BR_PT',
-                    subs_per_page: 30
-                };
-                if (type === 'serie' && season && episode) {
-                    fallbackParams.type = 'tv';
-                    fallbackParams.season = season;
-                    fallbackParams.episode = episode;
-                }
-                const fallbackRes = await axios.get(this.apiBaseUrl, {
-                    params: fallbackParams,
-                    timeout: 10000,
-                    headers: { 'User-Agent': 'BrasilFlix/1.0.0' }
-                });
-                if (fallbackRes.data?.status !== false) {
-                    subtitles = fallbackRes.data?.subtitles || [];
+            // Filtragem por tolerância de ano ±1 se o ano for conhecido
+            if (year && subtitles.length > 0) {
+                const targetYear = parseInt(year, 10);
+                if (!isNaN(targetYear) && targetYear > 1900) {
+                    const yearFiltered = subtitles.filter(s => {
+                        const rel = (s.release_name || s.name || '').toLowerCase();
+                        const m = rel.match(/\b(19\d{2}|20\d{2})\b/);
+                        if (!m) return true; // Mantém se não tiver ano no nome
+                        const subYear = parseInt(m[1], 10);
+                        return Math.abs(subYear - targetYear) <= 1;
+                    });
+                    if (yearFiltered.length > 0) {
+                        subtitles = yearFiltered;
+                    }
                 }
             }
 
             return subtitles;
-        }, title || imdbId || 'Busca SubDL');
+        }, originalTitle || title || imdbId || 'Busca SubDL');
     }
 
     /**
@@ -275,6 +295,20 @@ class SubdlService {
             const lang = (sub.language || sub.lang || '').toLowerCase();
             if (lang === 'br_pt' || lang === 'br-pt' || lang.includes('brazilian') || lang.includes('pob') || lang.includes('pt-br')) {
                 score += 50;
+            }
+
+            // Bônus para correspondência de ano de lançamento (tolerância ±1 ano)
+            const targetYear = parseInt(metadata.year || metadata.ano, 10);
+            if (!isNaN(targetYear) && targetYear > 1900) {
+                const ym = rel.match(/\b(19\d{2}|20\d{2})\b/);
+                if (ym) {
+                    const subYear = parseInt(ym[1], 10);
+                    if (Math.abs(subYear - targetYear) <= 1) {
+                        score += 60;
+                    } else {
+                        score -= 80;
+                    }
+                }
             }
 
             // Penalidade severa para releases divididos em múltiplos CDs (CD1, CD2, etc.) em mídias de arquivo único
