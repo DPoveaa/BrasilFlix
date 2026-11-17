@@ -57,8 +57,17 @@ def format_timecode(total_sec):
 def parse_srt(srt_path):
     if not srt_path or not os.path.exists(srt_path):
         return []
-    with open(srt_path, 'r', encoding='utf-8', errors='replace') as f:
-        content = f.read()
+    content = ""
+    for enc in ['utf-8', 'cp1252', 'latin-1', 'iso-8859-1']:
+        try:
+            with open(srt_path, 'r', encoding=enc) as f:
+                content = f.read()
+            break
+        except UnicodeDecodeError:
+            continue
+    if not content:
+        with open(srt_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
 
     normalized = re.sub(r'\r\n|\r', '\n', content).strip()
     blocks = re.split(r'\n\s*\n', normalized)
@@ -295,9 +304,11 @@ def align_subtitles(video_path, input_srt_path, output_srt_path, duration_sec=0.
     spread = max(offsets) - min(offsets)
     print(f"\n📊 [Whisper Alignment Check] Offsets medidos: {[round(o, 3) for o in offsets]} | Divergência máxima (spread): {spread:.3f}s")
 
-    # STRICT CUT MISMATCH GATE: If checkpoints disagree by > 2.5s (Theatrical vs Extended Cut)
-    if spread > 2.5:
-        reason = f"Checkpoints divergiram em {spread:.2f}s (> 2.5s) - corte de filme incompatível (Theatrical vs Extended). Rejeitando candidato."
+    # STRICT CUT MISMATCH GATE: If checkpoints disagree by > threshold (Theatrical vs Extended Cut)
+    # Scaled gracefully by movie duration: 3.5s for normal movies (< 2.5h), up to 5.0s for long epics (>= 2.5h)
+    max_allowed_spread = 3.5 if duration_sec < 9000 else 5.0
+    if spread > max_allowed_spread:
+        reason = f"Checkpoints divergiram em {spread:.2f}s (> {max_allowed_spread:.1f}s) - corte de filme incompatível (Theatrical vs Extended). Rejeitando candidato."
         print(f"❌ [Whisper Cut Gate] {reason}")
         return {
             'aligned': False,

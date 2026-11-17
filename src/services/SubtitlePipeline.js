@@ -838,7 +838,9 @@ class SubtitlePipeline {
                         const lastEnCue = this.getLastDialogueCue(refEnCues);
                         const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
                         const endDiff = Math.abs(lastCueEndSec - enLastSec);
-                        if (endDiff > 45) {
+                        const bothAreFullCoverage = (lastCueEndSec / videoDurationSec >= 0.80) && (enLastSec / videoDurationSec >= 0.80);
+                        const maxAllowedEndDiff = bothAreFullCoverage ? Math.max(600, videoDurationSec * 0.08) : 180;
+                        if (endDiff > maxAllowedEndDiff) {
                             console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min).`);
                             continue;
                         }
@@ -988,7 +990,9 @@ class SubtitlePipeline {
                         const lastEnCue = this.getLastDialogueCue(refEnCues);
                         const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
                         const endDiff = Math.abs(lastCueEndSec - enLastSec);
-                        if (endDiff > 45) {
+                        const bothAreFullCoverage = (lastCueEndSec / videoDurationSec >= 0.80) && (enLastSec / videoDurationSec >= 0.80);
+                        const maxAllowedEndDiff = bothAreFullCoverage ? Math.max(600, videoDurationSec * 0.08) : 180;
+                        if (endDiff > maxAllowedEndDiff) {
                             console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
                             await fs.remove(extractedSrtPath).catch(() => {});
                             continue;
