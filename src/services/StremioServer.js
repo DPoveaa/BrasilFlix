@@ -1640,7 +1640,8 @@ class StremioServer {
                     mediaId: id,
                     title: mediaTitle,
                     status: 'processing',
-                    message: 'Analisando áudio com Whisper e gerando nova legenda...',
+                    progress: 10,
+                    message: 'Obtendo stream de áudio real do Telegram...',
                     startTime: Date.now(),
                     error: null,
                     tracks: null,
@@ -1652,6 +1653,12 @@ class StremioServer {
                 setImmediate(async () => {
                     try {
                         console.log(`\n🔄 [AdminSubtitles:REPROCESS] Iniciando reprocessamento automático para "${mediaTitle}" (${type} #${id})...`);
+
+                        const onProgress = (percent, msg) => {
+                            job.progress = percent;
+                            job.message = msg;
+                            console.log(`🔄 [AdminSubtitles:REPROCESS] [${percent}%] ${msg}`);
+                        };
 
                         // 1. Constrói stream URL local protegido por token interno
                         const targetAudio = row.versoes?.legendado ? 'legendado' : (row.versoes?.dublado ? 'dublado' : 'legendado');
@@ -1675,7 +1682,7 @@ class StremioServer {
                         };
 
                         // 2. Executa o pipeline completo (Stremio -> SubDL Pool -> Gemini -> Whisper ASR)
-                        const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(streamUrl, metadata);
+                        const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(streamUrl, metadata, onProgress);
 
                         if (!pipelineResult || !pipelineResult.srtPath || !fs.existsSync(pipelineResult.srtPath)) {
                             throw new Error('Pipeline não retornou arquivo de legenda válido.');
@@ -1735,7 +1742,8 @@ class StremioServer {
                         const parsedCues = SubtitleUtils.parseSubtitles(srtContent);
 
                         job.status = 'completed';
-                        job.message = `Legenda reprocessada com sucesso via ${pipelineResult.sourceMethod || 'Whisper ASR'}!`;
+                        job.progress = 100;
+                        job.message = `Concluído! Legenda reprocessada com sucesso via ${pipelineResult.sourceMethod || 'Whisper ASR'}!`;
                         job.tracks = tracks;
                         job.cues = parsedCues;
                         job.completedAt = Date.now();
@@ -1753,6 +1761,7 @@ class StremioServer {
                 return res.status(202).json({
                     success: true,
                     status: 'processing',
+                    progress: 10,
                     message: 'Reprocessamento de legendas iniciado em segundo plano.',
                     job
                 });
@@ -1770,7 +1779,16 @@ class StremioServer {
             if (!job) {
                 return res.json({ status: 'idle', message: 'Nenhum processo em andamento para esta mídia.' });
             }
-            res.json({ success: true, ...job });
+            res.json({
+                success: true,
+                status: job.status,
+                progress: typeof job.progress === 'number' ? job.progress : (job.status === 'completed' ? 100 : 15),
+                message: job.message || '',
+                tracks: job.tracks || null,
+                cues: job.cues || null,
+                error: job.error || null,
+                completedAt: job.completedAt || null
+            });
         });
 
         // 7. TMDB Live Search & Detalhes

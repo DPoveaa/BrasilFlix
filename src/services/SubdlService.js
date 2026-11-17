@@ -273,8 +273,18 @@ class SubdlService {
 
             // Bônus para marcação inequívoca de Português Brasileiro
             const lang = (sub.language || sub.lang || '').toLowerCase();
-            if (lang === 'br_pt' || lang.includes('brazilian') || lang.includes('pob') || lang.includes('pt-br')) {
+            if (lang === 'br_pt' || lang === 'br-pt' || lang.includes('brazilian') || lang.includes('pob') || lang.includes('pt-br')) {
                 score += 50;
+            }
+
+            // Penalidade severa para releases divididos em múltiplos CDs (CD1, CD2, etc.) em mídias de arquivo único
+            if (/\b(cd1|cd2|2cd|part1|part2|dis[ck]1|dis[ck]2)\b/i.test(rel)) {
+                score -= 200;
+            }
+
+            // Bônus para edições estendidas / completas
+            if (/\b(extended|ee|remastered|unrated|director)\b/i.test(rel)) {
+                score += 45;
             }
 
             // Penalidade para qualquer tag de Portugal
@@ -388,10 +398,10 @@ class SubdlService {
                         '-c:s', 'srt',
                         outSrtPath
                     ], { timeout: 30000 });
-                    await fs.remove(tempIn).catch(() => {});
+                    await fs.remove(tempIn).catch(() => { });
                     return outSrtPath;
                 } catch (convErr) {
-                    await fs.remove(tempIn).catch(() => {});
+                    await fs.remove(tempIn).catch(() => { });
                     throw new Error(`Falha ao converter ${ext} para SRT: ${convErr.message}`);
                 }
             }

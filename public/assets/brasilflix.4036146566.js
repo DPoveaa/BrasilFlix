@@ -14901,6 +14901,8 @@
             const progressBox = document.getElementById('admin-sub-reprocess-progress-box');
             const statusText = document.getElementById('admin-sub-reprocess-status-text');
             const subText = document.getElementById('admin-sub-reprocess-subtext');
+            const barFill = document.getElementById('admin-sub-reprocess-bar-fill');
+            const percentLabel = document.getElementById('admin-sub-reprocess-percent');
 
             if (btn) {
                 btn.disabled = true;
@@ -14908,8 +14910,10 @@
                 btn.innerHTML = `<span>⏳ Processando...</span>`;
             }
             if (progressBox) progressBox.style.display = 'flex';
-            if (statusText) statusText.innerText = 'Analisando áudio com Whisper e gerando nova legenda...';
-            if (subText) subText.innerText = 'Buscando faixas no Stremio e SubDL, executando alinhamento acústico Whisper ASR e validação multi-checkpoint.';
+            if (barFill) barFill.style.width = '10%';
+            if (percentLabel) percentLabel.innerText = '10%';
+            if (statusText) statusText.innerText = 'Obtendo stream de áudio real do Telegram...';
+            if (subText) subText.innerText = 'Aguarde o alinhamento acústico com Whisper ASR e validação.';
 
             try {
                 showToast('⏳ Iniciando reprocessamento de legenda...', 'info');
@@ -14928,7 +14932,7 @@
                     adminSubReprocessPollTimer = null;
                 }
 
-                // Polling de status a cada 2.5s
+                // Polling de status em tempo real a cada 1.5s (0% -> 100%)
                 adminSubReprocessPollTimer = setInterval(async () => {
                     try {
                         const sRes = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/reprocess/status`, {
@@ -14939,17 +14943,34 @@
                         if (!sRes.ok) return;
 
                         if (sData.status === 'processing') {
+                            const p = typeof sData.progress === 'number' ? sData.progress : 15;
+                            if (barFill) barFill.style.width = `${Math.min(99, Math.max(5, p))}%`;
+                            if (percentLabel) percentLabel.innerText = `${p}%`;
                             if (statusText && sData.message) statusText.innerText = sData.message;
+                            if (subText) {
+                                if (p <= 20) subText.innerText = 'Medindo duração exata e sondando container de vídeo...';
+                                else if (p <= 40) subText.innerText = 'Buscando faixas no Stremio e SubDL pool com controle de cota...';
+                                else if (p <= 60) subText.innerText = 'Verificando cobertura de tempo (>=85%) e densidade de falas...';
+                                else if (p <= 80) subText.innerText = 'Extraindo áudio e validando checkpoints de fala com Whisper ASR...';
+                                else subText.innerText = 'Refinando via Gemini e validando integridade no Quality Gate...';
+                            }
                         } else if (sData.status === 'completed') {
                             clearInterval(adminSubReprocessPollTimer);
                             adminSubReprocessPollTimer = null;
 
-                            if (progressBox) progressBox.style.display = 'none';
-                            if (btn) {
-                                btn.disabled = false;
-                                btn.style.opacity = '1';
-                                btn.innerHTML = `<span>🔄 Ressincronizar / Refazer Legenda (Auto)</span>`;
-                            }
+                            if (barFill) barFill.style.width = '100%';
+                            if (percentLabel) percentLabel.innerText = '100%';
+                            if (statusText) statusText.innerText = sData.message || 'Concluído! Recarregando legendas...';
+                            if (subText) subText.innerText = 'Legenda salva e catálogo atualizado com sucesso.';
+
+                            setTimeout(() => {
+                                if (progressBox) progressBox.style.display = 'none';
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.style.opacity = '1';
+                                    btn.innerHTML = `<span>🔄 Ressincronizar / Refazer Legenda (Auto)</span>`;
+                                }
+                            }, 800);
 
                             showToast('✅ Legenda reprocessada e sincronizada com sucesso!', 'success');
 
@@ -14979,7 +15000,7 @@
                     } catch (pollErr) {
                         console.warn('Erro ao consultar status:', pollErr);
                     }
-                }, 2500);
+                }, 1500);
 
             } catch (err) {
                 if (progressBox) progressBox.style.display = 'none';

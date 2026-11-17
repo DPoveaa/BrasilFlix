@@ -216,11 +216,74 @@ class SubtitlePipeline {
     }
 
     /**
+     * Mede a duração real do stream de vídeo com precisão cirúrgica via ffprobe
+     */
+    async probeActualVideoDuration(videoPath) {
+        if (!videoPath) return 0;
+        try {
+            console.log(`⏱️ [Video Probe] Medindo duração real da mídia com ffprobe: ${videoPath.substring(0, 80)}...`);
+            const { stdout } = await execFileAsync('ffprobe', [
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                videoPath
+            ], { timeout: 35000 });
+            const dur = parseFloat(stdout.trim());
+            if (!isNaN(dur) && dur > 60) {
+                console.log(`⏱️ [Video Probe] Duração real medida: ${dur.toFixed(1)}s (${(dur / 60).toFixed(1)}min)`);
+                return dur;
+            }
+        } catch (err) {
+            console.warn(`⚠️ [Video Probe] Aviso ao sondar duração via ffprobe:`, err.message);
+        }
+        return 0;
+    }
+
+    /**
+     * QUALITY GATE: Validação Estrita de Cobertura (>= 85%) e Densidade Mínima (>= 4.5 falas/min)
+     */
+    validateCandidateCoverageAndDensity(cues, videoDurationSec, candidateLabel = 'Candidato') {
+        if (!Array.isArray(cues) || cues.length === 0) {
+            return { valid: false, reason: 'Arquivo de legenda vazio ou sem falas' };
+        }
+
+        if (cues.length < 30) {
+            return { valid: false, reason: `Poucas falas (${cues.length} cues, mínimo 30)` };
+        }
+
+        if (videoDurationSec && videoDurationSec >= 600) {
+            const movieMinutes = videoDurationSec / 60;
+            const lastCue = this.getLastDialogueCue(cues);
+            const lastCueEndSec = lastCue ? lastCue.endMs / 1000 : cues[cues.length - 1].endMs / 1000;
+            const coverageRatio = lastCueEndSec / videoDurationSec;
+
+            // 1. Strict Minimum Coverage Gate: Última fala deve alcançar pelo menos 85% do filme
+            if (coverageRatio < 0.85) {
+                return {
+                    valid: false,
+                    reason: `Última fala em ${(lastCueEndSec / 60).toFixed(1)}min termina antes de 85% da duração do vídeo (${movieMinutes.toFixed(1)}min). Cobertura: ${(coverageRatio * 100).toFixed(1)}% < 85%`
+                };
+            }
+
+            // 2. Strict Minimum Cue Density: Rejeita < 4.5 falas/minuto para longa-metragem
+            const cueDensity = cues.length / movieMinutes;
+            if (movieMinutes >= 50 && cueDensity < 4.5) {
+                return {
+                    valid: false,
+                    reason: `Densidade de falas absurdamente baixa (${cueDensity.toFixed(2)} falas/min < 4.5 falas/min exigidas para longa-metragem). Total: ${cues.length} falas em ${movieMinutes.toFixed(1)}min`
+                };
+            }
+        }
+
+        return { valid: true };
+    }
+
+    /**
      * Valida se a legenda tem vocabulário autêntico de Português Brasileiro (PT-BR).
      *
      * Regra ultra-simples em 2 critérios objetivos:
      * 1. Confiança nos Metadados / Tags da Fonte:
-     *    - pob, pt-br, pt_br, brazilian, bra -> aprova imediatamente como PT-BR sem inspecionar texto.
+     *    - pob, pt-br, pt_br, brazilian, bra, br_pt, br-pt -> aprova imediatamente como PT-BR.
      *    - pt-pt, pt_pt, portugal -> rejeita imediatamente.
      * 2. Regra Única para Código Genérico ("por" sem especificar país):
      *    - Se você/vocês aparecer 3+ vezes -> aprova imediatamente como PT-BR.
@@ -237,9 +300,9 @@ class SubtitlePipeline {
         const file = (sourceFile || '').toLowerCase();
 
         // 1. Confiança nos Metadados / Tags da Fonte
-        const ptBrTags = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra'];
+        const ptBrTags = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra', 'br_pt', 'br-pt'];
         if (ptBrTags.includes(lang)) return true;
-        if (/\b(pt[-_]br|ptbr|pob|brazilian|bra)\b/.test(file)) return true;
+        if (/\b(pt[-_]br|ptbr|pob|brazilian|bra|br[-_]pt|por[-_]br)\b/.test(file)) return true;
 
         const ptPtTags = ['pt-pt', 'pt_pt', 'ptpt'];
         if (ptPtTags.includes(lang)) return false;
@@ -434,13 +497,8 @@ class SubtitlePipeline {
                                 const sanitized = this.sanitizeEncoding(raw);
                                 const cues = this.parseSrt(sanitized);
 
-                                if (videoDurationSec > 3600) {
-                                    const lastCue = cues[cues.length - 1];
-                                    const lastCueSec = lastCue ? lastCue.endMs / 1000 : 0;
-                                    if (cues.length < 500 || lastCueSec < (videoDurationSec - 420)) {
-                                        continue;
-                                    }
-                                } else if (cues.length < 100) {
+                                const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, 'OpenSubtitles EN');
+                                if (!gate.valid) {
                                     continue;
                                 }
 
@@ -453,7 +511,58 @@ class SubtitlePipeline {
                     } catch (_) { }
                 }
             } catch (e) {
-                console.warn(`⚠️ Erro ao buscar legenda EN de referência:`, e.message);
+                console.warn(`⚠️ Erro ao buscar legenda EN de referência no OpenSubtitles:`, e.message);
+            }
+        }
+
+        // 3. Se não encontrou no OpenSubtitles, busca legenda EN no SubDL Pool como fallback
+        if (SubdlService.isAvailable() && (imdbId || metadata.tmdbId)) {
+            try {
+                console.log(`🌐 [Tier 2: English Reference] Buscando legenda EN de referência no SubDL API...`);
+                const enSubs = await SubdlService.executeWithFailover(async (apiKey) => {
+                    const params = {
+                        api_key: apiKey,
+                        imdb_id: imdbId,
+                        tmdb_id: metadata.tmdbId,
+                        type: metadata.tipo === 'serie' ? 'tv' : 'movie',
+                        languages: 'EN'
+                    };
+                    const r = await axios.get(SubdlService.apiBaseUrl, { params, timeout: 10000 });
+                    return r.data?.subtitles || [];
+                }, `EN_Ref_${metadata.title || imdbId}`);
+
+                if (Array.isArray(enSubs) && enSubs.length > 0) {
+                    const rankedEn = enSubs.slice().sort((a, b) => {
+                        const nameA = (a.release_name || a.name || '').toLowerCase();
+                        const nameB = (b.release_name || b.name || '').toLowerCase();
+                        let scoreA = 0, scoreB = 0;
+                        if (/extended|ee|remastered|unrated/i.test(nameA)) scoreA += 50;
+                        if (/extended|ee|remastered|unrated/i.test(nameB)) scoreB += 50;
+                        if (/cd1|cd2|part1|part2|2cd/i.test(nameA)) scoreA -= 150;
+                        if (/cd1|cd2|part1|part2|2cd/i.test(nameB)) scoreB -= 150;
+                        return scoreB - scoreA;
+                    });
+
+                    const workDir = this.getWorkingDir(videoPath);
+                    for (const sub of rankedEn.slice(0, 3)) {
+                        try {
+                            const srtPath = await SubdlService.downloadAndExtractSubtitle(sub, workDir);
+                            const raw = await fs.readFile(srtPath);
+                            const cues = this.parseSrt(this.sanitizeEncoding(raw));
+                            const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, 'SubDL EN');
+                            if (gate.valid) {
+                                const outPath = path.join(workDir, `ref_en_subdl_${Date.now()}.srt`);
+                                await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
+                                await fs.remove(srtPath).catch(() => {});
+                                console.log(`🎯 [Tier 2: English Reference] Legenda oficial em inglês obtida via SubDL (${cues.length} cues, release: "${sub.release_name || sub.name}")!`);
+                                return outPath;
+                            }
+                            await fs.remove(srtPath).catch(() => {});
+                        } catch (_) {}
+                    }
+                }
+            } catch (enErr) {
+                console.warn(`⚠️ Erro ao buscar legenda EN de referência no SubDL:`, enErr.message);
             }
         }
 
@@ -714,41 +823,23 @@ class SubtitlePipeline {
                     console.log(`✅ Candidato #${i + 1} aprovado como PT-BR [lang=${subLang}].`);
 
                     const cues = this.parseSrt(sanitized);
-                    if (cues.length < 30) {
-                        console.warn(`⚠️ Candidato #${i + 1} rejeitado: apenas ${cues.length} cues.`);
+                    
+                    // Validação estrita de cobertura (>= 85%) e densidade mínima (>= 4.5 falas/min)
+                    const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `Candidato #${i + 1}`);
+                    if (!gate.valid) {
+                        console.warn(`⚠️ Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
                         continue;
                     }
 
-                    // 3. Strict Duration Gate com suporte a âncora EN
-                    if (videoDurationSec > 600) {
+                    // Se houver âncora EN, valida correspondência temporal da última fala
+                    if (refEnCues && refEnCues.length > 0 && videoDurationSec > 600) {
                         const lastPtCue = this.getLastDialogueCue(cues);
                         const lastCueEndSec = lastPtCue ? lastPtCue.endMs / 1000 : cues[cues.length - 1].endMs / 1000;
-
-                        if (refEnCues && refEnCues.length > 0) {
-                            const lastEnCue = this.getLastDialogueCue(refEnCues);
-                            const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
-                            const endDiff = Math.abs(lastCueEndSec - enLastSec);
-                            if (endDiff > 45) {
-                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s do diálogo final da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
-                                continue;
-                            }
-                            const cueDiffRatio = Math.abs(cues.length - refEnCues.length) / Math.max(1, refEnCues.length);
-                            if (cueDiffRatio > 0.10) {
-                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: ${cues.length} cues PT vs ${refEnCues.length} cues EN (${(cueDiffRatio * 100).toFixed(0)}% divergência > 10% permitido).`);
-                                continue;
-                            }
-                        } else {
-                            const coverageRatio = lastCueEndSec / videoDurationSec;
-                            const gapSec = videoDurationSec - lastCueEndSec;
-                            // Tolera até 12 minutos (720s) de créditos finais e créditos pós-filme em blockbusters
-                            if (coverageRatio < 0.90 && gapSec > 720) {
-                                console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate: cobertura ${(coverageRatio * 100).toFixed(1)}% (última fala ${(lastCueEndSec / 60).toFixed(1)}min, gap ${Math.round(gapSec)}s).`);
-                                continue;
-                            }
-                        }
-
-                        if (videoDurationSec > 3600 && cues.length < 400) {
-                            console.warn(`⚠️ Candidato #${i + 1} rejeitado: apenas ${cues.length} falas para longa-metragem.`);
+                        const lastEnCue = this.getLastDialogueCue(refEnCues);
+                        const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
+                        const endDiff = Math.abs(lastCueEndSec - enLastSec);
+                        if (endDiff > 45) {
+                            console.warn(`⚠️ Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min).`);
                             continue;
                         }
                     }
@@ -852,8 +943,8 @@ class SubtitlePipeline {
 
             const videoDir = this.getWorkingDir(videoPath);
 
-            // Economia estrita de cota: baixa no máximo os 2 melhores candidatos ranqueados
-            const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 2);
+            // Avalia os melhores candidatos ranqueados com economia de cota
+            const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 4);
 
             for (let i = 0; i < maxCandidatesToDownload; i++) {
                 const candidate = rankedSubtitles[i];
@@ -881,45 +972,24 @@ class SubtitlePipeline {
                     }
 
                     const cues = this.parseSrt(sanitized);
-                    if (cues.length < 30) {
-                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: apenas ${cues.length} cues.`);
+
+                    // Validação estrita de cobertura (>= 85%) e densidade mínima (>= 4.5 falas/min)
+                    const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `SubDL #${i + 1}`);
+                    if (!gate.valid) {
+                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
                         await fs.remove(extractedSrtPath).catch(() => {});
                         continue;
                     }
 
-                    // Duration Gate
-                    if (videoDurationSec > 600) {
+                    // Se houver âncora EN, valida correspondência temporal da última fala
+                    if (refEnCues && refEnCues.length > 0 && videoDurationSec > 600) {
                         const lastPtCue = this.getLastDialogueCue(cues);
                         const lastCueEndSec = lastPtCue ? lastPtCue.endMs / 1000 : cues[cues.length - 1].endMs / 1000;
-
-                        if (refEnCues && refEnCues.length > 0) {
-                            const lastEnCue = this.getLastDialogueCue(refEnCues);
-                            const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
-                            const endDiff = Math.abs(lastCueEndSec - enLastSec);
-                            if (endDiff > 45) {
-                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
-                                await fs.remove(extractedSrtPath).catch(() => {});
-                                continue;
-                            }
-                            const cueDiffRatio = Math.abs(cues.length - refEnCues.length) / Math.max(1, refEnCues.length);
-                            if (cueDiffRatio > 0.10) {
-                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: ${cues.length} cues PT vs ${refEnCues.length} cues EN (${(cueDiffRatio * 100).toFixed(0)}% divergência > 10% permitido).`);
-                                await fs.remove(extractedSrtPath).catch(() => {});
-                                continue;
-                            }
-                        } else {
-                            const coverageRatio = lastCueEndSec / videoDurationSec;
-                            const gapSec = videoDurationSec - lastCueEndSec;
-                            // Tolera até 12 minutos (720s) de créditos finais e créditos pós-filme em blockbusters
-                            if (coverageRatio < 0.90 && gapSec > 720) {
-                                console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate: cobertura ${(coverageRatio * 100).toFixed(1)}% (última fala ${(lastCueEndSec / 60).toFixed(1)}min, gap ${Math.round(gapSec)}s).`);
-                                await fs.remove(extractedSrtPath).catch(() => {});
-                                continue;
-                            }
-                        }
-
-                        if (videoDurationSec > 3600 && cues.length < 400) {
-                            console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: apenas ${cues.length} falas para longa-metragem.`);
+                        const lastEnCue = this.getLastDialogueCue(refEnCues);
+                        const enLastSec = lastEnCue ? lastEnCue.endMs / 1000 : refEnCues[refEnCues.length - 1].endMs / 1000;
+                        const endDiff = Math.abs(lastCueEndSec - enLastSec);
+                        if (endDiff > 45) {
+                            console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
                             await fs.remove(extractedSrtPath).catch(() => {});
                             continue;
                         }
@@ -1185,6 +1255,60 @@ print(f"RESULT:{res}")
     }
 
     /**
+     * TIER 4: Forced Multi-Checkpoint Acoustic Offset Alignment (Whisper ASR)
+     * Extrai 3 clipes de áudio de 30s nos pontos 15%, 50% e 80% do runtime.
+     * Transcreve com Whisper, mapeia contra o diálogo e calcula o deslocamento mediano milimétrico (ms).
+     * Se houver divergência > 2.5s (corte de filme incompatível), rejeita o candidato.
+     */
+    async alignSubtitleWithWhisper(videoPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null) {
+        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_acoustic_align.py');
+        if (!fs.existsSync(scriptPath)) {
+            console.warn(`⚠️ [Tier 4: Whisper Align] Script whisper_acoustic_align.py não encontrado.`);
+            return { aligned: false, reason: 'Script ausente' };
+        }
+
+        try {
+            console.log(`🎙️ [Tier 4: Whisper Align] Executando alinhamento acústico multi-checkpoint (15%, 50%, 80%) via Whisper ASR...`);
+            const args = [
+                scriptPath,
+                videoPath,
+                inputSrtPath,
+                outputSrtPath,
+                String(videoDurationSec || 0)
+            ];
+            if (refEnPath && fs.existsSync(refEnPath)) {
+                args.push(refEnPath);
+            }
+
+            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 180000 });
+            const jsonMatch = stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
+            if (jsonMatch) {
+                const data = JSON.parse(jsonMatch[0]);
+                if (data.aligned && fs.existsSync(outputSrtPath)) {
+                    console.log(`🎯 [Tier 4: Whisper Align] Alinhamento aprovado! Deslocamento mediano: ${data.median_shift_ms}ms (divergência: ${data.spread}s <= 2.5s)`);
+                    return data;
+                }
+                console.warn(`⚠️ [Tier 4: Whisper Align] Candidato rejeitado: ${data.reason}`);
+                return data;
+            }
+            return { aligned: false, reason: 'Resposta inválida do alinhador Whisper' };
+        } catch (e) {
+            if (e.stdout) {
+                const jsonMatch = e.stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
+                if (jsonMatch) {
+                    try {
+                        const data = JSON.parse(jsonMatch[0]);
+                        console.warn(`⚠️ [Tier 4: Whisper Align] Rejeitado: ${data.reason}`);
+                        return data;
+                    } catch (_) {}
+                }
+            }
+            console.warn(`⚠️ [Tier 4: Whisper Align] Erro na execução do alinhador Whisper: ${e.message}`);
+            return { aligned: false, reason: e.message };
+        }
+    }
+
+    /**
      * VERIFICAÇÃO MULTI-CHECKPOINT: Inspeciona sincronia com Whisper ASR em 3 pontos (Início, Miolo, Fim)
      */
     async verifySyncAtCheckpoints(videoPath, srtPath, videoDurationSec, refEnPath = null, toleranceSec = '1.5') {
@@ -1232,24 +1356,20 @@ print(f"RESULT:{res}")
 
     /**
      * Pipeline Completo: TIER 1 -> TIER 2 -> TIER 3 -> TIER 4 -> QUALITY GATE
+     * Suporta callback em tempo real onProgress(percent, message)
      */
-    async processSubtitlePipeline(videoPath, metadata = {}) {
+    async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
         console.log(`\n============================================================`);
         console.log(`🎬 [CINEMA-GRADE SUBTITLE PIPELINE] "${metadata.nome || metadata.title || path.basename(videoPath)}"`);
         console.log(`============================================================`);
 
-        // Duração do vídeo via metadata ou ffprobe
+        // Etapa 1 (10%): Medição da duração real do vídeo diretamente no stream do Telegram
+        onProgress?.(10, 'Obtendo stream de áudio real do Telegram...');
         let videoDurationSec = parseFloat(metadata.duration || metadata.duracao || 0);
-        if (!videoDurationSec || videoDurationSec < 120) {
-            try {
-                const { stdout } = await execFileAsync('ffprobe', [
-                    '-v', 'quiet',
-                    '-print_format', 'json',
-                    '-show_format',
-                    videoPath
-                ], { timeout: 20000 });
-                videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
-            } catch (e) { }
+        const probedDur = await this.probeActualVideoDuration(videoPath);
+        if (probedDur > 60) {
+            videoDurationSec = probedDur;
+            metadata.duration = probedDur;
         }
 
         const videoDir = this.getWorkingDir(videoPath);
@@ -1278,7 +1398,10 @@ print(f"RESULT:{res}")
             }
         }
 
-        // Se ainda não tem EN de referência, extrai do container ou busca no OpenSubtitles
+        // Etapa 2 (25%): Busca de legendas nativas PT-BR e âncora EN
+        onProgress?.(25, 'Buscando legendas PT-BR nativas (Stremio + SubDL Pool)...');
+
+        // Se ainda não tem EN de referência, extrai do container, OpenSubtitles ou SubDL
         if (!refEnPath) {
             refEnPath = await this.extractEnglishReferenceSubtitle(videoPath, metadata, videoDurationSec);
         }
@@ -1293,7 +1416,7 @@ print(f"RESULT:{res}")
             } catch (_) { }
         }
 
-        // TIER 3: Se não tem Tier 1 nem Tier 2, busca externa estrita por PT-BR genuíno
+        // TIER 3: Se não tem Tier 1 nem Tier 2, busca externa estrita por PT-BR genuíno via Stremio/OpenSubtitles
         if (!selectedSrtPath) {
             const tier3 = await this.fetchExternalSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
             if (tier3) {
@@ -1304,8 +1427,6 @@ print(f"RESULT:{res}")
         }
 
         // TIER 3.5: Fallback de busca PT-BR via SubDL API (Pool com Rotação Automática de Chaves)
-        // Acionado APENAS se os endpoints gratuitos do Stremio (Tier 3) não aprovarem nenhuma legenda PT-BR no Duration Gate,
-        // e ANTES de acionar a tradução neural via Gemini para preservar tokens e cotas.
         if (!selectedSrtPath) {
             const tier35 = await this.fetchSubdlSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
             if (tier35) {
@@ -1315,23 +1436,52 @@ print(f"RESULT:{res}")
             }
         }
 
-        // TIER 3 FALLBACK: Tradução Neural via Gemini API a partir da legenda âncora em inglês
-        // Executado quando NENHUMA legenda PT-BR nativa foi encontrada/aprovada no Duration Gate
-        if (!selectedSrtPath && refEnPath && fs.existsSync(refEnPath)) {
-            console.log(`\n🤖 [Tier 3 Fallback] Nenhuma legenda PT-BR nativa aprovada no Duration Gate.`);
+        // Etapa 3 (45%): Validação de Cobertura e Duração do arquivo
+        onProgress?.(45, 'Validando cobertura e duração do arquivo...');
+        if (selectedSrtPath && fs.existsSync(selectedSrtPath)) {
+            const rawCand = await fs.readFile(selectedSrtPath, 'utf8');
+            const candCues = this.parseSrt(this.sanitizeEncoding(rawCand));
+            const candGate = this.validateCandidateCoverageAndDensity(candCues, videoDurationSec, 'Candidato Selecionado');
+            if (!candGate.valid) {
+                console.warn(`⚠️ Candidato PT-BR descartado pelo Quality Gate (${candGate.reason}). Acionando tradução neural via Gemini.`);
+                selectedSrtPath = null;
+            }
+        }
 
-            // 1. Pré-sincroniza a legenda âncora em inglês com o áudio do filme (se veio de fonte externa)
+        // Etapa 4 (65%): Alinhamento Acústico Multi-Checkpoint com Whisper ASR
+        if (selectedSrtPath && requiresSync) {
+            onProgress?.(65, 'Executando alinhamento acústico multi-checkpoint com Whisper ASR...');
+            const syncedOutPath = path.join(videoDir, `synced_whisper_${Date.now()}.srt`);
+            const alignResult = await this.alignSubtitleWithWhisper(videoPath, selectedSrtPath, syncedOutPath, videoDurationSec, refEnPath);
+
+            if (alignResult.aligned && fs.existsSync(syncedOutPath)) {
+                selectedSrtPath = syncedOutPath;
+                sourceMethod = `${sourceMethod} + Whisper ASR Shift (${alignResult.median_shift_ms > 0 ? '+' : ''}${alignResult.median_shift_ms}ms)`;
+                requiresSync = false;
+            } else {
+                console.warn(`⚠️ [Cut Gate] Checkpoints divergiram (> 2.5s) ou falharam: ${alignResult.reason}. Descartando candidato de corte incompatível e caindo para tradução neural.`);
+                selectedSrtPath = null; // Força fallback para tradução da âncora correspondente
+            }
+        }
+
+        // Etapa 5 (85%): Tradução/Refinamento via Gemini (se necessário) e Quality Gate
+        onProgress?.(85, 'Traduzindo/refinando via Gemini (se necessário) e validando Quality Gate...');
+
+        // TIER 3 FALLBACK: Tradução Neural via Gemini API a partir da legenda âncora em inglês
+        // Executado quando NENHUMA legenda PT-BR nativa foi encontrada/aprovada ou o corte divergiu
+        if (!selectedSrtPath && refEnPath && fs.existsSync(refEnPath)) {
+            console.log(`\n🤖 [Tier 3 Fallback] Nenhuma legenda PT-BR nativa aprovada no Duration/Cut Gate.`);
+
+            // 1. Pré-sincroniza a legenda âncora em inglês com o áudio do filme via Whisper se necessário
             let refEnSyncPath = refEnPath;
-            const isEnExternal = path.basename(refEnPath).startsWith('ref_en_ext_');
+            const isEnExternal = path.basename(refEnPath).startsWith('ref_en_ext_') || path.basename(refEnPath).startsWith('ref_en_subdl_');
             if (isEnExternal) {
                 const syncedEnOut = path.join(videoDir, `synced_en_anchor_${Date.now()}.srt`);
-                console.log(`🎙️ [Tier 3 Fallback] Pré-sincronizando âncora em inglês com o áudio do filme antes da tradução neural...`);
+                console.log(`🎙️ [Tier 3 Fallback] Pré-alinhando âncora em inglês acusticamente antes da tradução neural...`);
                 try {
-                    const syncEnRes = await this.alignSubtitle(videoPath, refEnPath, syncedEnOut, {
-                        maxOffsetSeconds: metadata.maxOffsetSeconds || 45
-                    });
-                    if (syncEnRes && fs.existsSync(syncEnRes)) {
-                        refEnSyncPath = syncEnRes;
+                    const syncEnRes = await this.alignSubtitleWithWhisper(videoPath, refEnPath, syncedEnOut, videoDurationSec, null);
+                    if (syncEnRes.aligned && fs.existsSync(syncedEnOut)) {
+                        refEnSyncPath = syncedEnOut;
                         console.log(`🎯 [Tier 3 Fallback] Âncora em inglês travada acusticamente com precisão de estúdio!`);
                     }
                 } catch (syncEnErr) {
@@ -1357,14 +1507,9 @@ print(f"RESULT:{res}")
                         console.log(`🎙️ [Tier 3 Fallback] Executando verificação Whisper ASR na legenda traduzida...`);
                         const whisperTranslated = await this.verifySyncAtCheckpoints(
                             videoPath, translatedPtBrPath, videoDurationSec,
-                            refEnSyncPath, // âncora para validação de conteúdo via tokens EN
+                            refEnSyncPath,
                             '1.5'
                         );
-                        for (const cp of whisperTranslated.checkpoints || []) {
-                            const st = cp.in_sync ? '✅' : '❌';
-                            const off = cp.measured_offset_sec !== undefined ? `${cp.measured_offset_sec > 0 ? '+' : ''}${cp.measured_offset_sec}s` : 'N/A';
-                            console.log(`   ${st} ${cp.name} [${cp.cue_timecode || ''}]: Offset: ${off} | "${(cp.spoken_text || '').substring(0, 50)}"`);
-                        }
                         if (!whisperTranslated.verified) {
                             throw new Error(`Quality Gate: Legenda traduzida pelo Gemini reprovada no Whisper ASR (${(whisperTranslated.checkpoints || []).filter(c => !c.in_sync).map(c => c.name).join(', ')}).`);
                         }
@@ -1372,7 +1517,7 @@ print(f"RESULT:{res}")
 
                         selectedSrtPath = translatedPtBrPath;
                         sourceMethod = `Tier 3 (Neural Gemini AI Translation from English Anchor [${SubtitleTranslationService.modelName}]) | Quality Gate ✅ | Whisper ✅`;
-                        requiresSync = false; // Timecodes já estão matematicamente travados na âncora sincronizada!
+                        requiresSync = false;
                     }
                 } catch (transErr) {
                     console.error(`❌ [Tier 3 Fallback: Neural Translation] Erro durante a tradução neural via Gemini: ${transErr.message}`);
@@ -1386,51 +1531,32 @@ print(f"RESULT:{res}")
             throw new Error(`Falha no pipeline: nenhuma legenda PT-BR válida encontrada nos Tiers 1-3 e tradução neural indisponível.`);
         }
 
-        // TIER 4: Sincronização Acústica / Sub-to-Sub (se necessário)
+        // TIER 4: Alinhamento final acústico / Quality Gate
         let finalSrtPath = selectedSrtPath;
-        // isStudioRef: true se a legenda EN de referência veio do container ou foi gerada via tradução da âncora (frame-perfect)
-        // false se veio da internet (OpenSubtitles, pode ter fps diferente) → usa Audio-to-Sub
-        const isStudioRef = !requiresSync || (refEnPath && !path.basename(refEnPath).startsWith('ref_en_ext_'));
         if (requiresSync) {
             const syncedOutPath = path.join(videoDir, `synced_final_${Date.now()}.srt`);
-            // Se a legenda EN de referência veio do CONTAINER (softsub embutida de estúdio),
-            // ela é garantidamente frame-perfect com o vídeo -> Sub-to-Sub é seguro e instantâneo.
-            // Se veio da internet (OpenSubtitles), ela pode ter framerate diferente (ex: 25fps PAL)
-            // -> Usa Audio-to-Sub (alinhamento acústico direto na fala do vídeo) para sincronia de cinema absoluta!
-            const syncResult = await this.alignSubtitle(videoPath, selectedSrtPath, syncedOutPath, {
-                refSubPath: isStudioRef ? refEnPath : null,
-                maxOffsetSeconds: metadata.maxOffsetSeconds || 45
-            });
-
-            if (syncResult && fs.existsSync(syncResult)) {
-                finalSrtPath = syncResult;
-                console.log(`🎯 [Pipeline] Alinhamento concluído com sucesso via ${isStudioRef ? 'Sub-to-Sub (Container Studio)' : 'Audio-to-Sub (Voz Acústica)'}!`);
-            } else {
-                console.warn(`⚠️ [Pipeline] Alinhamento falhou; testando qualidade com Whisper ASR antes de aceitar.`);
+            const syncResult = await this.alignSubtitleWithWhisper(videoPath, selectedSrtPath, syncedOutPath, videoDurationSec, refEnPath);
+            if (syncResult.aligned && fs.existsSync(syncedOutPath)) {
+                finalSrtPath = syncedOutPath;
             }
         }
 
         // AUTOMATED QUALITY GATE
         await this.validateAndFinalizeSubtitle(finalSrtPath, videoDurationSec);
 
-        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR (com ancoragem de estúdio se disponível)
-        // Se a legenda EN veio do container (studio), usamos como âncora de conteúdo com tolerância ±1.5s
-        // Se foi alinhada acusticamente (Audio-to-Sub), o áudio do próprio vídeo valida o timing com tolerância ±2.5s
-        const whisperTolerance = isStudioRef ? '1.5' : '2.5';
-        const anchorSubPath = isStudioRef ? refEnPath : null;
+        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR
+        const whisperTolerance = '2.5';
+        const anchorSubPath = refEnPath && fs.existsSync(refEnPath) ? refEnPath : null;
         console.log(`🎙️ [Pipeline] Verificação Whisper ASR | Âncora: ${anchorSubPath ? 'Studio Sub' : 'Áudio Acústico Direto'} | Tolerância: ${whisperTolerance}s`);
         const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec, anchorSubPath, whisperTolerance);
         console.log(`🔍 [Multi-Checkpoint Whisper Verification] Resultado: ${checkpointCheck.verified ? 'PASSED ✅' : 'FAILED ❌'}`);
-        for (const cp of checkpointCheck.checkpoints || []) {
-            const status = cp.in_sync ? '✅' : '❌';
-            const offset = cp.measured_offset_sec !== undefined ? `${cp.measured_offset_sec > 0 ? '+' : ''}${cp.measured_offset_sec}s` : 'N/A';
-            console.log(`   ${status} ${cp.name} [${cp.cue_timecode || cp.timecode || ''}]: Offset: ${offset} | Fala: "${(cp.spoken_text || '').substring(0, 45)}"`);
-            console.log(`     Legenda: "${(cp.cue_text || cp.text || '').substring(0, 60)}"`);
-        }
 
         if (!checkpointCheck.verified) {
             throw new Error(`Falha no Quality Gate: Legenda reprovada no teste acústico de sincronia real (Whisper ASR). Offset excessivo detectado.`);
         }
+
+        // Etapa 6 (100%): Conclusão e entrega
+        onProgress?.(100, 'Concluído! Recarregando legendas...');
 
         console.log(`✅ [CINEMA-GRADE PIPELINE CONCLUÍDO] Método: ${sourceMethod} | Arquivo: ${path.basename(finalSrtPath)}`);
         return {
