@@ -9545,40 +9545,6 @@
                         e.preventDefault();
                         e.stopPropagation();
                         if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-                        if (document.activeElement && document.activeElement !== document.body && tag !== 'BODY') {
-                            try { document.activeElement.blur(); } catch (_) { }
-                        }
-                        if (currentPartyRoom && !partyIsHost && !perms.canSeek) {
-                            showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
-                            return;
-                        }
-                        video.currentTime = Math.max(0, video.currentTime - 10);
-                        break;
-
-                    case 'ArrowRight':
-                    case 'l':
-                    case 'L':
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-                        if (document.activeElement && document.activeElement !== document.body && tag !== 'BODY') {
-                            try { document.activeElement.blur(); } catch (_) { }
-                        }
-                        if (currentPartyRoom && !partyIsHost && !perms.canSeek) {
-                            showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
-                            return;
-                        }
-                        video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
-                        break;
-
-                    case 'ArrowUp':
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-                        if (document.activeElement && document.activeElement !== document.body && tag !== 'BODY') {
-                            try { document.activeElement.blur(); } catch (_) { }
-                        }
-                        video.volume = Math.min(1, Math.round((video.volume + 0.1) * 10) / 10);
                         if (video.muted && video.volume > 0) video.muted = false;
                         showToast(`🔊 Volume: ${Math.round(video.volume * 100)}%`, 'info');
                         break;
