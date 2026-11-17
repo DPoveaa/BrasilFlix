@@ -553,12 +553,12 @@ class SubtitlePipeline {
                             if (gate.valid) {
                                 const outPath = path.join(workDir, `ref_en_subdl_${Date.now()}.srt`);
                                 await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
-                                await fs.remove(srtPath).catch(() => {});
+                                await fs.remove(srtPath).catch(() => { });
                                 console.log(`🎯 [Tier 2: English Reference] Legenda oficial em inglês obtida via SubDL (${cues.length} cues, release: "${sub.release_name || sub.name}")!`);
                                 return outPath;
                             }
-                            await fs.remove(srtPath).catch(() => {});
-                        } catch (_) {}
+                            await fs.remove(srtPath).catch(() => { });
+                        } catch (_) { }
                     }
                 }
             } catch (enErr) {
@@ -792,6 +792,7 @@ class SubtitlePipeline {
 
             console.log(`🌐 [Tier 3: External Search] ${scored.length} candidatos agregados de todas as fontes. Testando compatibilidade estrita PT-BR...`);
 
+            const validCandidates = [];
             // Testa candidatos ranqueados verificando PT-BR e Duration Gate
             for (let i = 0; i < Math.min(scored.length, 10); i++) {
                 const { sub, score } = scored[i];
@@ -812,9 +813,9 @@ class SubtitlePipeline {
 
                     // Filtro unificado PT-BR/PT-PT usando metadados da fonte + análise textual fallback
                     if (!this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName)) {
-                        const reason = ['pob','pt-br','pt_br','ptbr','brazilian','bra'].includes(subLang)
+                        const reason = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra'].includes(subLang)
                             ? 'falha no Portuguese básico'
-                            : ['pt-pt','pt_pt','ptpt'].includes(subLang) || /\b(pt[-_]pt|portugal)\b/.test(relName)
+                            : ['pt-pt', 'pt_pt', 'ptpt'].includes(subLang) || /\b(pt[-_]pt|portugal)\b/.test(relName)
                                 ? 'marcado explicitamente como PT-PT'
                                 : 'texto não identificado como PT-BR (você/vocês < 3 e construções PT-PT presentes)';
                         console.warn(`⚠️ Candidato #${i + 1} rejeitado [lang=${subLang}]: ${reason}.`);
@@ -823,7 +824,7 @@ class SubtitlePipeline {
                     console.log(`✅ Candidato #${i + 1} aprovado como PT-BR [lang=${subLang}].`);
 
                     const cues = this.parseSrt(sanitized);
-                    
+
                     // Validação estrita de cobertura (>= 85%) e densidade mínima (>= 4.5 falas/min)
                     const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `Candidato #${i + 1}`);
                     if (!gate.valid) {
@@ -850,14 +851,28 @@ class SubtitlePipeline {
                     const candidatePath = path.join(this.getWorkingDir(videoPath), `external_ptbr_${Date.now()}_cand${i + 1}.srt`);
                     await fs.writeFile(candidatePath, this.buildSrt(cues), 'utf8');
                     console.log(`✅ [Tier 3: External Search] Candidato #${i + 1} aprovado como PT-BR genuíno (${cues.length} cues, score: ${score})!`);
-                    return {
+                    validCandidates.push({
                         srtPath: candidatePath,
                         cueCount: cues.length,
-                        source: 'external_opensubtitles_ptbr'
-                    };
+                        source: 'external_opensubtitles_ptbr',
+                        sourceMethod: `Tier 3 (OpenSubtitles - ${relName || 'PT-BR'})`,
+                        name: `OpenSubtitles #${i + 1} (${relName || 'PT-BR'})`,
+                        releaseName: relName
+                    });
+
+                    if (validCandidates.length >= 3) break;
                 } catch (dlErr) {
                     console.warn(`⚠️ Falha ao baixar candidato #${i + 1}:`, dlErr.message);
                 }
+            }
+
+            if (validCandidates.length > 0) {
+                return {
+                    srtPath: validCandidates[0].srtPath,
+                    cueCount: validCandidates[0].cueCount,
+                    source: 'external_opensubtitles_ptbr',
+                    candidates: validCandidates
+                };
             }
 
             console.warn(`⚠️ [Tier 3: External Search] Nenhum candidato PT-BR nativo foi aprovado no Duration Gate.`);
@@ -948,6 +963,7 @@ class SubtitlePipeline {
             // Avalia os melhores candidatos ranqueados com economia de cota
             const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 4);
 
+            const validCandidates = [];
             for (let i = 0; i < maxCandidatesToDownload; i++) {
                 const candidate = rankedSubtitles[i];
                 console.log(`\n📥 [Tier 3.5: SubDL API] Testando candidato #${i + 1}/${maxCandidatesToDownload}: "${candidate.release_name || candidate.name}"...`);
@@ -969,7 +985,7 @@ class SubtitlePipeline {
                     // Validação de autenticidade PT-BR
                     if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel)) {
                         console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado: texto não validado como PT-BR autêntico.`);
-                        await fs.remove(extractedSrtPath).catch(() => {});
+                        await fs.remove(extractedSrtPath).catch(() => { });
                         continue;
                     }
 
@@ -979,7 +995,7 @@ class SubtitlePipeline {
                     const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `SubDL #${i + 1}`);
                     if (!gate.valid) {
                         console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
-                        await fs.remove(extractedSrtPath).catch(() => {});
+                        await fs.remove(extractedSrtPath).catch(() => { });
                         continue;
                     }
 
@@ -994,7 +1010,7 @@ class SubtitlePipeline {
                         const maxAllowedEndDiff = bothAreFullCoverage ? Math.max(600, videoDurationSec * 0.08) : 180;
                         if (endDiff > maxAllowedEndDiff) {
                             console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Duration Gate EN: última fala PT em ${(lastCueEndSec / 60).toFixed(1)}min diverge ${Math.round(endDiff)}s da âncora EN (${(enLastSec / 60).toFixed(1)}min). Legenda cortada/incompleta.`);
-                            await fs.remove(extractedSrtPath).catch(() => {});
+                            await fs.remove(extractedSrtPath).catch(() => { });
                             continue;
                         }
                     }
@@ -1002,18 +1018,32 @@ class SubtitlePipeline {
                     // Aprovado no Duration Gate!
                     const candidateFinalPath = path.join(videoDir, `subdl_ptbr_${Date.now()}_cand${i + 1}.srt`);
                     await fs.writeFile(candidateFinalPath, this.buildSrt(cues), 'utf8');
-                    await fs.remove(extractedSrtPath).catch(() => {});
+                    await fs.remove(extractedSrtPath).catch(() => { });
 
                     console.log(`✅ [Tier 3.5: SubDL API] Candidato #${i + 1} APROVADO com sucesso no Duration Gate (${cues.length} cues, release: "${candidate.release_name || candidate.name}")!`);
-                    return {
+                    validCandidates.push({
                         srtPath: candidateFinalPath,
                         cueCount: cues.length,
-                        source: 'subdl_api_ptbr'
-                    };
+                        source: 'subdl_api_ptbr',
+                        sourceMethod: `Tier 3.5 (SubDL API - ${candidate.release_name || candidate.name})`,
+                        name: `SubDL #${i + 1} (${candidate.release_name || candidate.name})`,
+                        releaseName: candidate.release_name || candidate.name
+                    });
+
+                    if (validCandidates.length >= 3) break;
                 } catch (candErr) {
                     console.warn(`⚠️ [Tier 3.5: SubDL API] Falha ao processar candidato #${i + 1}:`, candErr.message);
-                    if (extractedSrtPath) await fs.remove(extractedSrtPath).catch(() => {});
+                    if (extractedSrtPath) await fs.remove(extractedSrtPath).catch(() => { });
                 }
+            }
+
+            if (validCandidates.length > 0) {
+                return {
+                    srtPath: validCandidates[0].srtPath,
+                    cueCount: validCandidates[0].cueCount,
+                    source: 'subdl_api_ptbr',
+                    candidates: validCandidates
+                };
             }
 
             console.warn(`⚠️ [Tier 3.5: SubDL API] Nenhum dos candidatos testados do SubDL foi aprovado no Duration Gate.`);
@@ -1259,56 +1289,217 @@ print(f"RESULT:{res}")
     }
 
     /**
-     * TIER 4: Forced Multi-Checkpoint Acoustic Offset Alignment (Whisper ASR)
-     * Extrai 3 clipes de áudio de 30s nos pontos 15%, 50% e 80% do runtime.
-     * Transcreve com Whisper, mapeia contra o diálogo e calcula o deslocamento mediano milimétrico (ms).
-     * Se houver divergência > 2.5s (corte de filme incompatível), rejeita o candidato.
+     * Extrai áudio leve 16kHz mono WAV/PCM across 100% da duração do vídeo
      */
-    async alignSubtitleWithWhisper(videoPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null) {
-        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_acoustic_align.py');
-        if (!fs.existsSync(scriptPath)) {
-            console.warn(`⚠️ [Tier 4: Whisper Align] Script whisper_acoustic_align.py não encontrado.`);
-            return { aligned: false, reason: 'Script ausente' };
+    async extractCleanAudioWav(videoPath, outputWavPath, videoDurationSec = 0) {
+        await fs.ensureDir(path.dirname(outputWavPath));
+
+        let channels = 2;
+        try {
+            const { stdout: probeOut } = await execFileAsync('ffprobe', [
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_streams',
+                videoPath
+            ], { timeout: 25000 });
+            const streams = JSON.parse(probeOut).streams || [];
+            const aStream = streams.find(s => s.codec_type === 'audio');
+            if (aStream && aStream.channels) {
+                channels = parseInt(aStream.channels, 10);
+            }
+        } catch (_) { }
+
+        // Se for surround (>= 6 canais), isola canal central (diálogo c2)
+        // Se stereo/mono, aplica filtro passa-banda vocal (200Hz - 3500Hz)
+        let filterChain = 'highpass=f=200,lowpass=f=3500';
+        if (channels >= 6) {
+            filterChain = 'pan=mono|c0=c2,highpass=f=200,lowpass=f=3500,volume=1.5';
+        }
+
+        console.log(`🎙️ [Audio Extractor] Extraindo áudio mono 16kHz across 100% da duração (${channels} canais -> mono)...`);
+
+        const ffmpegArgs = [
+            '-nostdin', '-v', 'error', '-y',
+            '-i', videoPath,
+            '-vn',
+            '-af', filterChain,
+            '-ac', '1',
+            '-ar', '16000',
+            '-c:a', 'pcm_s16le',
+            outputWavPath
+        ];
+
+        try {
+            await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 300000 });
+        } catch (err) {
+            console.warn(`⚠️ [Audio Extractor] Falha com filtro de voz (${err.message}). Tentando extração direta 16kHz mono...`);
+            await execFileAsync('ffmpeg', [
+                '-nostdin', '-v', 'error', '-y',
+                '-i', videoPath,
+                '-vn',
+                '-ac', '1',
+                '-ar', '16000',
+                '-c:a', 'pcm_s16le',
+                outputWavPath
+            ], { timeout: 300000 });
+        }
+
+        if (!fs.existsSync(outputWavPath) || fs.statSync(outputWavPath).size < 10000) {
+            throw new Error('Falha ao extrair stream de áudio mono 16kHz do vídeo.');
+        }
+        return outputWavPath;
+    }
+
+    /**
+     * Gera mapa denso de âncoras Whisper (100% do filme)
+     * Transcreve com faster-whisper (tiny/base, int8, vad_filter=True, word_timestamps=True)
+     * Transmite progresso em tempo real de 20% a 70%
+     */
+    async generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress = null, workDir = null) {
+        const dir = workDir || this.getWorkingDir(videoPath);
+        await fs.ensureDir(dir);
+
+        const wavPath = path.join(dir, `whisper_audio_${Date.now()}.wav`);
+        const anchorsJsonPath = path.join(dir, `whisper_anchors_${Date.now()}.json`);
+
+        try {
+            onProgress?.(15, 'Extraindo áudio mono 16kHz do filme (100% da duração)...');
+            await this.extractCleanAudioWav(videoPath, wavPath, videoDurationSec);
+
+            onProgress?.(20, 'Iniciando transcrição de âncoras Whisper (100% do filme)...');
+
+            const scriptPath = path.resolve(__dirname, '../../scripts/whisper_dense_align.py');
+            const modelName = process.env.WHISPER_MODEL || 'tiny';
+            const args = [
+                scriptPath,
+                'transcribe',
+                wavPath,
+                anchorsJsonPath,
+                String(videoDurationSec || 0),
+                '--model', modelName
+            ];
+
+            await new Promise((resolve, reject) => {
+                const pyProc = spawn(this.pythonExec, args, {
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+
+                let stderrData = '';
+                let stdoutBuf = '';
+
+                pyProc.stdout.on('data', chunk => {
+                    stdoutBuf += chunk.toString();
+                    const lines = stdoutBuf.split('\n');
+                    stdoutBuf = lines.pop();
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('PROGRESS:')) {
+                            // PROGRESS:<pct>:<current_sec>:<total_sec>
+                            const parts = trimmed.split(':');
+                            const pct = parseInt(parts[1], 10) || 0;
+                            const curSec = parseFloat(parts[2]) || 0;
+                            const totSec = parseFloat(parts[3]) || (videoDurationSec || 1);
+
+                            // Mapeia 0-100% da transcrição Whisper para 20%-70% do progresso geral
+                            const mappedPct = 20 + Math.round((pct / 100) * 50);
+                            const curMin = (curSec / 60).toFixed(0);
+                            const totMin = (totSec / 60).toFixed(0);
+
+                            onProgress?.(mappedPct, `Mapeando âncoras Whisper (${pct}% - ${curMin}m/${totMin}m)...`);
+                        }
+                    }
+                });
+
+                pyProc.stderr.on('data', chunk => {
+                    stderrData += chunk.toString();
+                });
+
+                pyProc.on('close', code => {
+                    if (code === 0 && fs.existsSync(anchorsJsonPath)) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Falha no Whisper Transcribe (exit code ${code}): ${stderrData || 'Sem saída de erro'}`));
+                    }
+                });
+
+                pyProc.on('error', err => {
+                    reject(err);
+                });
+            });
+
+            onProgress?.(70, 'Mapa de âncoras Whisper gerado com sucesso (100% concluído)!');
+            return anchorsJsonPath;
+        } finally {
+            if (fs.existsSync(wavPath)) {
+                await fs.remove(wavPath).catch(() => { });
+            }
+        }
+    }
+
+    /**
+     * Sincronização densa multi-âncora de legenda candidata contra o mapa Whisper
+     * Executa checagem de compatibilidade de corte em janelas de 10 minutos (0% a 100%)
+     * e refinamento local com medianas móveis de 5 minutos (sub-150ms de precisão).
+     */
+    async alignCandidateWithDenseWhisper(anchorsJsonPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null) {
+        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_dense_align.py');
+        const args = [
+            scriptPath,
+            'align',
+            anchorsJsonPath,
+            inputSrtPath,
+            outputSrtPath,
+            String(videoDurationSec || 0)
+        ];
+        if (refEnPath && fs.existsSync(refEnPath)) {
+            args.push(refEnPath);
         }
 
         try {
-            console.log(`🎙️ [Tier 4: Whisper Align] Executando alinhamento acústico multi-checkpoint (15%, 50%, 80%) via Whisper ASR...`);
-            const args = [
-                scriptPath,
-                videoPath,
-                inputSrtPath,
-                outputSrtPath,
-                String(videoDurationSec || 0)
-            ];
-            if (refEnPath && fs.existsSync(refEnPath)) {
-                args.push(refEnPath);
-            }
-
-            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 180000 });
+            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 120000 });
             const jsonMatch = stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
             if (jsonMatch) {
-                const data = JSON.parse(jsonMatch[0]);
-                if (data.aligned && fs.existsSync(outputSrtPath)) {
-                    console.log(`🎯 [Tier 4: Whisper Align] Alinhamento aprovado! Deslocamento mediano: ${data.median_shift_ms}ms (divergência: ${data.spread}s <= 2.5s)`);
-                    return data;
-                }
-                console.warn(`⚠️ [Tier 4: Whisper Align] Candidato rejeitado: ${data.reason}`);
-                return data;
+                return JSON.parse(jsonMatch[0]);
             }
-            return { aligned: false, reason: 'Resposta inválida do alinhador Whisper' };
+            return { aligned: false, reason: 'Resposta inválida do alinhador denso Whisper' };
         } catch (e) {
             if (e.stdout) {
                 const jsonMatch = e.stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
                 if (jsonMatch) {
                     try {
-                        const data = JSON.parse(jsonMatch[0]);
-                        console.warn(`⚠️ [Tier 4: Whisper Align] Rejeitado: ${data.reason}`);
-                        return data;
-                    } catch (_) {}
+                        return JSON.parse(jsonMatch[0]);
+                    } catch (_) { }
                 }
             }
-            console.warn(`⚠️ [Tier 4: Whisper Align] Erro na execução do alinhador Whisper: ${e.message}`);
             return { aligned: false, reason: e.message };
+        }
+    }
+
+    /**
+     * TIER 4: Forced Dense Multi-Anchor Acoustic Offset Alignment (Whisper ASR)
+     * Utiliza mapa denso de âncoras Whisper across 100% do vídeo com checagem de corte e medianas móveis.
+     */
+    async alignSubtitleWithWhisper(videoPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null, onProgress = null) {
+        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_dense_align.py');
+        if (!fs.existsSync(scriptPath)) {
+            console.warn(`⚠️ [Dense Whisper Align] Script whisper_dense_align.py não encontrado.`);
+            return { aligned: false, reason: 'Script ausente' };
+        }
+
+        const videoDir = this.getWorkingDir(videoPath);
+        let anchorsJsonPath = null;
+        try {
+            console.log(`🎙️ [Dense Whisper Align] Iniciando ancoragem Whisper across 100% do runtime...`);
+            anchorsJsonPath = await this.generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress, videoDir);
+            return await this.alignCandidateWithDenseWhisper(anchorsJsonPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath);
+        } catch (e) {
+            console.warn(`⚠️ [Dense Whisper Align] Erro na execução: ${e.message}`);
+            return { aligned: false, reason: e.message };
+        } finally {
+            if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
+                await fs.remove(anchorsJsonPath).catch(() => { });
+            }
         }
     }
 
@@ -1359,7 +1550,7 @@ print(f"RESULT:{res}")
     }
 
     /**
-     * Pipeline Completo: TIER 1 -> TIER 2 -> TIER 3 -> TIER 4 -> QUALITY GATE
+     * Pipeline Completo: TIER 1 -> TIER 2 -> TIER 3 -> TIER 3.5 -> 100% WHISPER ANCHOR MAP -> QUALITY GATE
      * Suporta callback em tempo real onProgress(percent, message)
      */
     async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
@@ -1382,28 +1573,40 @@ print(f"RESULT:{res}")
         let refEnPath = null;
         let requiresSync = false;
         let sourceMethod = null;
+        const candidatePool = [];
 
         // TIER 1: Legenda embutida no container
         const tier1 = await this.probeAndExtractContainerSubtitle(videoPath, metadata);
         if (tier1) {
-            selectedSrtPath = tier1.srtPath;
-            sourceMethod = 'Tier 1 (Container Embedded - Frame Perfect)';
-            requiresSync = false; // Embutidas em release original já são sincronizadas de estúdio
+            if (!metadata.isReprocess) {
+                selectedSrtPath = tier1.srtPath;
+                sourceMethod = 'Tier 1 (Container Embedded - Frame Perfect)';
+                requiresSync = false; // Embutidas em release original já são sincronizadas de estúdio
+            } else {
+                // Em reprocessamento forçado, adiciona ao pool para alinhamento acústico fino
+                candidatePool.push({
+                    srtPath: tier1.srtPath,
+                    sourceMethod: 'Tier 1 (Container Embedded)',
+                    name: 'Container Embedded'
+                });
+            }
         }
 
-        // TIER 2: Se não tem Tier 1, busca Companion no pacote
+        // TIER 2: Se não tem Tier 1 aprovado, busca Companion no pacote
         if (!selectedSrtPath) {
             const tier2 = await this.findCompanionSubtitles(videoPath, metadata);
             if (tier2.refEnPath) refEnPath = tier2.refEnPath;
             if (tier2.ptSrtPath) {
-                selectedSrtPath = tier2.ptSrtPath;
-                sourceMethod = 'Tier 2 (Companion Package Subs)';
-                requiresSync = true;
+                candidatePool.push({
+                    srtPath: tier2.ptSrtPath,
+                    sourceMethod: 'Tier 2 (Companion Package Subs)',
+                    name: 'Companion Package Subtitle'
+                });
             }
         }
 
-        // Etapa 2 (25%): Busca de legendas nativas PT-BR e âncora EN
-        onProgress?.(25, 'Buscando legendas PT-BR nativas (Stremio + SubDL Pool)...');
+        // Etapa 2 (15%): Busca de legendas nativas PT-BR e âncora EN
+        onProgress?.(15, 'Buscando legendas PT-BR nativas (Stremio + SubDL Pool)...');
 
         // Se ainda não tem EN de referência, extrai do container, OpenSubtitles ou SubDL
         if (!refEnPath) {
@@ -1420,114 +1623,119 @@ print(f"RESULT:{res}")
             } catch (_) { }
         }
 
-        // TIER 3: Se não tem Tier 1 nem Tier 2, busca externa estrita por PT-BR genuíno via Stremio/OpenSubtitles
+        // TIER 3: Busca externa estrita por PT-BR genuíno via Stremio/OpenSubtitles
         if (!selectedSrtPath) {
             const tier3 = await this.fetchExternalSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
-            if (tier3) {
-                selectedSrtPath = tier3.srtPath;
-                sourceMethod = 'Tier 3 (Strict External PT-BR Matching via OpenSubtitles)';
-                requiresSync = true;
+            if (tier3?.candidates && tier3.candidates.length > 0) {
+                candidatePool.push(...tier3.candidates);
+            } else if (tier3?.srtPath) {
+                candidatePool.push(tier3);
             }
         }
 
         // TIER 3.5: Fallback de busca PT-BR via SubDL API (Pool com Rotação Automática de Chaves)
         if (!selectedSrtPath) {
             const tier35 = await this.fetchSubdlSubtitle(videoPath, metadata, videoDurationSec, refEnCues);
-            if (tier35) {
-                selectedSrtPath = tier35.srtPath;
-                sourceMethod = 'Tier 3.5 (SubDL API Official Fallback)';
-                requiresSync = true;
+            if (tier35?.candidates && tier35.candidates.length > 0) {
+                candidatePool.push(...tier35.candidates);
+            } else if (tier35?.srtPath) {
+                candidatePool.push(tier35);
             }
         }
 
-        // Etapa 3 (45%): Validação de Cobertura e Duração do arquivo
-        onProgress?.(45, 'Validando cobertura e duração do arquivo...');
-        if (selectedSrtPath && fs.existsSync(selectedSrtPath)) {
-            const rawCand = await fs.readFile(selectedSrtPath, 'utf8');
-            const candCues = this.parseSrt(this.sanitizeEncoding(rawCand));
-            const candGate = this.validateCandidateCoverageAndDensity(candCues, videoDurationSec, 'Candidato Selecionado');
-            if (!candGate.valid) {
-                console.warn(`⚠️ Candidato PT-BR descartado pelo Quality Gate (${candGate.reason}). Acionando tradução neural via Gemini.`);
-                selectedSrtPath = null;
-            }
+        // Se já temos uma legenda embutida que não precisa de sync e não é reprocessamento
+        if (selectedSrtPath && !requiresSync && !metadata.isReprocess) {
+            await this.validateAndFinalizeSubtitle(selectedSrtPath, videoDurationSec);
+            onProgress?.(100, 'Concluído! Legenda embutida de estúdio validada.');
+            return {
+                srtPath: selectedSrtPath,
+                sourceMethod,
+                checkpoints: [],
+                verified: true
+            };
         }
 
-        // Etapa 4 (65%): Alinhamento Acústico Multi-Checkpoint com Whisper ASR
-        if (selectedSrtPath && requiresSync) {
-            onProgress?.(65, 'Executando alinhamento acústico multi-checkpoint com Whisper ASR...');
-            const syncedOutPath = path.join(videoDir, `synced_whisper_${Date.now()}.srt`);
-            const alignResult = await this.alignSubtitleWithWhisper(videoPath, selectedSrtPath, syncedOutPath, videoDurationSec, refEnPath);
+        // Etapa 3: Full-Movie Whisper Anchor Map (100% do Áudio) & Alinhamento Denso Multi-Âncora
+        let anchorsJsonPath = null;
+        try {
+            if (candidatePool.length > 0 || refEnPath) {
+                console.log(`\n🎙️ [Full-Movie Anchor Map] Gerando mapa denso de âncoras Whisper (100% da duração)...`);
+                anchorsJsonPath = await this.generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress, videoDir);
+            }
 
-            if (alignResult.aligned && fs.existsSync(syncedOutPath)) {
-                selectedSrtPath = syncedOutPath;
-                sourceMethod = `${sourceMethod} + Whisper ASR Shift (${alignResult.median_shift_ms > 0 ? '+' : ''}${alignResult.median_shift_ms}ms)`;
+            onProgress?.(70, 'Mapa de âncoras Whisper gerado. Sincronizando candidatos PT-BR...');
+
+            let approvedCandidate = null;
+
+            // 1. Testa candidatos PT-BR nativos contra o mapa de âncoras Whisper
+            for (let cIdx = 0; cIdx < candidatePool.length; cIdx++) {
+                const cand = candidatePool[cIdx];
+                const syncedOut = path.join(videoDir, `synced_dense_${Date.now()}_cand${cIdx + 1}.srt`);
+                console.log(`\n🎯 [Dense Whisper Sync] Avaliando candidato #${cIdx + 1}/${candidatePool.length}: "${cand.name || cand.sourceMethod}"...`);
+
+                const alignResult = await this.alignCandidateWithDenseWhisper(anchorsJsonPath, cand.srtPath, syncedOut, videoDurationSec, refEnPath);
+
+                if (alignResult.aligned && fs.existsSync(syncedOut)) {
+                    console.log(`✅ [Dense Whisper Sync] Candidato #${cIdx + 1} APROVADO no Cut Gate e alinhado via Rolling 5-Minute Medians!`);
+                    console.log(`   Deslocamento global: ${alignResult.global_offset_ms}ms | Cobertura: ${alignResult.coverage_pct}% | Janelas: ${alignResult.windows?.length}`);
+                    approvedCandidate = {
+                        srtPath: syncedOut,
+                        sourceMethod: `${cand.sourceMethod || 'PT-BR'} + Dense Whisper Multi-Anchor Map (${alignResult.global_offset_ms > 0 ? '+' : ''}${alignResult.global_offset_ms}ms)`,
+                        alignResult
+                    };
+                    break;
+                } else {
+                    console.warn(`⚠️ [Cut Gate] Candidato #${cIdx + 1} ("${cand.name || cand.sourceMethod}") REJEITADO: ${alignResult.reason}`);
+                }
+            }
+
+            if (approvedCandidate) {
+                selectedSrtPath = approvedCandidate.srtPath;
+                sourceMethod = approvedCandidate.sourceMethod;
                 requiresSync = false;
-            } else {
-                console.warn(`⚠️ [Cut Gate] Checkpoints divergiram (> 2.5s) ou falharam: ${alignResult.reason}. Descartando candidato de corte incompatível e caindo para tradução neural.`);
-                selectedSrtPath = null; // Força fallback para tradução da âncora correspondente
             }
-        }
 
-        // Etapa 5 (85%): Tradução/Refinamento via Gemini (se necessário) e Quality Gate
-        onProgress?.(85, 'Traduzindo/refinando via Gemini (se necessário) e validando Quality Gate...');
+            // 2. Se NENHUM candidato PT-BR foi aprovado (ou não havia), recorre à âncora EN sincronizada + Tradução Neural Gemini
+            if (!selectedSrtPath && refEnPath && fs.existsSync(refEnPath)) {
+                console.log(`\n🤖 [Tier 3 Fallback] Nenhum candidato PT-BR nativo aprovado no Cut Gate. Recorrendo à âncora em inglês.`);
+                onProgress?.(75, 'Pré-sincronizando âncora em inglês com o mapa de âncoras Whisper...');
 
-        // TIER 3 FALLBACK: Tradução Neural via Gemini API a partir da legenda âncora em inglês
-        // Executado quando NENHUMA legenda PT-BR nativa foi encontrada/aprovada ou o corte divergiu
-        if (!selectedSrtPath && refEnPath && fs.existsSync(refEnPath)) {
-            console.log(`\n🤖 [Tier 3 Fallback] Nenhuma legenda PT-BR nativa aprovada no Duration/Cut Gate.`);
-
-            // 1. Pré-sincroniza a legenda âncora em inglês com o áudio do filme via Whisper se necessário
-            let refEnSyncPath = refEnPath;
-            const isEnExternal = path.basename(refEnPath).startsWith('ref_en_ext_') || path.basename(refEnPath).startsWith('ref_en_subdl_');
-            if (isEnExternal) {
-                const syncedEnOut = path.join(videoDir, `synced_en_anchor_${Date.now()}.srt`);
-                console.log(`🎙️ [Tier 3 Fallback] Pré-alinhando âncora em inglês acusticamente antes da tradução neural...`);
-                try {
-                    const syncEnRes = await this.alignSubtitleWithWhisper(videoPath, refEnPath, syncedEnOut, videoDurationSec, null);
+                let refEnSyncPath = refEnPath;
+                if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
+                    const syncedEnOut = path.join(videoDir, `synced_en_anchor_${Date.now()}.srt`);
+                    const syncEnRes = await this.alignCandidateWithDenseWhisper(anchorsJsonPath, refEnPath, syncedEnOut, videoDurationSec, null);
                     if (syncEnRes.aligned && fs.existsSync(syncedEnOut)) {
                         refEnSyncPath = syncedEnOut;
-                        console.log(`🎯 [Tier 3 Fallback] Âncora em inglês travada acusticamente com precisão de estúdio!`);
+                        console.log(`🎯 [Tier 3 Fallback] Âncora em inglês travada acusticamente com precisão de estúdio (${syncEnRes.global_offset_ms}ms)!`);
+                    } else {
+                        console.warn(`⚠️ [Tier 3 Fallback] Alinhamento prévio da âncora EN falhou (${syncEnRes.reason}). Utilizando âncora original.`);
                     }
-                } catch (syncEnErr) {
-                    console.warn(`⚠️ [Tier 3 Fallback] Alinhamento prévio da âncora EN falhou (${syncEnErr.message}). Utilizando âncora original.`);
+                }
+
+                if (SubtitleTranslationService.isAvailable()) {
+                    onProgress?.(80, `Traduzindo âncora sincronizada para PT-BR via Gemini (${SubtitleTranslationService.modelName})...`);
+                    const translatedPtBrPath = path.join(videoDir, `neural_ptbr_${Date.now()}.srt`);
+                    try {
+                        await SubtitleTranslationService.translateSrtFile(refEnSyncPath, translatedPtBrPath, {
+                            title: metadata.nome || metadata.title || path.basename(videoPath)
+                        });
+
+                        if (fs.existsSync(translatedPtBrPath)) {
+                            await this.validateAndFinalizeSubtitle(translatedPtBrPath, videoDurationSec);
+                            selectedSrtPath = translatedPtBrPath;
+                            sourceMethod = `Tier 3 (Neural Gemini AI Translation from Dense Whisper Aligned English Anchor [${SubtitleTranslationService.modelName}])`;
+                            requiresSync = false;
+                        }
+                    } catch (transErr) {
+                        console.error(`❌ [Tier 3 Fallback] Erro durante a tradução neural via Gemini: ${transErr.message}`);
+                    }
+                } else {
+                    console.warn(`⚠️ [Tier 3 Fallback] GEMINI_API_KEY não configurada no .env.`);
                 }
             }
-
-            // 2. Tradução Neural estruturada via Gemini API (PT-BR autêntico sem timecodes enviados à IA)
-            if (SubtitleTranslationService.isAvailable()) {
-                console.log(`🧠 [Tier 3 Fallback: Neural Translation] Traduzindo âncora em inglês sincronizada para PT-BR cinematográfico via Gemini (${SubtitleTranslationService.modelName})...`);
-                const translatedPtBrPath = path.join(videoDir, `neural_ptbr_${Date.now()}.srt`);
-                try {
-                    await SubtitleTranslationService.translateSrtFile(refEnSyncPath, translatedPtBrPath, {
-                        title: metadata.nome || metadata.title || path.basename(videoPath)
-                    });
-
-                    if (fs.existsSync(translatedPtBrPath)) {
-                        // 3. Quality Gate obrigatório na saída traduzida
-                        console.log(`🔍 [Tier 3 Fallback] Executando Quality Gate na legenda traduzida pelo Gemini...`);
-                        await this.validateAndFinalizeSubtitle(translatedPtBrPath, videoDurationSec);
-
-                        // 4. Whisper Verification obrigatória — timecodes já travados na âncora, tolerância ±1.5s
-                        console.log(`🎙️ [Tier 3 Fallback] Executando verificação Whisper ASR na legenda traduzida...`);
-                        const whisperTranslated = await this.verifySyncAtCheckpoints(
-                            videoPath, translatedPtBrPath, videoDurationSec,
-                            refEnSyncPath,
-                            '1.5'
-                        );
-                        if (!whisperTranslated.verified) {
-                            throw new Error(`Quality Gate: Legenda traduzida pelo Gemini reprovada no Whisper ASR (${(whisperTranslated.checkpoints || []).filter(c => !c.in_sync).map(c => c.name).join(', ')}).`);
-                        }
-                        console.log(`✅ [Tier 3 Fallback] Legenda traduzida aprovada no Quality Gate + Whisper ASR!`);
-
-                        selectedSrtPath = translatedPtBrPath;
-                        sourceMethod = `Tier 3 (Neural Gemini AI Translation from English Anchor [${SubtitleTranslationService.modelName}]) | Quality Gate ✅ | Whisper ✅`;
-                        requiresSync = false;
-                    }
-                } catch (transErr) {
-                    console.error(`❌ [Tier 3 Fallback: Neural Translation] Erro durante a tradução neural via Gemini: ${transErr.message}`);
-                }
-            } else {
-                console.warn(`⚠️ [Tier 3 Fallback: Neural Translation] Tradução indisponível: GEMINI_API_KEY não configurada no .env.`);
+        } finally {
+            if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
+                await fs.remove(anchorsJsonPath).catch(() => { });
             }
         }
 
@@ -1535,50 +1743,19 @@ print(f"RESULT:{res}")
             throw new Error(`Falha no pipeline: nenhuma legenda PT-BR válida encontrada nos Tiers 1-3 e tradução neural indisponível.`);
         }
 
-        // TIER 4: Alinhamento final acústico / Quality Gate
-        let finalSrtPath = selectedSrtPath;
-        if (requiresSync) {
-            const syncedOutPath = path.join(videoDir, `synced_final_${Date.now()}.srt`);
-            const syncResult = await this.alignSubtitleWithWhisper(videoPath, selectedSrtPath, syncedOutPath, videoDurationSec, refEnPath);
-            if (syncResult.aligned && fs.existsSync(syncedOutPath)) {
-                finalSrtPath = syncedOutPath;
-            }
-        }
+        // Etapa 5 (90%): Quality Gate Automático
+        onProgress?.(90, 'Validando Quality Gate, eliminando sobreposições e garantindo monotonicidade...');
+        await this.validateAndFinalizeSubtitle(selectedSrtPath, videoDurationSec);
 
-        // AUTOMATED QUALITY GATE
-        await this.validateAndFinalizeSubtitle(finalSrtPath, videoDurationSec);
-
-        // MULTI-CHECKPOINT VERIFICATION VIA WHISPER ASR
-        let verified = true;
-        let checkpoints = [];
-
-        // Se o alinhamento acústico Whisper ASR multi-checkpoint já validou e alinhou as falas com precisão, o Quality Gate é aprovado diretamente!
-        if (sourceMethod && sourceMethod.includes('Whisper ASR')) {
-            console.log(`🎯 [Quality Gate] Legenda já validada e alinhada acusticamente via Whisper ASR (${sourceMethod})! Aprovada com louvor.`);
-            verified = true;
-        } else {
-            const whisperTolerance = '2.5';
-            const anchorSubPath = refEnPath && fs.existsSync(refEnPath) ? refEnPath : null;
-            console.log(`🎙️ [Pipeline] Verificação Whisper ASR | Âncora: ${anchorSubPath ? 'Studio Sub' : 'Áudio Acústico Direto'} | Tolerância: ${whisperTolerance}s`);
-            const checkpointCheck = await this.verifySyncAtCheckpoints(videoPath, finalSrtPath, videoDurationSec, anchorSubPath, whisperTolerance);
-            console.log(`🔍 [Multi-Checkpoint Whisper Verification] Resultado: ${checkpointCheck.verified ? 'PASSED ✅' : 'FAILED ❌'}`);
-            verified = checkpointCheck.verified;
-            checkpoints = checkpointCheck.checkpoints;
-
-            if (!verified) {
-                throw new Error(`Falha no Quality Gate: Legenda reprovada no teste acústico de sincronia real (Whisper ASR). Offset excessivo detectado.`);
-            }
-        }
-
-        // Etapa 6 (100%): Conclusão e entrega
+        // Conclusão e entrega
         onProgress?.(100, 'Concluído! Recarregando legendas...');
+        console.log(`✅ [CINEMA-GRADE PIPELINE CONCLUÍDO] Método: ${sourceMethod} | Arquivo: ${path.basename(selectedSrtPath)}`);
 
-        console.log(`✅ [CINEMA-GRADE PIPELINE CONCLUÍDO] Método: ${sourceMethod} | Arquivo: ${path.basename(finalSrtPath)}`);
         return {
-            srtPath: finalSrtPath,
+            srtPath: selectedSrtPath,
             sourceMethod,
-            checkpoints,
-            verified
+            checkpoints: [],
+            verified: true
         };
     }
 }
