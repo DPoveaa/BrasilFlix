@@ -18,7 +18,8 @@ import tempfile
 
 def run_ffsubsync(video_path, srt_path):
     """Roda ffsubsync via API Python e retorna resultado."""
-    if not os.path.exists(video_path):
+    is_url = isinstance(video_path, str) and video_path.startswith(('http://', 'https://'))
+    if not (is_url or os.path.exists(video_path)):
         return {"adjusted": False, "error": f"Vídeo não encontrado: {video_path}"}
     if not os.path.exists(srt_path):
         return {"adjusted": False, "error": f"SRT não encontrado: {srt_path}"}

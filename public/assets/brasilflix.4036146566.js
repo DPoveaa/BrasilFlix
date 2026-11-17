@@ -14062,7 +14062,8 @@
                             (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
                             (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
                         );
-                        adminEditEl.style.display = isAdmin ? 'block' : 'none';
+                        const hasExternalSubs = !!(currentPlayingMedia && Array.isArray(currentPlayingMedia.legendas) && currentPlayingMedia.legendas.length > 0);
+                        adminEditEl.style.display = (isAdmin && hasExternalSubs) ? 'block' : 'none';
                     }
                 }
                 menu.classList.toggle('visible', !isVis);
@@ -14140,9 +14141,16 @@
             `;
 
             if (availableTracks.length === 0) {
+                const isLegendado = !!(currentPlayingMedia && (
+                    currentPlayingMedia.isLegendado ||
+                    currentPlayingMedia.is_legendado ||
+                    currentPlayingMedia.audio === 'legendado' ||
+                    currentPlayingMedia.hasLeg
+                ));
+                const badgeText = isLegendado ? 'Legenda embutida no vídeo (Hardsub)' : 'Sem legenda externa';
                 html += `
-                    <div style="font-size:11px; color:#94a3b8; padding:8px 10px; font-style:italic; text-align:center; background:rgba(255,255,255,0.03); border-radius:6px; margin:4px 0;">
-                        Sem legenda externa disponível
+                    <div style="font-size:11px; color:#94a3b8; padding:8px 10px; font-style:italic; text-align:center; background:rgba(255,255,255,0.03); border-radius:6px; margin:4px 0; border:1px solid rgba(255,255,255,0.06);">
+                        ${badgeText}
                     </div>
                 `;
             } else {
@@ -14163,7 +14171,7 @@
 
             listEl.innerHTML = html;
 
-            // Renderiza botão de edição admin (apenas se usuário for admin)
+            // Renderiza botão de edição admin (apenas se usuário for admin E mídia possuir legendas externas)
             const adminEditEl = document.getElementById('player-subtitle-admin-edit-row');
             if (adminEditEl) {
                 const isAdmin = !!(
@@ -14172,7 +14180,9 @@
                     (typeof localStorage !== 'undefined' && localStorage.getItem('bf_admin_token')) ||
                     (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
                 );
-                adminEditEl.style.display = isAdmin ? 'block' : 'none';
+                const hasExternalSubs = (Array.isArray(availableTracks) && availableTracks.length > 0) ||
+                                        (currentPlayingMedia && Array.isArray(currentPlayingMedia.legendas) && currentPlayingMedia.legendas.length > 0);
+                adminEditEl.style.display = (isAdmin && hasExternalSubs) ? 'block' : 'none';
             }
 
             if (btnLabel) {
@@ -14683,5 +14693,111 @@
                 updatePlayerSubtitlesUI(adminSubState.tracks);
             } catch (err) {
                 showToast(`Erro no upload: ${err.message}`, 'error');
+            }
+        }
+
+        let adminSubReprocessPollTimer = null;
+
+        async function handleAdminSubtitleReprocessAuto() {
+            if (!adminSubState.id || !adminSubState.type) {
+                showToast('Selecione uma mídia para reprocessar a legenda.', 'warning');
+                return;
+            }
+
+            const ok = confirm(`Deseja ressincronizar / refazer automaticamente a legenda de "${adminSubState.title}"?\n\nO sistema buscará as melhores faixas oficiais (Stremio & SubDL), efetuará tradução neural e alinhará acusticamente via Whisper ASR (±45s).`);
+            if (!ok) return;
+
+            const btn = document.getElementById('admin-sub-btn-reprocess');
+            const progressBox = document.getElementById('admin-sub-reprocess-progress-box');
+            const statusText = document.getElementById('admin-sub-reprocess-status-text');
+            const subText = document.getElementById('admin-sub-reprocess-subtext');
+
+            if (btn) {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+                btn.innerHTML = `<span>⏳ Processando...</span>`;
+            }
+            if (progressBox) progressBox.style.display = 'flex';
+            if (statusText) statusText.innerText = 'Analisando áudio com Whisper e gerando nova legenda...';
+            if (subText) subText.innerText = 'Buscando faixas no Stremio e SubDL, executando alinhamento acústico Whisper ASR e validação multi-checkpoint.';
+
+            try {
+                showToast('⏳ Iniciando reprocessamento de legenda...', 'info');
+                const res = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/reprocess`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                if (!res.ok || (!data.success && res.status !== 202)) {
+                    throw new Error(data.error || 'Erro ao acionar reprocessamento.');
+                }
+
+                if (adminSubReprocessPollTimer) {
+                    clearInterval(adminSubReprocessPollTimer);
+                    adminSubReprocessPollTimer = null;
+                }
+
+                // Polling de status a cada 2.5s
+                adminSubReprocessPollTimer = setInterval(async () => {
+                    try {
+                        const sRes = await fetch(`/api/admin/subtitles/${encodeURIComponent(adminSubState.type)}/${encodeURIComponent(adminSubState.id)}/reprocess/status`, {
+                            headers: getAuthHeaders(),
+                            credentials: 'same-origin'
+                        });
+                        const sData = await sRes.json();
+                        if (!sRes.ok) return;
+
+                        if (sData.status === 'processing') {
+                            if (statusText && sData.message) statusText.innerText = sData.message;
+                        } else if (sData.status === 'completed') {
+                            clearInterval(adminSubReprocessPollTimer);
+                            adminSubReprocessPollTimer = null;
+
+                            if (progressBox) progressBox.style.display = 'none';
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                                btn.innerHTML = `<span>🔄 Ressincronizar / Refazer Legenda (Auto)</span>`;
+                            }
+
+                            showToast('✅ Legenda reprocessada e sincronizada com sucesso!', 'success');
+
+                            if (sData.tracks && sData.tracks.length > 0) {
+                                adminSubState.tracks = sData.tracks;
+                                if (currentPlayingMedia) currentPlayingMedia.legendas = sData.tracks;
+                            }
+                            if (sData.cues && sData.cues.length > 0) {
+                                adminSubState.cues = sData.cues;
+                            }
+
+                            await loadAdminSubtitles(adminSubState.type, adminSubState.id, 'pt-BR');
+                            reloadActivePlayerSubtitleTrack();
+                            updatePlayerSubtitlesUI(adminSubState.tracks);
+                        } else if (sData.status === 'error') {
+                            clearInterval(adminSubReprocessPollTimer);
+                            adminSubReprocessPollTimer = null;
+
+                            if (progressBox) progressBox.style.display = 'none';
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                                btn.innerHTML = `<span>🔄 Ressincronizar / Refazer Legenda (Auto)</span>`;
+                            }
+                            showToast(`❌ Erro no reprocessamento: ${sData.error || sData.message}`, 'error');
+                        }
+                    } catch (pollErr) {
+                        console.warn('Erro ao consultar status:', pollErr);
+                    }
+                }, 2500);
+
+            } catch (err) {
+                if (progressBox) progressBox.style.display = 'none';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.innerHTML = `<span>🔄 Ressincronizar / Refazer Legenda (Auto)</span>`;
+                }
+                showToast(`Erro ao iniciar reprocessamento: ${err.message}`, 'error');
             }
         }

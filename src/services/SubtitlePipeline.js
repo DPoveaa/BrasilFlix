@@ -17,6 +17,19 @@ class SubtitlePipeline {
     }
 
     /**
+     * Resolve o diretório seguro de trabalho (para arquivos locais ou stream URLs)
+     */
+    getWorkingDir(videoPath) {
+        const isUrl = typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath);
+        if (isUrl || !videoPath || !fs.existsSync(videoPath)) {
+            const dir = path.resolve(__dirname, '../../data/temp_subtitles');
+            fs.ensureDirSync(dir);
+            return dir;
+        }
+        return path.dirname(videoPath);
+    }
+
+    /**
      * Converte timecode SRT (00:01:23,456 ou 00:01:23.456) para milissegundos
      */
     parseTimecodeToMs(tc) {
@@ -280,7 +293,7 @@ class SubtitlePipeline {
             }
 
             // Tenta extrair a melhor trilha PT
-            const videoDir = path.dirname(videoPath);
+            const videoDir = this.getWorkingDir(videoPath);
             for (const stream of ptStreams) {
                 const subIndex = stream.index;
                 const streamLang = (stream.tags?.language || stream.tags?.lang || '').toLowerCase();
@@ -350,7 +363,7 @@ class SubtitlePipeline {
             });
 
             if (enStream) {
-                const outPath = path.join(path.dirname(videoPath), `ref_en_${Date.now()}.srt`);
+                const outPath = path.join(this.getWorkingDir(videoPath), `ref_en_${Date.now()}.srt`);
                 await execFileAsync('ffmpeg', [
                     '-nostdin', '-v', 'error', '-y',
                     '-i', videoPath,
@@ -431,7 +444,7 @@ class SubtitlePipeline {
                                     continue;
                                 }
 
-                                const outPath = path.join(path.dirname(videoPath), `ref_en_ext_${Date.now()}.srt`);
+                                const outPath = path.join(this.getWorkingDir(videoPath), `ref_en_ext_${Date.now()}.srt`);
                                 await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
                                 console.log(`🎯 [Tier 2: English Reference] Legenda oficial em inglês obtida via OpenSubtitles (${cues.length} cues) para alinhamento sub-to-sub!`);
                                 return outPath;
@@ -452,8 +465,11 @@ class SubtitlePipeline {
      */
     async findCompanionSubtitles(videoPath, metadata = {}) {
         try {
+            if (typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath)) {
+                return { ptSrtPath: null, refEnPath: null };
+            }
             console.log(`🔍 [Tier 2: Companion Package] Buscando legendas companheiras na pasta do torrent...`);
-            const videoDir = path.dirname(videoPath);
+            const videoDir = this.getWorkingDir(videoPath);
             const candidateDirs = [
                 videoDir,
                 path.join(videoDir, 'Subs'),
@@ -738,7 +754,7 @@ class SubtitlePipeline {
                     }
 
                     // Candidato PT-BR genuíno aprovado com louvor!
-                    const candidatePath = path.join(path.dirname(videoPath), `external_ptbr_${Date.now()}_cand${i + 1}.srt`);
+                    const candidatePath = path.join(this.getWorkingDir(videoPath), `external_ptbr_${Date.now()}_cand${i + 1}.srt`);
                     await fs.writeFile(candidatePath, this.buildSrt(cues), 'utf8');
                     console.log(`✅ [Tier 3: External Search] Candidato #${i + 1} aprovado como PT-BR genuíno (${cues.length} cues, score: ${score})!`);
                     return {
@@ -834,7 +850,7 @@ class SubtitlePipeline {
 
             console.log(`🌐 [Tier 3.5: SubDL API] ${rankedSubtitles.length} legendas PT-BR encontradas. Avaliando os melhores candidatos com economia de cota...`);
 
-            const videoDir = path.dirname(videoPath);
+            const videoDir = this.getWorkingDir(videoPath);
 
             // Economia estrita de cota: baixa no máximo os 2 melhores candidatos ranqueados
             const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 2);
@@ -938,7 +954,8 @@ class SubtitlePipeline {
      * TIER 4: Sincronização Cinema-Grade (Sub-to-Sub ou Audio-to-Sub acústico)
      */
     async alignSubtitle(videoPath, inputSrtPath, outputSrtPath, options = {}) {
-        if (!fs.existsSync(inputSrtPath) || !fs.existsSync(videoPath)) {
+        const isUrl = typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath);
+        if (!fs.existsSync(inputSrtPath) || (!isUrl && !fs.existsSync(videoPath))) {
             throw new Error('Vídeo ou arquivo de legenda não encontrado para alinhamento.');
         }
 
@@ -999,7 +1016,8 @@ class SubtitlePipeline {
                 }
             }
 
-            // Executa ffsubsync com controle estrito de frameratio
+            const maxOffsetSec = String(options.maxOffsetSeconds || 45);
+            // Executa ffsubsync com controle estrito de frameratio e offset limite
             const pythonCode = `
 import sys
 import os
@@ -1010,7 +1028,7 @@ args = parser.parse_args([
     sys.argv[1],
     '-i', sys.argv[2],
     '-o', sys.argv[3],
-    '--max-offset-seconds', '120',
+    '--max-offset-seconds', sys.argv[4] if len(sys.argv) > 4 else '45',
     '--vad', 'subs_then_webrtc'
 ])
 res = run(args)
@@ -1023,7 +1041,7 @@ print(f"RESULT:{res}")
 
             const syncSuccess = await new Promise((resolve) => {
                 let finished = false;
-                const pyProc = spawn(this.pythonExec, ['-c', pythonCode, referenceTarget, inputSrtPath, outputSrtPath], {
+                const pyProc = spawn(this.pythonExec, ['-c', pythonCode, referenceTarget, inputSrtPath, outputSrtPath, maxOffsetSec], {
                     stdio: ['ignore', 'pipe', 'pipe']
                 });
 
@@ -1170,7 +1188,8 @@ print(f"RESULT:{res}")
      * VERIFICAÇÃO MULTI-CHECKPOINT: Inspeciona sincronia com Whisper ASR em 3 pontos (Início, Miolo, Fim)
      */
     async verifySyncAtCheckpoints(videoPath, srtPath, videoDurationSec, refEnPath = null, toleranceSec = '1.5') {
-        if (!fs.existsSync(videoPath) || !fs.existsSync(srtPath)) {
+        const isUrl = typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath);
+        if ((!isUrl && !fs.existsSync(videoPath)) || !fs.existsSync(srtPath)) {
             return { verified: false, reason: 'Arquivo de vídeo ou legenda inexistente', checkpoints: [] };
         }
 
@@ -1219,19 +1238,22 @@ print(f"RESULT:{res}")
         console.log(`🎬 [CINEMA-GRADE SUBTITLE PIPELINE] "${metadata.nome || metadata.title || path.basename(videoPath)}"`);
         console.log(`============================================================`);
 
-        // Duração do vídeo via ffprobe
-        let videoDurationSec = 0;
-        try {
-            const { stdout } = await execFileAsync('ffprobe', [
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_format',
-                videoPath
-            ], { timeout: 15000 });
-            videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
-        } catch (e) { }
+        // Duração do vídeo via metadata ou ffprobe
+        let videoDurationSec = parseFloat(metadata.duration || metadata.duracao || 0);
+        if (!videoDurationSec || videoDurationSec < 120) {
+            try {
+                const { stdout } = await execFileAsync('ffprobe', [
+                    '-v', 'quiet',
+                    '-print_format', 'json',
+                    '-show_format',
+                    videoPath
+                ], { timeout: 20000 });
+                videoDurationSec = parseFloat(JSON.parse(stdout).format?.duration || 0);
+            } catch (e) { }
+        }
 
-        const videoDir = path.dirname(videoPath);
+        const videoDir = this.getWorkingDir(videoPath);
+        await fs.ensureDir(videoDir);
         let selectedSrtPath = null;
         let refEnPath = null;
         let requiresSync = false;
@@ -1305,7 +1327,9 @@ print(f"RESULT:{res}")
                 const syncedEnOut = path.join(videoDir, `synced_en_anchor_${Date.now()}.srt`);
                 console.log(`🎙️ [Tier 3 Fallback] Pré-sincronizando âncora em inglês com o áudio do filme antes da tradução neural...`);
                 try {
-                    const syncEnRes = await this.alignSubtitle(videoPath, refEnPath, syncedEnOut);
+                    const syncEnRes = await this.alignSubtitle(videoPath, refEnPath, syncedEnOut, {
+                        maxOffsetSeconds: metadata.maxOffsetSeconds || 45
+                    });
                     if (syncEnRes && fs.existsSync(syncEnRes)) {
                         refEnSyncPath = syncEnRes;
                         console.log(`🎯 [Tier 3 Fallback] Âncora em inglês travada acusticamente com precisão de estúdio!`);
@@ -1374,7 +1398,8 @@ print(f"RESULT:{res}")
             // Se veio da internet (OpenSubtitles), ela pode ter framerate diferente (ex: 25fps PAL)
             // -> Usa Audio-to-Sub (alinhamento acústico direto na fala do vídeo) para sincronia de cinema absoluta!
             const syncResult = await this.alignSubtitle(videoPath, selectedSrtPath, syncedOutPath, {
-                refSubPath: isStudioRef ? refEnPath : null
+                refSubPath: isStudioRef ? refEnPath : null,
+                maxOffsetSeconds: metadata.maxOffsetSeconds || 45
             });
 
             if (syncResult && fs.existsSync(syncResult)) {

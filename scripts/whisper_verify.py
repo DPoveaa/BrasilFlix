@@ -90,7 +90,8 @@ def compute_token_overlap(set_a, set_b):
     return len(intersection) / max(1, min(len(set_a), len(set_b)))
 
 def verify_sync(video_path, srt_path, max_allowed_offset_sec=1.5, ref_en_path=None):
-    if not os.path.exists(video_path) or not os.path.exists(srt_path):
+    is_url = isinstance(video_path, str) and video_path.startswith(('http://', 'https://'))
+    if not (is_url or os.path.exists(video_path)) or not os.path.exists(srt_path):
         return {'verified': False, 'error': 'Video or SRT file missing', 'checkpoints': []}
     
     probe_run = subprocess.run([
