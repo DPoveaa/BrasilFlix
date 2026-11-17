@@ -18,6 +18,7 @@ class TMDBService {
     _getFromCache(key) {
         const item = this.cache.get(key);
         if (item && item.expiresAt > Date.now()) {
+            if (item.data && item.data.__notFound) return null;
             try {
                 return structuredClone(item.data);
             } catch (e) {
@@ -29,7 +30,7 @@ class TMDBService {
     }
 
     _setInCache(key, data, ttlMs = 2 * 60 * 60 * 1000) {
-        if (!data) return;
+        if (data === undefined) return;
         if (this.cache.size > 2000) {
             const firstKeys = Array.from(this.cache.keys()).slice(0, 300);
             firstKeys.forEach(k => this.cache.delete(k));
@@ -63,6 +64,9 @@ class TMDBService {
                 if (!isolated) this.consecutiveFailures = 0;
                 return response.data;
             } catch (err) {
+                if (err.response?.status === 404) {
+                    throw err;
+                }
                 if (attempt < maxRetries) {
                     await new Promise(r => setTimeout(r, 1000 * attempt));
                     continue;
@@ -374,6 +378,10 @@ class TMDBService {
             this._setInCache(cacheKey, formatted, 4 * 60 * 60 * 1000); // 4 horas
             return formatted;
         } catch (error) {
+            if (error.response?.status === 404) {
+                this._setInCache(cacheKey, { __notFound: true }, 60 * 60 * 1000);
+                return null;
+            }
             const msg = error.code || error.message || 'Falha de conexão';
             console.warn(`⚠️ [TMDB] Indisponibilidade ao obter detalhes do filme ${tmdbId}: ${msg}`);
             return null;
@@ -395,6 +403,10 @@ class TMDBService {
             this._setInCache(cacheKey, formatted, 4 * 60 * 60 * 1000); // 4 horas
             return formatted;
         } catch (error) {
+            if (error.response?.status === 404) {
+                this._setInCache(cacheKey, { __notFound: true }, 60 * 60 * 1000);
+                return null;
+            }
             const msg = error.code || error.message || 'Falha de conexão';
             console.warn(`⚠️ [TMDB] Indisponibilidade ao obter detalhes da série ${tmdbId}: ${msg}`);
             return null;

@@ -339,47 +339,52 @@ class AutoFeeder {
 
                 const isAnime = pedido.tipo === 'anime' || (pedido.detalhes && pedido.detalhes.toLowerCase().includes('anime'));
                 const isDorama = pedido.tipo === 'dorama';
-                let isSerie = pedido.tipo === 'serie' || isAnime || isDorama;
-                let tipo = isSerie ? 'serie' : (pedido.tipo || 'filme');
+                let isSerie = pedido.tipo === 'serie' || isDorama;
+                let tipo = isSerie ? 'serie' : (pedido.tipo === 'filme' ? 'filme' : 'filme');
                 let tmdbId = pedido.tmdbId ? Number(pedido.tmdbId) : null;
                 let originalName = '';
 
-                // Busca metadados TMDB precisos
+                // Busca metadados TMDB precisos diferenciando séries e filmes (incluindo filmes de anime)
                 try {
                     if (tmdbId) {
-                        if (isSerie) {
-                            const tvData = await TMDBService.getTVDetails(tmdbId).catch(() => null);
-                            if (tvData) {
-                                originalName = tvData.nomeOriginal || '';
-                                tipo = 'serie';
-                                isSerie = true;
-                            }
-                        } else {
+                        if (pedido.tipo === 'filme') {
                             const movData = await TMDBService.getMovieDetails(tmdbId).catch(() => null);
                             if (movData) {
                                 originalName = movData.nomeOriginal || '';
                                 tipo = 'filme';
                                 isSerie = false;
+                            } else {
+                                const tvData = await TMDBService.getTVDetails(tmdbId).catch(() => null);
+                                if (tvData) {
+                                    originalName = tvData.nomeOriginal || '';
+                                    tipo = 'serie';
+                                    isSerie = true;
+                                }
+                            }
+                        } else {
+                            // Tenta como série primeiro; se 404, fallback inteligente para filme
+                            const tvData = await TMDBService.getTVDetails(tmdbId).catch(() => null);
+                            if (tvData) {
+                                originalName = tvData.nomeOriginal || '';
+                                tipo = 'serie';
+                                isSerie = true;
+                            } else {
+                                const movData = await TMDBService.getMovieDetails(tmdbId).catch(() => null);
+                                if (movData) {
+                                    originalName = movData.nomeOriginal || '';
+                                    tipo = 'filme';
+                                    isSerie = false;
+                                }
                             }
                         }
                     } else {
-                        if (isSerie) {
-                            const searchTV = await TMDBService.searchTV(title, pedido.ano).catch(() => null);
-                            if (searchTV && searchTV.length > 0) {
-                                tmdbId = searchTV[0].tmdbId;
-                                originalName = searchTV[0].nomeOriginal || '';
-                                tipo = 'serie';
-                            }
-                        }
-                        if (!tmdbId) {
-                            const searchResults = await TMDBService.searchMulti(title).catch(() => null);
-                            if (searchResults && searchResults.length > 0) {
-                                const match = isSerie ? (searchResults.find(r => r.tipo === 'serie') || searchResults[0]) : searchResults[0];
-                                tipo = match.tipo === 'serie' ? 'serie' : 'filme';
-                                isSerie = tipo === 'serie';
-                                tmdbId = match.tmdbId;
-                                originalName = match.nomeOriginal || '';
-                            }
+                        const searchResults = await TMDBService.searchMulti(title).catch(() => null);
+                        if (searchResults && searchResults.length > 0) {
+                            const match = isSerie ? (searchResults.find(r => r.tipo === 'serie') || searchResults[0]) : searchResults[0];
+                            tipo = match.tipo === 'serie' ? 'serie' : 'filme';
+                            isSerie = tipo === 'serie';
+                            tmdbId = match.tmdbId;
+                            originalName = match.nomeOriginal || '';
                         }
                     }
                 } catch (e) {}

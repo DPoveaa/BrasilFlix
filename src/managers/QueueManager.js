@@ -2089,7 +2089,18 @@ class QueueManager extends EventEmitter {
                     if (details) metadata = { ...metadata, ...details };
                 } else {
                     const details = await TMDBService.getTVDetails(job.tmdbId);
-                    if (details) metadata = { ...metadata, ...details };
+                    if (details) {
+                        metadata = { ...metadata, ...details };
+                    } else {
+                        // Fallback: se não achar em TV, o item pode ser um filme enfileirado como série
+                        const movDetails = await TMDBService.getMovieDetails(job.tmdbId).catch(() => null);
+                        if (movDetails) {
+                            console.log(`🔄 [QueueManager] Auto-corrigindo tipo do job "${job.title}" de série para filme (${job.tmdbId})`);
+                            job.type = 'filme';
+                            metadata = { ...metadata, ...movDetails, tipo: 'filme' };
+                            await this.saveJob(job).catch(() => {});
+                        }
+                    }
                 }
             } else if (job.type === 'filme') {
                 const results = await TMDBService.searchMovie(job.title, job.ano || job.extraData?.ano || null);
