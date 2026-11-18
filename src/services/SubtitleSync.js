@@ -45,14 +45,14 @@ class SubtitleSync {
         }
     }
 
-    validateSynchronizedSubtitle(srtPath, proof = null) {
+    async validateSynchronizedSubtitle(srtPath, proof = null) {
         if (!proof || !['dialogue_content', 'asr_word_timestamps'].includes(proof.method)) return false;
         try {
             const fs = require('fs-extra');
             if (!fs.existsSync(srtPath)) return false;
             const content = fs.readFileSync(srtPath, 'utf8');
             const cues = SubtitlePipeline.parseSrt(content);
-            return cues && cues.length >= 20 && SubtitlePipeline.isBrazilianPortugueseSubtitle(content);
+            return cues && cues.length >= 20 && await SubtitlePipeline.isBrazilianPortugueseSubtitle(content);
         } catch (e) {
             return false;
         }

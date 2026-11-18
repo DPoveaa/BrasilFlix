@@ -903,25 +903,8 @@ ${events.join('\n')}
             .replace(/[\u0300-\u036f]/g, '');
     }
 
-    isEuropeanPortugueseSubtitle(content) {
-        return SubtitlePipeline.isEuropeanPortugueseSubtitle(content);
-    }
-
     isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '') {
         return SubtitlePipeline.isBrazilianPortugueseSubtitle(content, sourceLang, sourceFile);
-    }
-
-    isGenericPortugueseSubtitle(content) {
-        if (!content || typeof content !== 'string' || content.length < 150) return false;
-        if (this.isEuropeanPortugueseSubtitle(content)) return false;
-        const norm = this.normalizeSubtitleText(content);
-        const genericPtRegex = /\b(nao|esta|estao|entao|tambem|muito|aqui|agora|isso|isto|porque|por\s+que|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|por\s+favor)\b/gi;
-        const matches = (norm.match(genericPtRegex) || []).length;
-        return matches >= 4;
-    }
-
-    isPortugueseSubtitleContent(content) {
-        return this.isBrazilianPortugueseSubtitle(content);
     }
 
     async fetchPortugueseSrt(url) {
@@ -931,7 +914,7 @@ ${events.join('\n')}
             responseType: 'text'
         });
         const timestamps = typeof data === 'string' && data.match(/^\s*\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}[,.]\d{3}/gm);
-        return timestamps?.length >= 3 && this.isBrazilianPortugueseSubtitle(data) ? data : null;
+        return timestamps?.length >= 3 && await this.isBrazilianPortugueseSubtitle(data) ? data : null;
     }
 
     async findCompanionSubtitle(inputPath, metadata = {}) {
@@ -994,7 +977,7 @@ ${events.join('\n')}
                 const matchesEp = epRegex.test(item.name) || epRegex.test(item.dirName);
                 if (isPt && matchesEp) {
                     const content = await fs.readFile(item.path, 'utf8').catch(() => '');
-                    if (this.isBrazilianPortugueseSubtitle(content)) {
+                    if (await this.isBrazilianPortugueseSubtitle(content)) {
                         console.log(`📦 [Companion Subs] Legenda original PT-BR encontrada no pacote do torrent: ${path.basename(item.path)} (${(content.length / 1024).toFixed(1)} KB)!`);
                         return { ptSrtPath: item.path, refEnPath: null };
                     } else {

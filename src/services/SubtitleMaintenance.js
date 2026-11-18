@@ -74,10 +74,11 @@ class SubtitleMaintenance {
             const cues = utils.parseVtt(clean);
             if (clean !== raw) await this.atomicWrite(file, clean);
             if (!pipeline.validateCandidateCoverageAndDensity(cues, duration).valid) return false;
-            if (/^pt/i.test(language) && !pipeline.isBrazilianPortugueseSubtitle(
-                clean, '', '', cues.map(c => c.text))) return false;
+            if (/^pt/i.test(language) && !await pipeline.isBrazilianPortugueseSubtitle(
+                clean, language, filename, cues.map(c => c.text))) return false;
             return true;
         } catch (error) {
+            if (error.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw error;
             if (error.code !== 'ENOENT') console.warn('[Subtitle validation]', file, error.message);
             return false;
         }
@@ -253,7 +254,9 @@ class SubtitleMaintenance {
             }
             const manualTrack = row.legendas?.find?.(track => /^pt/i.test(track.lang || '') && track.manualReview &&
                 track.mediaFingerprint === this.fingerprint(row));
-            if (manualTrack && !claim.rows[0].manual && manualTrack.contentHash === utils.contentHash(await fs.readFile(
+            if (manualTrack?.vttUrl && !claim.rows[0].manual &&
+                await this.validFile(manualTrack.vttUrl, manualTrack.lang, (row.duracao || 0) * 60) &&
+                manualTrack.contentHash === utils.contentHash(await fs.readFile(
                 path.join(directory, path.basename(manualTrack.vttUrl)), 'utf8').catch(() => ''))) {
                 await db.query(`UPDATE subtitle_repairs SET completed_at=NOW(),updated_at=NOW(),owner=NULL,lease_until=NULL,
                     progress=100,message='Revisão manual preservada',outcome='{"method":"Revisão manual"}'::jsonb

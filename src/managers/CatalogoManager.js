@@ -3211,6 +3211,7 @@ class CatalogoManager {
                     isDubladoCompleto: t.isDubladoCompleto,
                     isLegendadoCompleto: t.isLegendadoCompleto,
                     episodios: (t.episodios || []).map(ep => ({
+                        id: ep.id,
                         numero: ep.numero,
                         nome: ep.nome,
                         sinopse: ep.sinopse,

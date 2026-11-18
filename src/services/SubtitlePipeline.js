@@ -10,6 +10,7 @@ const SubtitleTranslationService = require('./SubtitleTranslationService');
 const SubdlService = require('./SubdlService');
 const SubtitleUtils = require('../utils/SubtitleUtils');
 const SubtitleAudioService = require('./SubtitleAudioService');
+const { classifyPortuguese, explicitlyEuropean } = require('../utils/PortugueseSubtitleLocale');
 const subtitleSlot = require('./SubtitleWorkSlot');
 
 const execFileAsync = promisify(execFile);
@@ -164,25 +165,6 @@ class SubtitlePipeline {
     }
 
     /**
-     * Detecta se a legenda é Português de Portugal com base em critérios objetivos:
-     * - Construções típicas do gerúndio europeu: "estar a + INFINITIVO" (ex: "estou a fazer", "está a dizer", "estão a falar")
-     * - Vocabulário genuinamente europeu: "ecrã", "comboio", "telemóvel", "autocarro", "pequeno-almoço", "frigorífico", "miúdo", "gajo", "fixe"
-     * - NÃO classifica como PT-PT se "você/vocês" estiver presente (>= 2 vezes), a menos que haja saturação extrema (>= 8 ocorrências).
-     * - NUNCA classifica como PT-PT frases comuns do Brasil como "está a caminho", "está a salvo", "esta a porta", etc.
-     */
-    isEuropeanPortugueseSubtitle(content) {
-        if (!content || typeof content !== 'string') return false;
-        const text = content.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        // "Comboio", "a ver" and "a fazer" also occur naturally in Brazilian dialogue.
-        const vocabulary = text.match(/\b(ecra|telemovel|autocarro|frigorifico|pequeno[- ]almoco|miudo|gajo)\b/g) || [];
-        const progressive = text.match(/\b(?:estou|estas|esta|estamos|estao) a [a-z]+(?:ar|er|ir)\b/g) || [];
-        const brazilian = (text.match(/\b(voce|voces|a gente)\b/g) || []).length;
-        const evidence = vocabulary.length + progressive.length;
-        return (evidence >= 8 && evidence > brazilian * 2) ||
-            (brazilian < 2 && evidence >= 3 && new Set(vocabulary).size >= 2);
-    }
-
-    /**
      * Verifica se um release name/tag contém indicadores de PT-PT que devem penalizar o candidato.
      * Retorna a penalidade de score (0 = sem penalidade, número positivo = penalidade).
      */
@@ -190,7 +172,7 @@ class SubtitlePipeline {
         if (!releaseNameOrUrl) return 0;
         const rel = releaseNameOrUrl.toLowerCase();
         // Tags explícitas de PT-PT ou Portugal
-        if (/\bpt[-.]?pt\b|\bportugal\b/.test(rel)) return 300;
+        if (explicitlyEuropean('', rel)) return 300;
         // "POR" sem "BRA" ou "BR" adjacente (legenda portuguesa sem indicação brasileira)
         if (/\bpor\b(?!.*(?:bra|br|brasil))/.test(rel) && !/\bbra\b|\bpt[-.]?br\b|\bpob\b/.test(rel)) return 150;
         return 0;
@@ -208,18 +190,8 @@ class SubtitlePipeline {
     }
 
     /**
-     * LANGUAGE SAFETY GATE: Detecta e rejeita legendas em Romeno ou outros idiomas
-     * do Leste Europeu que podem ter sido tagueados erroneamente como "por"/"pt"/"und".
-     *
-     * Critérios:
-     *  1. Rejeição imediata se contiver diacríticos típicos do Romeno / Leste-Europeu
-     *     (ă Ă ș Ș ț Ț î Î) — esses caracteres são INEXISTENTES no português.
-     *     Diacríticos adicionais do Polonês/Tcheco/Eslovaco (ł ń ż ź č ř ě) também rejeitam.
-     *  2. Exige taxa de acerto >= 4% de stopwords INCONFUNDÍVEIS do PT-BR
-     *     (não, você, está, para, com, que, uma, isso, aqui, muito, mas, por,
-     *      como, também, já) em amostragem de até 120 cues.
-     *     Essa taxa garante que o texto é genuinamente português e não
-     *     um idioma que coincidentemente passa pelo filtro léxico básico.
+     * Triagem de idioma antes da análise de variante. Exige vocabulário
+     * português e tolera nomes próprios com diacríticos de outros idiomas.
      *
      * @param {string} content   - texto bruto/completo da legenda (SRT ou plain)
      * @param {string[]} [cueTexts] - array opcional de textos dos cues já parseados
@@ -233,22 +205,15 @@ class SubtitlePipeline {
         cueTexts ||= SubtitleUtils.parseSubtitles(content).map(cue => cue.text);
         if (!cueTexts.length) cueTexts = null;
 
-        // --- 1. Rejeição imediata por diacríticos inexistentes no Português ---
-        // Romeno: ă Ă ș Ș ț Ț î Î  (note: î é diferente de í/ì)
-        // Polonês/Tcheco: ł ń ż ź č ř ě
-        const easternEuropeanDiacritics = /[ăĂșȘțȚîÎłńżźčřě]/;
-        if (easternEuropeanDiacritics.test(content)) {
-            // Conta ocorrências para evitar falso-positivo por caractere único
-            const hits = (content.match(/[ăĂșȘțȚîÎłńżźčřě]/g) || []).length;
-            if (hits >= 1) {
-                return {
-                    valid: false,
-                    reason: `Detectado ${hits} diacrítico(s) de idioma Leste-Europeu (Romeno/Polonês) inexistente(s) em Português: "${content.match(/[ăĂșȘțȚîÎłńżźčřě]/g).slice(0, 5).join(' ')}"`
-                };
-            }
+        // Words with these marks can be names in an otherwise Brazilian track.
+        // Require several distinct words before rejecting.
+        const foreignWords = new Set((cueTexts || [content]).join(' ')
+            .toLowerCase().match(/\p{L}*[ășțîłńżźčřě]\p{L}*/gu) || []);
+        if (foreignWords.size >= 4) {
+            return { valid: false, reason: 'Diacríticos de outro idioma em várias palavras distintas.' };
         }
 
-        // --- 2. Taxa mínima de stopwords PT-BR inconfundíveis ---
+        // Taxa mínima de palavras comuns em português.
         // Amostra até 120 cues distribuídos pelo arquivo
         const textToSample = cueTexts
             ? (() => {
@@ -261,7 +226,7 @@ class SubtitlePipeline {
 
         const norm = textToSample.toLowerCase();
 
-        // Stopwords absolutamente inequívocas do Português (incluindo formas acentuadas e não-acentuadas)
+        // Inclui formas acentuadas e não acentuadas.
         const ptStopwordPattern = /\b(não|nao|você|voce|está|esta\b|para\b|com\b|que\b|uma\b|isso|aqui|muito|mas\b|por\b|como\b|também|tambem|já\b|ja\b|ele\b|ela\b|nos\b|seu\b|sua\b|são|sao\b|ter\b|ser\b|por\b|mais\b)\b/gi;
         const stopwordHits = (norm.match(ptStopwordPattern) || []).length;
 
@@ -374,43 +339,13 @@ class SubtitlePipeline {
         return { valid: true };
     }
 
-    /**
-     * Valida se a legenda tem vocabulário autêntico de Português Brasileiro (PT-BR).
-     *
-     * FLUXO DE VALIDAÇÃO (ordem de verificação):
-     *  0. SAFETY GATE ESTRITO: detecta e rejeita diacríticos romenos/leste-europeus e
-     *     exige taxa mínima de stopwords PT — aplicado a TODOS os candidatos, sem exceção,
-     *     antes de qualquer análise de metadados/tags. Isso evita que uma trilha romena
-     *     tagueada como "por" ou "und" passe pela validação.
-     *  1. Confiança nos Metadados / Tags da Fonte (após passar o Safety Gate):
-     *     - pob, pt-br, pt_br, ptbr, brazilian, bra, br_pt, br-pt, por_br -> aprova como PT-BR.
-     *     - pt-pt, pt_pt, portugal -> rejeita imediatamente.
-     *  2. Análise textual para código genérico ("por" ou sem país explícito):
-     *     - Se você/vocês aparecer 2+ vezes -> aprova como PT-BR.
-     *     - Rejeita como PT-PT se houver pelo menos 3 construções europeias.
-     *
-     * @param {string} content - texto da legenda
-     * @param {string} [sourceLang] - código de idioma retornado pela API/fonte (ex: "pob", "por", "pt-pt")
-     * @param {string} [sourceFile] - nome do arquivo/release (para detectar tags no filename)
-     * @param {string[]} [cueTexts] - array opcional de textos dos cues já parseados (para o safety gate)
-     */
-    isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '', cueTexts = null) {
-        if (!content || typeof content !== 'string') return false;
-
-        // 0. SAFETY GATE ESTRITO (roda SEMPRE, independentemente de tags/metadados)
-        //    Detecta Romeno, Polonês e outros idiomas E-Europeus; exige taxa mínima de stopwords PT.
-        const safetyCheck = this.validatePtBrTextSafety(content, cueTexts);
-        if (!safetyCheck.valid) {
-            console.warn(`🚫 [PT-BR Safety Gate] Candidato REJEITADO: ${safetyCheck.reason}`);
-            return false;
-        }
-
-        const lang = (sourceLang || '').toLowerCase().trim();
-        const file = (sourceFile || '').toLowerCase();
-
-        if (['pt-pt', 'pt_pt', 'ptpt'].includes(lang) || /\b(pt[-_]pt|ptpt|portugal)\b/.test(file)) return false;
-        if (this.isEuropeanPortugueseSubtitle(content)) return false;
-        return this.isPortugueseLanguage(content);
+    async isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '', cueTexts = null) {
+        if (typeof content !== 'string' || !content || explicitlyEuropean(sourceLang, sourceFile)) return false;
+        const texts = cueTexts || SubtitleUtils.parseSubtitles(content).map(cue => cue.text);
+        const safety = this.validatePtBrTextSafety(content, texts);
+        if (!safety.valid || !this.isPortugueseLanguage(content)) return false;
+        const { variety } = await classifyPortuguese(texts);
+        return variety === 'pt-BR';
     }
 
     /**
@@ -474,7 +409,7 @@ class SubtitlePipeline {
                         const cues = this.parseSrt(sanitized);
                         const cueTexts = cues.map(c => c.text);
 
-                        if (cues.length >= 20 && this.isBrazilianPortugueseSubtitle(sanitized, streamLang, '', cueTexts)) {
+                        if (cues.length >= 20 && await this.isBrazilianPortugueseSubtitle(sanitized, streamLang, stream.tags?.title, cueTexts)) {
                             // Salva versão normalizada em UTF-8
                             await fs.writeFile(outPath, this.buildSrt(cues), 'utf8');
                             console.log(`✅ [Tier 1: Container Stream] Trilha PT-BR [stream 0:${subIndex}] extraída com sucesso (${cues.length} cues, 100% frame-perfect com o container)!`);
@@ -491,10 +426,12 @@ class SubtitlePipeline {
                 } catch (e) {
                     console.warn(`⚠️ [Tier 1: Container Stream] Erro ao extrair stream 0:${subIndex}:`, e.message);
                     await fs.remove(outPath).catch(() => { });
+                    if (e.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw e;
                 }
             }
             return null;
         } catch (e) {
+            if (e.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw e;
             console.warn(`⚠️ [Tier 1: Container Stream] Falha ao sondar container:`, e.message);
             return null;
         }
@@ -790,7 +727,7 @@ class SubtitlePipeline {
                     const sanitized = this.sanitizeEncoding(buf);
                     const cues = this.parseSrt(sanitized);
                     const cueTexts = cues.map(c => c.text);
-                    if (cues.length >= 30 && this.isBrazilianPortugueseSubtitle(sanitized, '', item.name, cueTexts)) {
+                    if (cues.length >= 30 && await this.isBrazilianPortugueseSubtitle(sanitized, '', item.name, cueTexts)) {
                         companionPtSrt = item.path;
                         console.log(`✅ [Tier 2: Companion Package] Legenda PT-BR oficial encontrada no pacote: ${path.basename(item.path)} (${cues.length} cues)!`);
                         break;
@@ -813,6 +750,7 @@ class SubtitlePipeline {
                 refEnPath: companionEnSrt
             };
         } catch (e) {
+            if (e.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw e;
             console.warn(`⚠️ [Tier 2: Companion Package] Erro ao buscar legendas companheiras:`, e.message);
             return { ptSrtPath: null, refEnPath: null };
         }
@@ -992,10 +930,8 @@ class SubtitlePipeline {
                         if (!subUrl || urlSeen.has(subUrl)) continue;
 
                         const lang = (s.lang || s.language || '').toLowerCase().replace(/_/g, '-');
-                        if (lang.includes('pt-pt') || lang.includes('por-pt')) continue;
-
                         const rel = (s.movieReleaseName || s.releaseName || s.url || '').toLowerCase();
-                        if (/\bpt[-.]?pt\b|\bportugal\b|\bpt[-_]por\b/.test(rel)) continue;
+                        if (explicitlyEuropean(lang, rel)) continue;
 
                         if (['pob', 'pt-br', 'br-pt', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang)) {
                             urlSeen.add(subUrl);
@@ -1061,7 +997,7 @@ class SubtitlePipeline {
                     const cues = this.parseSrt(sanitized);
                     const cueTexts = cues.map(c => c.text);
 
-                    if (!this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName, cueTexts)) {
+                    if (!await this.isBrazilianPortugueseSubtitle(sanitized, subLang, relName, cueTexts)) {
                         console.warn(`⚠️ [Tier 3: OpenSubtitles] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${subLang}, release: ${relName.slice(0, 60)}).`);
                         continue;
                     }
@@ -1090,6 +1026,7 @@ class SubtitlePipeline {
                         if (approved) return { approved };
                     }
                 } catch (dlErr) {
+                    if (dlErr.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw dlErr;
                     if (![404, 410].includes(dlErr.response?.status)) unavailable('Download do OpenSubtitles/Stremio incompleto');
                     console.warn(`⚠️ Falha ao baixar candidato OpenSubtitles #${i + 1}:`, dlErr.message);
                 }
@@ -1106,6 +1043,7 @@ class SubtitlePipeline {
 
             return null;
         } catch (e) {
+            if (e.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw e;
             console.warn(`⚠️ [Tier 3: OpenSubtitles] Erro na busca externa:`, e.message);
             onIncomplete?.('Busca OpenSubtitles/Stremio incompleta');
             return null;
@@ -1178,7 +1116,7 @@ class SubtitlePipeline {
                         const cues = this.parseSrt(sanitized);
                         const cueTexts = cues.map(c => c.text);
 
-                        if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel, cueTexts)) {
+                        if (!await this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel, cueTexts)) {
                             console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${candidateLang}, release: ${candidateRel.slice(0, 60)}).`);
                             continue;
                         }
@@ -1208,6 +1146,7 @@ class SubtitlePipeline {
                         }
                     }
                 } catch (candErr) {
+                    if (candErr.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw candErr;
                     if (![404, 410].includes(candErr.response?.status)) {
                         onIncomplete?.('Download ou leitura de resultado do SubDL incompleto');
                     }
@@ -1228,6 +1167,7 @@ class SubtitlePipeline {
 
             return null;
         } catch (err) {
+            if (err.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw err;
             console.warn(`⚠️ [Tier 3.5: SubDL API] Erro ao buscar legendas no SubDL:`, err.message);
             onIncomplete?.('Busca SubDL incompleta');
             return null;
@@ -1531,7 +1471,7 @@ print(f"RESULT:{res}")
         const cleanedCues = rawCues.map(cue => ({ ...cue, text: SubtitleUtils.cleanCueText(cue.text) }))
             .filter(cue => cue.text);
         const cleanContent = this.buildSrt(cleanedCues);
-        if (!this.isBrazilianPortugueseSubtitle(cleanContent, '', '', cleanedCues.map(c => c.text))) {
+        if (!await this.isBrazilianPortugueseSubtitle(cleanContent, '', '', cleanedCues.map(c => c.text))) {
             throw new Error('Quality Gate: conteúdo não confirmado como PT-BR.');
         }
         const coverage = this.validateCandidateCoverageAndDensity(cleanedCues, videoDurationSec);
@@ -1853,7 +1793,7 @@ print(f"RESULT:{res}")
             if (!checkpoints) return this.validateAndFinalizeSubtitle(file, metadata.duration || 0);
             const content = await fs.readFile(file, 'utf8');
             const cues = SubtitleUtils.parseSubtitles(content);
-            if (cues.length < 20 || !this.isBrazilianPortugueseSubtitle(content)) throw new Error('Referência textual dos checkpoints inválida.');
+            if (cues.length < 20 || !await this.isBrazilianPortugueseSubtitle(content)) throw new Error('Referência textual dos checkpoints inválida.');
         };
         if (fingerprint && await fs.pathExists(cache)) {
             try {
@@ -1861,7 +1801,10 @@ print(f"RESULT:{res}")
                 const copy = path.join(os.tmpdir(), `subtitle-ref-${require('crypto').randomUUID()}.srt`);
                 await fs.copy(cache, copy);
                 return copy;
-            } catch (_) { await fs.remove(cache); }
+            } catch (error) {
+                if (error.code === 'SUBTITLE_LOCALE_UNAVAILABLE') throw error;
+                await fs.remove(cache);
+            }
         }
         const reference = await (checkpoints ? SubtitleAudioService.createCheckpoints : SubtitleAudioService.create)(videoPath, metadata.audioIndex || 0, {
             title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes, audioCachePath, onProgress
@@ -1909,7 +1852,8 @@ print(f"RESULT:{res}")
         const attempt = async (label, action) => {
             try { return await action(); }
             catch (error) {
-                if (label === 'human translation' && error.code === 'SUBTITLE_PROVIDER_UNAVAILABLE') throw error;
+                if (error.code === 'SUBTITLE_LOCALE_UNAVAILABLE' ||
+                    (label === 'human translation' && error.code === 'SUBTITLE_PROVIDER_UNAVAILABLE')) throw error;
                 console.warn(`[Subtitle ${label}]`, error.message);
                 return null;
             }
@@ -1965,6 +1909,8 @@ print(f"RESULT:{res}")
                         const clean = path.join(workDir, 'candidate.srt');
                         const cues = SubtitleUtils.parseSubtitles(await fs.readFile(candidate.srtPath, 'utf8'));
                         const text = SubtitleUtils.cuesToSrt(cues);
+                        if (!await this.isBrazilianPortugueseSubtitle(text, candidate.sourceLang, candidate.releaseName,
+                            cues.map(cue => cue.text))) return null;
                         const hash = require('crypto').createHash('sha256').update(text).digest('hex');
                         if (checkedContent.has(hash)) return null;
                         checkedContent.add(hash);
@@ -2077,7 +2023,11 @@ print(f"RESULT:{res}")
             return await finish(fullReferencePath, 'Whisper ASR + PT-BR translation (final fallback)', {
                 method: 'asr_word_timestamps', audioFingerprint: metadata.mediaFingerprint || null
             });
-        } catch (error) { error.code ||= 'SUBTITLE_SYNC_FAILED'; throw error; }
+        } catch (error) {
+            if (error.code === 'SUBTITLE_LOCALE_UNAVAILABLE') error.code = 'SUBTITLE_PROVIDER_UNAVAILABLE';
+            error.code ||= 'SUBTITLE_SYNC_FAILED';
+            throw error;
+        }
         finally {
             if (referencePath) await fs.remove(referencePath).catch(() => {});
             if (fullReferencePath) await fs.remove(fullReferencePath).catch(() => {});

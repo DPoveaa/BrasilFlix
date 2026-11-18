@@ -6141,9 +6141,9 @@
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
                     if (_filmSubSignal.aborted) return;
-                    const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownLegendas;
+                    const freshTracks = (Array.isArray(data?.tracks)) ? data.tracks : knownLegendas;
                     // Atualiza o catálogo em memória para esta entrada para evitar nova busca
-                    if (freshTracks.length > knownLegendas.length) {
+                    if (Array.isArray(data?.tracks)) {
                         movie.legendas = freshTracks;
                     }
                     openWebPlayer(movie.nome, `Filme • ${movie.ano || ''}`, streamUrl, {
@@ -6385,8 +6385,8 @@
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
                     if (_epSubSignal.aborted) return;
-                    const freshTracks = (data && Array.isArray(data.tracks) && data.tracks.length > 0) ? data.tracks : knownEpLegendas;
-                    if (freshTracks.length > knownEpLegendas.length) {
+                    const freshTracks = (Array.isArray(data?.tracks)) ? data.tracks : knownEpLegendas;
+                    if (Array.isArray(data?.tracks)) {
                         episode.legendas = freshTracks;
                     }
                     openWebPlayer(serie.nome, `T${sNum}E${eNum} • ${epTitleStr}`, streamUrl, {
@@ -15051,14 +15051,12 @@
 
             if (type === 'serie') {
                 type = 'episodio';
-                if (currentPlayingMedia.episodeId) {
-                    id = currentPlayingMedia.episodeId;
-                } else if (currentPlaybackSerie) {
-                    const season = (currentPlaybackSerie.temporadas || []).find(t => t.numero === currentPlayingMedia.season);
-                    const ep = (season?.episodios || []).find(e => e.numero === currentPlayingMedia.episode);
-                    if (ep && (ep.id || ep.messageId)) {
-                        id = ep.id || ep.messageId;
-                    }
+                const season = currentPlaybackSerie?.temporadas?.find(t => Number(t.numero) === Number(currentPlayingMedia.season));
+                const episode = season?.episodios?.find(e => Number(e.numero) === Number(currentPlayingMedia.episode));
+                id = currentPlayingMedia.episodeId || episode?.id;
+                if (!id) {
+                    showToast('Não foi possível identificar o episódio. Reabra o episódio para editar a legenda.', 'warning');
+                    return;
                 }
                 title = `${currentPlayingMedia.title} ${currentPlayingMedia.sub || ''}`;
             }
@@ -15078,6 +15076,8 @@
             adminSubState.title = title || `${type === 'filme' ? 'Filme' : 'Episódio'} #${id}`;
             adminSubState.searchQuery = '';
             adminSubState.selectedLang = 'pt-BR';
+            adminSubState.tracks = [];
+            adminSubState.cues = [];
 
             const modal = document.getElementById('admin-modal-subtitles');
             const titleEl = document.getElementById('admin-sub-modal-title');
@@ -15105,6 +15105,8 @@
             const tracksBox = document.getElementById('admin-sub-tracks-container');
             const tbody = document.getElementById('admin-sub-cues-tbody');
 
+            if (tracksBox) tracksBox.replaceChildren();
+            if (cuesCountEl) cuesCountEl.innerText = '';
             if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:#94a3b8;">⏳ Carregando falas da legenda...</td></tr>`;
 
             try {

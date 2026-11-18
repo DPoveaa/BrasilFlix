@@ -994,7 +994,7 @@ class MediaSearchService {
                             if (subSample.data && subSample.data.length > 150) {
                                 const subLang = (s.lang || s.language || '').toLowerCase();
                                 const relName = (s.movieReleaseName || s.releaseName || '').toLowerCase();
-                                if (!VideoProcessor.isBrazilianPortugueseSubtitle(subSample.data, subLang, relName)) {
+                                if (!await VideoProcessor.isBrazilianPortugueseSubtitle(subSample.data, subLang, relName)) {
                                     console.log(`⚠️ [OpenSubtitles] Legenda candidata "${s.movieReleaseName || s.releaseName || s.id}" (${s.lang}) descartada: não identificada como PT-BR.`);
                                     continue;
                                 }

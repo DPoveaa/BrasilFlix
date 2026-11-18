@@ -80,7 +80,8 @@ class StremioServer {
                 if (await fs.pathExists(filePath)) {
                     const rawContent = await fs.readFile(filePath, 'utf8');
                     const cleanVtt = SubtitleUtils.sanitizeVtt(rawContent);
-                    if (/ptbr/i.test(filename) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(cleanVtt)) {
+                    if (/(?:^|_)(?:pt|ptbr|pt[-_]br|ptpt|pt[-_]pt|pob)(?:_|\.)/i.test(filename) &&
+                        !await SubtitlePipeline.isBrazilianPortugueseSubtitle(cleanVtt, '', filename)) {
                         return res.status(422).send('Legenda PT-BR inválida.');
                     }
                     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
@@ -90,6 +91,7 @@ class StremioServer {
                 }
             } catch (err) {
                 console.warn(`⚠️ [VTT Sanitizer] Erro ao processar ${filename}:`, err.message);
+                return res.status(err.code === 'SUBTITLE_LOCALE_UNAVAILABLE' ? 503 : 500).send('Legenda indisponível.');
             }
             next();
         });
@@ -1263,68 +1265,16 @@ class StremioServer {
                 const { type, id } = req.params;
                 const reqLang = (req.query.lang || 'pt-BR').trim();
 
-                let row = null;
-                let title = '';
-                let tmdbId = null;
-                let sNum = null;
-                let eNum = null;
-
-                if (type === 'filme') {
-                    const r = await db.query(`SELECT id, nome, tmdb_id, imdb_id, legendas, created_at, is_legendado, is_hardsub, audio FROM filmes WHERE id = $1`, [id]);
-                    if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
-                    row = r.rows[0];
-                    title = row.nome;
-                    tmdbId = row.tmdb_id;
-                } else if (type === 'episodio') {
-                    const r = await db.query(`
-                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.legendas, e.created_at, e.is_legendado, e.is_hardsub, e.audio, s.nome as serie_nome, s.tmdb_id 
-                        FROM episodios e 
-                        JOIN series s ON s.id = e.serie_id 
-                        WHERE e.id = $1
-                    `, [id]);
-                    if (r.rows.length === 0) return res.status(404).json({ error: 'Episódio não encontrado.' });
-                    row = r.rows[0];
-                    title = `${row.serie_nome} T${row.temporada_numero}E${row.numero} - ${row.nome || `Episódio ${row.numero}`}`;
-                    tmdbId = row.tmdb_id;
-                    sNum = row.temporada_numero;
-                    eNum = row.numero;
-                } else {
+                if (!['filme', 'episodio'].includes(type)) {
                     return res.status(400).json({ error: 'Tipo inválido. Use "filme" ou "episodio".' });
                 }
-
-                let tracks = row.legendas || [];
-                if (typeof tracks === 'string') {
-                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
+                const row = await this.subtitleMaintenance.load(type, id);
+                if (!row) {
+                    return res.status(404).json({ error: type === 'filme' ? 'Filme não encontrado.' : 'Episódio não encontrado.' });
                 }
-                if (!Array.isArray(tracks)) tracks = [];
-
-                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
-                await fs.ensureDir(subtitlesDir);
-
-                if (tracks.length === 0) {
-                    const files = await fs.readdir(subtitlesDir);
-                    const basePattern = type === 'filme'
-                        ? new RegExp(`^(${tmdbId || row.id})_movie_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i')
-                        : new RegExp(`^(${tmdbId || row.serie_id})_s${sNum}e${eNum}_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i');
-
-                    const matchingPt = files.filter(f => basePattern.test(f) && /ptbr/i.test(f));
-                    if (matchingPt.length > 0) {
-                        const vttF = matchingPt.find(f => f.endsWith('.vtt')) || matchingPt[0];
-                        const srtF = matchingPt.find(f => f.endsWith('.srt')) || matchingPt[0];
-                        tracks.push({
-                            lang: 'pt-BR',
-                            label: 'Português (Brasil)',
-                            default: true,
-                            srtUrl: `/subtitles/${srtF}`,
-                            vttUrl: `/subtitles/${vttF}`,
-                            srtPath: path.join(subtitlesDir, srtF),
-                            vttPath: path.join(subtitlesDir, vttF),
-                            version: Date.now()
-                        });
-                        const table = type === 'filme' ? 'filmes' : 'episodios';
-                        await db.query(`UPDATE ${table} SET legendas = $1 WHERE id = $2`, [JSON.stringify(tracks), id]);
-                    }
-                }
+                const title = type === 'filme' ? row.nome :
+                    `${row.serie_nome} T${row.temporada_numero}E${row.numero} - ${row.nome || `Episódio ${row.numero}`}`;
+                const tracks = await this.subtitleMaintenance.tracks(type, row);
 
                 let track = tracks.find(t => t.lang.toLowerCase() === reqLang.toLowerCase()) || tracks[0] || null;
 
@@ -1419,7 +1369,7 @@ class StremioServer {
                 const shiftedCues = SubtitleUtils.shiftCues(cues, offsetMs);
                 const newSrt = SubtitleUtils.cuesToSrt(shiftedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(shiftedCues);
-                if (/^pt/i.test(track.lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                if (/^pt/i.test(track.lang) && !await SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
                     return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
                 }
 
@@ -1485,7 +1435,7 @@ class StremioServer {
                 const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
                 const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
-                if (/^pt/i.test(track.lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                if (/^pt/i.test(track.lang) && !await SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
                     return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
                 }
 
@@ -1550,7 +1500,7 @@ class StremioServer {
                 const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
                 const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
-                if (/^pt/i.test(lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                if (/^pt/i.test(lang) && !await SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
                     return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
                 }
 
