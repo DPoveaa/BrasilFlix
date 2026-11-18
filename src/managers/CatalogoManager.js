@@ -850,6 +850,7 @@ class CatalogoManager {
             const primaryFileId = versoesFiltradas.dublado?.fileId || versoesFiltradas.legendado?.fileId || ep.file_id || ep.fileId || null;
 
             return {
+                id: ep.id,
                 numero: epNum,
                 nome: ep.nome || `Episódio ${epNum}`,
                 sinopse: ep.sinopse || '',
