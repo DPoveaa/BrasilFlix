@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+public/assets/*.js text eol=lf
+public/assets/*.css text eol=lf
