@@ -219,9 +219,6 @@ class SubdlService {
                             return [];
                         }
                         if (!Array.isArray(res.data?.subtitles)) onIncomplete?.('SubDL retornou uma resposta inválida');
-                        // The v1 docs specify the response size but no page cursor.
-                        // A full response cannot prove that the API exposed every result.
-                        if (res.data?.subtitles?.length >= 30) onIncomplete?.('SubDL atingiu o limite de resultados por consulta');
                         return res.data?.subtitles || [];
                     } catch (err) {
                         if (this.isQuotaOrRateLimitError(err)) throw err;
