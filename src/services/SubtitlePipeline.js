@@ -1877,14 +1877,22 @@ print(f"RESULT:{res}")
 
     async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
         onProgress?.(0, 'Aguardando vaga na fila de legendas');
-        return subtitleSlot.run(metadata.title || metadata.nome || 'Nova mídia',
-            () => this.processWithSubtitleSlot(videoPath, metadata, onProgress));
+        const title = metadata.title || metadata.nome || 'Nova mídia';
+        const episode = metadata.season && metadata.episode ? ` · T${metadata.season} E${metadata.episode}` : '';
+        return subtitleSlot.run(title + episode, progress => this.processWithSubtitleSlot(videoPath, metadata, (percent, stage) => {
+            progress(percent, stage);
+            onProgress?.(percent, stage);
+        }), true, 'ingest');
     }
 
     async processWithSubtitleSlot(videoPath, metadata = {}, onProgress = null) {
         const attempt = async (label, action) => {
             try { return await action(); }
-            catch (error) { console.warn(`[Subtitle ${label}]`, error.message); return null; }
+            catch (error) {
+                if (label === 'human translation' && error.code === 'SUBTITLE_PROVIDER_UNAVAILABLE') throw error;
+                console.warn(`[Subtitle ${label}]`, error.message);
+                return null;
+            }
         };
         const duration = await this.probeActualVideoDuration(videoPath) || Number(metadata.duration || 0);
         const meta = { ...await this.resolveMovieMetadata(metadata), duration };
@@ -2010,7 +2018,10 @@ print(f"RESULT:{res}")
             if (foreign?.srtPath && SubtitleTranslationService.isAvailable()) {
                 const pt = path.join(workDir, 'translated.srt');
                 result = await attempt('human translation', async () => {
-                    await SubtitleTranslationService.translateSrtFile(foreign.srtPath, pt, { title: meta.title || meta.nome });
+                    await SubtitleTranslationService.translateSrtFile(foreign.srtPath, pt, {
+                        title: meta.title || meta.nome,
+                        onBatch: (done, total) => onProgress?.(72 + Math.floor(7 * done / total), `Traduzindo legenda humana (${done}/${total} lotes)`)
+                    });
                     return human([{ srtPath: pt, sourceMethod: `Human ${foreign.lang} translated to PT-BR` }], true);
                 });
                 if (result) return result;

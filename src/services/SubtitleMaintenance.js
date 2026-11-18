@@ -155,7 +155,8 @@ class SubtitleMaintenance {
                 q.completed_at DESC, q.type, q.media_id LIMIT 30 OFFSET $3`, [slot.revision, state, offset]),
             slot.active()
         ]);
-        return { counts: Object.fromEntries(counts.rows.map(row => [row.status, row.count])), jobs: jobs.rows, active,
+        const totals = Object.fromEntries(counts.rows.map(row => [row.status, row.count]));
+        return { counts: totals, processingTotal: active ? 1 : totals.processing || 0, jobs: jobs.rows, active,
             enabled: await fs.pathExists(path.resolve(__dirname, '../../data/subtitle_queue.enabled')) };
     }
 
@@ -196,11 +197,11 @@ class SubtitleMaintenance {
 
     async repair(type, id) {
         const row = await this.load(type, id);
-        return slot.run(row?.serie_nome || row?.nome || `${type} #${id}`,
-            () => this.repairWithSlot(type, id), false);
+        const title = row?.serie_nome ? `${row.serie_nome} · T${row.temporada_numero} E${row.numero}` : row?.nome;
+        return slot.run(title || `${type} #${id}`, progress => this.repairWithSlot(type, id, progress));
     }
 
-    async repairWithSlot(type, id) {
+    async repairWithSlot(type, id, slotProgress) {
         const owner = crypto.randomUUID();
         const claim = await db.query(`UPDATE subtitle_repairs SET owner = $3,
             lease_until = NOW() + INTERVAL '5 minutes', attempts = attempts + 1, last_error = NULL,
@@ -214,6 +215,7 @@ class SubtitleMaintenance {
         heartbeat.unref();
         let result;
         const progress = (percent, message) => {
+            slotProgress(percent, message);
             db.query('UPDATE subtitle_repairs SET progress=GREATEST(progress,$4),message=$5,updated_at=NOW() WHERE type=$1 AND media_id=$2 AND owner=$3',
                 [type,id,owner,percent,message]).catch(error => console.warn('[Subtitle progress]', error.message));
         };
@@ -285,7 +287,8 @@ class SubtitleMaintenance {
             this.server.catalogoManager?.loadCatalogo().catch(e => console.warn('[Subtitle catalog]', e.message));
             return { tracks: saved.rows[0].legendas, cues: utils.parseSrt(content), sourceMethod: result.sourceMethod };
         } catch (error) {
-            const delay = Math.min(360, 2 ** Math.min(claim.rows[0].attempts, 9));
+            const backoff = Math.min(360, 2 ** Math.min(claim.rows[0].attempts, 9));
+            const delay = Math.max(backoff, Math.ceil(((error.retryAt || 0) - Date.now()) / 60000));
             await db.query(`UPDATE subtitle_repairs SET lease_until=NULL, owner=NULL, last_error=$4,
                 updated_at=NOW(), message='Aguardando nova tentativa',
                 next_attempt=NOW() + ($5 * INTERVAL '1 minute') WHERE type=$1 AND media_id=$2 AND owner=$3`,

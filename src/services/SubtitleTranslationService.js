@@ -61,7 +61,7 @@ class SubtitleTranslationService {
      * Atribui uma chave dedicada para um filme específico via Round-Robin.
      * Garante que filmes em paralelo usem chaves distintas para evitar esgotamento de RPM.
      */
-    acquireDedicatedKeyForMovie(movieIdentifier = 'default') {
+    acquireDedicatedKeyForMovie() {
         const keys = this.getAllKeys();
         if (keys.length === 0) {
             throw new Error('Nenhuma chave GEMINI_API_KEY ou GEMINI_API_KEYS configurada no ambiente.');
@@ -83,60 +83,14 @@ class SubtitleTranslationService {
             }
         }
 
-        // Se todas as chaves estiverem em cooldown, seleciona a que tiver o cooldown mais próximo de expirar
         if (!chosenKey) {
-            let earliestTime = Infinity;
-            keys.forEach((k, idx) => {
-                const t = this.cooldowns.get(k) || 0;
-                if (t < earliestTime) {
-                    earliestTime = t;
-                    chosenKey = k;
-                    chosenIndex = idx;
-                }
-            });
-            console.warn(`⚠️ [Gemini Key Manager] Todas as chaves estão em cooldown. Reutilizando Chave #${chosenIndex + 1}/${total} (${this.maskKey(chosenKey)}).`);
-        } else {
-            console.log(`🔑 [Gemini Key Manager] Filme "${movieIdentifier}": Chave dedicada atribuída #${chosenIndex + 1}/${total} (${this.maskKey(chosenKey)})`);
+            throw this.providerError('Chaves do Gemini temporariamente em espera.', Math.min(...keys.map(key => this.cooldowns.get(key))));
         }
-
         return { key: chosenKey, index: chosenIndex, total };
     }
 
-    /**
-     * Executa failover automático quando uma chave sofre 429, 503 ou timeout.
-     * Coloca a chave falha em cooldown de 60s e troca para a próxima chave saudável.
-     */
-    rotateKeyOnFailure(failedKey, movieIdentifier = '', reason = '') {
-        const keys = this.getAllKeys();
-        const total = keys.length;
-        const failedIdx = keys.indexOf(failedKey);
-
-        // Aplica cooldown de 60 segundos na chave com erro
-        const cooldownMs = 60000;
-        this.cooldowns.set(failedKey, Date.now() + cooldownMs);
-
-        console.warn(`🔄 [Gemini Key Failover] Chave #${failedIdx + 1}/${total} (${this.maskKey(failedKey)}) sofreu falha [${reason}]. Colocada em cooldown de 60s.`);
-
-        if (total === 1) {
-            console.warn(`⚠️ [Gemini Key Failover] Pool possui apenas 1 chave. Aguardando 10s antes de retentar com a mesma chave...`);
-            return { key: failedKey, index: 0, total: 1, waited: true };
-        }
-
-        // Procura a próxima chave saudável
-        for (let i = 1; i <= total; i++) {
-            const nextIdx = (failedIdx + i) % total;
-            const candidate = keys[nextIdx];
-            if (!this.isKeyInCooldown(candidate)) {
-                console.log(`✅ [Gemini Key Failover] Filme "${movieIdentifier}": Alternando com sucesso para Chave #${nextIdx + 1}/${total} (${this.maskKey(candidate)}).`);
-                return { key: candidate, index: nextIdx, total, waited: false };
-            }
-        }
-
-        // Se todas estiverem em cooldown, pega a chave seguinte
-        const nextIdx = (failedIdx + 1) % total;
-        const candidate = keys[nextIdx];
-        console.warn(`⚠️ [Gemini Key Failover] Todas as chaves do pool estão em cooldown. Alternando para Chave #${nextIdx + 1}/${total} (${this.maskKey(candidate)}).`);
-        return { key: candidate, index: nextIdx, total, waited: false };
+    providerError(message, retryAt) {
+        return Object.assign(new Error(message), { code: 'SUBTITLE_PROVIDER_UNAVAILABLE', retryAt });
     }
 
     /**
@@ -300,19 +254,31 @@ class SubtitleTranslationService {
                 };
             });
         } catch (err) {
-            const statusCode = err.response?.status;
-            const isRateLimitOrTimeout = statusCode === 429 || statusCode === 503 || err.code === 'ECONNABORTED' || err.message.includes('timeout') || err.message.includes('Resource has been exhausted');
-
-            if (isRateLimitOrTimeout) {
-                if (retry >= 3) {
-                    throw new Error(`Limite de retentativas atingido para lote com chave em failover: ${err.message}`);
+            const status = err.response?.status;
+            if (status >= 500 || err.code === 'ECONNABORTED') {
+                const retryAfter = Number(err.response?.headers?.['retry-after']);
+                if (retry === 0 && !retryAfter) {
+                    await new Promise(resolve => setTimeout(resolve, 2500));
+                    return this.translateBatchWithGemini(itemsToTranslate, previousContext, activeKeyObj, movieTitle, retry + 1);
                 }
-                const failoverKeyObj = this.rotateKeyOnFailure(apiKey, movieTitle, `Status ${statusCode || err.code || 'timeout'}`);
-                if (failoverKeyObj.waited) {
-                    await new Promise(r => setTimeout(r, 10000));
+                this.providerRetryAt = Date.now() + Math.max(90, Number.isFinite(retryAfter) ? retryAfter : 0) * 1000;
+                throw this.providerError(`Gemini temporariamente indisponível (${status || 'timeout'}).`, this.providerRetryAt);
+            }
+            if ([401, 403, 429].includes(status)) {
+                const retryAfter = Number(err.response?.headers?.['retry-after']);
+                const wait = status === 429 ? Math.max(60, Number.isFinite(retryAfter) ? retryAfter : 0) : 900;
+                const retryAt = Date.now() + wait * 1000;
+                this.cooldowns.set(apiKey, retryAt);
+                if (retry < 1) {
+                    Object.assign(activeKeyObj, this.acquireDedicatedKeyForMovie(movieTitle));
+                    return this.translateBatchWithGemini(itemsToTranslate, previousContext, activeKeyObj, movieTitle, retry + 1);
                 }
-                // Retoma exatamente o mesmo lote com a nova chave saudável
-                return this.translateBatchWithGemini(itemsToTranslate, previousContext, failoverKeyObj, movieTitle, retry + 1);
+                const reason = status === 429 ? 'Limite de requisições do Gemini' : 'Gemini recusou a credencial ou a permissão';
+                throw this.providerError(`${reason} (${status}).`, retryAt);
+            }
+            if (status >= 400) {
+                this.providerRetryAt = Date.now() + 5 * 60 * 1000;
+                throw this.providerError(`Gemini recusou a requisição (${status}).`, this.providerRetryAt);
             }
 
             if (retry < 2) {
@@ -333,6 +299,9 @@ class SubtitleTranslationService {
      * @returns {Promise<string>} Conteúdo SRT completo traduzido em Português Brasileiro
      */
     async translateSrt(srtContent, options = {}) {
+        if (this.providerRetryAt > Date.now()) {
+            throw this.providerError('Gemini em espera após indisponibilidade.', this.providerRetryAt);
+        }
         if (!this.isAvailable()) {
             throw new Error('Serviço de tradução neural indisponível: nenhuma chave GEMINI_API_KEY ou GEMINI_API_KEYS configurada no .env.');
         }
@@ -348,7 +317,6 @@ class SubtitleTranslationService {
         let activeKeyObj = this.acquireDedicatedKeyForMovie(title);
 
         console.log(`🤖 [Neural Subtitle Translation: "${title}"] Iniciando tradução via Gemini API (${this.modelName})`);
-        console.log(`🔑 [Pool de Chaves] Chave em uso: #${activeKeyObj.index + 1}/${activeKeyObj.total} (${this.maskKey(activeKeyObj.key)}) | Total de falas: ${originalCues.length}...`);
 
         const translatedCues = [];
         const totalBatches = Math.ceil(originalCues.length / this.batchSize);
@@ -361,7 +329,7 @@ class SubtitleTranslationService {
             // Coleta até 3 falas traduzidas do lote anterior como contexto de leitura
             const prevContext = translatedCues.slice(-this.contextSize);
 
-            console.log(`🔄 [Neural Translation: "${title}"] Lote ${b + 1}/${totalBatches} (falas ${start + 1} a ${end}) | Chave #${activeKeyObj.index + 1}/${activeKeyObj.total} (${this.maskKey(activeKeyObj.key)})...`);
+            console.log(`🔄 [Neural Translation: "${title}"] Lote ${b + 1}/${totalBatches} (falas ${start + 1} a ${end})...`);
 
             const translatedBatch = await this.translateBatchWithGemini(batch, prevContext, activeKeyObj, title);
             translatedCues.push(...translatedBatch);

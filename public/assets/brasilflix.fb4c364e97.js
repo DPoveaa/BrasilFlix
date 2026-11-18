@@ -10160,6 +10160,7 @@
 
             if (subTabId === 'overview') loadAdminStats();
             else if (subTabId === 'queue') loadAdminQueue();
+            else if (subTabId === 'subtitle-queue') loadSubtitleQueue(0);
             else if (subTabId === 'scheduler') loadAdminScheduler();
             else if (subTabId === 'priorities') loadAdminPriorities();
             else if (subTabId === 'settings') loadAdminSettings();
@@ -10696,9 +10697,9 @@
         let subtitleQueueRequest = 0;
         const subtitleStates = { processing: 'Em processamento', queued: 'Na fila', retry: 'Em retentativa', completed: 'Concluída', idle: 'Sem processamento' };
 
-        function subtitleJobText(job) {
+        function subtitleJobText(job, showState = true) {
             const state = job.status === 'queued' && job.error ? 'retry' : job.status;
-            const parts = [subtitleStates[state] || state];
+            const parts = showState ? [subtitleStates[state] || state] : [];
             if (state === 'processing') parts.push(job.progress + '%');
             if (job.message) parts.push(job.message);
             if (job.method || job.outcome?.method) parts.push(job.method || job.outcome.method);
@@ -10722,22 +10723,50 @@
                     status: filter, offset: subtitleQueueOffset
                 }), { headers: getAuthHeaders(), cache: 'no-store' });
                 if (!response.ok) throw new Error('Não foi possível carregar a fila de legendas.');
-                const { counts, jobs, active, enabled } = await response.json();
+                const { counts, jobs, active, enabled, processingTotal } = await response.json();
                 if (request !== subtitleQueueRequest) return;
                 const total = filter ? counts[filter] || 0 : Object.values(counts).reduce((sum, value) => sum + value, 0);
-                summary.textContent = [
-                    enabled ? 'Um item por vez' : 'Fila pausada',
-                    ...['processing', 'queued', 'retry', 'completed'].map(key => (counts[key] || 0) + ' ' + subtitleStates[key].toLowerCase()),
-                    active || null
-                ].filter(Boolean).join(' · ');
+                summary.textContent = enabled ? 'Um processamento por vez, incluindo novas entradas.' : 'Recuperação do catálogo pausada.';
+                const metrics = [
+                    ['Em processamento', processingTotal], ['Aguardando', counts.queued],
+                    ['Em retentativa', counts.retry], ['Concluídas', counts.completed]
+                ];
+                document.getElementById('admin-subtitle-queue-counts').replaceChildren(...metrics.map(([label, value]) => {
+                    const card = document.createElement('div');
+                    const number = document.createElement('strong');
+                    number.textContent = value || 0;
+                    card.append(number, document.createTextNode(label));
+                    return card;
+                }));
+                document.getElementById('admin-subtitle-queue-active').hidden = !active;
+                if (active) {
+                    document.getElementById('admin-subtitle-active-title').textContent = active.title;
+                    document.getElementById('admin-subtitle-active-stage').textContent =
+                        (active.kind === 'ingest' ? 'Nova entrada' : 'Catálogo') + ' · ' + (active.stage || 'Preparando áudio');
+                    const bar = document.getElementById('admin-subtitle-active-progress');
+                    bar.value = active.progress || 0;
+                    document.getElementById('admin-subtitle-active-percent').textContent = bar.value + '%';
+                }
                 list.replaceChildren(...jobs.map(job => {
                     const item = document.createElement('li');
                     const title = document.createElement('strong');
-                    title.textContent = job.title + ' (#' + job.media_id + ')';
-                    item.append(title, document.createElement('br'), document.createTextNode(subtitleJobText(job)));
+                    const state = document.createElement('span');
+                    const detail = document.createElement('p');
+                    title.textContent = job.title;
+                    state.className = 'subtitle-queue-state';
+                    state.dataset.state = job.status;
+                    state.textContent = subtitleStates[job.status];
+                    detail.textContent = job.status === 'queued' ? 'Aguardando vaga de processamento.' : subtitleJobText(job, false);
+                    item.append(title, state, detail);
                     return item;
                 }));
-                if (!jobs.length) list.append(document.createTextNode('Nenhum item nesta situação.'));
+                if (!jobs.length) {
+                    const empty = document.createElement('li');
+                    empty.textContent = 'Nenhum item do catálogo nesta situação.';
+                    list.append(empty);
+                }
+                document.getElementById('admin-subtitle-queue-page').textContent = jobs.length ?
+                    (subtitleQueueOffset + 1) + '–' + (subtitleQueueOffset + jobs.length) + ' de ' + total : '';
                 document.getElementById('admin-subtitle-queue-prev').disabled = subtitleQueueOffset === 0;
                 document.getElementById('admin-subtitle-queue-next').disabled = subtitleQueueOffset + 30 >= total;
             } catch (error) {
@@ -10783,7 +10812,6 @@
 
         async function loadAdminQueue() {
             if (!adminToken) return;
-            loadSubtitleQueue();
             const tbody = document.getElementById('admin-queue-tbody');
             if (!tbody) return;
 

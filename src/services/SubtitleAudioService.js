@@ -139,10 +139,11 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
         try {
             translated = await translator.translateSrt(source, {
                 title,
-                onBatch: (done, total) => onProgress?.(0, `Traduzindo legendas (${done}/${total} lotes)`)
+                onBatch: (done, total) => onProgress?.(80 + Math.floor(15 * done / total), `Traduzindo legendas (${done}/${total} lotes)`)
             });
         } catch (error) {
-            throw subtitleError(`Tradução PT-BR incompleta (${error.message}).`, 'SUBTITLE_PROVIDER_UNAVAILABLE');
+            throw Object.assign(subtitleError(`Tradução PT-BR incompleta (${error.message}).`, 'SUBTITLE_PROVIDER_UNAVAILABLE'),
+                { retryAt: error.retryAt });
         }
         const output = path.join(workspace, 'pt-br.srt');
         const embedded = await validateEmbedded(inputPath, subtitleStreams, translated, isEuropeanPortuguese);

@@ -2432,6 +2432,73 @@
             border-color: #ef4444;
         }
 
+        #admin-subtitle-queue {
+            display: grid;
+            gap: 16px;
+            color: var(--text-primary, #edf2fa);
+        }
+
+        .subtitle-queue-heading, .subtitle-queue-pages {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .subtitle-queue-heading h2, .subtitle-queue-heading h3,
+        .subtitle-queue-heading p, .subtitle-queue-active p { margin: 0; }
+
+        .subtitle-queue-heading p, .subtitle-queue-active p,
+        .subtitle-queue-items p, .subtitle-queue-pages {
+            color: var(--text-muted, #9facbd);
+            font-size: .875rem;
+        }
+
+        .subtitle-queue-counts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+            gap: 10px;
+        }
+
+        .subtitle-queue-counts > div, .subtitle-queue-active, .subtitle-queue-items li {
+            background: #151d29;
+            border: 1px solid #303c4d;
+            border-radius: 10px;
+            padding: 12px 15px;
+        }
+
+        .subtitle-queue-counts > div { display: grid; gap: 4px; font-size: .875rem; }
+        .subtitle-queue-counts strong { font-size: 1.55rem; line-height: 1.2; }
+        .subtitle-queue-active { border-color: #327563; }
+        .subtitle-queue-active p { margin: 6px 0 10px; }
+        .subtitle-queue-active progress { display: block; width: 100%; accent-color: #4bd2a9; }
+        .subtitle-queue-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+        .subtitle-queue-items li { display: flex; align-items: start; flex-wrap: wrap; gap: 8px 12px; }
+        .subtitle-queue-items li > strong { flex: 1 1 220px; overflow-wrap: anywhere; }
+        .subtitle-queue-items p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+        .subtitle-queue-state {
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #243247;
+            color: #ccdbef;
+            font-size: .75rem;
+            white-space: nowrap;
+        }
+        .subtitle-queue-state[data-state="completed"], .subtitle-queue-state[data-state="processing"] { background: #153d34; color: #9ae7c9; }
+        .subtitle-queue-state[data-state="retry"] { background: #4a3520; color: #ffe1a1; }
+        .subtitle-queue-button, .subtitle-queue-toolbar select {
+            border: 1px solid #435470;
+            border-radius: 8px;
+            background: #1d2b40;
+            padding: 7px 10px;
+            margin-inline-start: 4px;
+            color: #edf2fa;
+            font: inherit;
+        }
+        .subtitle-queue-button { cursor: pointer; }
+        .subtitle-queue-button:disabled { opacity: .5; cursor: default; }
+
         .admin-sidebar-nav {
             display: flex;
             flex-direction: column;

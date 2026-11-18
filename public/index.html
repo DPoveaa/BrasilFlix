@@ -21,7 +21,7 @@
         rel="stylesheet">
     <!-- Telegram Mini App SDK — carregado incondicionalmente (inerte fora do Telegram) -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="/assets/brasilflix.5c491fedb1.css?v=5c491fedb1">
+    <link rel="stylesheet" href="/assets/brasilflix.ff25f177c4.css?v=ff25f177c4">
     <style id="bf-subtitles-base-css">
         .subtitle-dropdown-menu {
             position: absolute;
@@ -2215,7 +2215,12 @@
                                     <button class="admin-sub-btn" id="admin-sub-btn-queue"
                                         onclick="switchAdminSubTab('queue')">
                                         <span class="admin-btn-icon">📥</span>
-                                        <span class="admin-btn-label">Fila & Processamento</span>
+                                        <span class="admin-btn-label">Fila de mídia</span>
+                                    </button>
+                                    <button class="admin-sub-btn" id="admin-sub-btn-subtitle-queue"
+                                        onclick="switchAdminSubTab('subtitle-queue')">
+                                        <span class="admin-btn-icon" aria-hidden="true">💬</span>
+                                        <span class="admin-btn-label">Fila de legendas</span>
                                     </button>
                                     <button class="admin-sub-btn" id="admin-sub-btn-scheduler"
                                         onclick="switchAdminSubTab('scheduler')">
@@ -2341,25 +2346,47 @@
                                     </div>
                                 </div>
 
+                                <div id="admin-subtab-subtitle-queue" class="admin-subtab-content" style="display:none">
+                                    <section id="admin-subtitle-queue" aria-labelledby="subtitle-queue-title">
+                                        <div class="subtitle-queue-heading">
+                                            <div>
+                                                <h2 id="subtitle-queue-title">Fila de legendas</h2>
+                                                <p id="admin-subtitle-queue-summary" aria-live="polite">Carregando fila…</p>
+                                            </div>
+                                            <button type="button" class="subtitle-queue-button" onclick="loadSubtitleQueue(subtitleQueueOffset)">Atualizar</button>
+                                        </div>
+                                        <div class="subtitle-queue-counts" id="admin-subtitle-queue-counts"></div>
+                                        <div class="subtitle-queue-active" id="admin-subtitle-queue-active" hidden>
+                                            <div class="subtitle-queue-heading">
+                                                <strong id="admin-subtitle-active-title"></strong>
+                                                <span id="admin-subtitle-active-percent"></span>
+                                            </div>
+                                            <p id="admin-subtitle-active-stage"></p>
+                                            <progress id="admin-subtitle-active-progress" max="100" aria-label="Progresso da legenda ativa"></progress>
+                                        </div>
+                                        <div class="subtitle-queue-heading subtitle-queue-toolbar">
+                                            <h3>Itens do catálogo</h3>
+                                            <label>Situação
+                                                <select id="admin-subtitle-queue-filter" onchange="loadSubtitleQueue(0)">
+                                                    <option value="">Todas</option>
+                                                    <option value="processing">Em processamento</option>
+                                                    <option value="queued">Na fila</option>
+                                                    <option value="retry">Em retentativa</option>
+                                                    <option value="completed">Concluídas</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <ul id="admin-subtitle-queue-jobs" class="subtitle-queue-items"></ul>
+                                        <div class="subtitle-queue-pages">
+                                            <button type="button" class="subtitle-queue-button" id="admin-subtitle-queue-prev" onclick="loadSubtitleQueue(subtitleQueueOffset-30)">Anterior</button>
+                                            <span id="admin-subtitle-queue-page"></span>
+                                            <button type="button" class="subtitle-queue-button" id="admin-subtitle-queue-next" onclick="loadSubtitleQueue(subtitleQueueOffset+30)">Próxima</button>
+                                        </div>
+                                    </section>
+                                </div>
+
                                 <!-- SUB-TAB 2: FILA & DOWNLOADS -->
                                 <div id="admin-subtab-queue" class="admin-subtab-content" style="display: none;">
-                                    <section id="admin-subtitle-queue" class="admin-table-container" style="padding:16px; margin-bottom:20px">
-                                        <h3>Fila de legendas</h3>
-                                        <p id="admin-subtitle-queue-summary" aria-live="polite">Carregando fila…</p>
-                                        <label for="admin-subtitle-queue-filter">Filtrar por situação</label>
-                                        <select id="admin-subtitle-queue-filter" onchange="loadSubtitleQueue(0)">
-                                            <option value="">Todas</option>
-                                            <option value="processing">Em processamento</option>
-                                            <option value="queued">Na fila</option>
-                                            <option value="retry">Em retentativa</option>
-                                            <option value="completed">Concluídas</option>
-                                        </select>
-                                        <button type="button" class="admin-sub-btn" onclick="loadSubtitleQueue(subtitleQueueOffset)">Atualizar</button>
-                                        <ol id="admin-subtitle-queue-jobs" style="display:grid;gap:10px; margin:12px 0 12px 24px"></ol>
-                                        <button type="button" class="admin-sub-btn" id="admin-subtitle-queue-prev" onclick="loadSubtitleQueue(subtitleQueueOffset-30)">Anterior</button>
-                                        <button type="button" class="admin-sub-btn" id="admin-subtitle-queue-next" onclick="loadSubtitleQueue(subtitleQueueOffset+30)">Próxima</button>
-                                    </section>
-
                                     <!-- TERMINAL DE LOGS EM TEMPO REAL (SSE) -->
                                     <div id="adm-terminal-wrapper"
                                         style="margin-bottom: 20px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #0d1117;">
@@ -4996,7 +5023,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.7905c8e8ae.js?v=7905c8e8ae"></script>
+    <script src="/assets/brasilflix.fb4c364e97.js?v=fb4c364e97"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)
