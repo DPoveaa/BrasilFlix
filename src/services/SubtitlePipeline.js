@@ -1827,6 +1827,7 @@ print(f"RESULT:{res}")
             checkpoints ? metadata.checkpointTimes : null
         ])).digest('hex');
         const cache = path.join(cacheDir, `${key}.srt`);
+        const audioCachePath = fingerprint && !checkpoints ? `${cache}.wav` : null;
         const validate = async file => {
             if (!checkpoints) return this.validateAndFinalizeSubtitle(file, metadata.duration || 0);
             const content = await fs.readFile(file, 'utf8');
@@ -1842,7 +1843,7 @@ print(f"RESULT:{res}")
             } catch (_) { await fs.remove(cache); }
         }
         const reference = await (checkpoints ? SubtitleAudioService.createCheckpoints : SubtitleAudioService.create)(videoPath, metadata.audioIndex || 0, {
-            title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes, onProgress
+            title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes, audioCachePath, onProgress
         });
         try {
             await validate(reference);
@@ -1850,6 +1851,10 @@ print(f"RESULT:{res}")
                 const temporary = `${cache}.${require('crypto').randomUUID()}.tmp`;
                 await fs.copy(reference, temporary);
                 await fs.rename(temporary, cache);
+                if (audioCachePath) {
+                    await fs.remove(audioCachePath).catch(() => {});
+                    await fs.remove(`${audioCachePath}.source.srt`).catch(() => {});
+                }
             }
             return reference;
         } catch (error) { await fs.remove(reference).catch(() => {}); throw error; }

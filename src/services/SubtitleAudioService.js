@@ -75,25 +75,43 @@ async function validateEmbedded(inputPath, streams, reference, isEuropeanPortugu
     return null;
 }
 
-async function transcribe(inputPath, audioIndex, workspace, title) {
-    const wav = path.join(workspace, 'audio.wav');
+async function transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration = 0) {
+    const wav = audioCachePath || path.join(workspace, 'audio.wav');
+    const cachedSource = audioCachePath ? `${audioCachePath}.source.srt` : null;
+    if (cachedSource && await fs.pathExists(cachedSource)) return fs.readFile(cachedSource, 'utf8');
     const source = path.join(workspace, 'source.srt');
     const model = process.env.SUBTITLE_WHISPER_MODEL || 'turbo';
-    console.log(`[Legenda: ${title}] Analisando a faixa de áudio ${audioIndex} com Whisper ${model}.`);
-    await run('ffmpeg', [
-        '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
-        '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', wav
-    ], { timeout: /^https?:/.test(inputPath) ? 90 * 60 * 1000 : 20 * 60 * 1000 });
-    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4'], {
-        timeout: Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000),
-        killSignal: 'SIGKILL'
-    });
-    const summary = stderr.trim().split('\n').at(-1);
-    console.log(`[Legenda: ${title}] ${summary}.`);
+    const minimumBytes = duration > 0 ? duration * 32000 * 0.97 : 10000;
+    const cachedAudio = await fs.stat(wav).catch(() => null);
+    if (!cachedAudio || cachedAudio.size < minimumBytes) {
+        const temporary = `${wav}.${require('crypto').randomUUID()}.partial.wav`;
+        try {
+            console.log(`[Legenda: ${title}] Extraindo áudio da versão atual.`);
+            await run('ffmpeg', [
+                '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
+                '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', temporary
+            ], { timeout: /^https?:/.test(inputPath) ? 90 * 60 * 1000 : 20 * 60 * 1000 });
+            if ((await fs.stat(temporary)).size < minimumBytes) throw new Error('Extração de áudio incompleta.');
+            await fs.rename(temporary, wav);
+        } finally { await fs.remove(temporary).catch(() => {}); }
+    }
+    console.log(`[Legenda: ${title}] Transcrevendo áudio com Whisper ${model}.`);
+    // execFile requires an integer timeout; WAV headers make size/32000 fractional.
+    const timeout = Math.ceil(Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000));
+    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [
+        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4'
+    ], { timeout, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
+    console.log(`[Legenda: ${title}] ${stderr.trim().split('\n').at(-1)}.`);
+    if (cachedSource) {
+        const temporary = `${cachedSource}.${require('crypto').randomUUID()}.tmp`;
+        await fs.copy(source, temporary);
+        await fs.rename(temporary, cachedSource);
+        await fs.remove(wav).catch(() => {});
+    }
     return fs.readFile(source, 'utf8');
 }
 
-async function create(inputPath, audioIndex, { title, onProgress, subtitleStreams = [], isEuropeanPortuguese }) {
+async function create(inputPath, audioIndex, { title, onProgress, subtitleStreams = [], isEuropeanPortuguese, audioCachePath = null, duration = 0 }) {
     if (!translator.isAvailable()) {
         throw subtitleError('Tradução PT-BR indisponível. GEMINI_API_KEY ausente.', 'SUBTITLE_PROVIDER_UNAVAILABLE');
     }
@@ -106,12 +124,12 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
             // Serializa a transcrição para evitar múltiplas cópias do modelo na memória.
             const task = pendingTranscription.then(() => {
                 onProgress?.(0, 'Transcrevendo e marcando falas da faixa de áudio');
-                return transcribe(inputPath, audioIndex, workspace, title);
+                return transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
             });
             pendingTranscription = task.catch(() => {});
             source = await task;
         } catch (error) {
-            const detail = error.stderr?.trim().split('\n').at(-1) || error.code || 'sem resultado';
+            const detail = error.stderr?.trim().split('\n').at(-1) || error.message || error.code || 'sem resultado';
             throw subtitleError(`Falha na transcrição da faixa de áudio (${detail}).`, 'SUBTITLE_SYNC_FAILED');
         } finally {
             await fs.remove(path.join(workspace, 'audio.wav')).catch(() => {});
