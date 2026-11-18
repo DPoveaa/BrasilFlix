@@ -13,6 +13,7 @@ const inputFlags = input => /^https?:\/\//i.test(input) ? [
 ] : [];
 const transcribeTimeout = 90 * 60 * 1000;
 let pendingTranscription = Promise.resolve();
+let pendingCheckpoints = Promise.resolve();
 
 function subtitleError(message, code) {
     return Object.assign(new Error(message), { code });
@@ -82,9 +83,9 @@ async function transcribe(inputPath, audioIndex, workspace, title) {
     await run('ffmpeg', [
         '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
         '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', wav
-    ], { timeout: 15 * 60 * 1000 });
-    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [script, wav, source, '--model', model], {
-        timeout: transcribeTimeout,
+    ], { timeout: /^https?:/.test(inputPath) ? 90 * 60 * 1000 : 20 * 60 * 1000 });
+    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4'], {
+        timeout: Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000),
         killSignal: 'SIGKILL'
     });
     const summary = stderr.trim().split('\n').at(-1);
@@ -140,4 +141,42 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
     }
 }
 
-module.exports = { create, matchesSpokenDialogue };
+async function createCheckpoints(inputPath, audioIndex, { title, duration, checkpointTimes, onProgress }) {
+    if (!translator.isAvailable() || duration < 120) throw subtitleError('Referência por checkpoints indisponível.', 'SUBTITLE_PROVIDER_UNAVAILABLE');
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'subtitle-checkpoints-'));
+    try {
+        const clips = [];
+        for (let index = 0; index < 8; index++) {
+            const center = checkpointTimes?.[index] ?? duration * ((index + 0.5) / 8);
+            const offset = Math.max(0, Math.min(duration - 90, center - 30));
+            const file = path.join(workspace, `${index}.wav`);
+            onProgress?.(20, `Extraindo amostra de fala ${index + 1}/8`);
+            await run('ffmpeg', [
+                '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath),
+                '-ss', String(offset), '-i', inputPath, '-t', '90', '-map', `0:a:${audioIndex}`,
+                '-vn', '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', file
+            ], { timeout: 180000 });
+            clips.push({ path: file, offset });
+        }
+        const manifest = path.join(workspace, 'clips.json');
+        const source = path.join(workspace, 'source.srt');
+        await fs.writeJson(manifest, clips);
+        const task = pendingCheckpoints.then(() => {
+            onProgress?.(35, 'Reconhecendo o conteúdo das falas nos 8 checkpoints');
+            return run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [
+                path.resolve(__dirname, '../../scripts/transcribe_subtitle_checkpoints.py'),
+                manifest, source, process.env.SUBTITLE_WHISPER_CHECKPOINT_MODEL || 'tiny'
+            ], { timeout: 20 * 60 * 1000, maxBuffer: 2 * 1024 * 1024 });
+        });
+        pendingCheckpoints = task.catch(() => {});
+        await task;
+        const translated = await translator.translateSrt(await fs.readFile(source, 'utf8'), {
+            title, onBatch: (done, total) => onProgress?.(55, `Verificando falas PT-BR (${done}/${total})`)
+        });
+        const output = path.join(os.tmpdir(), `subtitle-checkpoints-${require('crypto').randomUUID()}.srt`);
+        await fs.writeFile(output, translated, 'utf8');
+        return output;
+    } finally { await fs.remove(workspace).catch(() => {}); }
+}
+
+module.exports = { create, createCheckpoints, matchesSpokenDialogue };

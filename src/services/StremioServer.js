@@ -1671,6 +1671,11 @@ class StremioServer {
                     });
                 }
 
+                const persistent = await this.subtitleMaintenance.status(type, id);
+                if (persistent.status === 'processing') {
+                    return res.status(202).json({ success: true, message: 'Recuperação já em andamento.', job: persistent });
+                }
+
                 const job = {
                     id: `reprocess_${jobKey}_${Date.now()}`,
                     type,
@@ -1734,12 +1739,17 @@ class StremioServer {
         });
 
         // 6. Consultar status do job de reprocessamento de legenda
-        this.app.get('/api/admin/subtitles/:type/:id/reprocess/status', auth, (req, res) => {
+        this.app.get('/api/admin/subtitles/:type/:id/reprocess/status', auth, async (req, res) => {
             const { type, id } = req.params;
+            try {
+                const persistent = await this.subtitleMaintenance.status(type, id);
+                if (persistent.status !== 'idle') return res.json({ success: true, ...persistent });
+            } catch (error) { return res.status(500).json({ error: error.message }); }
             const jobKey = `${type}_${id}`;
             const job = this.reprocessSubtitleJobs?.get(jobKey);
             if (!job) {
-                return res.json({ status: 'idle', message: 'Nenhum processo em andamento para esta mídia.' });
+                try { return res.json({ success: true, ...await this.subtitleMaintenance.status(type, id) }); }
+                catch (error) { return res.status(500).json({ error: error.message }); }
             }
             res.json({
                 success: true,

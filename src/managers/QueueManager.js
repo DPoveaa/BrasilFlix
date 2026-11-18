@@ -7,6 +7,8 @@ const TMDBService = require('../services/TMDBService');
 const MediaSearchService = require('../services/MediaSearchService');
 const DownloaderManager = require('../services/DownloaderManager');
 const VideoProcessor = require('../services/VideoProcessor');
+const SubtitlePipeline = require('../services/SubtitlePipeline');
+const SubtitleUtils = require('../utils/SubtitleUtils');
 const TelegramUploader = require('../services/TelegramUploader');
 const DiskCleaner = require('../services/DiskCleaner');
 const SwarmWatcher = require('../services/SwarmWatcher');
@@ -3770,6 +3772,28 @@ class QueueManager extends EventEmitter {
                 : 'Legendado (PT-BR)';
         }
 
+        // Resumed optimized/pending uploads can predate the current subtitle pipeline.
+        // A .subtitled marker or embedded stream alone is never proof of a usable web track.
+        if (metadata.isLegendado) {
+            const pt = (metadata.webSubtitles || []).find(track => /^pt/i.test(track.lang || '') && track.validationVersion === 2);
+            const vttPath = pt?.vttUrl ? path.resolve(__dirname, '../../public/subtitles', path.basename(pt.vttUrl.split('?')[0])) : null;
+            const content = vttPath ? await fs.readFile(vttPath, 'utf8').catch(() => '') : '';
+            const verified = !!(['dialogue_content', 'asr_word_timestamps'].includes(pt?.syncProof?.method) && content && pt.contentHash === SubtitleUtils.contentHash(content));
+            if (!verified) {
+                job.progressDetails = 'Validando a legenda do arquivo final antes da publicação';
+                let result;
+                try {
+                    result = await SubtitlePipeline.processSubtitlePipeline(optimizedPath, {
+                        ...metadata, tipo: job.type === 'filme' ? 'filme' : 'serie', audioIndex: 0,
+                        existingSubtitlePath: content ? vttPath : null
+                    }, (_percent, message) => { job.progressDetails = message; });
+                    metadata.subtitleSyncValidationVersion = result.syncValidationVersion;
+                    metadata.subtitleSyncProof = result.checkpoints;
+                    await VideoProcessor.persistWebSubtitles(metadata, result.srtPath);
+                } finally { if (result?.srtPath) await fs.remove(result.srtPath).catch(() => {}); }
+            }
+        }
+
         // Persistir duração REAL do arquivo de mídia (não apenas runtime TMDB)
         if (finalOptInfo?.duration > 0) {
             metadata.duracaoSegundos = Math.round(finalOptInfo.duration);
@@ -3942,6 +3966,10 @@ class QueueManager extends EventEmitter {
                 throw new Error(errMsg);
             }
         }
+
+        metadata.webSubtitles = (metadata.webSubtitles || []).map(track => ({
+            ...track, mediaFingerprint: String(uploadResult.fileId || uploadResult.messageId || '')
+        }));
 
         // 6. Cadastrar ou Atualizar no Catálogo
         if (job.type === 'filme') {

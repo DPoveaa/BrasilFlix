@@ -203,6 +203,7 @@ async function createTables() {
         ALTER TABLE episodios ALTER COLUMN id TYPE BIGINT;
         ALTER TABLE episodios ALTER COLUMN serie_id TYPE BIGINT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS versoes JSONB DEFAULT '{}';
+        ALTER TABLE episodios ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS legendas JSONB DEFAULT '[]';
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS still_url TEXT;
         ALTER TABLE episodios ADD COLUMN IF NOT EXISTS duracao INTEGER;
@@ -881,7 +882,7 @@ async function syncHardsubCutoff() {
         const fLegacy = await query(`
             UPDATE filmes 
             SET is_hardsub = true 
-            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR versoes ? 'legendado')
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR jsonb_typeof(versoes->'legendado') = 'object')
               AND created_at < '2026-11-15 00:00:00-03'::timestamptz
               AND (is_hardsub IS NULL OR is_hardsub = false)
         `);
@@ -889,7 +890,7 @@ async function syncHardsubCutoff() {
         const eLegacy = await query(`
             UPDATE episodios 
             SET is_hardsub = true 
-            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR versoes ? 'legendado')
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR jsonb_typeof(versoes->'legendado') = 'object')
               AND created_at < '2026-11-15 00:00:00-03'::timestamptz
               AND (is_hardsub IS NULL OR is_hardsub = false)
         `);

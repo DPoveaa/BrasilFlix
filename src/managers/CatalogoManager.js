@@ -1843,7 +1843,9 @@ class CatalogoManager {
             if (existingVersoes.legendado.notifMessageId) oldMsgIdsToDelete.push(existingVersoes.legendado.notifMessageId);
         }
 
-        const epLegendas = metadados.legendas || metadados.webSubtitles || (existingVersoes.legendado?.legendas || []);
+        const incomingTracks = [metadados.legendas, metadados.webSubtitles].find(value => Array.isArray(value) && value.length);
+        // Adding a dubbed version must preserve the existing subtitled version's tracks.
+        const epLegendas = incomingTracks || (!isLeg ? (existingEp?.legendas || existingVersoes.legendado?.legendas || []) : []);
         const versoes = {
             dublado: isDub
                 ? { messageId: messageId ? Number(messageId) : null, notifMessageId: metadados.notifMessageId || null, fileId: fileId || null, qualidade: metadados.qualidade || '1080p' }

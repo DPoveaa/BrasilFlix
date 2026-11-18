@@ -904,52 +904,11 @@ ${events.join('\n')}
     }
 
     isEuropeanPortugueseSubtitle(content) {
-        if (!content || typeof content !== 'string' || content.length < 150) return false;
-        const norm = content.toLowerCase();
-
-        // Construções típicas de Portugal:
-        // "estou a ", "estás a ", "está a ", "estamos a ", "estão a ", "a fazer", "a dizer", "ecrã", "comboio" ou "telemóvel"
-        const ptPtPattern = /(?:(?:estou|estás|estas|está|esta|estamos|estão|estao)\s+a\s+|(?<![a-zà-ú])a\s+(?:fazer|dizer)(?![a-zà-ú])|(?<![a-zà-ú])(?:ecrã|ecra|comboio|telemóvel|telemovel)(?![a-zà-ú]))/gi;
-        const ptPtMatches = (norm.match(ptPtPattern) || []).length;
-
-        // Ocorrências de você / vocês
-        const voceMatches = (norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || []).length;
-
-        // Saturação de construções europeias (10+ ocorrências) indica dialeto de Portugal mesmo com plural "vocês"
-        if (ptPtMatches >= 10) return true;
-
-        // Rejeita como PT-PT somente se você/vocês < 3 E houver construções típicas de Portugal
-        if (voceMatches < 3 && ptPtMatches >= 1) return true;
-
-        return false;
+        return SubtitlePipeline.isEuropeanPortugueseSubtitle(content);
     }
 
     isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '') {
-        if (!content || typeof content !== 'string' || content.length < 150) return false;
-
-        if (!SubtitlePipeline.isBrazilianPortugueseSubtitle(content, sourceLang, sourceFile)) return false;
-        const lang = (sourceLang || '').toLowerCase().trim();
-        const file = (sourceFile || '').toLowerCase();
-
-        // 1. Confiança nos Metadados / Tags da Fonte
-        const ptBrTags = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra'];
-        if (ptBrTags.includes(lang)) return true;
-        if (/\b(pt[-_]br|ptbr|pob|brazilian|bra)\b/.test(file)) return true;
-
-        const ptPtTags = ['pt-pt', 'pt_pt', 'ptpt'];
-        if (ptPtTags.includes(lang)) return false;
-        if (/\b(pt[-_]pt|ptpt|portugal)\b/.test(file)) return false;
-
-        // 2. Regra Única para Código Genérico ("por" ou sem país explícito)
-        if (this.isEuropeanPortugueseSubtitle(content)) return false;
-
-        const norm = content.toLowerCase();
-        const voceMatches = norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || [];
-        if (voceMatches.length >= 3) return true;
-
-        const genericPtRegex = /\b(nao|esta|estao|entao|tambem|muito|aqui|agora|isso|isto|porque|senhor|senhora|olha|vamos|fazer|onde|quando|quem|tudo|nada|tenho|tinha|dele|dela|obrigado|obrigada|para|com|como|mais|mas|pelo|pela)\b/gi;
-        const genericMatches = (norm.match(genericPtRegex) || []).length;
-        return genericMatches >= 5;
+        return SubtitlePipeline.isBrazilianPortugueseSubtitle(content, sourceLang, sourceFile);
     }
 
     isGenericPortugueseSubtitle(content) {
@@ -1232,17 +1191,20 @@ ${events.join('\n')}
 
         // Se o release for legendado e ainda não tiver legenda definida, obtém pelo SubtitlePipeline
         let cleanupGeneratedSrt = false;
-        if (!isConfirmedDublado && (!metadata.srtPath || !fs.existsSync(metadata.srtPath))) {
+        if (!isConfirmedDublado) {
             let srtPath = null;
             try {
                 const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
                     ...metadata,
                     nome: metadata.nome || metadata.title,
                     nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
+                    existingSubtitlePath: metadata.srtPath && fs.existsSync(metadata.srtPath) ? metadata.srtPath : null,
                     audioIndex: effectiveAudioIndex,
                     idioma: 'pt-BR'
                 });
                 metadata.refEnPath = pipelineResult?.refEnPath;
+                metadata.subtitleSyncValidationVersion = pipelineResult?.syncValidationVersion;
+                metadata.subtitleSyncProof = pipelineResult?.checkpoints;
                 srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
                 if (srtPath) {
                     console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
@@ -1784,7 +1746,8 @@ ${events.join('\n')}
                     srtPath: ptSrtDest,
                     vttPath: ptVttDest,
                     version: timestamp,
-                    validationVersion: 1,
+                    validationVersion: metadata.subtitleSyncValidationVersion || 0,
+                    syncProof: metadata.subtitleSyncProof,
                     contentHash: require('../utils/SubtitleUtils').contentHash(SubtitleTranslationService.convertSrtToVtt(srtContent))
                 });
                 console.log(`💾 [Web Subtitles] Legenda PT-BR persistida para o player web: ${ptVttName} (.srt e .vtt)`);

@@ -20,8 +20,10 @@ class SubtitleMaintenance {
         if (!this.ready) this.ready = db.query(`CREATE TABLE IF NOT EXISTS subtitle_repairs (
             type TEXT NOT NULL, media_id BIGINT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
             next_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW(), lease_until TIMESTAMPTZ,
-            owner TEXT, last_error TEXT, PRIMARY KEY (type, media_id)
-        )`).catch(error => { this.ready = null; throw error; });
+            owner TEXT, last_error TEXT, priority INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, message TEXT, PRIMARY KEY (type, media_id)
+        ); ALTER TABLE subtitle_repairs ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE subtitle_repairs ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE subtitle_repairs ADD COLUMN IF NOT EXISTS message TEXT;`).catch(error => { this.ready = null; throw error; });
         await this.ready;
     }
 
@@ -74,9 +76,9 @@ class SubtitleMaintenance {
         if (!tracks.some(t => /^pt/i.test(t.lang))) {
             const suffix = type === 'filme' ? 'movie' : `s${row.temporada_numero}e${row.numero}`;
             const base = row.tmdb_id || row.imdb_id || `${type}_${row.id}`;
-            const prefix = `${base}_${suffix}_ptbr_`;
+            const prefixes = [...new Set([base, type === 'filme' ? row.id : row.serie_id])].map(id => `${id}_${suffix}_ptbr_`);
             const files = await fs.readdir(directory).catch(() => []);
-            for (const name of files.filter(f => f.startsWith(prefix) && f.endsWith('.vtt')).sort().reverse()) {
+            for (const name of files.filter(f => prefixes.some(prefix => f.startsWith(prefix)) && f.endsWith('.vtt')).sort().reverse()) {
                 if (!await this.validFile(name, 'pt-BR', (row.duracao || 0) * 60)) continue;
                 tracks.unshift({ lang: 'pt-BR', label: 'Português (Brasil)', default: true,
                     vttUrl: `/subtitles/${name}`, version: (await fs.stat(path.join(directory, name))).mtimeMs });
@@ -85,14 +87,15 @@ class SubtitleMaintenance {
         }
         if (JSON.stringify(previous) !== JSON.stringify(tracks)) {
             // Avoid overwriting tracks published concurrently after this snapshot.
-            await db.query(`UPDATE ${tables[type]} SET legendas = $1, updated_at = NOW()
+            await db.query(`UPDATE ${tables[type]} SET legendas = $1${type === 'filme' ? ', updated_at = NOW()' : ''}
                 WHERE id = $2 AND COALESCE(legendas, '[]'::jsonb) = $3::jsonb`,
             [JSON.stringify(tracks), row.id, JSON.stringify(previous)]);
         }
         const pt = tracks.find(t => /^pt/i.test(t.lang));
-        const verified = pt && pt.validationVersion === 1 && pt.contentHash === utils.contentHash(
+        const fingerprint = String(row.versoes?.legendado?.fileId || row.versoes?.legendado?.file_id || row.file_id || row.versoes?.legendado?.messageId || row.message_id || '');
+        const verified = pt && pt.validationVersion === 2 && pt.mediaFingerprint === fingerprint && pt.contentHash === utils.contentHash(
             await fs.readFile(path.join(directory, path.basename(pt.vttUrl.split('?')[0])), 'utf8').catch(() => ''));
-        if (this.required(row) && !verified) await this.enqueue(type, row.id);
+        if (this.required(row) && !verified) await this.enqueue(type, row.id, pt ? 0 : 10);
         else if (verified) {
             await this.init();
             await db.query('DELETE FROM subtitle_repairs WHERE type=$1 AND media_id=$2 AND lease_until IS NULL', [type, row.id]);
@@ -100,16 +103,33 @@ class SubtitleMaintenance {
         return tracks;
     }
 
-    async enqueue(type, id) {
+    async status(type, id) {
+        if (!tables[type]) throw new Error('Tipo de mídia inválido.');
         await this.init();
-        await db.query(`INSERT INTO subtitle_repairs (type, media_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [type, id]);
+        const pending = (await db.query('SELECT attempts,lease_until,next_attempt,last_error,progress,message FROM subtitle_repairs WHERE type=$1 AND media_id=$2', [type,id])).rows[0];
+        if (pending) return {
+            status: pending.lease_until && new Date(pending.lease_until).getTime() > Date.now() ? 'processing' : 'queued',
+            progress: pending.progress, message: pending.message || 'Aguardando recuperação automática',
+            attempts: pending.attempts, nextAttempt: pending.next_attempt, error: pending.last_error
+        };
+        const row = await this.load(type,id);
+        const tracks = row ? await this.tracks(type,row) : [];
+        if (tracks.some(t => t.validationVersion === 2)) return { status: 'completed', progress: 100, tracks, message: 'Legenda verificada contra o áudio desta versão.' };
+        if (row && this.required(row)) return { status: 'queued', progress: 0, message: 'Aguardando verificação das falas desta versão.' };
+        return { status: 'idle', message: 'Nenhum processamento concluído para esta mídia.' };
+    }
+
+    async enqueue(type, id, priority = 0) {
+        await this.init();
+        await db.query(`INSERT INTO subtitle_repairs (type, media_id, priority) VALUES ($1, $2, $3)
+            ON CONFLICT (type, media_id) DO UPDATE SET priority=GREATEST(subtitle_repairs.priority, EXCLUDED.priority)`, [type, id, priority]);
     }
 
     async repair(type, id, onProgress, force = false) {
         await this.enqueue(type, id);
         const owner = crypto.randomUUID();
         const claim = await db.query(`UPDATE subtitle_repairs SET owner = $3,
-            lease_until = NOW() + INTERVAL '5 minutes', attempts = attempts + 1
+            lease_until = NOW() + INTERVAL '5 minutes', attempts = attempts + 1, last_error = NULL
             WHERE type = $1 AND media_id = $2 AND (lease_until IS NULL OR lease_until < NOW())
               AND ($4::boolean OR next_attempt <= NOW()) RETURNING attempts`, [type, id, owner, force]);
         if (!claim.rows.length) throw new Error('Recuperação já em andamento ou aguardando retentativa.');
@@ -118,6 +138,14 @@ class SubtitleMaintenance {
         [type, id, owner]).catch(e => console.warn('[Subtitle lease]', e.message)), 60000);
         heartbeat.unref();
         let result;
+        let lastProgress = 0;
+        const progress = (percent, message) => {
+            onProgress?.(percent, message);
+            if (Date.now() - lastProgress < 5000 && percent < 90) return;
+            lastProgress = Date.now();
+            db.query('UPDATE subtitle_repairs SET progress=$4,message=$5 WHERE type=$1 AND media_id=$2 AND owner=$3',
+                [type,id,owner,percent,message]).catch(error => console.warn('[Subtitle progress]', error.message));
+        };
         try {
             const row = await this.load(type, id);
             if (!row || (!force && !this.required(row))) {
@@ -129,12 +157,19 @@ class SubtitleMaintenance {
             const audio = row.versoes?.legendado ? 'legendado' : row.versoes?.dublado ? 'dublado' : 'legendado';
             const root = `http://127.0.0.1:${this.server.port}/stream/video/internal_admin`;
             const url = type === 'filme' ? `${root}/filme/${id}/${audio}` : `${root}/serie/${row.serie_id}/${season}/${episode}/${audio}`;
+            let oldTracks = row.legendas || [];
+            if (typeof oldTracks === 'string') { try { oldTracks = JSON.parse(oldTracks); } catch (_) { oldTracks = []; } }
+            const existing = Array.isArray(oldTracks) ? oldTracks.find(t => /^pt/i.test(t.lang || '') && t.vttUrl) : null;
+            const existingSubtitlePath = existing ? path.join(directory, path.basename(existing.vttUrl.split('?')[0])) : null;
+            const mediaFingerprint = String(row.versoes?.legendado?.fileId || row.versoes?.legendado?.file_id || row.file_id || row.versoes?.legendado?.messageId || row.message_id || '');
             result = await pipeline.processSubtitlePipeline(url, {
+                mediaFingerprint,
+                existingSubtitlePath: existingSubtitlePath && await fs.pathExists(existingSubtitlePath) ? existingSubtitlePath : null,
                 tipo: type === 'filme' ? 'filme' : 'serie', title: row.serie_nome || row.nome,
                 nomeOriginal: row.serie_nome_original || row.nome_original,
                 tmdbId: row.tmdb_id, imdbId: row.imdb_id, season, episode, year: row.ano,
                 duration: (row.duracao || 0) * 60
-            }, onProgress);
+            }, progress);
             await pipeline.validateAndFinalizeSubtitle(result.srtPath);
             const content = await fs.readFile(result.srtPath, 'utf8');
             const base = row.tmdb_id || row.imdb_id || `${type}_${id}`;
@@ -147,13 +182,13 @@ class SubtitleMaintenance {
             await this.atomicWrite(path.join(directory, `${name}.vtt`), utils.sanitizeVtt(content));
             const track = { lang: 'pt-BR', label: 'Português (Brasil)', default: true,
                 srtUrl: `/subtitles/${name}.srt`, vttUrl: `/subtitles/${name}.vtt`,
-                version: Date.now(), validationVersion: 1, contentHash: utils.contentHash(utils.sanitizeVtt(content)), sourceMethod: result.sourceMethod };
+                version: Date.now(), validationVersion: 2, mediaFingerprint, syncProof: result.checkpoints, contentHash: utils.contentHash(utils.sanitizeVtt(content)), sourceMethod: result.sourceMethod };
             // Merge against current DB state rather than the old pre-transcription snapshot.
             const saved = await db.query(`UPDATE ${tables[type]} SET legendas =
                 jsonb_build_array($1::jsonb) || COALESCE((SELECT jsonb_agg(t) FROM
                 jsonb_array_elements(CASE WHEN jsonb_typeof(legendas)='array' THEN legendas ELSE '[]'::jsonb END) t
                 WHERE COALESCE(t->>'lang', '') NOT ILIKE 'pt%'), '[]'::jsonb),
-                is_hardsub = false, is_legendado = true, updated_at = NOW()
+                is_hardsub = false, is_legendado = true${type === 'filme' ? ', updated_at = NOW()' : ''}
                 WHERE id=$2 AND EXISTS (SELECT 1 FROM subtitle_repairs
                     WHERE type=$3 AND media_id=$2 AND owner=$4 AND lease_until > NOW())
                 RETURNING legendas`, [JSON.stringify(track), id, type, owner]);
@@ -180,11 +215,15 @@ class SubtitleMaintenance {
             await this.init();
             for (const [type, table] of Object.entries(tables)) {
                 const batch = await db.query(`SELECT id FROM ${table} WHERE created_at >= $1
-                    AND (is_legendado=true OR audio ILIKE '%legendad%' OR versoes ? 'legendado')
+                    AND (is_legendado=true OR audio ILIKE '%legendad%' OR jsonb_typeof(versoes->'legendado') = 'object')
                     AND id > $2 ORDER BY id LIMIT 25`, [cutoff, this.cursor[type]]);
                 for (const { id } of batch.rows) {
-                    const row = await this.load(type, id);
-                    if (row) await this.tracks(type, row);
+                    try {
+                        const row = await this.load(type, id);
+                        if (row) await this.tracks(type, row);
+                    } catch (error) {
+                        console.warn('[Subtitle scan]', type, id, error.message);
+                    }
                     this.cursor[type] = id;
                 }
                 if (batch.rows.length < 25) this.cursor[type] = 0;
@@ -192,7 +231,7 @@ class SubtitleMaintenance {
             if (!this.working) {
                 const jobs = await db.query(`SELECT type, media_id FROM subtitle_repairs
                     WHERE next_attempt <= NOW() AND (lease_until IS NULL OR lease_until < NOW())
-                    ORDER BY next_attempt LIMIT 1`);
+                    ORDER BY priority DESC, next_attempt LIMIT 1`);
                 if (jobs.rows.length) {
                     const job = jobs.rows[0];
                     this.working = this.repair(job.type, job.media_id)

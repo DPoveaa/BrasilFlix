@@ -68,9 +68,17 @@ function stripOuterQuotes(text) {
     return t;
 }
 
+// Only speaker-marked cues are split; hyphenated words and ordinary dashes stay intact.
+function formatDialogue(text) {
+    const value = String(text || '').trim();
+    if (!/^(?:<[^>]+>)*[-–—]\s*\p{L}/u.test(value)) return value;
+    return value.replace(/[ \t]+[-–—][ \t]*(?=[\p{L}¿¡"“])/gu, '\n- ')
+        .replace(/^([ \t]*)(?:[-–—])[ \t]*/gm, '- ');
+}
+
 // Applied at every serialization boundary, throughout the entire timeline.
 function cleanCueText(text) {
-    return String(text || '').split('\n').filter(line => {
+    return formatDialogue(text).split('\n').filter(line => {
         const plain = line.replace(/<[^>]*>|\{[^}]*\}/g, '').normalize('NFKC');
         return !/(@[\w.]+|https?:\/\/|www\.|\bt\.me\/|\b[\w-]+\.(?:com|net|org|tv|xyz|site|me|io|br)\b|telegram|opensubtitles|legendas\.tv|pipocas|yify|comandotorrents|bludv|lapumia|baixarfilmes|legendas?\s+(?:por|de|by)|subtitles?\s+by|tradu[cç][aã]o\s*:|ripada\s+por|acesse\b|visite\s*:|baixe\s+em|anuncie\s+aqui|canal\s+(?:do|no)\b)/i.test(plain);
     }).join('\n').trim();
@@ -107,7 +115,7 @@ function parseSrt(srtContent) {
         const endTime = match[2].replace('.', ',');
         const startMs = timecodeToMs(startTime);
         const endMs = timecodeToMs(endTime);
-        const text = stripOuterQuotes(textLines.join('\n'));
+        const text = formatDialogue(stripOuterQuotes(textLines.join('\n')));
 
         cues.push({
             index: cueIndex++,
@@ -158,7 +166,7 @@ function parseVtt(vttContent) {
         const endTime = match[2].replace(',', '.');
         const startMs = timecodeToMs(startTime);
         const endMs = timecodeToMs(endTime);
-        const text = stripOuterQuotes(textLines.join('\n'));
+        const text = formatDialogue(stripOuterQuotes(textLines.join('\n')));
 
         cues.push({
             index: cueIndex++,
@@ -350,6 +358,7 @@ function validateAndSanitizeCues(cues) {
 module.exports = {
     contentHash: content => require('crypto').createHash('sha256').update(content).digest('hex'),
     cleanCueText,
+    formatDialogue,
     timecodeToMs,
     msToSrtTimecode,
     msToVttTimecode,

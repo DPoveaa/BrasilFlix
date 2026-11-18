@@ -45,7 +45,8 @@ class SubtitleSync {
         }
     }
 
-    validateSynchronizedSubtitle(srtPath) {
+    validateSynchronizedSubtitle(srtPath, proof = null) {
+        if (!proof || !['dialogue_content', 'asr_word_timestamps'].includes(proof.method)) return false;
         try {
             const fs = require('fs-extra');
             if (!fs.existsSync(srtPath)) return false;

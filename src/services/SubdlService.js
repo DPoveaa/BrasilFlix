@@ -156,6 +156,8 @@ class SubdlService {
                 return result;
             } catch (err) {
                 lastError = err;
+                // A missing subtitle is candidate-specific, not an exhausted API key.
+                if (err.response?.status === 404) throw err;
                 const isQuota = this.isQuotaOrRateLimitError(err);
                 const reason = isQuota ? 'Limite diário de downloads ou rate-limit 429 atingido' : `Erro na requisição: ${err.message}`;
                 this.markKeyCooldown(keyInfo.key, reason, isQuota ? 3600000 : 300000);

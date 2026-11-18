@@ -64,17 +64,24 @@ def main():
     parser.add_argument("output")
     parser.add_argument("--model", default="turbo")
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--language")
     args = parser.parse_args()
 
     from faster_whisper import WhisperModel
 
     model = WhisperModel(args.model, device="cpu", compute_type="int8", cpu_threads=args.threads)
-    segments, info = model.transcribe(
+    try:
+        from faster_whisper import BatchedInferencePipeline
+        engine = BatchedInferencePipeline(model=model)
+        batch_options = {'batch_size': max(1, args.batch_size)}
+    except ImportError:
+        engine, batch_options = model, {}
+    segments, info = engine.transcribe(
         args.audio, language=args.language, word_timestamps=True, vad_filter=True,
-        condition_on_previous_text=False, beam_size=5,
+        condition_on_previous_text=False, beam_size=5, **batch_options,
     )
-    segments = [segment for segment in segments if segment.words]
+    segments = [segment for segment in segments if segment.words and segment.no_speech_prob < 0.7]
     total_words = sum(len(segment.words) for segment in segments)
     uncertain = sum(len(segment.words) for segment in segments if segment.avg_logprob < -0.9)
     cues = build_cues(segments)

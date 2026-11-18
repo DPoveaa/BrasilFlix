@@ -171,23 +171,14 @@ class SubtitlePipeline {
      */
     isEuropeanPortugueseSubtitle(content) {
         if (!content || typeof content !== 'string') return false;
-        const norm = content.toLowerCase();
-
-        // Construções específicas de Portugal (estar a + verbo infinitivo ou vocabulário exclusivo)
-        const ptPtPattern = /(?:\b(?:estou|estás|está|estamos|estão)\s+a\s+[a-zà-ú]+(?:ar|er|ir|or)\b|\ba\s+(?:fazer|dizer|falar|ver|correr|ir|partir|dar|pôr)\b|\b(?:ecrã|ecra|comboio|telemóvel|telemovel|autocarro|pequeno[- ]almoço|pequeno[- ]almoco|frigorífico|frigorifico|miúdo|miudo|gajo|fixe)\b)/gi;
-        const ptPtMatches = (norm.match(ptPtPattern) || []).length;
-
-        // Ocorrências de você / vocês (típico do Brasil)
-        const voceMatches = (norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || []).length;
-
-        // Saturação evidente de dialeto europeu (>= 8 ocorrências)
-        if (ptPtMatches >= 8) return true;
-
-        // Rejeita como PT-PT se você/vocês for quase nulo (< 2) E houver pelo menos 3 marcadores fortes de Portugal
-        if (voceMatches < 2 && ptPtMatches >= 3) return true;
-
-        // Caso contrário, não é considerado PT-PT
-        return false;
+        const text = content.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        // "Comboio", "a ver" and "a fazer" also occur naturally in Brazilian dialogue.
+        const vocabulary = text.match(/\b(ecra|telemovel|autocarro|frigorifico|pequeno[- ]almoco|miudo|gajo)\b/g) || [];
+        const progressive = text.match(/\b(?:estou|estas|esta|estamos|estao) a [a-z]+(?:ar|er|ir)\b/g) || [];
+        const brazilian = (text.match(/\b(voce|voces|a gente)\b/g) || []).length;
+        const evidence = vocabulary.length + progressive.length;
+        return (evidence >= 8 && evidence > brazilian * 2) ||
+            (brazilian < 2 && evidence >= 3 && new Set(vocabulary).size >= 2);
     }
 
     /**
@@ -237,6 +228,9 @@ class SubtitlePipeline {
         if (!content || typeof content !== 'string') {
             return { valid: false, reason: 'Conteúdo vazio' };
         }
+
+        cueTexts ||= SubtitleUtils.parseSubtitles(content).map(cue => cue.text);
+        if (!cueTexts.length) cueTexts = null;
 
         // --- 1. Rejeição imediata por diacríticos inexistentes no Português ---
         // Romeno: ă Ă ș Ș ț Ț î Î  (note: î é diferente de í/ì)
@@ -413,28 +407,8 @@ class SubtitlePipeline {
         const lang = (sourceLang || '').toLowerCase().trim();
         const file = (sourceFile || '').toLowerCase();
 
-        // 1. Confiança nos Metadados / Tags da Fonte
-        const ptBrTags = ['pob', 'pt-br', 'pt_br', 'ptbr', 'brazilian', 'bra', 'br_pt', 'br-pt', 'por_br', 'por-br'];
-        if (ptBrTags.includes(lang) || /\b(pt[-_]br|ptbr|pob|brazilian|bra|br[-_]pt|por[-_]br)\b/.test(file)) {
-            const norm = content.toLowerCase();
-            const ptPtPattern = /(?:\b(?:estou|estás|está|estamos|estão)\s+a\s+[a-zà-ú]+(?:ar|er|ir|or)\b|\ba\s+(?:fazer|dizer|falar|ver|correr|ir|partir|dar|pôr)\b|\b(?:ecrã|ecra|comboio|telemóvel|telemovel|autocarro|pequeno[- ]almoço|frigorífico|miúdo|gajo|fixe)\b)/gi;
-            const ptPtMatches = (norm.match(ptPtPattern) || []).length;
-            if (ptPtMatches >= 10) return false;
-            return true;
-        }
-
-        const ptPtTags = ['pt-pt', 'pt_pt', 'ptpt'];
-        if (ptPtTags.includes(lang) || /\b(pt[-_]pt|ptpt|portugal)\b/.test(file)) {
-            return false;
-        }
-
-        // 2. Análise textual para código genérico ("por" ou sem país explícito)
+        if (['pt-pt', 'pt_pt', 'ptpt'].includes(lang) || /\b(pt[-_]pt|ptpt|portugal)\b/.test(file)) return false;
         if (this.isEuropeanPortugueseSubtitle(content)) return false;
-
-        const norm = content.toLowerCase();
-        const voceMatches = (norm.match(/(?<![a-zà-ú])voc[eê]s?(?![a-zà-ú])/gi) || []).length;
-        if (voceMatches >= 2) return true;
-
         return this.isPortugueseLanguage(content);
     }
 
@@ -1801,110 +1775,36 @@ print(f"RESULT:{res}")
      * Executa checagem de compatibilidade de corte em janelas de 10 minutos (0% a 100%)
      * e refinamento local com medianas móveis de 5 minutos (sub-150ms de precisão).
      */
-    async alignCandidateWithDenseWhisper(anchorsJsonPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null) {
-        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_dense_align.py');
-        const args = [
-            scriptPath,
-            'align',
-            anchorsJsonPath,
-            inputSrtPath,
-            outputSrtPath,
-            String(videoDurationSec || 0)
-        ];
-        if (refEnPath && fs.existsSync(refEnPath)) {
-            args.push(refEnPath);
-        }
-
-        try {
-            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 120000 });
-            const jsonMatch = stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
-            if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
-            }
-            return { aligned: false, reason: 'Resposta inválida do alinhador denso Whisper' };
-        } catch (e) {
-            if (e.stdout) {
-                const jsonMatch = e.stdout.match(/\{[\s\S]*"aligned"[\s\S]*\}/);
-                if (jsonMatch) {
-                    try {
-                        return JSON.parse(jsonMatch[0]);
-                    } catch (_) { }
-                }
-            }
-            return { aligned: false, reason: e.message };
-        }
+    async alignCandidateWithDenseWhisper(anchorsJsonPath, inputSrtPath, outputSrtPath) {
+        const data = await fs.readJson(anchorsJsonPath).catch(() => null);
+        if (!data?.ptbr_reference) return { aligned: false, reason: 'Âncoras acústicas sem correspondência textual não comprovam sincronia.' };
+        return this.alignCandidateWithDialogue(data.ptbr_reference, inputSrtPath, outputSrtPath);
     }
 
-    /**
-     * TIER 4: Forced Dense Multi-Anchor Acoustic Offset Alignment (Whisper ASR)
-     * Utiliza mapa denso de âncoras Whisper across 100% do vídeo com checagem de corte e medianas móveis.
-     */
-    async alignSubtitleWithWhisper(videoPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath = null, onProgress = null) {
-        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_dense_align.py');
-        if (!fs.existsSync(scriptPath)) {
-            console.warn(`⚠️ [Dense Whisper Align] Script whisper_dense_align.py não encontrado.`);
-            return { aligned: false, reason: 'Script ausente' };
-        }
-
-        const videoDir = this.getWorkingDir(videoPath);
-        let anchorsJsonPath = null;
+    async alignSubtitleWithWhisper(videoPath, inputSrtPath, outputSrtPath, duration, refEnPath = null, onProgress = null) {
+        let reference;
         try {
-            console.log(`🎙️ [Dense Whisper Align] Iniciando ancoragem Whisper across 100% do runtime...`);
-            anchorsJsonPath = await this.generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress, videoDir);
-            return await this.alignCandidateWithDenseWhisper(anchorsJsonPath, inputSrtPath, outputSrtPath, videoDurationSec, refEnPath);
-        } catch (e) {
-            console.warn(`⚠️ [Dense Whisper Align] Erro na execução: ${e.message}`);
-            return { aligned: false, reason: e.message };
-        } finally {
-            if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
-                await fs.remove(anchorsJsonPath).catch(() => { });
-            }
-        }
+            reference = await this.audioDialogueReference(videoPath, { duration }, onProgress, true);
+            return await this.alignCandidateWithDialogue(reference, inputSrtPath, outputSrtPath);
+        } finally { if (reference) await fs.remove(reference).catch(() => {}); }
     }
 
     /**
      * VERIFICAÇÃO MULTI-CHECKPOINT: Inspeciona sincronia com Whisper ASR em 3 pontos (Início, Miolo, Fim)
      */
-    async verifySyncAtCheckpoints(videoPath, srtPath, videoDurationSec, refEnPath = null, toleranceSec = '1.5') {
-        const isUrl = typeof videoPath === 'string' && /^https?:\/\//i.test(videoPath);
-        if ((!isUrl && !fs.existsSync(videoPath)) || !fs.existsSync(srtPath)) {
-            return { verified: false, reason: 'Arquivo de vídeo ou legenda inexistente', checkpoints: [] };
-        }
-
-        const scriptPath = path.resolve(__dirname, '../../scripts/whisper_verify.py');
-        if (!fs.existsSync(scriptPath)) {
-            console.warn(`⚠️ [Quality Gate] Script whisper_verify.py não encontrado em ${scriptPath}. Utilizando validação de contingência.`);
-            return { verified: true, warning: 'Script ausente', checkpoints: [] };
-        }
-
+    async verifySyncAtCheckpoints(videoPath, srtPath, duration, refEnPath = null, toleranceSec = '1.5') {
+        let reference;
+        const output = path.join(os.tmpdir(), `subtitle-verify-${require('crypto').randomUUID()}.srt`);
         try {
-            console.log(`🎙️ [Quality Gate: Whisper Speech Verification] Executando verificação de voz real nos checkpoints (Início, Miolo, Clímax) | Tolerância: ±${toleranceSec}s ...`);
-            const args = [
-                scriptPath,
-                videoPath,
-                srtPath,
-                toleranceSec
-            ];
-            if (refEnPath && fs.existsSync(refEnPath)) {
-                args.push(refEnPath);
-            }
-
-            const { stdout } = await execFileAsync(this.pythonExec, args, { timeout: 120000 });
-
-            const jsonMatch = stdout.match(/\{[\s\S]*"verified"[\s\S]*\}/);
-            if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
-            }
-            return { verified: stdout.includes('PASSED ✅'), checkpoints: [] };
-        } catch (e) {
-            if (e.stdout) {
-                const jsonMatch = e.stdout.match(/\{[\s\S]*"verified"[\s\S]*\}/);
-                if (jsonMatch) {
-                    try { return JSON.parse(jsonMatch[0]); } catch (_) { }
-                }
-            }
-            console.warn(`⚠️ [Quality Gate] Reprovação ou falha na verificação Whisper: ${e.message}`);
-            return { verified: false, error: e.message, checkpoints: [] };
+            reference = await this.audioDialogueReference(videoPath, { duration }, null, true);
+            const proof = await this.alignCandidateWithDialogue(reference, srtPath, output);
+            const tolerance = Number(toleranceSec) || 1.5;
+            const endOffset = (proof.offset_sec || 0) + ((proof.scale || 1) - 1) * duration;
+            return { verified: !!(proof.aligned && Math.abs(proof.offset_sec) <= tolerance && Math.abs(endOffset) <= tolerance), checkpoints: proof };
+        } catch (error) { return { verified: false, error: error.message }; }
+        finally {
+            if (reference) await fs.remove(reference).catch(() => {});
+            await fs.remove(output).catch(() => {});
         }
     }
 
@@ -1916,89 +1816,148 @@ print(f"RESULT:{res}")
      * 3) Downloaded/embedded human EN/ES subtitle (translated cleanly while keeping exact human cue boundaries and punctuation).
      * 4) Whisper ASR with PT-BR translation, only after human tracks fail.
      */
+    async audioDialogueReference(videoPath, metadata, onProgress, checkpoints = false) {
+        const stat = /^https?:/.test(videoPath) ? null : await fs.stat(videoPath);
+        const fingerprint = metadata.mediaFingerprint || (stat ? `${stat.size}:${stat.mtimeMs}` : null);
+        const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
+        await fs.ensureDir(cacheDir);
+        const key = require('crypto').createHash('sha256').update(JSON.stringify([
+            checkpoints ? 'dialogue-checkpoints-v3' : 'dialogue-full-v2', videoPath, fingerprint, metadata.audioIndex || 0,
+            checkpoints ? (process.env.SUBTITLE_WHISPER_CHECKPOINT_MODEL || 'tiny') : (process.env.SUBTITLE_WHISPER_MODEL || 'turbo'),
+            checkpoints ? metadata.checkpointTimes : null
+        ])).digest('hex');
+        const cache = path.join(cacheDir, `${key}.srt`);
+        const validate = async file => {
+            if (!checkpoints) return this.validateAndFinalizeSubtitle(file, metadata.duration || 0);
+            const content = await fs.readFile(file, 'utf8');
+            const cues = SubtitleUtils.parseSubtitles(content);
+            if (cues.length < 20 || !this.isBrazilianPortugueseSubtitle(content)) throw new Error('Referência textual dos checkpoints inválida.');
+        };
+        if (fingerprint && await fs.pathExists(cache)) {
+            try {
+                await validate(cache);
+                const copy = path.join(os.tmpdir(), `subtitle-ref-${require('crypto').randomUUID()}.srt`);
+                await fs.copy(cache, copy);
+                return copy;
+            } catch (_) { await fs.remove(cache); }
+        }
+        const reference = await (checkpoints ? SubtitleAudioService.createCheckpoints : SubtitleAudioService.create)(videoPath, metadata.audioIndex || 0, {
+            title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes, onProgress
+        });
+        try {
+            await validate(reference);
+            if (fingerprint) {
+                const temporary = `${cache}.${require('crypto').randomUUID()}.tmp`;
+                await fs.copy(reference, temporary);
+                await fs.rename(temporary, cache);
+            }
+            return reference;
+        } catch (error) { await fs.remove(reference).catch(() => {}); throw error; }
+    }
+
+    async alignCandidateWithDialogue(reference, candidate, output) {
+        const script = path.resolve(__dirname, '../../scripts/align_subtitle_dialogue.py');
+        try {
+            const { stdout } = await execFileAsync(this.pythonExec, [script, candidate, reference, output], {
+                timeout: 120000, maxBuffer: 2 * 1024 * 1024
+            });
+            const result = JSON.parse(stdout.trim());
+            return result.aligned && result.method === 'dialogue_content' ? result : { aligned: false };
+        } catch (error) {
+            try { return JSON.parse(error.stdout.trim()); }
+            catch (_) { return { aligned: false, reason: error.message }; }
+        }
+    }
+
     async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
         const attempt = async (label, action) => {
             try { return await action(); }
             catch (error) { console.warn(`[Subtitle ${label}]`, error.message); return null; }
         };
         const duration = await this.probeActualVideoDuration(videoPath) || Number(metadata.duration || 0);
-        const meta = await this.resolveMovieMetadata(metadata);
-        const workDir = this.getWorkingDir(videoPath);
-        await fs.ensureDir(workDir);
-        let anchorsPromise;
-        let anchorsPath;
-        let refEnPath = null;
-        const anchors = () => anchorsPromise ||= this.generateWhisperAnchorMap(
-            videoPath, duration, onProgress, workDir, metadata.audioIndex || 0
-        ).then(file => { anchorsPath = file; return file; });
-        const finish = async (file, sourceMethod) => {
+        const meta = { ...await this.resolveMovieMetadata(metadata), duration };
+        const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'subtitle-dialogue-'));
+        let referencePromise;
+        let referencePath;
+        let fullReferencePath;
+        let retained;
+        const reference = () => referencePromise ||= this.audioDialogueReference(videoPath, meta, onProgress, true)
+            .then(file => { referencePath = file; return file; });
+        const finish = async (file, sourceMethod, proof) => {
             await this.validateAndFinalizeSubtitle(file, duration);
-            return { srtPath: file, sourceMethod, refEnPath, verified: true, checkpoints: [] };
+            retained = path.join(os.tmpdir(), `subtitle-${require('crypto').randomUUID()}.srt`);
+            await fs.copy(file, retained);
+            return { srtPath: retained, sourceMethod, verified: true, syncValidationVersion: 2,
+                checkpoints: proof, refEnPath: null };
         };
-        try {
-            onProgress?.(10, 'Extraindo legenda humana PT-BR do arquivo');
-            const embedded = await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
-            if (embedded?.srtPath && !meta.isReprocess) {
-                const result = await attempt('embedded validation', () => finish(embedded.srtPath, 'Embedded Human PT-BR'));
+        const human = async candidates => {
+            if (!candidates.length) return null;
+            if (!referencePromise) {
+                const cues = SubtitleUtils.parseSubtitles(await fs.readFile(candidates[0].srtPath, 'utf8'))
+                    .filter(cue => SubtitleUtils.cleanCueText(cue.text).split(/\s+/).length >= 5 && !/[♪♫]/.test(cue.text))
+                    .sort((left, right) => left.startMs - right.startMs);
+                if (cues.length < 20) return null;
+                const first = cues[0].startMs / 1000;
+                const last = cues[cues.length - 1].startMs / 1000;
+                meta.checkpointTimes = [0, .1875, .3125, .4375, .5625, .6875, .8125, .9375].map(fraction => {
+                    const target = first + (last - first) * fraction;
+                    return cues.reduce((best, cue) => Math.abs(cue.startMs / 1000 - target) < Math.abs(best.startMs / 1000 - target) ? cue : best).startMs / 1000;
+                });
+            }
+            const spoken = await attempt('dialogue checkpoints', reference);
+            if (!spoken) return null;
+            for (const candidate of candidates) {
+                const output = path.join(workDir, `${require('crypto').randomUUID()}.srt`);
+                const result = await attempt('dialogue alignment', async () => {
+                    const proof = await this.alignCandidateWithDialogue(spoken, candidate.srtPath, output);
+                    if (!proof.aligned) throw new Error(proof.reason || 'Correspondência com o áudio não comprovada');
+                    return finish(output, `${candidate.sourceMethod || 'Human PT-BR'} + dialogue verification`, proof);
+                });
                 if (result) return result;
             }
-
-            onProgress?.(15, 'Buscando legendas humanas PT-BR');
+            return null;
+        };
+        try {
             const candidates = [];
+            if (metadata.existingSubtitlePath) {
+                const content = await fs.readFile(metadata.existingSubtitlePath, 'utf8');
+                const candidate = path.join(workDir, 'existing.srt');
+                await fs.writeFile(candidate, SubtitleUtils.cuesToSrt(SubtitleUtils.parseSubtitles(content)));
+                candidates.push({ srtPath: candidate, sourceMethod: 'Existing human PT-BR' });
+            }
+            onProgress?.(10, 'Extraindo legendas humanas e verificando o áudio desta versão');
+            const embedded = metadata.existingSubtitlePath ? null : await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
             if (embedded?.srtPath) candidates.push(embedded);
             const companion = await attempt('companion', () => this.findCompanionSubtitles(videoPath, meta));
-            refEnPath = companion?.refEnPath || null;
             if (companion?.ptSrtPath) candidates.push({ srtPath: companion.ptSrtPath, sourceMethod: 'Companion Human PT-BR' });
+            let result = await human(candidates);
+            if (result) return result;
+
             for (const fetch of [this.fetchExternalSubtitle, this.fetchSubdlSubtitle]) {
                 const found = await attempt('provider', () => fetch.call(this, videoPath, meta, duration));
-                if (found?.candidates?.length) candidates.push(...found.candidates);
-                else if (found?.srtPath) candidates.push(found);
+                result = await human(found?.candidates || (found?.srtPath ? [found] : []));
+                if (result) return result;
             }
-            if (candidates.length) {
-                const map = await attempt('sync anchors', anchors);
-                if (map) {
-                    for (const candidate of candidates) {
-                        const output = path.join(workDir, `synced_${require('crypto').randomUUID()}.srt`);
-                        const result = await attempt('human sync', async () => {
-                            const aligned = await this.alignCandidateWithDenseWhisper(map, candidate.srtPath, output, duration, refEnPath);
-                            if (!aligned.aligned) throw new Error(aligned.reason || 'Sincronia não comprovada');
-                            return finish(output, `${candidate.sourceMethod || 'Human PT-BR'} + Whisper Sync`);
-                        });
-                        if (result) return result;
-                        await fs.remove(output).catch(() => {});
-                    }
-                }
+            onProgress?.(72, 'Traduzindo legenda humana EN/ES e comparando com as falas');
+            const foreign = await attempt('foreign subtitle', () => this.fetchForeignSubtitleCandidates(videoPath, meta, duration));
+            if (foreign?.srtPath && SubtitleTranslationService.isAvailable()) {
+                const pt = path.join(workDir, 'translated.srt');
+                result = await attempt('human translation', async () => {
+                    await SubtitleTranslationService.translateSrtFile(foreign.srtPath, pt, { title: meta.title || meta.nome });
+                    return human([{ srtPath: pt, sourceMethod: `Human ${foreign.lang} translated to PT-BR` }]);
+                });
+                if (result) return result;
             }
-
-            onProgress?.(72, 'Buscando e traduzindo legenda humana EN/ES');
-            const translated = await attempt('human translation', async () => {
-                const foreign = await this.fetchForeignSubtitleCandidates(videoPath, meta, duration);
-                if (!foreign?.srtPath || !SubtitleTranslationService.isAvailable()) return null;
-                const output = path.join(workDir, `foreign_${require('crypto').randomUUID()}.srt`);
-                const aligned = await this.alignCandidateWithDenseWhisper(await anchors(), foreign.srtPath, output, duration);
-                if (!aligned.aligned) throw new Error(aligned.reason || 'Sincronia EN/ES não comprovada');
-                const pt = path.join(workDir, `translated_${require('crypto').randomUUID()}.srt`);
-                try {
-                    await SubtitleTranslationService.translateSrtFile(output, pt, { title: meta.title || meta.nome });
-                    return await finish(pt, `Human ${foreign.lang} + PT-BR translation + Whisper Sync`);
-                } catch (error) {
-                    await fs.remove(pt).catch(() => {});
-                    throw error;
-                } finally { await fs.remove(output).catch(() => {}); }
+            onProgress?.(80, 'Último recurso: legenda das falas transcritas deste áudio');
+            fullReferencePath = await this.audioDialogueReference(videoPath, meta, onProgress);
+            return await finish(fullReferencePath, 'Whisper ASR + PT-BR translation (final fallback)', {
+                method: 'asr_word_timestamps', audioFingerprint: metadata.mediaFingerprint || null
             });
-            if (translated) return translated;
-
-            onProgress?.(80, 'Último recurso: Whisper ASR e tradução PT-BR');
-            const asr = await SubtitleAudioService.create(videoPath, metadata.audioIndex || 0, {
-                title: meta.title || meta.nome, onProgress
-            });
-            try { return await finish(asr, 'Whisper ASR + PT-BR translation (final fallback)'); }
-            catch (error) { await fs.remove(asr).catch(() => {}); throw error; }
-        } catch (error) {
-            error.code ||= 'SUBTITLE_SYNC_FAILED';
-            throw error;
-        } finally {
-            if (anchorsPath) await fs.remove(anchorsPath).catch(() => {});
+        } catch (error) { error.code ||= 'SUBTITLE_SYNC_FAILED'; throw error; }
+        finally {
+            if (referencePath) await fs.remove(referencePath).catch(() => {});
+            if (fullReferencePath) await fs.remove(fullReferencePath).catch(() => {});
+            await fs.remove(workDir).catch(() => {});
         }
     }
 
