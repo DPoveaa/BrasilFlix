@@ -133,14 +133,16 @@ class SubtitleMaintenance {
 
     async dashboard(state, offset) {
         await this.init();
+        const active = await slot.active();
         const classified = `SELECT r.*, CASE
             WHEN completed_at IS NOT NULL THEN 'completed'
-            WHEN lease_until > NOW() THEN 'processing'
+            WHEN lease_until > NOW() AND type=$2 AND media_id=$3 THEN 'processing'
             WHEN last_error IS NOT NULL THEN 'retry'
             ELSE 'queued' END AS status
             FROM subtitle_repairs r WHERE revision=$1`;
-        const [counts, jobs, active] = await Promise.all([
-            db.query(`SELECT status, COUNT(*)::int AS count FROM (${classified}) q GROUP BY status`, [slot.revision]),
+        const params = [slot.revision, active?.media_type || null, active?.media_id || null];
+        const [counts, jobs] = await Promise.all([
+            db.query(`SELECT status, COUNT(*)::int AS count FROM (${classified}) q GROUP BY status`, params),
             db.query(`SELECT q.type,q.media_id,q.status,q.progress,q.message,q.attempts,q.next_attempt,
                 q.last_error,q.updated_at,q.started_at,q.completed_at,q.outcome->>'method' AS method,
                 COALESCE(f.nome, CONCAT(s.nome, ' · T', e.temporada_numero, ' E', e.numero), q.media_id::text) AS title
@@ -148,12 +150,11 @@ class SubtitleMaintenance {
                 LEFT JOIN filmes f ON q.type='filme' AND f.id=q.media_id
                 LEFT JOIN episodios e ON q.type='episodio' AND e.id=q.media_id
                 LEFT JOIN series s ON s.id=e.serie_id
-                WHERE ($2='' OR q.status=$2)
+                WHERE ($4='' OR q.status=$4)
                 ORDER BY CASE q.status WHEN 'processing' THEN 0 WHEN 'retry' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END,
                 CASE WHEN q.completed_at IS NULL THEN q.priority END DESC,
                 CASE WHEN q.completed_at IS NULL THEN q.next_attempt END,
-                q.completed_at DESC, q.type, q.media_id LIMIT 30 OFFSET $3`, [slot.revision, state, offset]),
-            slot.active()
+                q.completed_at DESC, q.type, q.media_id LIMIT 30 OFFSET $5`, [...params, state, offset])
         ]);
         const totals = Object.fromEntries(counts.rows.map(row => [row.status, row.count]));
         return { counts: totals, processingTotal: active ? 1 : totals.processing || 0, jobs: jobs.rows, active,
@@ -169,11 +170,16 @@ class SubtitleMaintenance {
             return { status: 'completed', progress: 100, tracks: row?.legendas || [], message: pending.message,
                 outcome: pending.outcome, completedAt: pending.completed_at };
         }
-        if (pending?.revision === slot.revision) return {
-            status: pending.lease_until && new Date(pending.lease_until).getTime() > Date.now() ? 'processing' : 'queued',
-            progress: pending.progress, message: pending.message || 'Aguardando recuperação automática',
-            attempts: pending.attempts, nextAttempt: pending.next_attempt, error: pending.last_error
-        };
+        if (pending?.revision === slot.revision) {
+            const active = pending.lease_until && new Date(pending.lease_until).getTime() > Date.now() ? await slot.active() : null;
+            const processing = active?.media_type === type && String(active?.media_id) === String(id);
+            return {
+                status: processing ? 'processing' : 'queued',
+                progress: processing ? pending.progress : 0,
+                message: processing || pending.last_error ? pending.message : 'Aguardando recuperação automática',
+                attempts: pending.attempts, nextAttempt: pending.next_attempt, error: pending.last_error
+            };
+        }
         const row = await this.load(type,id);
         const tracks = Array.isArray(row?.legendas) ? row.legendas : [];
         if (tracks.some(t => t.validationVersion === slot.revision)) return { status: 'completed', progress: 100, tracks, message: 'Legenda verificada contra o áudio desta versão.' };
@@ -198,7 +204,8 @@ class SubtitleMaintenance {
     async repair(type, id) {
         const row = await this.load(type, id);
         const title = row?.serie_nome ? `${row.serie_nome} · T${row.temporada_numero} E${row.numero}` : row?.nome;
-        return slot.run(title || `${type} #${id}`, progress => this.repairWithSlot(type, id, progress));
+        return slot.run(title || `${type} #${id}`, progress => this.repairWithSlot(type, id, progress),
+            true, 'catalog', { type, id });
     }
 
     async repairWithSlot(type, id, slotProgress) {
