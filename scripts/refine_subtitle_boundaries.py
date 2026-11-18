@@ -132,9 +132,9 @@ def refine(args):
     with open(args.output, 'w', encoding='utf8') as file:
         for index, cue in enumerate(out, 1):
             file.write(f"{index}\n{format_time(cue['start'])} --> {format_time(cue['end'])}\n{cue['text']}\n\n")
-    return dict(boundary_checks=checks,
-                refined_starts=sum(abs(a['start'] - b['start']) > .01 for a, b in zip(cues, out)),
-                refined_ends=sum(abs(a['end'] - b['end']) > .01 for a, b in zip(cues, out)))
+    return dict(boundary_checks=int(checks),
+                refined_starts=int(sum(abs(a['start'] - b['start']) > .01 for a, b in zip(cues, out))),
+                refined_ends=int(sum(abs(a['end'] - b['end']) > .01 for a, b in zip(cues, out))))
 
 
 if __name__ == '__main__':
