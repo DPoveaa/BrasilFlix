@@ -3700,7 +3700,29 @@ class StremioServer {
         res.setHeader('Cache-Control', 'private, no-cache, no-transform');
 
         // 1. Resolve o filme no catálogo
-        const filme = this.catalogoManager.buscarFilmePorId(id);
+        let filme = this.catalogoManager.buscarFilmePorId(id, userToken === 'internal_admin');
+        if (!filme && userToken === 'internal_admin') {
+            try {
+                const row = await this.subtitleMaintenance.load('filme', id);
+                if (row) {
+                    let versoes = row.versoes;
+                    if (typeof versoes === 'string') {
+                        try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+                    }
+                    filme = {
+                        id: row.id,
+                        nome: row.nome,
+                        nomeOriginal: row.nome_original,
+                        versoes: versoes || {},
+                        messageId: row.message_id ? Number(row.message_id) : null,
+                        fileId: row.file_id,
+                        duracao: row.duracao,
+                        isDublado: row.is_dublado,
+                        isLegendado: row.is_legendado
+                    };
+                }
+            } catch (_) { }
+        }
         if (!filme) {
             return res.status(404).send('Filme não encontrado no catálogo.');
         }
@@ -3818,19 +3840,45 @@ class StremioServer {
         const epNum = parseInt(episode, 10);
 
         // 1. Resolve a série no catálogo
-        const serie = this.catalogoManager.buscarSeriePorId(id);
-        if (!serie) {
+        let serie = this.catalogoManager.buscarSeriePorId(id, userToken === 'internal_admin');
+        let ep = null;
+        if (serie) {
+            const temporada = (serie.temporadas || []).find(t => t.numero === seasonNum);
+            ep = (temporada?.episodios || []).find(e => e.numero === epNum);
+        }
+
+        // Fallback especial para streaming administrativo interno de episódio em reparo de legenda
+        if (!ep && userToken === 'internal_admin') {
+            try {
+                const epRes = await db.query(
+                    'SELECT * FROM episodios WHERE serie_id = $1 AND temporada_numero = $2 AND numero = $3',
+                    [id, seasonNum, epNum]
+                );
+                if (epRes.rows[0]) {
+                    const row = epRes.rows[0];
+                    let versoes = row.versoes;
+                    if (typeof versoes === 'string') {
+                        try { versoes = JSON.parse(versoes); } catch (_) { versoes = {}; }
+                    }
+                    ep = {
+                        numero: row.numero,
+                        nome: row.nome,
+                        duracao: row.duracao,
+                        messageId: row.message_id ? Number(row.message_id) : null,
+                        fileId: row.file_id,
+                        qualidade: row.qualidade || '1080p',
+                        isDublado: row.is_dublado,
+                        isLegendado: row.is_legendado,
+                        versoes: versoes || {}
+                    };
+                }
+            } catch (_) { }
+        }
+
+        if (!serie && !ep) {
             return res.status(404).send('Série não encontrada no catálogo.');
         }
 
-        // 2. Resolve a temporada (respeitando continuidade e ponto de entrada)
-        const temporada = (serie.temporadas || []).find(t => t.numero === seasonNum);
-        if (!temporada) {
-            return res.status(404).send(`Temporada ${seasonNum} da série não encontrada ou indisponível.`);
-        }
-
-        // 3. Resolve o episódio na temporada (garantindo que não está em lacuna de continuidade)
-        const ep = (temporada.episodios || []).find(e => e.numero === epNum);
         if (!ep) {
             return res.status(404).send(`Episódio S${seasonNum}E${epNum} não encontrado ou indisponível.`);
         }

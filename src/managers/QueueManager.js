@@ -84,6 +84,7 @@ class QueueManager extends EventEmitter {
         this.MAX_JOB_ATTEMPTS = 3; // Máximo de tentativas antes de marcar job como failed definitivo
         this.downloadSlots = new Set();
         this.downloadWaiters = new Map();
+        this.subtitleMaintenance = null;
         this.ingestionMetrics = { jobs: 0, published: 0, failures: {}, discardedBytes: {}, timings: {} };
         this._processingStarted = false; // Só inicia downloads após o servidor web estar no ar
         // Mutex para evitar race condition no loop de lançamento de workers paralelos
@@ -129,6 +130,10 @@ class QueueManager extends EventEmitter {
         if (val && val.id) {
             this.activeJobs.set(val.id, val);
         }
+    }
+
+    setSubtitleMaintenance(subtitleMaintenance) {
+        this.subtitleMaintenance = subtitleMaintenance;
     }
 
     getActiveTasks() {
@@ -917,7 +922,18 @@ class QueueManager extends EventEmitter {
             }
 
             // Se houver mais de 1 download em paralelo, devolve os excedentes para a fila
-            if (activeDownloads.length > 1) {
+            const hasSubDownload = Array.from(this.downloadSlots).some(id => String(id).startsWith('sub_'));
+            if (hasSubDownload && activeDownloads.length > 0) {
+                for (const excessJob of activeDownloads) {
+                    console.log(`🍃 [Modo Econômico] Slot de download reservado para reprocessamento de legenda. Devolvendo "${excessJob.title}" à fila temporariamente.`);
+                    DownloaderManager.cancelDownload(excessJob.id);
+                    excessJob.status = 'queued';
+                    excessJob.progress = 0;
+                    excessJob.progressDetails = 'Aguardando vez na esteira (legenda em reprocessamento)...';
+                    this.saveJob(excessJob).catch(() => { });
+                    this.activeJobs.delete(excessJob.id);
+                }
+            } else if (activeDownloads.length > 1) {
                 const excessDownloads = activeDownloads.slice(1);
                 for (const excessJob of excessDownloads) {
                     console.log(`🍃 [Modo Econômico] Limitando downloads simultâneos a 1. Interrompendo download excedente de "${excessJob.title}" e devolvendo à fila.`);
@@ -1748,6 +1764,9 @@ class QueueManager extends EventEmitter {
 
     releaseDownloadSlot(jobId) {
         this.downloadSlots.delete(jobId);
+        if (this.subtitleMaintenance) {
+            this.subtitleMaintenance.tick().catch(() => {});
+        }
     }
 
     recordIngestionTiming(stage, startedAt) {
@@ -1886,7 +1905,7 @@ class QueueManager extends EventEmitter {
                 const activeTranscodes = this.getActiveOptimizationsCount();
                 const activeUploads = this.getActiveUploadsCount();
 
-                const canDownload = !diskCrowded && isNetworkAllowed && [...this.activeJobs.values()].filter(job => !job.rawFilePath && !job.optimizedPath && !this.downloadSlots.has(job.id)).length < maxSearches;
+                const canDownload = !diskCrowded && isNetworkAllowed && (this.downloadSlots.size < maxDownloads) && [...this.activeJobs.values()].filter(job => !job.rawFilePath && !job.optimizedPath && !this.downloadSlots.has(job.id)).length < maxSearches;
                 const canTranscode = activeTranscodes < maxTranscodes;
                 const canUpload = isNetworkAllowed && activeUploads < maxUploads;
 

@@ -26,6 +26,7 @@ class BrasilFlixBot {
         this.removalQueue = new RemovalQueueManager(this.catalogoManager, this.queueManager);
         this.autoFeeder = new AutoFeeder(this.queueManager, this.catalogoManager, this.pedidosManager);
         this.stremioServer = new StremioServer(this.catalogoManager, this.assinaturaManager, this.queueManager, this.pedidosManager);
+        this.queueManager.setSubtitleMaintenance(this.stremioServer.subtitleMaintenance);
         // Compartilha a instância central do RemovalQueueManager com o StremioServer
         this.stremioServer.removalQueue = this.removalQueue;
         this.commandHandler = new CommandHandler(this.bot, this.pedidosManager, this.catalogoManager, this.assinaturaManager, this.queueManager, this.favoritosManager);

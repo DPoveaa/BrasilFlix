@@ -5,6 +5,8 @@ const db = require('../database/db');
 const utils = require('../utils/SubtitleUtils');
 const pipeline = require('./SubtitlePipeline');
 const slot = require('./SubtitleWorkSlot');
+const SchedulerService = require('./SchedulerService');
+const config = require('../../config');
 
 const directory = path.resolve(__dirname, '../../public/subtitles');
 const cutoff = '2026-11-15T00:00:00-03:00';
@@ -199,13 +201,30 @@ class SubtitleMaintenance {
                 message=CASE WHEN $4 OR subtitle_repairs.completed_at IS NOT NULL THEN NULL ELSE subtitle_repairs.message END
             WHERE (subtitle_repairs.lease_until IS NULL OR subtitle_repairs.lease_until < NOW())
                 AND ($4 OR subtitle_repairs.completed_at IS NOT NULL OR subtitle_repairs.revision<>$5 OR subtitle_repairs.priority<$3)`, [type, id, priority, manual, slot.revision]);
+        this.server.catalogoManager?.loadCatalogo().catch(e => console.warn('[Subtitle catalog]', e.message));
     }
 
     async repair(type, id) {
         const row = await this.load(type, id);
         const title = row?.serie_nome ? `${row.serie_nome} · T${row.temporada_numero} E${row.numero}` : row?.nome;
-        return slot.run(title || `${type} #${id}`, progress => this.repairWithSlot(type, id, progress),
-            true, 'catalog', { type, id });
+        const qm = this.server?.queueManager;
+        const slotId = `sub_${type}_${id}`;
+        let slotAcquiredHere = false;
+        if (qm && !qm.downloadSlots.has(slotId)) {
+            while (!qm.acquireDownloadSlot(slotId)) {
+                await new Promise(r => setTimeout(r, 4000));
+            }
+            slotAcquiredHere = true;
+        }
+        try {
+            return await slot.run(title || `${type} #${id}`, progress => this.repairWithSlot(type, id, progress),
+                true, 'catalog', { type, id });
+        } finally {
+            if (slotAcquiredHere && qm) {
+                qm.releaseDownloadSlot(slotId);
+                setImmediate(() => qm.processNext());
+            }
+        }
     }
 
     async repairWithSlot(type, id, slotProgress) {
@@ -329,14 +348,40 @@ class SubtitleMaintenance {
                 if (batch.rows.length < 25) this.cursor[type] = 0;
             }
             if (!this.working) {
+                // Integração com a esteira de downloads: respeita agendamento e concorrência máxima de download
+                if (!SchedulerService.isAllowedToRun()) return;
+
+                const qm = this.server?.queueManager;
+                if (qm) {
+                    const limit = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || qm.maxConcurrentDownloads || 3);
+                    if (qm.downloadSlots.size >= limit) {
+                        return; // Slot de download já ocupado na esteira (por download de mídia do catálogo)
+                    }
+                }
+
                 const jobs = await db.query(`SELECT type, media_id FROM subtitle_repairs
                     WHERE revision=$1 AND completed_at IS NULL AND next_attempt <= NOW() AND (lease_until IS NULL OR lease_until < NOW())
                     ORDER BY priority DESC, next_attempt LIMIT 1`, [slot.revision]);
                 if (jobs.rows.length) {
                     const job = jobs.rows[0];
-                    this.working = this.repair(job.type, job.media_id)
-                        .catch(e => console.warn('[Subtitle repair pending]', job.type, job.media_id, e.message))
-                        .finally(() => { this.working = null; });
+                    const slotId = `sub_${job.type}_${job.media_id}`;
+                    if (qm && !qm.acquireDownloadSlot(slotId)) {
+                        return; // Não conseguiu vaga exclusiva de download
+                    }
+                    console.log(`🍃 [Fila de Legendas] Slot de download reservado na esteira para ${job.type} #${job.media_id}`);
+                    this.working = (async () => {
+                        try {
+                            await this.repair(job.type, job.media_id);
+                        } finally {
+                            if (qm) {
+                                qm.releaseDownloadSlot(slotId);
+                                console.log(`🍃 [Fila de Legendas] Slot de download liberado (${job.type} #${job.media_id})`);
+                                setImmediate(() => qm.processNext());
+                            }
+                        }
+                    })()
+                    .catch(e => console.warn('[Subtitle repair pending]', job.type, job.media_id, e.message))
+                    .finally(() => { this.working = null; });
                 }
             }
         } finally { this.scanning = false; }
