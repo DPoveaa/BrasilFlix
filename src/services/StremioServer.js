@@ -37,7 +37,6 @@ class StremioServer {
         this.progressManager = new ProgressManager();
         this.stremioService = new StremioService(catalogoManager, assinaturaManager);
         this.removalQueue = new RemovalQueueManager(catalogoManager, queueManager);
-        this.reprocessSubtitleJobs = new Map();
         this.port = port;
         this.subtitleMaintenance = new SubtitleMaintenance(this);
         this.app = express();
@@ -1379,7 +1378,7 @@ class StremioServer {
                 }
 
                 const table = type === 'filme' ? 'filmes' : 'episodios';
-                const r = await db.query(`SELECT id, nome, legendas FROM ${table} WHERE id = $1`, [id]);
+                const r = await db.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
                 if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
 
                 let tracks = r.rows[0].legendas || [];
@@ -1433,6 +1432,9 @@ class StremioServer {
 
                 const newVersion = Date.now();
                 track.version = newVersion;
+                track.manualReview = true;
+                track.mediaFingerprint = this.subtitleMaintenance.fingerprint(r.rows[0]);
+                track.contentHash = SubtitleUtils.contentHash(newVtt);
                 track.srtPath = srtDest;
                 track.vttPath = vttDest;
                 track.srtUrl = `/subtitles/${path.basename(srtDest)}`;
@@ -1466,7 +1468,7 @@ class StremioServer {
                 }
 
                 const table = type === 'filme' ? 'filmes' : 'episodios';
-                const r = await db.query(`SELECT id, nome, legendas FROM ${table} WHERE id = $1`, [id]);
+                const r = await db.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
                 if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
 
                 let tracks = r.rows[0].legendas || [];
@@ -1499,6 +1501,9 @@ class StremioServer {
 
                 const newVersion = Date.now();
                 track.version = newVersion;
+                track.manualReview = true;
+                track.mediaFingerprint = this.subtitleMaintenance.fingerprint(r.rows[0]);
+                track.contentHash = SubtitleUtils.contentHash(newVtt);
                 track.srtPath = srtDest;
                 track.vttPath = vttDest;
                 track.srtUrl = `/subtitles/${path.basename(srtDest)}`;
@@ -1550,7 +1555,7 @@ class StremioServer {
                 }
 
                 const table = type === 'filme' ? 'filmes' : 'episodios';
-                const r = await db.query(`SELECT id, nome, ${type === 'filme' ? 'tmdb_id' : 'serie_id, temporada_numero, numero'} FROM ${table} WHERE id = $1`, [id]);
+                const r = await db.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
                 if (r.rows.length === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
                 const row = r.rows[0];
 
@@ -1586,7 +1591,10 @@ class StremioServer {
                     vttUrl: `/subtitles/${vttFilename}`,
                     srtPath: srtDest,
                     vttPath: vttDest,
-                    version: timestamp
+                    version: timestamp,
+                    manualReview: true,
+                    mediaFingerprint: this.subtitleMaintenance.fingerprint(r.rows[0]),
+                    contentHash: SubtitleUtils.contentHash(newVtt)
                 };
 
                 if (trackIdx >= 0) {
@@ -1618,120 +1626,19 @@ class StremioServer {
                     return res.status(400).json({ error: 'Tipo inválido. Use "filme" ou "episodio".' });
                 }
 
-                let row = null;
-                let sNum = null;
-                let eNum = null;
-                let mediaTitle = '';
-                let tmdbId = null;
-                let imdbId = null;
-                let durationSec = 0;
+                const row = await this.subtitleMaintenance.load(type, id);
+                if (!row) return res.status(404).json({ error: 'Mídia não encontrada.' });
 
-                if (type === 'filme') {
-                    const r = await db.query(`
-                        SELECT id, nome, nome_original, ano, tmdb_id, imdb_id, message_id, file_id, versoes, legendas, is_legendado, is_hardsub, created_at, audio
-                        FROM filmes WHERE id = $1
-                    `, [id]);
-                    if (r.rows.length === 0) return res.status(404).json({ error: 'Filme não encontrado.' });
-                    row = r.rows[0];
-                    mediaTitle = row.nome;
-                    tmdbId = row.tmdb_id;
-                    imdbId = row.imdb_id;
-                    // filmes table has no duracao column — ffprobe will probe from stream
-                } else {
-                    const r = await db.query(`
-                        SELECT e.id, e.nome, e.temporada_numero, e.numero, e.serie_id, e.message_id, e.file_id, e.versoes, e.legendas, e.duracao, e.is_legendado, e.is_hardsub, e.created_at, e.audio,
-                               s.nome as serie_nome, s.nome_original as serie_nome_original, s.tmdb_id, s.imdb_id
-                        FROM episodios e
-                        JOIN series s ON s.id = e.serie_id
-                        WHERE e.id = $1
-                    `, [id]);
-                    if (r.rows.length === 0) return res.status(404).json({ error: 'Episódio não encontrado.' });
-                    row = r.rows[0];
-                    sNum = row.temporada_numero;
-                    eNum = row.numero;
-                    mediaTitle = `${row.serie_nome} T${sNum}E${eNum}`;
-                    tmdbId = row.tmdb_id;
-                    imdbId = row.imdb_id;
-                    durationSec = row.duracao ? row.duracao * 60 : 0;
-                }
-
-                if (CatalogoManager.isItemLegacyHardsub(row)) {
+                if (this.subtitleMaintenance.hardsub(row)) {
                     return res.status(400).json({
                         error: 'Esta mídia possui legenda fixa embutida na imagem (Hardsub legado anterior a 15/11/2026) e não utiliza faixas de legenda externas.'
                     });
                 }
 
-                const jobKey = `${type}_${id}`;
-                const existing = this.reprocessSubtitleJobs.get(jobKey);
-                if (existing && existing.status === 'processing') {
-                    return res.status(202).json({
-                        success: true,
-                        message: 'Reprocessamento já em andamento.',
-                        job: existing
-                    });
-                }
-
-                const persistent = await this.subtitleMaintenance.status(type, id);
-                if (persistent.status === 'processing') {
-                    return res.status(202).json({ success: true, message: 'Recuperação já em andamento.', job: persistent });
-                }
-
-                const job = {
-                    id: `reprocess_${jobKey}_${Date.now()}`,
-                    type,
-                    mediaId: id,
-                    title: mediaTitle,
-                    status: 'processing',
-                    progress: 10,
-                    message: 'Obtendo stream de áudio real do Telegram...',
-                    startTime: Date.now(),
-                    error: null,
-                    tracks: null,
-                    cues: null
-                };
-                this.reprocessSubtitleJobs.set(jobKey, job);
-
-                // Executa em segundo plano (background) sem prender a conexão HTTP
-                setImmediate(async () => {
-                    try {
-                        console.log(`\n🔄 [AdminSubtitles:REPROCESS] Iniciando reprocessamento automático para "${mediaTitle}" (${type} #${id})...`);
-
-                        const onProgress = (percent, msg) => {
-                            job.progress = percent;
-                            job.message = msg;
-                            console.log(`🔄 [AdminSubtitles:REPROCESS] [${percent}%] ${msg}`);
-                        };
-
-                        const result = await this.subtitleMaintenance.repair(type, id, onProgress, true);
-                        job.status = 'completed';
-                        job.progress = 100;
-                        job.message = `Concluído via ${result.sourceMethod}`;
-                        job.tracks = result.tracks;
-                        job.cues = result.cues;
-                        job.completedAt = Date.now();
-                    } catch (bgErr) {
-                        // Surface FFmpeg stderr if available so the Admin modal shows the real root cause
-                        const ffStderr = bgErr.ffmpegStderr || bgErr.stderr || '';
-                        const stderrSnippet = ffStderr
-                            ? `\n[FFmpeg stderr] ${ffStderr.trim().split('\n').slice(-8).join(' | ')}`
-                            : '';
-                        const fullMsg = `${bgErr.message}${stderrSnippet}`;
-                        console.error(`❌ [AdminSubtitles:REPROCESS] Erro em segundo plano: ${fullMsg}`);
-                        job.status = 'error';
-                        job.error = fullMsg;
-                        job.message = `Falha ao reprocessar: ${fullMsg}`;
-                        job.completedAt = Date.now();
-                    }
-                });
-
-                // Retorna 202 Accepted imediatamente
-                return res.status(202).json({
-                    success: true,
-                    status: 'processing',
-                    progress: 10,
-                    message: 'Reprocessamento de legendas iniciado em segundo plano.',
-                    job
-                });
+                await this.subtitleMaintenance.enqueue(type, id, 100, true);
+                this.subtitleMaintenance.tick().catch(error => console.warn('[Subtitle queue]', error.message));
+                const job = await this.subtitleMaintenance.status(type, id);
+                return res.status(202).json({ success: true, ...job, job });
             } catch (e) {
                 console.error('❌ [AdminSubtitles:REPROCESS]', e.message);
                 res.status(500).json({ error: e.message });
@@ -1740,27 +1647,18 @@ class StremioServer {
 
         // 6. Consultar status do job de reprocessamento de legenda
         this.app.get('/api/admin/subtitles/:type/:id/reprocess/status', auth, async (req, res) => {
-            const { type, id } = req.params;
             try {
-                const persistent = await this.subtitleMaintenance.status(type, id);
-                if (persistent.status !== 'idle') return res.json({ success: true, ...persistent });
-            } catch (error) { return res.status(500).json({ error: error.message }); }
-            const jobKey = `${type}_${id}`;
-            const job = this.reprocessSubtitleJobs?.get(jobKey);
-            if (!job) {
-                try { return res.json({ success: true, ...await this.subtitleMaintenance.status(type, id) }); }
-                catch (error) { return res.status(500).json({ error: error.message }); }
-            }
-            res.json({
-                success: true,
-                status: job.status,
-                progress: typeof job.progress === 'number' ? job.progress : (job.status === 'completed' ? 100 : 15),
-                message: job.message || '',
-                tracks: job.tracks || null,
-                cues: job.cues || null,
-                error: job.error || null,
-                completedAt: job.completedAt || null
-            });
+                const { type, id } = req.params;
+                res.set('Cache-Control', 'no-store').json({ success: true, ...await this.subtitleMaintenance.status(type, id) });
+            } catch (error) { res.status(500).json({ error: error.message }); }
+        });
+
+        this.app.get('/api/admin/subtitle-queue', auth, async (req, res) => {
+            const state = ['queued', 'processing', 'retry', 'completed'].includes(req.query.status) ? req.query.status : '';
+            const offset = Math.min(100000, Math.max(0, parseInt(req.query.offset, 10) || 0));
+            try {
+                res.set('Cache-Control', 'no-store').json(await this.subtitleMaintenance.dashboard(state, offset));
+            } catch (error) { res.status(500).json({ error: error.message }); }
         });
 
         // 7. TMDB Live Search & Detalhes

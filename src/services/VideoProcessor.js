@@ -1205,6 +1205,7 @@ ${events.join('\n')}
                 metadata.refEnPath = pipelineResult?.refEnPath;
                 metadata.subtitleSyncValidationVersion = pipelineResult?.syncValidationVersion;
                 metadata.subtitleSyncProof = pipelineResult?.checkpoints;
+                metadata.subtitleSourceMethod = pipelineResult?.sourceMethod;
                 srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
                 if (srtPath) {
                     console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
@@ -1748,6 +1749,7 @@ ${events.join('\n')}
                     version: timestamp,
                     validationVersion: metadata.subtitleSyncValidationVersion || 0,
                     syncProof: metadata.subtitleSyncProof,
+                    sourceMethod: metadata.subtitleSourceMethod,
                     contentHash: require('../utils/SubtitleUtils').contentHash(SubtitleTranslationService.convertSrtToVtt(srtContent))
                 });
                 console.log(`💾 [Web Subtitles] Legenda PT-BR persistida para o player web: ${ptVttName} (.srt e .vtt)`);

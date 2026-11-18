@@ -10,6 +10,7 @@ const SubtitleTranslationService = require('./SubtitleTranslationService');
 const SubdlService = require('./SubdlService');
 const SubtitleUtils = require('../utils/SubtitleUtils');
 const SubtitleAudioService = require('./SubtitleAudioService');
+const subtitleSlot = require('./SubtitleWorkSlot');
 
 const execFileAsync = promisify(execFile);
 
@@ -1875,6 +1876,12 @@ print(f"RESULT:{res}")
     }
 
     async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
+        onProgress?.(0, 'Aguardando vaga na fila de legendas');
+        return subtitleSlot.run(metadata.title || metadata.nome || 'Nova mídia',
+            () => this.processWithSubtitleSlot(videoPath, metadata, onProgress));
+    }
+
+    async processWithSubtitleSlot(videoPath, metadata = {}, onProgress = null) {
         const attempt = async (label, action) => {
             try { return await action(); }
             catch (error) { console.warn(`[Subtitle ${label}]`, error.message); return null; }
@@ -1885,18 +1892,73 @@ print(f"RESULT:{res}")
         let referencePromise;
         let referencePath;
         let fullReferencePath;
+        let sourcePromise;
         let retained;
+        const model = process.env.SUBTITLE_SEMANTIC_MODEL_DIR ||
+            path.resolve(__dirname, '../../data/subtitle_models/multilingual-minilm');
+        const source = () => sourcePromise ||= (async () => {
+            const stat = /^https?:/.test(videoPath) ? null : await fs.stat(videoPath);
+            const fingerprint = meta.mediaFingerprint || (stat && `${stat.size}:${stat.mtimeMs}`);
+            const key = require('crypto').createHash('sha256').update(JSON.stringify([
+                'dialogue-full-v2', videoPath, fingerprint, meta.audioIndex || 0,
+                process.env.SUBTITLE_WHISPER_MODEL || 'turbo', null
+            ])).digest('hex');
+            const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
+            await fs.ensureDir(cacheDir);
+            const text = await SubtitleAudioService.sourceTranscript(videoPath, meta.audioIndex || 0, {
+                title: meta.title || meta.nome, duration, onProgress,
+                audioCachePath: fingerprint ? path.join(cacheDir, `${key}.srt.wav`) : null
+            });
+            const file = path.join(workDir, 'spoken.srt');
+            await fs.writeFile(file, text);
+            return file;
+        })();
         const reference = () => referencePromise ||= this.audioDialogueReference(videoPath, meta, onProgress, true)
             .then(file => { referencePath = file; return file; });
         const finish = async (file, sourceMethod, proof) => {
             await this.validateAndFinalizeSubtitle(file, duration);
             retained = path.join(os.tmpdir(), `subtitle-${require('crypto').randomUUID()}.srt`);
             await fs.copy(file, retained);
-            return { srtPath: retained, sourceMethod, verified: true, syncValidationVersion: 2,
+            return { srtPath: retained, sourceMethod, verified: true, syncValidationVersion: subtitleSlot.revision,
                 checkpoints: proof, refEnPath: null };
         };
-        const human = async candidates => {
+        const human = async (candidates, allowTranslatedReference = false) => {
             if (!candidates.length) return null;
+            if (await fs.pathExists(path.join(model, 'onnx/model_quantized.onnx'))) {
+                const spoken = await attempt('source audio', source);
+                if (spoken) for (const candidate of candidates.slice(0, 6)) {
+                    const result = await attempt('semantic alignment', async () => {
+                        const output = path.join(workDir, `${require('crypto').randomUUID()}.srt`);
+                        const clean = path.join(workDir, 'candidate.srt');
+                        const cues = SubtitleUtils.parseSubtitles(await fs.readFile(candidate.srtPath, 'utf8'));
+                        await fs.writeFile(clean, SubtitleUtils.cuesToSrt(cues));
+                        onProgress?.(52, 'Comparando falas, velocidade e cortes');
+                        const { stdout } = await execFileAsync(this.pythonExec, [
+                            path.resolve(__dirname, '../../scripts/align_subtitle_semantic.py'),
+                            clean, spoken, output, model, String(duration)
+                        ], { timeout: 300000, maxBuffer: 1024 * 1024 });
+                        const proof = JSON.parse(stdout);
+                        if (!proof.aligned) throw new Error(proof.reason);
+                        const points = proof.boundary_points;
+                        delete proof.boundary_points;
+                        const refined = path.join(workDir, 'refined.srt');
+                        const usable = await attempt('boundary refinement', async () => {
+                            onProgress?.(65, 'Conferindo entradas e saídas de falas no áudio');
+                            const { stdout: report } = await execFileAsync(this.pythonExec, [
+                                path.resolve(__dirname, '../../scripts/refine_subtitle_boundaries.py'),
+                                videoPath, output, refined, model, String(meta.audioIndex || 0),
+                                JSON.stringify(points), '--whisper', process.env.SUBTITLE_WHISPER_MODEL || 'turbo',
+                                '--second', process.env.SUBTITLE_WHISPER_SECOND_MODEL || 'medium'
+                            ], { timeout: 420000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+                            Object.assign(proof, JSON.parse(report));
+                            return refined;
+                        });
+                        return finish(usable || output, `${candidate.sourceMethod || 'PT-BR'} + alinhamento por diálogo`, proof);
+                    });
+                    if (result) return result;
+                }
+            }
+            if (!allowTranslatedReference) return null;
             if (!referencePromise) {
                 const cues = SubtitleUtils.parseSubtitles(await fs.readFile(candidates[0].srtPath, 'utf8'))
                     .filter(cue => SubtitleUtils.cleanCueText(cue.text).split(/\s+/).length >= 5 && !/[♪♫]/.test(cue.text))
@@ -1949,7 +2011,7 @@ print(f"RESULT:{res}")
                 const pt = path.join(workDir, 'translated.srt');
                 result = await attempt('human translation', async () => {
                     await SubtitleTranslationService.translateSrtFile(foreign.srtPath, pt, { title: meta.title || meta.nome });
-                    return human([{ srtPath: pt, sourceMethod: `Human ${foreign.lang} translated to PT-BR` }]);
+                    return human([{ srtPath: pt, sourceMethod: `Human ${foreign.lang} translated to PT-BR` }], true);
                 });
                 if (result) return result;
             }

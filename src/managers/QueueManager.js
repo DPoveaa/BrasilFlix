@@ -3775,10 +3775,11 @@ class QueueManager extends EventEmitter {
         // Resumed optimized/pending uploads can predate the current subtitle pipeline.
         // A .subtitled marker or embedded stream alone is never proof of a usable web track.
         if (metadata.isLegendado) {
-            const pt = (metadata.webSubtitles || []).find(track => /^pt/i.test(track.lang || '') && track.validationVersion === 2);
+            const pt = (metadata.webSubtitles || []).find(track => /^pt/i.test(track.lang || '') &&
+                track.validationVersion === require('../services/SubtitleWorkSlot').revision);
             const vttPath = pt?.vttUrl ? path.resolve(__dirname, '../../public/subtitles', path.basename(pt.vttUrl.split('?')[0])) : null;
             const content = vttPath ? await fs.readFile(vttPath, 'utf8').catch(() => '') : '';
-            const verified = !!(['dialogue_content', 'asr_word_timestamps'].includes(pt?.syncProof?.method) && content && pt.contentHash === SubtitleUtils.contentHash(content));
+            const verified = !!(['semantic_dialogue', 'dialogue_content', 'asr_word_timestamps'].includes(pt?.syncProof?.method) && content && pt.contentHash === SubtitleUtils.contentHash(content));
             if (!verified) {
                 job.progressDetails = 'Validando a legenda do arquivo final antes da publicação';
                 let result;
@@ -3789,6 +3790,7 @@ class QueueManager extends EventEmitter {
                     }, (_percent, message) => { job.progressDetails = message; });
                     metadata.subtitleSyncValidationVersion = result.syncValidationVersion;
                     metadata.subtitleSyncProof = result.checkpoints;
+                    metadata.subtitleSourceMethod = result.sourceMethod;
                     await VideoProcessor.persistWebSubtitles(metadata, result.srtPath);
                 } finally { if (result?.srtPath) await fs.remove(result.srtPath).catch(() => {}); }
             }

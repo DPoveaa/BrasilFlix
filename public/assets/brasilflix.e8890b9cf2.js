@@ -10692,8 +10692,98 @@
             } catch (e) { }
         }
 
+        let subtitleQueueOffset = 0;
+        let subtitleQueueRequest = 0;
+        const subtitleStates = { processing: 'Em processamento', queued: 'Na fila', retry: 'Em retentativa', completed: 'Concluída', idle: 'Sem processamento' };
+
+        function subtitleJobText(job) {
+            const state = job.status === 'queued' && job.error ? 'retry' : job.status;
+            const parts = [subtitleStates[state] || state];
+            if (state === 'processing') parts.push(job.progress + '%');
+            if (job.message) parts.push(job.message);
+            if (job.method || job.outcome?.method) parts.push(job.method || job.outcome.method);
+            if (job.attempts) parts.push(job.attempts + ' tentativa(s)');
+            const next = job.nextAttempt || job.next_attempt;
+            if (state === 'retry' && next) parts.push('Próxima: ' + new Date(next).toLocaleString('pt-BR'));
+            if (job.error || job.last_error) parts.push(job.error || job.last_error);
+            return parts.join(' · ');
+        }
+
+        async function loadSubtitleQueue(offset = subtitleQueueOffset) {
+            if (!adminToken) return;
+            const list = document.getElementById('admin-subtitle-queue-jobs');
+            const summary = document.getElementById('admin-subtitle-queue-summary');
+            if (!list || !summary) return;
+            subtitleQueueOffset = Math.max(0, offset);
+            const request = ++subtitleQueueRequest;
+            const filter = document.getElementById('admin-subtitle-queue-filter').value;
+            try {
+                const response = await fetch('/api/admin/subtitle-queue?' + new URLSearchParams({
+                    status: filter, offset: subtitleQueueOffset
+                }), { headers: getAuthHeaders(), cache: 'no-store' });
+                if (!response.ok) throw new Error('Não foi possível carregar a fila de legendas.');
+                const { counts, jobs, active, enabled } = await response.json();
+                if (request !== subtitleQueueRequest) return;
+                const total = filter ? counts[filter] || 0 : Object.values(counts).reduce((sum, value) => sum + value, 0);
+                summary.textContent = [
+                    enabled ? 'Um item por vez' : 'Fila pausada',
+                    ...['processing', 'queued', 'retry', 'completed'].map(key => (counts[key] || 0) + ' ' + subtitleStates[key].toLowerCase()),
+                    active || null
+                ].filter(Boolean).join(' · ');
+                list.replaceChildren(...jobs.map(job => {
+                    const item = document.createElement('li');
+                    const title = document.createElement('strong');
+                    title.textContent = job.title + ' (#' + job.media_id + ')';
+                    item.append(title, document.createElement('br'), document.createTextNode(subtitleJobText(job)));
+                    return item;
+                }));
+                if (!jobs.length) list.append(document.createTextNode('Nenhum item nesta situação.'));
+                document.getElementById('admin-subtitle-queue-prev').disabled = subtitleQueueOffset === 0;
+                document.getElementById('admin-subtitle-queue-next').disabled = subtitleQueueOffset + 30 >= total;
+            } catch (error) {
+                if (request === subtitleQueueRequest) summary.textContent = error.message;
+            }
+        }
+
+        let playerSubtitleStatusBusy = false;
+        async function loadPlayerSubtitleStatus() {
+            const target = document.getElementById('player-admin-subtitle-status');
+            const media = currentPlayingMedia;
+            if (!target || !target.getClientRects().length || !media || playerSubtitleStatusBusy) return;
+            const type = media.type === 'filme' ? 'filme' : 'episodio';
+            const episode = type === 'episodio' && currentPlaybackSerie?.temporadas
+                ?.find(season => Number(season.numero) === Number(media.season))?.episodios
+                ?.find(item => Number(item.numero) === Number(media.episode));
+            const id = type === 'filme' ? media.id : media.episodeId || episode?.id;
+            if (!id) return;
+            playerSubtitleStatusBusy = true;
+            try {
+                const response = await fetch('/api/admin/subtitles/' + type + '/' + encodeURIComponent(id) + '/reprocess/status',
+                    { headers: getAuthHeaders(), cache: 'no-store' });
+                if (!response.ok) throw new Error('Status indisponível.');
+                const job = await response.json();
+                if (currentPlayingMedia === media) {
+                    target.textContent = subtitleJobText(job);
+                    const updated = job.tracks?.find(track => /^pt/i.test(track.lang || ''));
+                    const shown = media.legendas?.find?.(track => /^pt/i.test(track.lang || ''));
+                    if (updated && (shown?.vttUrl !== updated.vttUrl || shown?.version !== updated.version)) {
+                        media.legendas = job.tracks;
+                        updatePlayerSubtitlesUI(job.tracks);
+                    }
+                }
+            } catch (error) {
+                if (currentPlayingMedia === media) target.textContent = error.message;
+            } finally { playerSubtitleStatusBusy = false; }
+        }
+
+        setInterval(() => {
+            if (document.getElementById('admin-subtitle-queue')?.getClientRects().length) loadSubtitleQueue();
+            loadPlayerSubtitleStatus();
+        }, 5000);
+
         async function loadAdminQueue() {
             if (!adminToken) return;
+            loadSubtitleQueue();
             const tbody = document.getElementById('admin-queue-tbody');
             if (!tbody) return;
 
@@ -14253,6 +14343,7 @@
                         );
                         const isHardsub = isItemHardsub(currentPlayingMedia);
                         adminEditEl.style.display = (isAdmin && !isHardsub) ? 'block' : 'none';
+                if (isAdmin && !isHardsub) loadPlayerSubtitleStatus();
                     }
                     menu.style.display = 'block';
                     menu.classList.add('visible');
@@ -14343,7 +14434,7 @@
                 });
             }
 
-            if (!availableTracks.some(t => /^pt/i.test(t.lang)) && !isItemHardsub(currentPlayingMedia) && !_subtitleRepairTimer) {
+            if (!isItemHardsub(currentPlayingMedia) && !_subtitleRepairTimer) {
                 const media = currentPlayingMedia;
                 const type = media?.type === 'filme' ? 'filme' : 'episodio';
                 const id = type === 'filme' ? media?.id : media?.episodeId;
@@ -14356,11 +14447,14 @@
                             const response = await fetch(`/api/media/${type}/${encodeURIComponent(id)}/subtitles`, { cache: 'no-store' });
                             if (!response.ok) return;
                             const data = await response.json();
-                            if (currentPlayingMedia === media && data.tracks?.some(t => /^pt/i.test(t.lang))) {
-                                clearInterval(_subtitleRepairTimer);
-                                _subtitleRepairTimer = null;
-                                media.legendas = data.tracks;
-                                updatePlayerSubtitlesUI(data.tracks);
+                            if (currentPlayingMedia === media && Array.isArray(data.tracks)) {
+                                const version = tracks => JSON.stringify(tracks.map(track => [track.lang, track.vttUrl, track.version]));
+                                if (version(data.tracks) !== version(availableTracks)) {
+                                    clearInterval(_subtitleRepairTimer);
+                                    _subtitleRepairTimer = null;
+                                    media.legendas = data.tracks;
+                                    updatePlayerSubtitlesUI(data.tracks);
+                                }
                             }
                         } catch (_) {} finally { refreshing = false; }
                     }, 30000);
@@ -14412,6 +14506,7 @@
                     (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bf_admin_token'))
                 );
                 adminEditEl.style.display = (isAdmin && !isHardsub) ? 'block' : 'none';
+                if (isAdmin && !isHardsub) loadPlayerSubtitleStatus();
             }
 
             if (btnLabel) {
@@ -15182,18 +15277,12 @@
                         const sData = await sRes.json();
                         if (!sRes.ok) return;
 
-                        if (sData.status === 'processing') {
-                            const p = typeof sData.progress === 'number' ? sData.progress : 15;
-                            if (barFill) barFill.style.width = `${Math.min(99, Math.max(5, p))}%`;
-                            if (percentLabel) percentLabel.innerText = `${p}%`;
-                            if (statusText && sData.message) statusText.innerText = sData.message;
-                            if (subText) {
-                                if (p <= 20) subText.innerText = 'Medindo duração exata e sondando container de vídeo...';
-                                else if (p <= 40) subText.innerText = 'Buscando faixas no Stremio e SubDL pool com controle de cota...';
-                                else if (p <= 60) subText.innerText = 'Verificando cobertura de tempo (>=85%) e densidade de falas...';
-                                else if (p <= 80) subText.innerText = 'Extraindo áudio e validando checkpoints de fala com Whisper ASR...';
-                                else subText.innerText = 'Refinando via Gemini e validando integridade no Quality Gate...';
-                            }
+                        if (sData.status === 'processing' || sData.status === 'queued') {
+                            const p = sData.progress || 0;
+                            if (barFill) barFill.style.width = p + '%';
+                            if (percentLabel) percentLabel.innerText = p + '%';
+                            if (statusText) statusText.innerText = subtitleStates[sData.status];
+                            if (subText) subText.innerText = subtitleJobText(sData);
                         } else if (sData.status === 'completed') {
                             clearInterval(adminSubReprocessPollTimer);
                             adminSubReprocessPollTimer = null;

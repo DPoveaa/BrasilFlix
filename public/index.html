@@ -1553,6 +1553,7 @@
                                         </div>
 
                                         <div id="player-subtitle-admin-edit-row" style="display: none; padding-top: 8px; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
+                                            <p id="player-admin-subtitle-status" style="font-size:.8rem; margin:0 0 8px" aria-live="polite"></p>
                                             <button class="speed-opt-btn" onclick="openPlayerAdminSubtitleEditor(event)" style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; font-weight: 700; width: 100%; justify-content: center; gap: 6px;">
                                                 <span>⚙️ Editar Legenda (Admin)</span>
                                             </button>
@@ -2342,6 +2343,22 @@
 
                                 <!-- SUB-TAB 2: FILA & DOWNLOADS -->
                                 <div id="admin-subtab-queue" class="admin-subtab-content" style="display: none;">
+                                    <section id="admin-subtitle-queue" class="admin-table-container" style="padding:16px; margin-bottom:20px">
+                                        <h3>Fila de legendas</h3>
+                                        <p id="admin-subtitle-queue-summary" aria-live="polite">Carregando fila…</p>
+                                        <label for="admin-subtitle-queue-filter">Filtrar por situação</label>
+                                        <select id="admin-subtitle-queue-filter" onchange="loadSubtitleQueue(0)">
+                                            <option value="">Todas</option>
+                                            <option value="processing">Em processamento</option>
+                                            <option value="queued">Na fila</option>
+                                            <option value="retry">Em retentativa</option>
+                                            <option value="completed">Concluídas</option>
+                                        </select>
+                                        <button type="button" class="admin-sub-btn" onclick="loadSubtitleQueue(subtitleQueueOffset)">Atualizar</button>
+                                        <ol id="admin-subtitle-queue-jobs" style="display:grid;gap:10px; margin:12px 0 12px 24px"></ol>
+                                        <button type="button" class="admin-sub-btn" id="admin-subtitle-queue-prev" onclick="loadSubtitleQueue(subtitleQueueOffset-30)">Anterior</button>
+                                        <button type="button" class="admin-sub-btn" id="admin-subtitle-queue-next" onclick="loadSubtitleQueue(subtitleQueueOffset+30)">Próxima</button>
+                                    </section>
 
                                     <!-- TERMINAL DE LOGS EM TEMPO REAL (SSE) -->
                                     <div id="adm-terminal-wrapper"
@@ -4979,7 +4996,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.749eb254cc.js?v=749eb254cc"></script>
+    <script src="/assets/brasilflix.e8890b9cf2.js?v=e8890b9cf2"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)

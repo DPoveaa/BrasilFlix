@@ -895,39 +895,7 @@ async function syncHardsubCutoff() {
               AND (is_hardsub IS NULL OR is_hardsub = false)
         `);
 
-        // 2. Limpa falso-positivos em itens pós-cutoff (>= 15/11/2026 00:00:00 América/São Paulo)
-        const fPost = await query(`
-            UPDATE filmes 
-            SET is_hardsub = false 
-            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND is_hardsub IS DISTINCT FROM false
-        `);
-
-        const ePost = await query(`
-            UPDATE episodios 
-            SET is_hardsub = false 
-            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND is_hardsub IS DISTINCT FROM false
-        `);
-
-        // 3. Remove flags residuais de hardsub dentro de versoes->'legendado' para pós-cutoff
-        await query(`
-            UPDATE filmes 
-            SET versoes = jsonb_set(versoes, '{legendado,hardsub}', 'false'::jsonb, false)
-            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND versoes->'legendado' ? 'hardsub'
-              AND versoes->'legendado'->>'hardsub' = 'true'
-        `);
-
-        await query(`
-            UPDATE episodios 
-            SET versoes = jsonb_set(versoes, '{legendado,hardsub}', 'false'::jsonb, false)
-            WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND versoes->'legendado' ? 'hardsub'
-              AND versoes->'legendado'->>'hardsub' = 'true'
-        `);
-
-        console.log(`✅ [HardsubCutoff] Sincronização concluída: ${fLegacy.rowCount || 0} filmes e ${eLegacy.rowCount || 0} eps legados marcados; ${fPost.rowCount || 0} filmes e ${ePost.rowCount || 0} eps pós-cutoff limpos.`);
+        console.log(`✅ [HardsubCutoff] ${fLegacy.rowCount || 0} filmes e ${eLegacy.rowCount || 0} episódios legados marcados.`);
     } catch (e) {
         console.warn('⚠️ [HardsubCutoff] Erro ao sincronizar corte de hardsubs:', e.message);
     }

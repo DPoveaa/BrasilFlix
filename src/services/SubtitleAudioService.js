@@ -197,4 +197,14 @@ async function createCheckpoints(inputPath, audioIndex, { title, duration, check
     } finally { await fs.remove(workspace).catch(() => {}); }
 }
 
-module.exports = { create, createCheckpoints, matchesSpokenDialogue };
+async function sourceTranscript(inputPath, audioIndex, { title, duration, audioCachePath, onProgress }) {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'subtitle-source-'));
+    try {
+        onProgress?.(24, 'Transcrevendo o áudio original para comparar as legendas');
+        return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+    } finally {
+        await fs.remove(workspace).catch(() => {});
+    }
+}
+
+module.exports = { create, createCheckpoints, matchesSpokenDialogue, sourceTranscript };
