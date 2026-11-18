@@ -45,6 +45,8 @@ async function bootstrap() {
         console.warn('⚠️ [HardsubCutoff] Falha ao sincronizar corte de hardsubs no banco:', e.message);
     }
 
+    botInstance.stremioServer.subtitleMaintenance.start();
+
     // 3. Inicializa polling e handlers do bot
     botInstance.start();
 

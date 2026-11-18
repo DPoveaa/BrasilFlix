@@ -881,16 +881,16 @@ async function syncHardsubCutoff() {
         const fLegacy = await query(`
             UPDATE filmes 
             SET is_hardsub = true 
-            WHERE (is_legendado = true OR audio ILIKE '%legendado%') 
-              AND created_at <= '2026-11-14 23:59:59.999-03'::timestamptz
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR versoes ? 'legendado')
+              AND created_at < '2026-11-15 00:00:00-03'::timestamptz
               AND (is_hardsub IS NULL OR is_hardsub = false)
         `);
 
         const eLegacy = await query(`
             UPDATE episodios 
             SET is_hardsub = true 
-            WHERE (is_legendado = true OR audio ILIKE '%legendado%') 
-              AND created_at <= '2026-11-14 23:59:59.999-03'::timestamptz
+            WHERE (is_legendado = true OR audio ILIKE '%legendado%' OR versoes ? 'legendado')
+              AND created_at < '2026-11-15 00:00:00-03'::timestamptz
               AND (is_hardsub IS NULL OR is_hardsub = false)
         `);
 
@@ -899,14 +899,14 @@ async function syncHardsubCutoff() {
             UPDATE filmes 
             SET is_hardsub = false 
             WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND is_hardsub = true
+              AND is_hardsub IS DISTINCT FROM false
         `);
 
         const ePost = await query(`
             UPDATE episodios 
             SET is_hardsub = false 
             WHERE created_at >= '2026-11-15 00:00:00-03'::timestamptz
-              AND is_hardsub = true
+              AND is_hardsub IS DISTINCT FROM false
         `);
 
         // 3. Remove flags residuais de hardsub dentro de versoes->'legendado' para pós-cutoff

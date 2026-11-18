@@ -24,12 +24,8 @@ class SubtitleSync {
     }
 
     async optimizeSubtitleFile(srtPath) {
-        try {
-            await SubtitlePipeline.validateAndFinalizeSubtitle(srtPath, 0);
-            return srtPath;
-        } catch (e) {
-            return srtPath;
-        }
+        await SubtitlePipeline.validateAndFinalizeSubtitle(srtPath, 0);
+        return srtPath;
     }
 
     async syncSubtitle(videoOrRefSrt, srtInputPath, srtOutputPath, options = {}) {
@@ -55,7 +51,7 @@ class SubtitleSync {
             if (!fs.existsSync(srtPath)) return false;
             const content = fs.readFileSync(srtPath, 'utf8');
             const cues = SubtitlePipeline.parseSrt(content);
-            return cues && cues.length >= 8;
+            return cues && cues.length >= 20 && SubtitlePipeline.isBrazilianPortugueseSubtitle(content);
         } catch (e) {
             return false;
         }

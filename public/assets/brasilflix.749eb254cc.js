@@ -1250,6 +1250,8 @@
 
         function isItemHardsub(item) {
             if (!item) return false;
+            const uploaded = item.createdAt || item.created_at || item.dataAdicionado;
+            if (uploaded && new Date(uploaded).getTime() >= new Date('2026-11-15T00:00:00-03:00').getTime()) return false;
             // Flag explícita do item / banco de dados
             if (item.isHardsub !== undefined && item.isHardsub !== null) return !!item.isHardsub;
             if (item.is_hardsub !== undefined && item.is_hardsub !== null) return !!item.is_hardsub;
@@ -6874,6 +6876,7 @@
         // Aborted whenever a new media is initialized so a slow response from title A
         // never overwrites the subtitle state of title B.
         let _subtitleFetchController = null;
+        let _subtitleRepairTimer = null;
         let autoPlayNextTimer = null;
         let autoPlayNextSeconds = 10;
         let autoPlayCancelled = false;
@@ -7228,6 +7231,8 @@
         // Call before loading any new media to guarantee zero bleed-through of
         // cues, in-memory state, or pending network responses from the previous title.
         function resetSubtitleState() {
+            clearInterval(_subtitleRepairTimer);
+            _subtitleRepairTimer = null;
             // 1. Abort any in-flight subtitle fetch so a slow response from the
             //    previous title never overwrites the new title's tracks.
             if (_subtitleFetchController) {
@@ -14288,7 +14293,7 @@
                 oldTracks.forEach(t => t.remove());
             }
 
-            let availableTracks = Array.isArray(tracks) ? tracks : [];
+            let availableTracks = (Array.isArray(tracks) ? tracks : []).filter(t => t && t.lang && /\.vtt(?:\?|$)/i.test(t.vttUrl || ''));
             const savedLang = localStorage.getItem('bf_sub_lang');
 
             // Determina a trilha ativa:
@@ -14324,7 +14329,7 @@
                     // Força modo 'showing' após carregamento do track para evitar race condition
                     trackEl.addEventListener('load', () => {
                         try {
-                            if (isActive) {
+                            if (trackEl.dataset.selected === 'true') {
                                 trackEl.track.mode = 'showing';
                             } else {
                                 trackEl.track.mode = 'disabled';
@@ -14332,8 +14337,34 @@
                         } catch (_) {}
                         applySubtitlePosition();
                     });
+                    trackEl.dataset.selected = String(isActive);
                     video.appendChild(trackEl);
+                    trackEl.track.mode = isActive ? 'showing' : 'disabled';
                 });
+            }
+
+            if (!availableTracks.some(t => /^pt/i.test(t.lang)) && !isItemHardsub(currentPlayingMedia) && !_subtitleRepairTimer) {
+                const media = currentPlayingMedia;
+                const type = media?.type === 'filme' ? 'filme' : 'episodio';
+                const id = type === 'filme' ? media?.id : media?.episodeId;
+                if (id) {
+                    let refreshing = false;
+                    _subtitleRepairTimer = setInterval(async () => {
+                        if (refreshing || currentPlayingMedia !== media) return;
+                        refreshing = true;
+                        try {
+                            const response = await fetch(`/api/media/${type}/${encodeURIComponent(id)}/subtitles`, { cache: 'no-store' });
+                            if (!response.ok) return;
+                            const data = await response.json();
+                            if (currentPlayingMedia === media && data.tracks?.some(t => /^pt/i.test(t.lang))) {
+                                clearInterval(_subtitleRepairTimer);
+                                _subtitleRepairTimer = null;
+                                media.legendas = data.tracks;
+                                updatePlayerSubtitlesUI(data.tracks);
+                            }
+                        } catch (_) {} finally { refreshing = false; }
+                    }, 30000);
+                }
             }
 
             // Renderiza lista no menu
@@ -14462,6 +14493,9 @@
         }
 
         function switchPlayerSubtitleTrack(lang) {
+            document.querySelectorAll('#html5-video-player track').forEach(el => {
+                el.dataset.selected = String(lang !== 'off' && el.srclang.toLowerCase() === lang.toLowerCase());
+            });
             const menu = document.getElementById('player-subtitles-menu');
             if (menu) {
                 menu.classList.remove('visible');

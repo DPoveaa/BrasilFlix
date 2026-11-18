@@ -8,12 +8,14 @@ const iconv = require('iconv-lite');
 const config = require('../../config');
 const SubtitleTranslationService = require('./SubtitleTranslationService');
 const SubdlService = require('./SubdlService');
+const SubtitleUtils = require('../utils/SubtitleUtils');
+const SubtitleAudioService = require('./SubtitleAudioService');
 
 const execFileAsync = promisify(execFile);
 
 class SubtitlePipeline {
     constructor() {
-        this.pythonExec = process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
+        this.pythonExec = process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
     }
 
     /**
@@ -221,7 +223,7 @@ class SubtitlePipeline {
      *  1. Rejeição imediata se contiver diacríticos típicos do Romeno / Leste-Europeu
      *     (ă Ă ș Ș ț Ț î Î) — esses caracteres são INEXISTENTES no português.
      *     Diacríticos adicionais do Polonês/Tcheco/Eslovaco (ł ń ż ź č ř ě) também rejeitam.
-     *  2. Exige taxa de acerto >= 1.5% de stopwords INCONFUNDÍVEIS do PT-BR
+     *  2. Exige taxa de acerto >= 4% de stopwords INCONFUNDÍVEIS do PT-BR
      *     (não, você, está, para, com, que, uma, isso, aqui, muito, mas, por,
      *      como, também, já) em amostragem de até 120 cues.
      *     Essa taxa garante que o texto é genuinamente português e não
@@ -243,7 +245,7 @@ class SubtitlePipeline {
         if (easternEuropeanDiacritics.test(content)) {
             // Conta ocorrências para evitar falso-positivo por caractere único
             const hits = (content.match(/[ăĂșȘțȚîÎłńżźčřě]/g) || []).length;
-            if (hits >= 2) {
+            if (hits >= 1) {
                 return {
                     valid: false,
                     reason: `Detectado ${hits} diacrítico(s) de idioma Leste-Europeu (Romeno/Polonês) inexistente(s) em Português: "${content.match(/[ăĂșȘțȚîÎłńżźčřě]/g).slice(0, 5).join(' ')}"`
@@ -272,12 +274,18 @@ class SubtitlePipeline {
         const totalWords = (norm.match(/\b\w{2,}\b/g) || []).length || 1;
         const hitRate = stopwordHits / totalWords;
 
-        // Exige pelo menos 1.5% de stopwords PT — textos romenos típicos ficam abaixo de 0.3%
-        if (hitRate < 0.015 && stopwordHits < 8) {
+        // Exige pelo menos 4% de stopwords PT — textos romenos típicos ficam abaixo de 0.3%
+        if (hitRate < 0.04 || stopwordHits < 5) {
             return {
                 valid: false,
-                reason: `Taxa de stopwords PT-BR insuficiente: ${stopwordHits} hits em ${totalWords} palavras (${(hitRate * 100).toFixed(2)}% < 1.5%). Provável idioma não-português.`
+                reason: `Taxa de stopwords PT-BR insuficiente: ${stopwordHits} hits em ${totalWords} palavras (${(hitRate * 100).toFixed(2)}% < 4%). Provável idioma não-português.`
             };
+        }
+
+        const portuguese = norm.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const distinctive = portuguese.match(/\b(nao|voce|voces|sao|entao|tambem|obrigado|obrigada|tenho|tinha|comigo|ninguem|alguem|minha|meu|muito|estou|fazer|olha|agora|ainda|preciso)\b/g) || [];
+        if (distinctive.length < 5 || new Set(distinctive).size < 2) {
+            return { valid: false, reason: 'Evidência textual insuficiente de português.' };
         }
 
         return { valid: true, reason: 'OK' };
@@ -294,6 +302,9 @@ class SubtitlePipeline {
         return [
             '-reconnect', '1',
             '-reconnect_streamed', '1',
+            '-reconnect_on_network_error', '1',
+            '-reconnect_on_http_error', '429,5xx',
+            '-rw_timeout', '30000000',
             '-reconnect_delay_max', '5'
         ];
     }
@@ -338,6 +349,9 @@ class SubtitlePipeline {
             return { valid: false, reason: `Poucas falas (${cues.length} cues, mínimo 20)` };
         }
 
+        if (videoDurationSec > 0 && cues.some(c => c.endMs > (videoDurationSec + 10) * 1000)) {
+            return { valid: false, reason: 'Falas ultrapassam a duração do vídeo.' };
+        }
         if (videoDurationSec && videoDurationSec >= 600) {
             const movieMinutes = videoDurationSec / 60;
             const lastCue = this.getLastDialogueCue(cues);
@@ -1519,19 +1533,14 @@ print(f"RESULT:{res}")
             throw new Error(`Quality Gate falhou: legenda contém apenas ${rawCues.length} falas (mínimo 20).`);
         }
 
-        // Filtro de propaganda / links de spam em legendas
-        const isSpamText = (t) => {
-            return /(opensubtitles|legendas\.tv|pipocas\.tv|yts\.mx|yts\.ag|yify|comandotorrents|bludv|lapumia|baixarfilmes|acesse:|visite:|anuncie aqui|subtitles by|tradução:|ripada por:)/i.test(t);
-        };
-
-        const cleanedCues = [];
-        for (const cue of rawCues) {
-            // Se for spam e tiver duração curta no início ou fim absoluto do filme, descarta
-            if (isSpamText(cue.text) && (cue.startMs < 120000 || (videoDurationSec && cue.startMs > (videoDurationSec - 180) * 1000))) {
-                continue;
-            }
-            cleanedCues.push(cue);
+        const cleanedCues = rawCues.map(cue => ({ ...cue, text: SubtitleUtils.cleanCueText(cue.text) }))
+            .filter(cue => cue.text);
+        const cleanContent = this.buildSrt(cleanedCues);
+        if (!this.isBrazilianPortugueseSubtitle(cleanContent, '', '', cleanedCues.map(c => c.text))) {
+            throw new Error('Quality Gate: conteúdo não confirmado como PT-BR.');
         }
+        const coverage = this.validateCandidateCoverageAndDensity(cleanedCues, videoDurationSec);
+        if (!coverage.valid) throw new Error(`Quality Gate: ${coverage.reason}`);
 
         // Ordena estritamente por timestamp inicial
         cleanedCues.sort((a, b) => a.startMs - b.startMs);
@@ -1593,7 +1602,7 @@ print(f"RESULT:{res}")
      *    para evitar que o índice errado seja selecionado quando a sondagem falha.
      *  - Captura e loga o stderr completo do FFmpeg em vez de engolir a mensagem genérica.
      */
-    async extractCleanAudioWav(videoPath, outputWavPath, videoDurationSec = 0) {
+    async extractCleanAudioWav(videoPath, outputWavPath, videoDurationSec = 0, audioIndex = 0) {
         // Garante que o diretório de destino existe antes de spawnar o FFmpeg
         const outputDir = path.dirname(outputWavPath);
         fs.mkdirSync(outputDir, { recursive: true });
@@ -1604,7 +1613,7 @@ print(f"RESULT:{res}")
         let channels = 2;
         // relativeAudioIdx: índice RELATIVO dentro dos streams de áudio (0:a:N), sempre seguro.
         // O índice global (0:N) pode ser incorreto se o ffprobe falhar e cair no default.
-        let relativeAudioIdx = 0;
+        let relativeAudioIdx = Math.max(0, Number(audioIndex) || 0);
         let ptsDelaySec = 0;
 
         try {
@@ -1619,11 +1628,11 @@ print(f"RESULT:{res}")
             const streams = data.streams || [];
             const vStream = streams.find(s => s.codec_type === 'video');
             const audioStreams = streams.filter(s => s.codec_type === 'audio');
-            const aStream = audioStreams[0];
+            const aStream = audioStreams[relativeAudioIdx] || audioStreams[0];
 
             if (aStream) {
                 // Use relative audio index (0:a:N) — safe even when stream ordering is unusual
-                relativeAudioIdx = 0; // first audio stream is always 0:a:0 in relative terms
+                relativeAudioIdx = Math.max(0, audioStreams.indexOf(aStream));
                 channels = parseInt(aStream.channels, 10) || 2;
                 const vStart = parseFloat(vStream?.start_time || '0') || 0;
                 const aStart = parseFloat(aStream.start_time || '0') || 0;
@@ -1672,14 +1681,14 @@ print(f"RESULT:{res}")
         ];
 
         try {
-            await execFileAsync('ffmpeg', buildFfmpegArgs(filterChain), { timeout: 300000 });
+            await execFileAsync('ffmpeg', buildFfmpegArgs(filterChain), { timeout: 20 * 60 * 1000 });
         } catch (err) {
             // Surface the full FFmpeg stderr in PM2 logs so the real error is immediately visible
             const ffmpegStderr = err.stderr ? err.stderr.trim().split('\n').slice(-15).join('\n  ') : '(sem stderr)';
             console.warn(`⚠️ [Audio Extractor] Falha no filtro vocal. Tentando fallback direto com aresample=async=1:first_pts=0...`);
             console.warn(`  FFmpeg stderr (últimas 15 linhas):\n  ${ffmpegStderr}`);
             try {
-                await execFileAsync('ffmpeg', buildFfmpegArgs('aresample=async=1:first_pts=0'), { timeout: 300000 });
+                await execFileAsync('ffmpeg', buildFfmpegArgs('aresample=async=1:first_pts=0'), { timeout: 20 * 60 * 1000 });
             } catch (fallbackErr) {
                 const fallbackStderr = fallbackErr.stderr ? fallbackErr.stderr.trim().split('\n').slice(-15).join('\n  ') : '(sem stderr)';
                 console.error(`❌ [Audio Extractor] Falha também no fallback FFmpeg.`);
@@ -1702,7 +1711,7 @@ print(f"RESULT:{res}")
      * Transcreve com faster-whisper (tiny/base, int8, vad_filter=True, word_timestamps=True)
      * Transmite progresso em tempo real de 20% a 70%
      */
-    async generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress = null, workDir = null) {
+    async generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress = null, workDir = null, audioIndex = 0) {
         const dir = workDir || this.getWorkingDir(videoPath);
         await fs.ensureDir(dir);
 
@@ -1711,7 +1720,7 @@ print(f"RESULT:{res}")
 
         try {
             onProgress?.(15, 'Extraindo áudio mono 16kHz do filme (100% da duração)...');
-            await this.extractCleanAudioWav(videoPath, wavPath, videoDurationSec);
+            await this.extractCleanAudioWav(videoPath, wavPath, videoDurationSec, audioIndex);
 
             onProgress?.(20, 'Iniciando transcrição de âncoras Whisper (100% do filme)...');
 
@@ -1731,6 +1740,9 @@ print(f"RESULT:{res}")
                     stdio: ['ignore', 'pipe', 'pipe']
                 });
 
+                const timer = setTimeout(() => pyProc.kill('SIGKILL'), 90 * 60 * 1000);
+                pyProc.once('close', () => clearTimeout(timer));
+                pyProc.once('error', () => clearTimeout(timer));
                 let stderrData = '';
                 let stdoutBuf = '';
 
@@ -1902,190 +1914,94 @@ print(f"RESULT:{res}")
      * 1) Embedded human PT-BR subtitle track.
      * 2) Downloaded human PT-BR subtitle (OpenSubtitles / SubDL).
      * 3) Downloaded/embedded human EN/ES subtitle (translated cleanly while keeping exact human cue boundaries and punctuation).
-     * 4) Gemini API ONLY as an extreme last resort when zero human subtitles exist anywhere.
+     * 4) Whisper ASR with PT-BR translation, only after human tracks fail.
      */
     async processSubtitlePipeline(videoPath, metadata = {}, onProgress = null) {
-        console.log(`\n============================================================`);
-        console.log(`🎬 [HUMAN-FIRST SUBTITLE PIPELINE] "${metadata.nome || metadata.title || path.basename(videoPath)}"`);
-        console.log(`============================================================`);
-
-        // Etapa 1: Medição da duração real do vídeo
-        onProgress?.(10, 'Obtendo stream de áudio real do vídeo...');
-        let videoDurationSec = parseFloat(metadata.duration || metadata.duracao || 0);
-        const probedDur = await this.probeActualVideoDuration(videoPath);
-        if (probedDur > 60) {
-            videoDurationSec = probedDur;
-            metadata.duration = probedDur;
-        }
-
-        const videoDir = this.getWorkingDir(videoPath);
-        await fs.ensureDir(videoDir);
-
-        // Resolve metadados completos (IMDb ID, TMDB ID, Título Original EN, Título PT, Ano ± 1)
-        const resolvedMeta = await this.resolveMovieMetadata(metadata);
-
-        let selectedSrtPath = null;
-        let sourceMethod = null;
-        let refEnPath = null;
-        const candidatePool = [];
-
-        // =====================================================================
-        // PRIORITY 1: Trilha humana PT-BR embutida no container (MKV/MP4)
-        // =====================================================================
-        const tier1 = await this.probeAndExtractContainerSubtitle(videoPath, resolvedMeta);
-        if (tier1 && tier1.srtPath) {
-            if (!resolvedMeta.isReprocess) {
-                // Legenda oficial de estúdio já embutida no container (frame-perfect)
-                selectedSrtPath = tier1.srtPath;
-                sourceMethod = 'Priority 1 (Embedded Human PT-BR - Studio Frame Perfect)';
-                console.log(`💎 [Priority 1: Embedded Human PT-BR] Trilha embutida selecionada (${tier1.cueCount} cues)!`);
-            } else {
-                candidatePool.push({
-                    srtPath: tier1.srtPath,
-                    sourceMethod: 'Priority 1 (Embedded Human PT-BR)',
-                    name: 'Container Embedded PT-BR'
-                });
-            }
-        }
-
-        // =====================================================================
-        // PRIORITY 2: Legenda humana PT-BR baixada (Companion / OpenSubtitles / SubDL)
-        // =====================================================================
-        if (!selectedSrtPath) {
-            onProgress?.(15, 'Buscando legendas humanas PT-BR (OpenSubtitles + SubDL Pool)...');
-
-            // 1. Companion Package (pasta do download/torrent)
-            const tier2 = await this.findCompanionSubtitles(videoPath, resolvedMeta);
-            if (tier2.refEnPath) refEnPath = tier2.refEnPath;
-            if (tier2.ptSrtPath) {
-                candidatePool.push({
-                    srtPath: tier2.ptSrtPath,
-                    sourceMethod: 'Priority 2 (Companion Package Subs PT-BR)',
-                    name: 'Companion Package Subtitle'
-                });
-            }
-
-            // 2. OpenSubtitles (Stremio endpoints com suporte a PT-BR genuíno)
-            const tier3 = await this.fetchExternalSubtitle(videoPath, resolvedMeta, videoDurationSec);
-            if (tier3?.candidates?.length > 0) {
-                candidatePool.push(...tier3.candidates);
-            } else if (tier3?.srtPath) {
-                candidatePool.push(tier3);
-            }
-
-            // 3. SubDL API Pool com busca multicritério (IMDb, TMDB, Título EN, Título PT, Ano ± 1)
-            const tier35 = await this.fetchSubdlSubtitle(videoPath, resolvedMeta, videoDurationSec);
-            if (tier35?.candidates?.length > 0) {
-                candidatePool.push(...tier35.candidates);
-            } else if (tier35?.srtPath) {
-                candidatePool.push(tier35);
-            }
-
-            // Se temos candidatos PT-BR humanos: verifica sincronia via Whisper Sync Guide não-destrutivo
-            if (candidatePool.length > 0) {
-                onProgress?.(20, 'Gerando mapa de fala Whisper para verificação de sincronia...');
-                const anchorsJsonPath = await this.generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress, videoDir);
-
-                try {
-                    onProgress?.(70, 'Verificando sincronia dos candidatos PT-BR com o áudio...');
-                    for (let cIdx = 0; cIdx < candidatePool.length; cIdx++) {
-                        const cand = candidatePool[cIdx];
-                        const syncedOut = path.join(videoDir, `synced_ptbr_${Date.now()}_cand${cIdx + 1}.srt`);
-                        console.log(`\n🎯 [Whisper Sync Guide] Avaliando candidato #${cIdx + 1}/${candidatePool.length}: "${cand.name || cand.sourceMethod}"...`);
-
-                        const alignResult = await this.alignCandidateWithDenseWhisper(anchorsJsonPath, cand.srtPath, syncedOut, videoDurationSec, refEnPath);
-                        if (alignResult.aligned && fs.existsSync(syncedOut)) {
-                            if (alignResult.in_sync) {
-                                console.log(`✨ [Whisper Sync Guide] Candidato #${cIdx + 1} já está em PERFEITA sincronia com o áudio (offset: ${alignResult.global_offset_ms}ms). Durações e timecodes 100% preservados!`);
-                                selectedSrtPath = syncedOut;
-                                sourceMethod = `${cand.sourceMethod || 'Human PT-BR'} (Already in sync, timings 100% untouched)`;
-                            } else {
-                                console.log(`✅ [Whisper Sync Guide] Candidato #${cIdx + 1} ajustado em ${alignResult.global_offset_ms > 0 ? '+' : ''}${alignResult.global_offset_ms}ms (durações humanas 100% preservadas)!`);
-                                selectedSrtPath = syncedOut;
-                                sourceMethod = `${cand.sourceMethod || 'Human PT-BR'} + Non-Destructive Whisper Sync (${alignResult.global_offset_ms > 0 ? '+' : ''}${alignResult.global_offset_ms}ms)`;
-                            }
-                            break;
-                        }
-                    }
-                } finally {
-                    if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
-                        await fs.remove(anchorsJsonPath).catch(() => {});
-                    }
-                }
-            }
-        }
-
-        // =====================================================================
-        // PRIORITY 3: Legenda humana EN/ES (embutida ou baixada) traduzida
-        // mantendo rigorosamente os limites de fala (cues) e pontuação humana
-        // =====================================================================
-        if (!selectedSrtPath) {
-            console.log(`\n🌐 [Priority 3: Human EN/ES Translation] Nenhuma legenda PT-BR encontrada. Buscando legendas humanas em EN ou ES...`);
-            onProgress?.(72, 'Buscando legendas humanas em EN/ES (Container + OpenSubtitles + SubDL)...');
-
-            const foreignCandidate = await this.fetchForeignSubtitleCandidates(videoPath, resolvedMeta, videoDurationSec);
-            if (foreignCandidate && fs.existsSync(foreignCandidate.srtPath)) {
-                console.log(`🎯 [Priority 3: Human EN/ES Translation] Legenda humana em ${foreignCandidate.lang.toUpperCase()} selecionada (${foreignCandidate.cueCount} cues, fonte: ${foreignCandidate.sourceMethod})!`);
-
-                onProgress?.(75, 'Ajustando sincronia da legenda EN/ES antes da tradução...');
-                const anchorsJsonPath = await this.generateWhisperAnchorMap(videoPath, videoDurationSec, onProgress, videoDir);
-                let baseToTranslate = foreignCandidate.srtPath;
-
-                try {
-                    const syncedForeignOut = path.join(videoDir, `synced_foreign_${Date.now()}.srt`);
-                    const alignForeignRes = await this.alignCandidateWithDenseWhisper(anchorsJsonPath, foreignCandidate.srtPath, syncedForeignOut, videoDurationSec, null);
-                    if (alignForeignRes.aligned && fs.existsSync(syncedForeignOut)) {
-                        baseToTranslate = syncedForeignOut;
-                    }
-                } finally {
-                    if (anchorsJsonPath && fs.existsSync(anchorsJsonPath)) {
-                        await fs.remove(anchorsJsonPath).catch(() => {});
-                    }
-                }
-
-                if (SubtitleTranslationService.isAvailable()) {
-                    onProgress?.(80, `Traduzindo legenda humana ${foreignCandidate.lang.toUpperCase()} para PT-BR via Gemini (${SubtitleTranslationService.modelName})...`);
-                    const translatedPtBrPath = path.join(videoDir, `human_translated_ptbr_${Date.now()}.srt`);
-                    try {
-                        await SubtitleTranslationService.translateSrtFile(baseToTranslate, translatedPtBrPath, {
-                            title: resolvedMeta.title || resolvedMeta.nome || path.basename(videoPath)
-                        });
-
-                        if (fs.existsSync(translatedPtBrPath)) {
-                            selectedSrtPath = translatedPtBrPath;
-                            sourceMethod = `Priority 3 (Human ${foreignCandidate.lang.toUpperCase()} Subtitle Translated to PT-BR via Gemini [${SubtitleTranslationService.modelName}])`;
-                        }
-                    } catch (transErr) {
-                        console.error(`❌ [Priority 3: Human EN/ES Translation] Erro na tradução neural: ${transErr.message}`);
-                    }
-                } else {
-                    console.warn(`⚠️ [Priority 3: Human EN/ES Translation] Gemini API indisponível para tradução.`);
-                }
-            }
-        }
-
-        // =====================================================================
-        // PRIORITY 4: Extremo último recurso quando ZERO legendas humanas existem
-        // (Deleta Whisper ASR translation completamente)
-        // =====================================================================
-        if (!selectedSrtPath) {
-            throw new Error(`Falha no pipeline: nenhuma legenda humana (PT-BR, EN ou ES) encontrada nos Tiers 1-3. Transcrição/tradução Whisper ASR desativada.`);
-        }
-
-        // Validação e sanitização final (elimina sobreposições, formata e remove anúncios)
-        onProgress?.(90, 'Validando e finalizando legenda...');
-        await this.validateAndFinalizeSubtitle(selectedSrtPath, videoDurationSec);
-
-        onProgress?.(100, 'Concluído! Legenda pronta para o player.');
-        console.log(`✅ [HUMAN-FIRST SUBTITLE PIPELINE CONCLUÍDO] Método: ${sourceMethod} | Arquivo: ${path.basename(selectedSrtPath)}`);
-
-        return {
-            srtPath: selectedSrtPath,
-            sourceMethod,
-            checkpoints: [],
-            verified: true
+        const attempt = async (label, action) => {
+            try { return await action(); }
+            catch (error) { console.warn(`[Subtitle ${label}]`, error.message); return null; }
         };
+        const duration = await this.probeActualVideoDuration(videoPath) || Number(metadata.duration || 0);
+        const meta = await this.resolveMovieMetadata(metadata);
+        const workDir = this.getWorkingDir(videoPath);
+        await fs.ensureDir(workDir);
+        let anchorsPromise;
+        let anchorsPath;
+        let refEnPath = null;
+        const anchors = () => anchorsPromise ||= this.generateWhisperAnchorMap(
+            videoPath, duration, onProgress, workDir, metadata.audioIndex || 0
+        ).then(file => { anchorsPath = file; return file; });
+        const finish = async (file, sourceMethod) => {
+            await this.validateAndFinalizeSubtitle(file, duration);
+            return { srtPath: file, sourceMethod, refEnPath, verified: true, checkpoints: [] };
+        };
+        try {
+            onProgress?.(10, 'Extraindo legenda humana PT-BR do arquivo');
+            const embedded = await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
+            if (embedded?.srtPath && !meta.isReprocess) {
+                const result = await attempt('embedded validation', () => finish(embedded.srtPath, 'Embedded Human PT-BR'));
+                if (result) return result;
+            }
+
+            onProgress?.(15, 'Buscando legendas humanas PT-BR');
+            const candidates = [];
+            if (embedded?.srtPath) candidates.push(embedded);
+            const companion = await attempt('companion', () => this.findCompanionSubtitles(videoPath, meta));
+            refEnPath = companion?.refEnPath || null;
+            if (companion?.ptSrtPath) candidates.push({ srtPath: companion.ptSrtPath, sourceMethod: 'Companion Human PT-BR' });
+            for (const fetch of [this.fetchExternalSubtitle, this.fetchSubdlSubtitle]) {
+                const found = await attempt('provider', () => fetch.call(this, videoPath, meta, duration));
+                if (found?.candidates?.length) candidates.push(...found.candidates);
+                else if (found?.srtPath) candidates.push(found);
+            }
+            if (candidates.length) {
+                const map = await attempt('sync anchors', anchors);
+                if (map) {
+                    for (const candidate of candidates) {
+                        const output = path.join(workDir, `synced_${require('crypto').randomUUID()}.srt`);
+                        const result = await attempt('human sync', async () => {
+                            const aligned = await this.alignCandidateWithDenseWhisper(map, candidate.srtPath, output, duration, refEnPath);
+                            if (!aligned.aligned) throw new Error(aligned.reason || 'Sincronia não comprovada');
+                            return finish(output, `${candidate.sourceMethod || 'Human PT-BR'} + Whisper Sync`);
+                        });
+                        if (result) return result;
+                        await fs.remove(output).catch(() => {});
+                    }
+                }
+            }
+
+            onProgress?.(72, 'Buscando e traduzindo legenda humana EN/ES');
+            const translated = await attempt('human translation', async () => {
+                const foreign = await this.fetchForeignSubtitleCandidates(videoPath, meta, duration);
+                if (!foreign?.srtPath || !SubtitleTranslationService.isAvailable()) return null;
+                const output = path.join(workDir, `foreign_${require('crypto').randomUUID()}.srt`);
+                const aligned = await this.alignCandidateWithDenseWhisper(await anchors(), foreign.srtPath, output, duration);
+                if (!aligned.aligned) throw new Error(aligned.reason || 'Sincronia EN/ES não comprovada');
+                const pt = path.join(workDir, `translated_${require('crypto').randomUUID()}.srt`);
+                try {
+                    await SubtitleTranslationService.translateSrtFile(output, pt, { title: meta.title || meta.nome });
+                    return await finish(pt, `Human ${foreign.lang} + PT-BR translation + Whisper Sync`);
+                } catch (error) {
+                    await fs.remove(pt).catch(() => {});
+                    throw error;
+                } finally { await fs.remove(output).catch(() => {}); }
+            });
+            if (translated) return translated;
+
+            onProgress?.(80, 'Último recurso: Whisper ASR e tradução PT-BR');
+            const asr = await SubtitleAudioService.create(videoPath, metadata.audioIndex || 0, {
+                title: meta.title || meta.nome, onProgress
+            });
+            try { return await finish(asr, 'Whisper ASR + PT-BR translation (final fallback)'); }
+            catch (error) { await fs.remove(asr).catch(() => {}); throw error; }
+        } catch (error) {
+            error.code ||= 'SUBTITLE_SYNC_FAILED';
+            throw error;
+        } finally {
+            if (anchorsPath) await fs.remove(anchorsPath).catch(() => {});
+        }
     }
+
 }
 
 module.exports = new SubtitlePipeline();

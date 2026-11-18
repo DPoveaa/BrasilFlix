@@ -927,6 +927,7 @@ ${events.join('\n')}
     isBrazilianPortugueseSubtitle(content, sourceLang = '', sourceFile = '') {
         if (!content || typeof content !== 'string' || content.length < 150) return false;
 
+        if (!SubtitlePipeline.isBrazilianPortugueseSubtitle(content, sourceLang, sourceFile)) return false;
         const lang = (sourceLang || '').toLowerCase().trim();
         const file = (sourceFile || '').toLowerCase();
 
@@ -1238,18 +1239,24 @@ ${events.join('\n')}
                     ...metadata,
                     nome: metadata.nome || metadata.title,
                     nomeOriginal: metadata.nomeOriginal || metadata.originalTitle,
+                    audioIndex: effectiveAudioIndex,
                     idioma: 'pt-BR'
                 });
+                metadata.refEnPath = pipelineResult?.refEnPath;
                 srtPath = pipelineResult && pipelineResult.srtPath ? pipelineResult.srtPath : null;
                 if (srtPath) {
                     console.log(`✅ [SubtitlePipeline] Legenda obtida via ${pipelineResult.sourceMethod} | verified=${pipelineResult.verified}`);
                 }
             } catch (pipelineErr) {
-                console.warn(`⚠️ [SubtitlePipeline] Falha no pipeline: ${pipelineErr.message}. Whisper ASR translation desativada conforme diretriz humana.`);
+                throw Object.assign(pipelineErr, { code: pipelineErr.code || 'SUBTITLE_SYNC_FAILED' });
             }
 
             metadata.srtPath = srtPath;
             cleanupGeneratedSrt = true;
+        }
+
+        if (!isConfirmedDublado && !metadata.srtPath) {
+            throw Object.assign(new Error('Legenda PT-BR obrigatória ausente.'), { code: 'SUBTITLE_SYNC_FAILED' });
         }
 
         // Persistência de legendas em formato .srt e .vtt para o site e painel admin
@@ -1757,6 +1764,7 @@ ${events.join('\n')}
 
             // 1. Trilha PT-BR
             if (srtPath && fs.existsSync(srtPath)) {
+                await SubtitlePipeline.validateAndFinalizeSubtitle(srtPath, Number(metadata.duration || 0));
                 const srtContent = await fs.readFile(srtPath, 'utf8');
                 const ptSrtName = `${baseId}_${mediaType}_ptbr_${timestamp}.srt`;
                 const ptVttName = `${baseId}_${mediaType}_ptbr_${timestamp}.vtt`;
@@ -1775,7 +1783,9 @@ ${events.join('\n')}
                     vttUrl: `/subtitles/${ptVttName}`,
                     srtPath: ptSrtDest,
                     vttPath: ptVttDest,
-                    version: timestamp
+                    version: timestamp,
+                    validationVersion: 1,
+                    contentHash: require('../utils/SubtitleUtils').contentHash(SubtitleTranslationService.convertSrtToVtt(srtContent))
                 });
                 console.log(`💾 [Web Subtitles] Legenda PT-BR persistida para o player web: ${ptVttName} (.srt e .vtt)`);
             }
@@ -1809,7 +1819,7 @@ ${events.join('\n')}
             return savedTracks;
         } catch (err) {
             console.warn(`⚠️ [Web Subtitles] Falha ao persistir legendas para web: ${err.message}`);
-            return [];
+            throw Object.assign(err, { code: err.code || 'SUBTITLE_SYNC_FAILED' });
         }
     }
 

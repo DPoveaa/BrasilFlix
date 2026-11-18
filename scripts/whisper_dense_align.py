@@ -289,18 +289,7 @@ def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0
         return {'aligned': False, 'reason': f"Legenda candidata vazia ou com poucas falas ({len(cues)})"}
 
     if len(anchors) < 5:
-        # Se quase não há fala detectada no áudio (filme mudo ou silêncio), preserva 100% o original
-        print("ℹ️ [Dense Whisper Sync] Poucas âncoras de voz detectadas. Preservando legenda humana 100% original.")
-        write_srt(cues, output_srt_path, preserve_original_timecodes=True)
-        return {
-            'aligned': True,
-            'in_sync': True,
-            'modified': False,
-            'global_offset_ms': 0,
-            'drift_range_ms': 0,
-            'cue_count': len(cues),
-            'reason': 'Poucas âncoras detectadas. Legenda original preservada 100% intacta.'
-        }
+        return {'aligned': False, 'reason': 'Âncoras de voz insuficientes para comprovar sincronia'}
 
     if not duration_sec or duration_sec < 60:
         duration_sec = max(total_dur_sec, cues[-1]['end'], anchors[-1]['endMs'] / 1000.0)
@@ -371,8 +360,7 @@ def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0
         total_w = sum(bins[b] for b in close_bins)
         global_offset_sec = sum(b * bins[b] for b in close_bins) / max(0.001, total_w)
     else:
-        best_bin = 0.0
-        global_offset_sec = 0.0
+        return {'aligned': False, 'reason': 'Nenhuma correspondência de fala para medir sincronia'}
 
     global_offset_ms = int(round(global_offset_sec * 1000.0))
     print(f"🎯 [Dense Whisper Sync] Deslocamento global estimado: {global_offset_ms:+d}ms (pico: {int(best_bin*1000)}ms)")
@@ -408,6 +396,9 @@ def run_align(anchors_json_path, input_srt_path, output_srt_path, duration_sec=0
                 'median_offset_sec': w_med,
                 'count': len(local_diffs)
             })
+
+    if len(window_offsets) < min(3, num_windows):
+        return {'aligned': False, 'reason': 'Cobertura de âncoras insuficiente ao longo do vídeo'}
 
     if window_offsets:
         all_meds = [wo['median_offset_sec'] for wo in window_offsets]

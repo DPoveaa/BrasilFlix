@@ -535,6 +535,8 @@ class CatalogoManager {
      */
     static isItemLegacyHardsub(item) {
         if (!item) return false;
+        const uploaded = item.created_at || item.createdAt || item.dataAdicionado;
+        if (uploaded && new Date(uploaded).getTime() >= new Date('2026-11-15T00:00:00-03:00').getTime()) return false;
         if (item.is_hardsub === true || item.isHardsub === true) return true;
         if (item.is_hardsub === false || item.isHardsub === false) return false;
 

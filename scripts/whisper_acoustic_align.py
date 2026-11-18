@@ -10,6 +10,7 @@ If checkpoints agree (<= 2.5s), applies exact median millisecond shift to all cu
 
 import sys
 import os
+import tempfile
 import json
 import re
 import subprocess
@@ -194,12 +195,14 @@ def align_subtitles(video_path, input_srt_path, output_srt_path, duration_sec=0.
         clip_start = max(0.0, target_cue['start'] - 2.0)
         clip_dur = 30.0
 
-        wav_path = f"/tmp/whisper_align_{int(clip_start)}_{os.getpid()}.wav"
+        wav_path = os.path.join(tempfile.gettempdir(), f"whisper_align_{int(clip_start)}_{os.getpid()}.wav")
         try:
             cmd = [
                 'ffmpeg', '-nostdin', '-v', 'error', '-y',
                 '-ss', f"{clip_start:.3f}",
-                '-i', video_path,
+                *(['-reconnect', '1', '-reconnect_streamed', '1', '-rw_timeout', '30000000'] if video_path.startswith(('http://', 'https://')) else []),
+                    '-i', video_path,
+                    '-map', '0:a:0',
                 '-t', f"{clip_dur:.3f}",
                 '-vn',
                 '-af', af_filter,

@@ -7,6 +7,10 @@ const translator = require('./SubtitleTranslationService');
 
 const run = promisify(execFile);
 const script = path.resolve(__dirname, '../../scripts/transcribe_subtitle_audio.py');
+const inputFlags = input => /^https?:\/\//i.test(input) ? [
+    '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_on_network_error', '1',
+    '-reconnect_on_http_error', '429,5xx', '-reconnect_delay_max', '5', '-rw_timeout', '30000000'
+] : [];
 const transcribeTimeout = 90 * 60 * 1000;
 let pendingTranscription = Promise.resolve();
 
@@ -63,7 +67,7 @@ async function validateEmbedded(inputPath, streams, reference, isEuropeanPortugu
     );
     for (const track of ptTracks.slice(0, 3)) {
         const { stdout } = await run('ffmpeg', [
-            '-nostdin', '-v', 'error', '-i', inputPath, '-map', `0:s:${track.index}`, '-c:s', 'srt', '-f', 'srt', 'pipe:1'
+            '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:s:${track.index}`, '-c:s', 'srt', '-f', 'srt', 'pipe:1'
         ], { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }).catch(() => ({ stdout: '' }));
         if (!isEuropeanPortuguese?.(stdout) && matchesSpokenDialogue(stdout, reference)) return stdout;
     }
@@ -76,10 +80,10 @@ async function transcribe(inputPath, audioIndex, workspace, title) {
     const model = process.env.SUBTITLE_WHISPER_MODEL || 'turbo';
     console.log(`[Legenda: ${title}] Analisando a faixa de áudio ${audioIndex} com Whisper ${model}.`);
     await run('ffmpeg', [
-        '-nostdin', '-v', 'error', '-i', inputPath, '-map', `0:a:${audioIndex}`,
+        '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
         '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', wav
     ], { timeout: 15 * 60 * 1000 });
-    const { stderr } = await run(process.env.SUBTITLE_PYTHON || 'python3', [script, wav, source, '--model', model], {
+    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [script, wav, source, '--model', model], {
         timeout: transcribeTimeout,
         killSignal: 'SIGKILL'
     });
@@ -125,10 +129,14 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
         const embedded = await validateEmbedded(inputPath, subtitleStreams, translated, isEuropeanPortuguese);
         if (embedded) console.log(`[Legenda: ${title}] Faixa PT-BR do arquivo corroborada pelas falas. Mantendo seus horários.`);
         await fs.writeFile(output, embedded || translated, 'utf8');
-        return output;
+        const retained = path.join(os.tmpdir(), `brasilflix-ptbr-${require('crypto').randomUUID()}.srt`);
+        await fs.move(output, retained);
+        return retained;
     } catch (error) {
         await fs.remove(workspace).catch(() => {});
         throw error;
+    } finally {
+        await fs.remove(workspace).catch(() => {});
     }
 }
 

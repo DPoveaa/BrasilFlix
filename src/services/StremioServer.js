@@ -19,6 +19,7 @@ const auditService = require('./AuditService');
 const logBroadcaster = require('../utils/LogBroadcaster');
 const SubtitleUtils = require('../utils/SubtitleUtils');
 const SubtitlePipeline = require('./SubtitlePipeline');
+const SubtitleMaintenance = require('./SubtitleMaintenance');
 const SubtitleTranslationService = require('./SubtitleTranslationService');
 const AssetManager = require('../utils/AssetManager');
 
@@ -38,6 +39,7 @@ class StremioServer {
         this.removalQueue = new RemovalQueueManager(catalogoManager, queueManager);
         this.reprocessSubtitleJobs = new Map();
         this.port = port;
+        this.subtitleMaintenance = new SubtitleMaintenance(this);
         this.app = express();
         this.setupMiddlewares();
         this.setupRoutes();
@@ -79,6 +81,9 @@ class StremioServer {
                 if (await fs.pathExists(filePath)) {
                     const rawContent = await fs.readFile(filePath, 'utf8');
                     const cleanVtt = SubtitleUtils.sanitizeVtt(rawContent);
+                    if (/ptbr/i.test(filename) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(cleanVtt)) {
+                        return res.status(422).send('Legenda PT-BR inválida.');
+                    }
                     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
                     res.setHeader('Access-Control-Allow-Origin', '*');
                     res.setHeader('Cache-Control', 'public, max-age=3600');
@@ -1415,6 +1420,9 @@ class StremioServer {
                 const shiftedCues = SubtitleUtils.shiftCues(cues, offsetMs);
                 const newSrt = SubtitleUtils.cuesToSrt(shiftedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(shiftedCues);
+                if (/^pt/i.test(track.lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                    return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
+                }
 
                 const baseName = path.basename(sourcePath).replace(/\.(srt|vtt)$/i, '');
                 const srtDest = path.join(subtitlesDir, `${baseName}.srt`);
@@ -1475,6 +1483,9 @@ class StremioServer {
                 const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
                 const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
+                if (/^pt/i.test(track.lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                    return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
+                }
 
                 const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
                 await fs.ensureDir(subtitlesDir);
@@ -1534,6 +1545,9 @@ class StremioServer {
                 const sanitizedCues = SubtitleUtils.validateAndSanitizeCues(cues);
                 const newSrt = SubtitleUtils.cuesToSrt(sanitizedCues);
                 const newVtt = SubtitleUtils.cuesToVtt(sanitizedCues);
+                if (/^pt/i.test(lang) && !SubtitlePipeline.isBrazilianPortugueseSubtitle(newSrt)) {
+                    return res.status(400).json({ error: 'Conteúdo não confirmado como PT-BR.' });
+                }
 
                 const table = type === 'filme' ? 'filmes' : 'episodios';
                 const r = await db.query(`SELECT id, nome, ${type === 'filme' ? 'tmdb_id' : 'serie_id, temporada_numero, numero'} FROM ${table} WHERE id = $1`, [id]);
@@ -1683,94 +1697,13 @@ class StremioServer {
                             console.log(`🔄 [AdminSubtitles:REPROCESS] [${percent}%] ${msg}`);
                         };
 
-                        // 1. Constrói stream URL local protegido por token interno
-                        const targetAudio = row.versoes?.legendado ? 'legendado' : (row.versoes?.dublado ? 'dublado' : 'legendado');
-                        const streamUrl = type === 'filme'
-                            ? `http://127.0.0.1:${this.port}/stream/video/admin_reprocess/filme/${row.id}/${targetAudio}`
-                            : `http://127.0.0.1:${this.port}/stream/video/admin_reprocess/serie/${row.serie_id}/${sNum}/${eNum}/${targetAudio}`;
-
-                        const metadata = {
-                            tipo: type === 'filme' ? 'filme' : 'serie',
-                            id: row.id,
-                            nome: row.nome || mediaTitle,
-                            title: row.nome || mediaTitle,
-                            nomeOriginal: row.nome_original || row.serie_nome_original || row.nome || mediaTitle,
-                            tmdbId,
-                            imdbId,
-                            season: sNum,
-                            episode: eNum,
-                            duration: durationSec,
-                            maxOffsetSeconds: 45,
-                            isReprocess: true
-                        };
-
-                        // 2. Executa o pipeline completo (Stremio -> SubDL Pool -> Gemini -> Whisper ASR)
-                        const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(streamUrl, metadata, onProgress);
-
-                        if (!pipelineResult || !pipelineResult.srtPath || !fs.existsSync(pipelineResult.srtPath)) {
-                            throw new Error('Pipeline não retornou arquivo de legenda válido.');
-                        }
-
-                        // 3. Salva os arquivos .srt e .vtt em public/subtitles/
-                        const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
-                        await fs.ensureDir(subtitlesDir);
-
-                        const baseId = tmdbId || imdbId || `${type}_${id}`;
-                        const mediaSuffix = type === 'serie' ? `s${sNum}e${eNum}` : 'movie';
-                        const timestamp = Date.now();
-                        const srtName = `${baseId}_${mediaSuffix}_ptbr_${timestamp}.srt`;
-                        const vttName = `${baseId}_${mediaSuffix}_ptbr_${timestamp}.vtt`;
-                        const srtDest = path.join(subtitlesDir, srtName);
-                        const vttDest = path.join(subtitlesDir, vttName);
-
-                        const srtContent = await fs.readFile(pipelineResult.srtPath, 'utf8');
-                        const vttContent = SubtitleTranslationService.convertSrtToVtt(srtContent);
-                        await fs.writeFile(srtDest, srtContent, 'utf8');
-                        await fs.writeFile(vttDest, vttContent, 'utf8');
-
-                        // 4. Atualiza a trilha na coluna legendas JSONB
-                        let tracks = row.legendas || [];
-                        if (typeof tracks === 'string') {
-                            try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
-                        }
-                        if (!Array.isArray(tracks)) tracks = [];
-
-                        const ptTrackIdx = tracks.findIndex(t => (t.lang || '').toLowerCase().startsWith('pt'));
-                        const newTrack = {
-                            lang: 'pt-BR',
-                            label: 'Português (Brasil)',
-                            default: true,
-                            srtUrl: `/subtitles/${srtName}`,
-                            vttUrl: `/subtitles/${vttName}`,
-                            srtPath: srtDest,
-                            vttPath: vttDest,
-                            version: timestamp,
-                            sourceMethod: pipelineResult.sourceMethod
-                        };
-
-                        if (ptTrackIdx >= 0) {
-                            tracks[ptTrackIdx] = newTrack;
-                        } else {
-                            tracks.unshift(newTrack);
-                        }
-
-                        const table = type === 'filme' ? 'filmes' : 'episodios';
-                        await db.query(`UPDATE ${table} SET legendas = $1, is_legendado = true, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
-
-                        // 5. Recarrega o catálogo em memória
-                        if (this.catalogoManager) {
-                            await this.catalogoManager.loadCatalogo();
-                        }
-
-                        const parsedCues = SubtitleUtils.parseSubtitles(srtContent);
-
+                        const result = await this.subtitleMaintenance.repair(type, id, onProgress, true);
                         job.status = 'completed';
                         job.progress = 100;
-                        job.message = `Concluído! Legenda reprocessada com sucesso via ${pipelineResult.sourceMethod || 'Whisper ASR'}!`;
-                        job.tracks = tracks;
-                        job.cues = parsedCues;
+                        job.message = `Concluído via ${result.sourceMethod}`;
+                        job.tracks = result.tracks;
+                        job.cues = result.cues;
                         job.completedAt = Date.now();
-                        console.log(`✅ [AdminSubtitles:REPROCESS] Concluído com sucesso para "${mediaTitle}"! (${parsedCues.length} falas salvas)`);
                     } catch (bgErr) {
                         // Surface FFmpeg stderr if available so the Admin modal shows the real root cause
                         const ffStderr = bgErr.ffmpegStderr || bgErr.stderr || '';
@@ -3634,58 +3567,9 @@ class StremioServer {
                     return res.status(400).json({ error: 'Tipo inválido. Use "filme" ou "episodio".' });
                 }
 
-                const table = type === 'filme' ? 'filmes' : 'episodios';
-                const cols = type === 'filme'
-                    ? 'id, nome, tmdb_id, legendas, is_hardsub'
-                    : 'id, nome, temporada_numero, numero, serie_id, legendas, is_hardsub';
-
-                const r = await db.query(`SELECT ${cols} FROM ${table} WHERE id = $1`, [id]);
-                if (r.rows.length === 0) return res.status(404).json({ tracks: [] });
-
-                const row = r.rows[0];
-
-                let tracks = row.legendas || [];
-                if (typeof tracks === 'string') {
-                    try { tracks = JSON.parse(tracks); } catch (_) { tracks = []; }
-                }
-                if (!Array.isArray(tracks)) tracks = [];
-
-                const subtitlesDir = path.resolve(__dirname, '../../public/subtitles');
-
-                // ── Disk discovery: mesma lógica do Admin modal ───────────────────────
-                if (tracks.length === 0 && fs.existsSync(subtitlesDir)) {
-                    let tmdbId = row.tmdb_id;
-                    let sNum = row.temporada_numero;
-                    let eNum = row.numero;
-                    const baseId = type === 'filme' ? (tmdbId || row.id) : (tmdbId || row.serie_id);
-
-                    const basePattern = type === 'filme'
-                        ? new RegExp(`^(${baseId})_movie_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i')
-                        : new RegExp(`^(${baseId})_s${sNum}e${eNum}_(ptbr|en)_\\d+\\.(srt|vtt)$`, 'i');
-
-                    let files = [];
-                    try { files = await fs.readdir(subtitlesDir); } catch (_) { }
-
-                    const matchingPt = files.filter(f => basePattern.test(f) && /ptbr/i.test(f));
-                    if (matchingPt.length > 0) {
-                        const vttF = matchingPt.find(f => f.endsWith('.vtt')) || matchingPt[0];
-                        const srtF = matchingPt.find(f => f.endsWith('.srt')) || matchingPt[0];
-                        const newTrack = {
-                            lang: 'pt-BR',
-                            label: 'Português (Brasil)',
-                            default: true,
-                            srtUrl: `/subtitles/${srtF}`,
-                            vttUrl: `/subtitles/${vttF}`,
-                            version: Date.now()
-                        };
-                        tracks.push(newTrack);
-                        // Persiste no banco e recarrega catálogo para corrigir stale data
-                        await db.query(`UPDATE ${table} SET legendas = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify(tracks), id]);
-                        if (this.catalogoManager) {
-                            this.catalogoManager.loadCatalogo().catch(() => { });
-                        }
-                    }
-                }
+                const row = await this.subtitleMaintenance.load(type, id);
+                if (!row) return res.status(404).json({ tracks: [] });
+                const tracks = await this.subtitleMaintenance.tracks(type, row);
 
                 // Sanitiza vttUrl/srtUrl sem expor srtPath/vttPath (caminhos do servidor)
                 const publicTracks = tracks.map(t => ({

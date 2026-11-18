@@ -8,6 +8,7 @@ using faster_whisper, verifies TRUE SPOKEN CONTENT against English Anchor Refere
 
 import sys
 import os
+import tempfile
 import json
 import re
 import subprocess
@@ -171,7 +172,7 @@ def verify_sync(video_path, srt_path, max_allowed_offset_sec=1.5, ref_en_path=No
             clip_start = max(0, cue_start - 2.0)
             clip_dur = min(16.0, (cue_end - cue_start) + 4.0)
             
-            wav_path = f"/tmp/whisper_chk_{int(clip_start)}_{os.getpid()}.wav"
+            wav_path = os.path.join(tempfile.gettempdir(), f"whisper_chk_{int(clip_start)}_{os.getpid()}.wav")
             
             try:
                 # Two-stage seek: fast seek 15s before, accurate seek remainder
@@ -181,7 +182,9 @@ def verify_sync(video_path, srt_path, max_allowed_offset_sec=1.5, ref_en_path=No
                 cmd = [
                     'ffmpeg', '-nostdin', '-v', 'warning', '-y',
                     '-ss', f"{fast_seek:.3f}",
+                    *(['-reconnect', '1', '-reconnect_streamed', '1', '-rw_timeout', '30000000'] if video_path.startswith(('http://', 'https://')) else []),
                     '-i', video_path,
+                    '-map', '0:a:0',
                     '-ss', f"{accurate_seek:.3f}",
                     '-t', f"{clip_dur:.3f}",
                     '-vn',

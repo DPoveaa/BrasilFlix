@@ -68,6 +68,14 @@ function stripOuterQuotes(text) {
     return t;
 }
 
+// Applied at every serialization boundary, throughout the entire timeline.
+function cleanCueText(text) {
+    return String(text || '').split('\n').filter(line => {
+        const plain = line.replace(/<[^>]*>|\{[^}]*\}/g, '').normalize('NFKC');
+        return !/(@[\w.]+|https?:\/\/|www\.|\bt\.me\/|\b[\w-]+\.(?:com|net|org|tv|xyz|site|me|io|br)\b|telegram|opensubtitles|legendas\.tv|pipocas|yify|comandotorrents|bludv|lapumia|baixarfilmes|legendas?\s+(?:por|de|by)|subtitles?\s+by|tradu[cç][aã]o\s*:|ripada\s+por|acesse\b|visite\s*:|baixe\s+em|anuncie\s+aqui|canal\s+(?:do|no)\b)/i.test(plain);
+    }).join('\n').trim();
+}
+
 function parseSrt(srtContent) {
     if (!srtContent || typeof srtContent !== 'string') return [];
     const normalized = srtContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
@@ -174,6 +182,7 @@ function parseSubtitles(content) {
 }
 
 function cuesToSrt(cues) {
+    cues = (Array.isArray(cues) ? cues : []).map(cue => ({ ...cue, text: cleanCueText(cue.text) })).filter(cue => cue.text);
     if (!Array.isArray(cues) || cues.length === 0) return '';
     return cues.map((cue, idx) => {
         const start = cue.startTime || msToSrtTimecode(cue.startMs || 0);
@@ -184,6 +193,7 @@ function cuesToSrt(cues) {
 }
 
 function cuesToVtt(cues) {
+    cues = (Array.isArray(cues) ? cues : []).map(cue => ({ ...cue, text: cleanCueText(cue.text) })).filter(cue => cue.text);
     if (!Array.isArray(cues) || cues.length === 0) return 'WEBVTT\n\n';
     const lines = ['WEBVTT', ''];
     cues.forEach((cue, idx) => {
@@ -254,7 +264,7 @@ function sanitizeVtt(vttContent) {
             cueSettings = remainder.includes('line:') ? remainder : `${remainder} line:85%`;
         }
 
-        const text = stripOuterQuotes(textLines.join('\n'));
+        const text = cleanCueText(stripOuterQuotes(textLines.join('\n')));
         if (!text) continue;
 
         validCues.push(`${cueNum++}\n${startVtt} --> ${endVtt} ${cueSettings}\n${text}`);
@@ -314,13 +324,8 @@ function validateAndSanitizeCues(cues) {
             }
         }
 
-        let text = stripOuterQuotes(raw.text || '');
-        // Filtro Quality Gate: descarta inserções evidentes de spam de sites de torrent no início ou fim
-        const isSpamText = /(opensubtitles|legendas\.tv|pipocas\.tv|yts\.mx|yts\.ag|yify|comandotorrents|bludv|lapumia|baixarfilmes|acesse:|visite:|anuncie aqui|subtitles by|tradução:|ripada por:)/i.test(text);
-        if (isSpamText && (startMs < 120000 || i >= cues.length - 3)) {
-            continue;
-        }
-
+        let text = cleanCueText(stripOuterQuotes(raw.text || ''));
+        if (!text) continue;
         // Limita a 2 linhas se necessário (~42 caracteres por linha)
         const lines = text.split('\n').filter(Boolean);
         if (lines.length > 2) {
@@ -343,6 +348,8 @@ function validateAndSanitizeCues(cues) {
 }
 
 module.exports = {
+    contentHash: content => require('crypto').createHash('sha256').update(content).digest('hex'),
+    cleanCueText,
     timecodeToMs,
     msToSrtTimecode,
     msToVttTimecode,
