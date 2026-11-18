@@ -177,91 +177,121 @@ class SubdlService {
      * @param {object} params - { imdbId, tmdbId, type, season, episode, title, originalTitle, year, languages }
      */
     async searchSubtitles(params = {}) {
-        const { imdbId, tmdbId, type, season, episode, title, originalTitle, year, languages } = params;
+        const { imdbId, tmdbId, type, season, episode, title, originalTitle, year, languages, onIncomplete } = params;
         const searchLang = languages || 'BR_PT';
 
-        return await this.executeWithFailover(async (apiKey, keyInfo) => {
-            const doQuery = async (querySpecifics, label) => {
-                const queryParams = {
-                    api_key: apiKey,
-                    languages: searchLang,
-                    subs_per_page: 30,
-                    ...querySpecifics
-                };
+        const doQuery = async (querySpecifics, label) => {
+            try {
+                return await this.executeWithFailover(async (apiKey, keyInfo) => {
+                    const queryParams = {
+                        api_key: apiKey,
+                        languages: searchLang,
+                        subs_per_page: 30,
+                        type: type === 'serie' ? 'tv' : 'movie',
+                        ...(onIncomplete && { unpack: 1 }),
+                        ...querySpecifics
+                    };
 
-                if (type === 'serie' && season && episode) {
-                    queryParams.type = 'tv';
-                    queryParams.season = season;
-                    queryParams.episode = episode;
-                }
+                    if (type === 'serie' && season && episode) {
+                        queryParams.type = 'tv';
+                        queryParams.season_number = season;
+                        queryParams.episode_number = episode;
+                    }
 
-                console.log(`🌐 [SubDL API] Consultando [${label}] [Chave #${keyInfo.index + 1}/${keyInfo.total} (${this.maskKey(apiKey)})] lang: ${searchLang}...`);
-                try {
-                    const res = await axios.get(this.apiBaseUrl, {
-                        params: queryParams,
-                        timeout: 10000,
-                        headers: { 'User-Agent': 'BrasilFlix/1.0.0' }
-                    });
+                    console.log(`🌐 [SubDL API] Consultando [${label}] [Chave #${keyInfo.index + 1}/${keyInfo.total} (${this.maskKey(apiKey)})] lang: ${searchLang}...`);
+                    try {
+                        const res = await axios.get(this.apiBaseUrl, {
+                            params: queryParams,
+                            timeout: 10000,
+                            headers: { 'User-Agent': 'BrasilFlix/1.0.0' }
+                        });
 
-                    if (res.data?.status === false) {
-                        if (this.isQuotaOrRateLimitError(res.data)) {
-                            const err = new Error(res.data.error || res.data.message || 'SubDL Quota Exceeded');
-                            err.response = { status: 429, data: res.data };
-                            throw err;
+                        if (res.data?.status === false) {
+                            if (this.isQuotaOrRateLimitError(res.data)) {
+                                const err = new Error(res.data.error || res.data.message || 'SubDL Quota Exceeded');
+                                err.response = { status: 429, data: res.data };
+                                throw err;
+                            }
+                            const reason = String(res.data.error || res.data.message || '');
+                            if (!/not found|no (results?|subtitles?|films?|series|matches)|nenhum/i.test(reason)) {
+                                onIncomplete?.('SubDL recusou uma consulta');
+                            }
+                            return [];
                         }
+                        if (!Array.isArray(res.data?.subtitles)) onIncomplete?.('SubDL retornou uma resposta inválida');
+                        // The v1 docs specify the response size but no page cursor.
+                        // A full response cannot prove that the API exposed every result.
+                        if (res.data?.subtitles?.length >= 30) onIncomplete?.('SubDL atingiu o limite de resultados por consulta');
+                        return res.data?.subtitles || [];
+                    } catch (err) {
+                        if (this.isQuotaOrRateLimitError(err)) throw err;
+                        if (![404, 410].includes(err.response?.status)) onIncomplete?.('SubDL indisponível');
+                        console.warn(`⚠️ [SubDL API] Erro na consulta [${label}]:`, err.message);
                         return [];
                     }
-                    return res.data?.subtitles || [];
-                } catch (err) {
-                    if (this.isQuotaOrRateLimitError(err)) throw err;
-                    console.warn(`⚠️ [SubDL API] Erro na consulta [${label}]:`, err.message);
-                    return [];
+                }, label);
+            } catch (error) {
+                if (!onIncomplete) throw error;
+                onIncomplete('Consulta do SubDL indisponível ou limitada');
+                return [];
+            }
+        };
+
+        let subtitles = [];
+
+        // 1. Busca por IMDb ID (se disponível)
+        if (imdbId) {
+            subtitles = await doQuery({ imdb_id: imdbId }, `imdb_id: ${imdbId}`);
+        }
+
+        // 2. Fallback por TMDB ID (se disponível e sem resultados)
+        if ((onIncomplete || !subtitles.length) && tmdbId) {
+            subtitles.push(...await doQuery({ tmdb_id: tmdbId }, `tmdb_id: ${tmdbId}`));
+        }
+
+        // 3. Fallback por Título Original em Inglês (ex: "Ice Age", "Harry Potter and the Goblet of Fire")
+        const cleanEngTitle = (originalTitle || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+        if ((onIncomplete || !subtitles.length) && cleanEngTitle.length >= 2) {
+            subtitles.push(...await doQuery({ film_name: cleanEngTitle }, `film_name (EN): "${cleanEngTitle}"`));
+        }
+
+        // 4. Fallback por Título Localizado em Português (ex: "A Era do Gelo")
+        const cleanPtTitle = (title || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+        if ((onIncomplete || !subtitles.length) && cleanPtTitle.length >= 2 && cleanPtTitle.toLowerCase() !== cleanEngTitle.toLowerCase()) {
+            subtitles.push(...await doQuery({ film_name: cleanPtTitle }, `film_name (PT): "${cleanPtTitle}"`));
+        }
+
+        if (onIncomplete) {
+            const expanded = subtitles.flatMap(sub => {
+                const files = (Array.isArray(sub.unpack_files) ? sub.unpack_files : []).filter(file => file.url &&
+                    (type !== 'serie' || (Number(file.season) === Number(season) && Number(file.episode) === Number(episode))));
+                if (files.length) return files.map(file => ({ ...sub, ...file, rawFile: true }));
+                if (type === 'serie' && sub.season != null && Number(sub.season) !== Number(season)) return [];
+                if (type === 'serie' && sub.episode != null && Number(sub.episode) !== Number(episode) &&
+                    !(Number(sub.episode_from) <= Number(episode) && Number(sub.episode_end) >= Number(episode))) return [];
+                return [{ ...sub, targetSeason: season, targetEpisode: episode }];
+            });
+            return [...new Map(expanded.filter(sub => sub.url).map(sub => [sub.url, sub])).values()];
+        }
+
+        // Filtragem por tolerância de ano ±1 se o ano for conhecido
+        if (year && subtitles.length > 0) {
+            const targetYear = parseInt(year, 10);
+            if (!isNaN(targetYear) && targetYear > 1900) {
+                const yearFiltered = subtitles.filter(s => {
+                    const rel = (s.release_name || s.name || '').toLowerCase();
+                    const m = rel.match(/\b(19\d{2}|20\d{2})\b/);
+                    if (!m) return true; // Mantém se não tiver ano no nome
+                    const subYear = parseInt(m[1], 10);
+                    return Math.abs(subYear - targetYear) <= 1;
+                });
+                if (yearFiltered.length > 0) {
+                    subtitles = yearFiltered;
                 }
-            };
-
-            let subtitles = [];
-
-            // 1. Busca por IMDb ID (se disponível)
-            if (imdbId) {
-                subtitles = await doQuery({ imdb_id: imdbId }, `imdb_id: ${imdbId}`);
             }
+        }
 
-            // 2. Fallback por TMDB ID (se disponível e sem resultados)
-            if (subtitles.length === 0 && tmdbId) {
-                subtitles = await doQuery({ tmdb_id: tmdbId }, `tmdb_id: ${tmdbId}`);
-            }
-
-            // 3. Fallback por Título Original em Inglês (ex: "Ice Age", "Harry Potter and the Goblet of Fire")
-            const cleanEngTitle = (originalTitle || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
-            if (subtitles.length === 0 && cleanEngTitle.length >= 2) {
-                subtitles = await doQuery({ film_name: cleanEngTitle }, `film_name (EN): "${cleanEngTitle}"`);
-            }
-
-            // 4. Fallback por Título Localizado em Português (ex: "A Era do Gelo")
-            const cleanPtTitle = (title || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
-            if (subtitles.length === 0 && cleanPtTitle.length >= 2 && cleanPtTitle.toLowerCase() !== cleanEngTitle.toLowerCase()) {
-                subtitles = await doQuery({ film_name: cleanPtTitle }, `film_name (PT): "${cleanPtTitle}"`);
-            }
-
-            // Filtragem por tolerância de ano ±1 se o ano for conhecido
-            if (year && subtitles.length > 0) {
-                const targetYear = parseInt(year, 10);
-                if (!isNaN(targetYear) && targetYear > 1900) {
-                    const yearFiltered = subtitles.filter(s => {
-                        const rel = (s.release_name || s.name || '').toLowerCase();
-                        const m = rel.match(/\b(19\d{2}|20\d{2})\b/);
-                        if (!m) return true; // Mantém se não tiver ano no nome
-                        const subYear = parseInt(m[1], 10);
-                        return Math.abs(subYear - targetYear) <= 1;
-                    });
-                    if (yearFiltered.length > 0) {
-                        subtitles = yearFiltered;
-                    }
-                }
-            }
-
-            return subtitles;
-        }, originalTitle || title || imdbId || 'Busca SubDL');
+        return subtitles;
     }
 
     /**
@@ -352,7 +382,7 @@ class SubdlService {
      * @param {object} sub - Objeto de metadados da legenda retornado pelo SubDL
      * @param {string} tempDir - Diretório temporário para extração
      */
-    async downloadAndExtractSubtitle(sub, tempDir = os.tmpdir()) {
+    async downloadAndExtractSubtitle(sub, tempDir = os.tmpdir(), allFiles = false) {
         if (!sub || !sub.url) {
             throw new Error('URL de download da legenda ausente nos metadados do SubDL.');
         }
@@ -366,6 +396,9 @@ class SubdlService {
 
             // Atualiza/injeta api_key na URL
             const parsedUrl = new URL(rawUrl);
+            if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== new URL(this.downloadBaseUrl).hostname) {
+                throw new Error('Origem de download do SubDL inválida.');
+            }
             parsedUrl.searchParams.set('api_key', apiKey);
             const downloadUrl = parsedUrl.toString();
 
@@ -385,8 +418,9 @@ class SubdlService {
 
             // Extrai o conteúdo do ZIP usando AdmZip
             const zipBuffer = Buffer.from(dlRes.data);
-            const zip = new AdmZip(zipBuffer);
-            const entries = zip.getEntries();
+            const entries = sub.rawFile && zipBuffer.subarray(0, 2).toString() !== 'PK'
+                ? [{ entryName: sub.name || `subtitle.${sub.format || 'srt'}`, header: { size: zipBuffer.length }, getData: () => zipBuffer }]
+                : new AdmZip(zipBuffer).getEntries();
 
             // Filtra entradas válidas (ignora pastas, __MACOSX e arquivos de sistema)
             const validEntries = entries.filter(e => {
@@ -402,47 +436,49 @@ class SubdlService {
 
             // Se houver múltiplos arquivos, seleciona o arquivo completo principal
             // Ignora arquivos marcados como forced, signs, sample se houver opção normal
-            let selectedEntry = null;
             const nonForced = validEntries.filter(e => {
                 const n = e.entryName.toLowerCase();
                 return !/(forced|for[cç]ad|signs|sample)/i.test(n);
             });
 
-            const candidateEntries = nonForced.length > 0 ? nonForced : validEntries;
-
-            // Prioriza arquivos .srt maiores (que representam o filme inteiro, não split CD1/CD2 ou partes curtas)
-            candidateEntries.sort((a, b) => b.header.size - a.header.size);
-            selectedEntry = candidateEntries[0];
-
-            console.log(`📦 [SubDL Extract] Arquivo selecionado no .zip: "${selectedEntry.entryName}" (${(selectedEntry.header.size / 1024).toFixed(1)} KB).`);
-
-            const entryBuffer = selectedEntry.getData();
-            const ext = path.extname(selectedEntry.entryName).toLowerCase();
-            const outSrtPath = path.join(tempDir, `subdl_${Date.now()}_extracted.srt`);
-
-            if (ext === '.srt') {
-                await fs.writeFile(outSrtPath, entryBuffer);
-                return outSrtPath;
-            } else if (ext === '.vtt' || ext === '.ass') {
-                // Converte via ffmpeg para SRT padronizado
-                const tempIn = path.join(tempDir, `subdl_temp_${Date.now()}${ext}`);
-                await fs.writeFile(tempIn, entryBuffer);
-                try {
-                    await execFileAsync('ffmpeg', [
-                        '-nostdin', '-v', 'error', '-y',
-                        '-i', tempIn,
-                        '-c:s', 'srt',
-                        outSrtPath
-                    ], { timeout: 30000 });
-                    await fs.remove(tempIn).catch(() => { });
-                    return outSrtPath;
-                } catch (convErr) {
-                    await fs.remove(tempIn).catch(() => { });
-                    throw new Error(`Falha ao converter ${ext} para SRT: ${convErr.message}`);
+            let candidateEntries = nonForced.length > 0 ? nonForced : validEntries;
+            if (sub.targetEpisode && candidateEntries.length > 1) {
+                const matchEpisode = candidateEntries.filter(entry => {
+                    const name = path.basename(entry.entryName, path.extname(entry.entryName));
+                    const pair = name.match(/(?:^|[^a-z0-9])(?:s(\d{1,2})[ ._-]*e(\d{1,3})|(\d{1,2})x(\d{1,3}))(?!\d)/i);
+                    return pair && Number(pair[1] || pair[3]) === Number(sub.targetSeason) &&
+                        Number(pair[2] || pair[4]) === Number(sub.targetEpisode);
+                });
+                if (matchEpisode.length) candidateEntries = matchEpisode;
+                else if (sub.full_season || Number(sub.episode_end) > Number(sub.episode_from)) {
+                    throw new Error('Pacote SubDL sem arquivo identificável para o episódio solicitado.');
                 }
             }
 
-            return outSrtPath;
+            // Prioriza arquivos .srt maiores (que representam o filme inteiro, não split CD1/CD2 ou partes curtas)
+            candidateEntries.sort((a, b) => b.header.size - a.header.size);
+            const files = allFiles ? candidateEntries : candidateEntries.slice(0, 1);
+            const outputs = [];
+            for (const entry of files) {
+                const ext = path.extname(entry.entryName).toLowerCase();
+                const token = require('node:crypto').randomUUID();
+                const outSrtPath = path.join(tempDir, `subdl_${token}.srt`);
+                if (ext === '.srt') {
+                    await fs.writeFile(outSrtPath, entry.getData());
+                } else {
+                    const input = path.join(tempDir, `subdl_${token}${ext}`);
+                    try {
+                        await fs.writeFile(input, entry.getData());
+                        await execFileAsync('ffmpeg', [
+                            '-nostdin', '-v', 'error', '-y', '-i', input, '-c:s', 'srt', outSrtPath
+                        ], { timeout: 30000 });
+                    } finally {
+                        await fs.remove(input).catch(() => {});
+                    }
+                }
+                outputs.push(outSrtPath);
+            }
+            return allFiles ? outputs : outputs[0];
         }, sub.release_name || sub.name || 'Download SubDL');
     }
 }

@@ -935,7 +935,7 @@ class SubtitlePipeline {
      * TIER 3: Busca externa por PT-BR humano via OpenSubtitles / Stremio API
      * Prioriza 'pob', 'pt-br', 'brazilian', 'por' autêntico e rejeita PT-PT
      */
-    async fetchExternalSubtitle(videoPath, metadata = {}, videoDurationSec = 0) {
+    async fetchExternalSubtitle(videoPath, metadata = {}, videoDurationSec = 0, { tryCandidate, onIncomplete, workDir } = {}) {
         try {
             if (!videoDurationSec || videoDurationSec < 120) {
                 try {
@@ -973,6 +973,7 @@ class SubtitlePipeline {
             const fileTokens = tokenize(inputFileName);
 
             const urlSeen = new Set();
+            const unavailable = source => onIncomplete?.(source);
             const allCandidateSubs = [];
 
             for (const url of endpoints) {
@@ -981,23 +982,29 @@ class SubtitlePipeline {
                         timeout: 7000,
                         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Stremio/4.4.168' }
                     });
-                    const subs = res.data?.subtitles || [];
+                    const subs = res.data?.subtitles;
+                    if (!Array.isArray(subs)) {
+                        unavailable('OpenSubtitles/Stremio retornou uma resposta inválida');
+                        continue;
+                    }
                     for (const s of subs) {
                         const subUrl = s.url;
                         if (!subUrl || urlSeen.has(subUrl)) continue;
 
-                        const lang = (s.lang || s.language || '').toLowerCase();
+                        const lang = (s.lang || s.language || '').toLowerCase().replace(/_/g, '-');
                         if (lang.includes('pt-pt') || lang.includes('por-pt')) continue;
 
                         const rel = (s.movieReleaseName || s.releaseName || s.url || '').toLowerCase();
                         if (/\bpt[-.]?pt\b|\bportugal\b|\bpt[-_]por\b/.test(rel)) continue;
 
-                        if (['pob', 'pt-br', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang)) {
+                        if (['pob', 'pt-br', 'br-pt', 'brazilian', 'por', 'pt', 'ptbr'].includes(lang)) {
                             urlSeen.add(subUrl);
                             allCandidateSubs.push(s);
                         }
                     }
-                } catch (_) { }
+                } catch (error) {
+                    if (![404, 410].includes(error.response?.status)) unavailable('OpenSubtitles/Stremio indisponível');
+                }
             }
 
             if (allCandidateSubs.length === 0) {
@@ -1034,7 +1041,7 @@ class SubtitlePipeline {
             console.log(`🌐 [Tier 3: OpenSubtitles] ${scored.length} candidatos agregados. Baixando e validando PT-BR...`);
 
             const validCandidates = [];
-            for (let i = 0; i < Math.min(scored.length, 6); i++) {
+            for (let i = 0; i < scored.length; i++) {
                 const { sub, score } = scored[i];
                 const subUrl = sub.url;
                 if (!subUrl) continue;
@@ -1065,7 +1072,7 @@ class SubtitlePipeline {
                         continue;
                     }
 
-                    const candidatePath = path.join(this.getWorkingDir(videoPath), `opensubs_ptbr_${Date.now()}_cand${i + 1}.srt`);
+                    const candidatePath = path.join(workDir || this.getWorkingDir(videoPath), `opensubs_ptbr_${Date.now()}_cand${i + 1}.srt`);
                     await fs.writeFile(candidatePath, this.buildSrt(cues), 'utf8');
                     console.log(`✅ [Tier 3: OpenSubtitles] Candidato #${i + 1} aprovado como PT-BR humano (${cues.length} cues, score: ${score})!`);
 
@@ -1078,8 +1085,12 @@ class SubtitlePipeline {
                         releaseName: relName
                     });
 
-                    if (validCandidates.length >= 3) break;
+                    if (tryCandidate) {
+                        const approved = await tryCandidate(validCandidates.at(-1));
+                        if (approved) return { approved };
+                    }
                 } catch (dlErr) {
+                    if (![404, 410].includes(dlErr.response?.status)) unavailable('Download do OpenSubtitles/Stremio incompleto');
                     console.warn(`⚠️ Falha ao baixar candidato OpenSubtitles #${i + 1}:`, dlErr.message);
                 }
             }
@@ -1096,6 +1107,7 @@ class SubtitlePipeline {
             return null;
         } catch (e) {
             console.warn(`⚠️ [Tier 3: OpenSubtitles] Erro na busca externa:`, e.message);
+            onIncomplete?.('Busca OpenSubtitles/Stremio incompleta');
             return null;
         }
     }
@@ -1104,9 +1116,10 @@ class SubtitlePipeline {
      * TIER 3.5: Busca de legendas humanas PT-BR no SubDL Pool
      * Busca por IMDb ID, TMDB ID, Título Original em Inglês e Título em Português com ano ± 1
      */
-    async fetchSubdlSubtitle(videoPath, metadata = {}, videoDurationSec = 0) {
+    async fetchSubdlSubtitle(videoPath, metadata = {}, videoDurationSec = 0, { tryCandidate, onIncomplete, workDir } = {}) {
         if (!SubdlService.isAvailable()) {
             console.log(`ℹ️ [Tier 3.5: SubDL API] Serviço indisponível: nenhuma chave configurada.`);
+            onIncomplete?.('SubDL sem credencial configurada');
             return null;
         }
 
@@ -1132,7 +1145,8 @@ class SubtitlePipeline {
                 title: meta.title || meta.nome,
                 originalTitle: meta.originalTitle || meta.nomeOriginal,
                 year: meta.year || meta.ano,
-                languages: 'BR_PT'
+                languages: 'BR_PT',
+                onIncomplete
             };
 
             const rawSubtitles = await SubdlService.searchSubtitles(searchParams);
@@ -1145,56 +1159,61 @@ class SubtitlePipeline {
             const rankedSubtitles = SubdlService.rankCandidates(rawSubtitles, videoFileName, meta);
             console.log(`🌐 [Tier 3.5: SubDL API] ${rankedSubtitles.length} legendas PT-BR encontradas. Baixando candidatos...`);
 
-            const videoDir = this.getWorkingDir(videoPath);
-            const maxCandidatesToDownload = Math.min(rankedSubtitles.length, 4);
+            const videoDir = workDir || this.getWorkingDir(videoPath);
+            const maxCandidatesToDownload = rankedSubtitles.length;
             const validCandidates = [];
 
             for (let i = 0; i < maxCandidatesToDownload; i++) {
                 const candidate = rankedSubtitles[i];
-                let extractedSrtPath = null;
+                let extractedFiles = [];
                 try {
-                    extractedSrtPath = await SubdlService.downloadAndExtractSubtitle(candidate, videoDir);
-                    if (!fs.existsSync(extractedSrtPath)) continue;
+                    extractedFiles = await SubdlService.downloadAndExtractSubtitle(candidate, videoDir, true);
+                    for (const [fileIndex, extractedSrtPath] of extractedFiles.entries()) {
 
-                    const rawBuffer = await fs.readFile(extractedSrtPath);
-                    const sanitized = this.sanitizeEncoding(rawBuffer);
-                    const candidateLang = candidate.language || candidate.lang || 'BR_PT';
-                    const candidateRel = candidate.release_name || candidate.name || '';
+                        const rawBuffer = await fs.readFile(extractedSrtPath);
+                        const sanitized = this.sanitizeEncoding(rawBuffer);
+                        const candidateLang = candidate.language || candidate.lang || 'BR_PT';
+                        const candidateRel = candidate.release_name || candidate.name || '';
 
-                    const cues = this.parseSrt(sanitized);
-                    const cueTexts = cues.map(c => c.text);
+                        const cues = this.parseSrt(sanitized);
+                        const cueTexts = cues.map(c => c.text);
 
-                    if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel, cueTexts)) {
-                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${candidateLang}, release: ${candidateRel.slice(0, 60)}).`);
-                        await fs.remove(extractedSrtPath).catch(() => { });
-                        continue;
+                        if (!this.isBrazilianPortugueseSubtitle(sanitized, candidateLang, candidateRel, cueTexts)) {
+                            console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado pelo Safety Gate PT-BR (lang: ${candidateLang}, release: ${candidateRel.slice(0, 60)}).`);
+                            continue;
+                        }
+
+                        const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `SubDL #${i + 1}`);
+                        if (!gate.valid) {
+                            console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
+                            continue;
+                        }
+
+                        const candidateFinalPath = path.join(videoDir, `subdl_ptbr_${Date.now()}_cand${i + 1}_${fileIndex + 1}.srt`);
+                        await fs.writeFile(candidateFinalPath, this.buildSrt(cues), 'utf8');
+
+                        console.log(`✅ [Tier 3.5: SubDL API] Candidato #${i + 1} APROVADO como PT-BR humano (${cues.length} cues, release: "${candidate.release_name || candidate.name}")!`);
+                        validCandidates.push({
+                            srtPath: candidateFinalPath,
+                            cueCount: cues.length,
+                            source: 'subdl_api_ptbr',
+                            sourceMethod: `Tier 3.5 (SubDL API - ${candidate.release_name || candidate.name})`,
+                            name: `SubDL #${i + 1} (${candidate.release_name || candidate.name})`,
+                            releaseName: candidate.release_name || candidate.name
+                        });
+
+                        if (tryCandidate) {
+                            const approved = await tryCandidate(validCandidates.at(-1));
+                            if (approved) return { approved };
+                        }
                     }
-
-                    const gate = this.validateCandidateCoverageAndDensity(cues, videoDurationSec, `SubDL #${i + 1}`);
-                    if (!gate.valid) {
-                        console.warn(`⚠️ [Tier 3.5: SubDL API] Candidato #${i + 1} rejeitado no Quality Gate: ${gate.reason}`);
-                        await fs.remove(extractedSrtPath).catch(() => { });
-                        continue;
-                    }
-
-                    const candidateFinalPath = path.join(videoDir, `subdl_ptbr_${Date.now()}_cand${i + 1}.srt`);
-                    await fs.writeFile(candidateFinalPath, this.buildSrt(cues), 'utf8');
-                    await fs.remove(extractedSrtPath).catch(() => { });
-
-                    console.log(`✅ [Tier 3.5: SubDL API] Candidato #${i + 1} APROVADO como PT-BR humano (${cues.length} cues, release: "${candidate.release_name || candidate.name}")!`);
-                    validCandidates.push({
-                        srtPath: candidateFinalPath,
-                        cueCount: cues.length,
-                        source: 'subdl_api_ptbr',
-                        sourceMethod: `Tier 3.5 (SubDL API - ${candidate.release_name || candidate.name})`,
-                        name: `SubDL #${i + 1} (${candidate.release_name || candidate.name})`,
-                        releaseName: candidate.release_name || candidate.name
-                    });
-
-                    if (validCandidates.length >= 3) break;
                 } catch (candErr) {
+                    if (![404, 410].includes(candErr.response?.status)) {
+                        onIncomplete?.('Download ou leitura de resultado do SubDL incompleto');
+                    }
                     console.warn(`⚠️ [Tier 3.5: SubDL API] Falha ao processar candidato #${i + 1}:`, candErr.message);
-                    if (extractedSrtPath) await fs.remove(extractedSrtPath).catch(() => { });
+                } finally {
+                    await Promise.all(extractedFiles.map(file => fs.remove(file).catch(() => {})));
                 }
             }
 
@@ -1210,6 +1229,7 @@ class SubtitlePipeline {
             return null;
         } catch (err) {
             console.warn(`⚠️ [Tier 3.5: SubDL API] Erro ao buscar legendas no SubDL:`, err.message);
+            onIncomplete?.('Busca SubDL incompleta');
             return null;
         }
     }
@@ -1902,6 +1922,10 @@ print(f"RESULT:{res}")
         let fullReferencePath;
         let sourcePromise;
         let retained;
+        const incomplete = new Set();
+        const onIncomplete = reason => incomplete.add(reason);
+        const checkedContent = new Set();
+        let checkedTracks = 0;
         const model = process.env.SUBTITLE_SEMANTIC_MODEL_DIR ||
             path.resolve(__dirname, '../../data/subtitle_models/multilingual-minilm');
         const source = () => sourcePromise ||= (async () => {
@@ -1934,17 +1958,26 @@ print(f"RESULT:{res}")
             if (!candidates.length) return null;
             if (await fs.pathExists(path.join(model, 'onnx/model_quantized.onnx'))) {
                 const spoken = await attempt('source audio', source);
-                if (spoken) for (const candidate of candidates.slice(0, 6)) {
+                if (!spoken) onIncomplete('Áudio de referência indisponível');
+                if (spoken) for (const candidate of candidates) {
                     const result = await attempt('semantic alignment', async () => {
                         const output = path.join(workDir, `${require('crypto').randomUUID()}.srt`);
                         const clean = path.join(workDir, 'candidate.srt');
                         const cues = SubtitleUtils.parseSubtitles(await fs.readFile(candidate.srtPath, 'utf8'));
-                        await fs.writeFile(clean, SubtitleUtils.cuesToSrt(cues));
-                        onProgress?.(52, 'Comparando falas, velocidade e cortes');
+                        const text = SubtitleUtils.cuesToSrt(cues);
+                        const hash = require('crypto').createHash('sha256').update(text).digest('hex');
+                        if (checkedContent.has(hash)) return null;
+                        checkedContent.add(hash);
+                        checkedTracks++;
+                        await fs.writeFile(clean, text);
+                        onProgress?.(52, `Comparando candidata PT-BR #${checkedTracks} com o áudio`);
                         const { stdout } = await execFileAsync(this.pythonExec, [
                             path.resolve(__dirname, '../../scripts/align_subtitle_semantic.py'),
                             clean, spoken, output, model, String(duration)
-                        ], { timeout: 300000, maxBuffer: 1024 * 1024 });
+                        ], { timeout: 300000, maxBuffer: 1024 * 1024 }).catch(error => {
+                            onIncomplete('Falha ao comparar a candidata com o áudio');
+                            throw error;
+                        });
                         const proof = JSON.parse(stdout);
                         if (!proof.aligned) throw new Error(proof.reason);
                         const points = proof.boundary_points;
@@ -1965,6 +1998,9 @@ print(f"RESULT:{res}")
                     });
                     if (result) return result;
                 }
+            }
+            if (!await fs.pathExists(path.join(model, 'onnx/model_quantized.onnx'))) {
+                onIncomplete('Modelo local de alinhamento indisponível');
             }
             if (!allowTranslatedReference) return null;
             if (!referencePromise) {
@@ -2001,7 +2037,10 @@ print(f"RESULT:{res}")
                 candidates.push({ srtPath: candidate, sourceMethod: 'Existing human PT-BR' });
             }
             onProgress?.(10, 'Extraindo legendas humanas e verificando o áudio desta versão');
-            const embedded = metadata.existingSubtitlePath ? null : await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
+            const existing = await human(candidates);
+            if (existing) return existing;
+            candidates.length = 0;
+            const embedded = await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
             if (embedded?.srtPath) candidates.push(embedded);
             const companion = await attempt('companion', () => this.findCompanionSubtitles(videoPath, meta));
             if (companion?.ptSrtPath) candidates.push({ srtPath: companion.ptSrtPath, sourceMethod: 'Companion Human PT-BR' });
@@ -2009,10 +2048,17 @@ print(f"RESULT:{res}")
             if (result) return result;
 
             for (const fetch of [this.fetchExternalSubtitle, this.fetchSubdlSubtitle]) {
-                const found = await attempt('provider', () => fetch.call(this, videoPath, meta, duration));
-                result = await human(found?.candidates || (found?.srtPath ? [found] : []));
-                if (result) return result;
+                const found = await fetch.call(this, videoPath, meta, duration, {
+                    tryCandidate: candidate => human([candidate]), onIncomplete, workDir
+                });
+                if (found?.approved) return found.approved;
             }
+            if (incomplete.size) {
+                const reason = `Busca humana PT-BR incompleta após ${checkedTracks} candidata(s): ${[...incomplete].join('; ')}. Tradução adiada.`;
+                onProgress?.(70, reason);
+                throw Object.assign(new Error(reason), { code: 'SUBTITLE_PROVIDER_UNAVAILABLE' });
+            }
+            console.log(`[Subtitle] ${meta.title || meta.nome}: ${checkedTracks} faixa(s) PT-BR comparada(s); resultados disponíveis esgotados.`);
             onProgress?.(72, 'Traduzindo legenda humana EN/ES e comparando com as falas');
             const foreign = await attempt('foreign subtitle', () => this.fetchForeignSubtitleCandidates(videoPath, meta, duration));
             if (foreign?.srtPath && SubtitleTranslationService.isAvailable()) {
