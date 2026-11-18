@@ -21,7 +21,7 @@
         rel="stylesheet">
     <!-- Telegram Mini App SDK — carregado incondicionalmente (inerte fora do Telegram) -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="/assets/brasilflix.ff25f177c4.css?v=ff25f177c4">
+    <link rel="stylesheet" href="/assets/brasilflix.72be83656a.css?v=72be83656a">
     <style id="bf-subtitles-base-css">
         .subtitle-dropdown-menu {
             position: absolute;
@@ -153,7 +153,7 @@
             <!-- SEARCH BAR (CENTERED WITH CONTENT BANNER) -->
             <div class="header-search-wrap">
                 <form role="search" id="header-search-form" action="javascript:void(0);" autocomplete="off"
-                    onsubmit="event.preventDefault();" style="margin:0;width:100%;position:relative;">
+                    onsubmit="submitCatalogSearch(event, this.elements.bf_query_search)" style="margin:0;width:100%;position:relative;">
                     <span class="header-search-icon">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2.5" stroke-linecap="round">
@@ -167,6 +167,7 @@
                         data-form-type="other" value="" oninput="onHeaderSearchInput(this.value)"
                         onkeydown="if(event.key==='Escape'){this.value='';onHeaderSearchInput('');this.blur();}">
                     <span class="header-search-shortcut">Ctrl K</span>
+                    <button type="submit" class="catalog-search-submit header-search-submit">Buscar</button>
                 </form>
             </div>
 
@@ -760,8 +761,9 @@
                         <path d="M21 21l-4.35-4.35" />
                     </svg>
                     <input type="search" id="sidebar-search-input" placeholder="Buscar filmes, séries, doramas..."
-                        autocomplete="off" oninput="onSidebarSearchInput(this.value)"
+                        autocomplete="off" oninput="onHeaderSearchInput(this.value)"
                         onkeydown="onSidebarSearchKeyDown(event)">
+                    <button type="button" class="catalog-search-submit" onclick="submitCatalogSearch(event, document.getElementById('sidebar-search-input'))">Buscar</button>
                 </div>
             </div>
 
@@ -5023,7 +5025,7 @@
 
     <!-- MODAL DO WEB PLAYER (REPRODUTOR DIRETO NO NAVEGADOR VIA TELEGRAM STREAM) -->
     <!-- Web Player migrado para #tab-playback-page -->
-    <script src="/assets/brasilflix.fb4c364e97.js?v=fb4c364e97"></script>
+    <script src="/assets/brasilflix.27b06976f6.js?v=27b06976f6"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          🍿 MODAL DE PEDIDO DE CONTEÚDO (SIMPLES, CLARO & DIRETO)
@@ -5177,7 +5179,7 @@
     <!-- ═══════════════════════════════════════════════════════════════════════
          📢 BRASILFLIX AD MANAGER (ADSTERRA - DISCRETO, RESPONSIVO & ISOLADO)
          ═══════════════════════════════════════════════════════════════════════ -->
-    <script src="/assets/brasilflix-player.49a1e38253.js?v=49a1e38253"></script>
+    <script src="/assets/brasilflix-player.9ce336210d.js?v=9ce336210d"></script>
 </body>
 
 </html>

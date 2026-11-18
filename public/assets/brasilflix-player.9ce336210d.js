@@ -61,14 +61,20 @@
             const navMode = typeof currentNavMode !== 'undefined' ? currentNavMode : (localStorage.getItem('bf_active_nav') || 'inicio');
 
             const homeAd = document.getElementById('bf-home-bottom-ad');
+            const homeNative = document.getElementById('bf-native-home-wrapper');
             const catAd = document.getElementById('bf-catalog-bottom-ad');
             const playerAd = document.getElementById('bf-player-bottom-ad');
 
-            if (activeTab === 'tab-catalogo') {
+            if (activeTab === 'tab-catalogo' && document.body.classList.contains('catalog-searching')) {
+                if (homeAd) homeAd.style.display = 'none';
+                if (homeNative) homeNative.style.display = 'none';
+                if (catAd) catAd.style.display = 'flex';
+            } else if (activeTab === 'tab-catalogo') {
                 if (navMode === 'inicio') {
                     if (homeAd) homeAd.style.display = 'flex';
                     if (catAd) catAd.style.display = 'none';
                     loadAdsterraNativeWidget();
+                    if (homeNative) homeNative.style.display = 'block';
                 } else {
                     if (homeAd) homeAd.style.display = 'none';
                     if (catAd) catAd.style.display = 'flex';

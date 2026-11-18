@@ -19,6 +19,11 @@
             border-color: rgba(255, 255, 255, 0.10);
         }
 
+        body.catalog-searching #bf-home-bottom-ad,
+        body.catalog-searching #bf-native-home-wrapper {
+            display: none !important;
+        }
+
         .bf-banner-ad-wrapper iframe {
             background: #080b11 !important;
             border: none !important;
@@ -739,6 +744,25 @@
         .header-search-input::placeholder {
             color: #64748b;
         }
+
+        .catalog-search-submit {
+            display: none;
+            flex-shrink: 0;
+            border: 1px solid #237862;
+            border-radius: 6px;
+            background: #143d32;
+            color: #d6f8ed;
+            font: inherit;
+            font-size: 12px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+
+        .search-needs-submit .catalog-search-submit { display: inline-block; }
+        .search-needs-submit .header-search-shortcut { display: none; }
+        .search-needs-submit .header-search-input { padding-right: 76px; }
+        .search-needs-submit .sidebar-search-inner input { min-width: 0; }
+        .header-search-submit { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
 
         .header-search-input:focus {
             background: rgba(255, 255, 255, 0.11);

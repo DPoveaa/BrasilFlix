@@ -675,7 +675,12 @@
             initApp();
         }
 
+        var headerSearchTimer;
+
         function switchTab(tabId, updateUrl = true) {
+            clearTimeout(headerSearchTimer);
+            document.body.classList.toggle('search-needs-submit', tabId !== 'tab-catalogo');
+            if (tabId !== 'tab-catalogo') document.body.classList.remove('catalog-searching');
             if (tabId !== 'tab-playback-page') {
                 if (typeof closeWebPlayer === 'function') closeWebPlayer();
             }
@@ -1521,12 +1526,37 @@
             renderCatalog();
         }
 
+        // Keep matches at the beginning of a title together so franchises
+        // read in release order, including a later reboot with the same name.
+        function orderCatalogMatches(items, query) {
+            const normalize = text => String(text || '').normalize('NFD').replace(/\p{M}/gu, '')
+                .toLocaleLowerCase('pt-BR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+            const term = normalize(query);
+            if (!term) return [];
+            const words = term.split(' ');
+            const year = item => Number(item.ano) || Number.MAX_SAFE_INTEGER;
+            const rank = item => {
+                const titles = [item.nome, item.nomeOriginal || item.nome_original].map(normalize);
+                if (titles.some(title => title.startsWith(term))) return 4;
+                if (titles.some(title => title.includes(term))) return 3;
+                if (titles.some(title => words.every(word => title.includes(word)))) return 2;
+                const descriptions = [item.sinopse, ...(item.generos || [])].map(normalize);
+                return descriptions.some(text => text.includes(term)) ? 1 : 0;
+            };
+            return items.map(item => ({ item, rank: rank(item) })).filter(match => match.rank)
+                .sort((a, b) => b.rank - a.rank || year(a.item) - year(b.item) ||
+                    String(a.item.nome || '').localeCompare(b.item.nome || '', 'pt-BR', { numeric: true }))
+                .map(match => match.item);
+        }
+
         function renderCatalog() {
             const searchInput = document.getElementById('catalog-search');
             const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
             const grid = document.getElementById('catalog-grid-container');
             const countText = document.getElementById('catalog-count-text');
             if (!grid) return;
+            const catalogVisible = document.getElementById('tab-catalogo')?.classList.contains('active');
+            document.body.classList.toggle('catalog-searching', Boolean(query && catalogVisible));
 
             // Seção de sub-filtro de Doramas na sidebar aparece apenas na categoria Doramas
             const doramaSidebar = document.getElementById('sidebar-filter-section-dorama');
@@ -1606,12 +1636,7 @@
 
             // 5. Filtro de Busca por Texto
             if (query) {
-                allItems = allItems.filter(i =>
-                    (i.nome && i.nome.toLowerCase().includes(query)) ||
-                    (i.nomeOriginal && i.nomeOriginal.toLowerCase().includes(query)) ||
-                    (i.sinopse && i.sinopse.toLowerCase().includes(query)) ||
-                    (i.generos && i.generos.some(g => String(g).toLowerCase().includes(query)))
-                );
+                allItems = orderCatalogMatches(allItems, query);
 
                 // Registra busca na auditoria com debounce de 600ms
                 if (query.length >= 2) {
@@ -1629,7 +1654,7 @@
             renderActiveChips(allItems.length);
 
             if (countText) {
-                if (catalogFilters.sort === 'em-alta') {
+                if (!query && catalogFilters.sort === 'em-alta') {
                     countText.innerHTML = `Mostrando <strong>${allItems.length}</strong> títulos em alta (mais bem avaliados)`;
                 } else {
                     const categoryNames = {
@@ -1648,8 +1673,7 @@
             if (allItems.length === 0) {
                 // Detecta se é uma busca por texto
                 const _searchQ = (document.getElementById('catalog-search')?.value || '').trim();
-                const _headerQ = (document.getElementById('header-search-input')?.value || '').trim();
-                const _searchTerm = _searchQ || _headerQ;
+                const _searchTerm = _searchQ;
                 const _isSearch = !!_searchTerm;
 
                 let emptyIcon = '🔍';
@@ -1782,6 +1806,10 @@
         let currentNavMode = 'inicio';
 
         function switchNavCategory(cat, updateUrl = true) {
+            for (const id of ['catalog-search', 'header-search-input', 'sidebar-search-input']) {
+                const input = document.getElementById(id);
+                if (input) input.value = '';
+            }
             if (typeof closeWebPlayer === 'function') closeWebPlayer();
             currentNavMode = cat;
             currentDetailMedia = null;
@@ -2707,90 +2735,84 @@
             { terms: ['animacao', 'animação', 'cartoon'], genre: 'Animação' },
         ];
 
-        let _headerSearchTimer = null;
-        function onHeaderSearchInput(query) {
-            clearTimeout(_headerSearchTimer);
-            const q = (query || '').trim();
+        function catalogIsVisible() {
+            return document.getElementById('tab-catalogo')?.classList.contains('active');
+        }
 
-            // ⛔ Não interrompe o player: se o player está ativo, não navega
-            const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
-            if (isPlayerActive && q) {
-                // Apenas sincroniza o campo lateral sem navegar
-                const sideSearch = document.getElementById('sidebar-search-input');
-                if (sideSearch && sideSearch.value !== (query || '')) {
-                    sideSearch.value = query || '';
-                }
+        function syncSearchFields(value) {
+            for (const id of ['header-search-input', 'sidebar-search-input']) {
+                const input = document.getElementById(id);
+                if (input && input.value !== value) input.value = value;
+            }
+        }
+
+        function onHeaderSearchInput(value) {
+            clearTimeout(headerSearchTimer);
+            if (value.trim().toLowerCase() === 'admin' &&
+                !['header-search-input', 'sidebar-search-input'].includes(document.activeElement?.id)) {
+                syncSearchFields('');
                 return;
             }
-
-            const sideSearch = document.getElementById('sidebar-search-input');
-            if (sideSearch && sideSearch.value !== (query || '')) {
-                sideSearch.value = query || '';
-            }
-
-            // Bloqueia autofill do navegador que tenta preencher 'admin' sem foco do usuário
-            if (q.toLowerCase() === 'admin' && document.activeElement !== document.getElementById('header-search-input')) {
-                const searchEl = document.getElementById('header-search-input');
-                if (searchEl) searchEl.value = '';
-                return;
-            }
-
-            if (!q) {
-                // Campo vazio — volta para o estado anterior
-                if (currentNavMode === 'inicio') {
-                    switchNavCategory('inicio');
-                } else {
-                    catalogFilters.searchQuery = '';
-                    const searchInput = document.getElementById('catalog-search');
-                    if (searchInput) searchInput.value = '';
-                    renderCatalog();
-                }
-                return;
-            }
-
-            _headerSearchTimer = setTimeout(() => {
-                const lq = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-                // 1. Verifica palavra-chave de CATEGORIA (navega direto)
-                const catMatch = _searchCategoryKeywords[lq] || _searchCategoryKeywords[q.toLowerCase()];
-                if (catMatch) {
-                    switchNavCategory(catMatch);
-                    return;
-                }
-
-                // 2. Verifica palavra-chave de GÊNERO
-                let genreMatch = null;
-                for (const g of _searchGenreKeywords) {
-                    if (g.terms.some(t => lq === t || lq.startsWith(t))) {
-                        genreMatch = g.genre;
-                        break;
-                    }
-                }
-                if (genreMatch) {
-                    filterBySidebarGenre(genreMatch);
-                    return;
-                }
-
-                // 3. Busca de texto livre em tempo real
-                const heroBox = document.getElementById('hero-billboard-container');
-                const railsBox = document.getElementById('netflix-rails-container');
-                const gridLayout = document.getElementById('catalog-layout-grid');
-                const homeAdBox = document.getElementById('bf-home-bottom-ad');
-                const homeNativeBox = document.getElementById('bf-native-home-wrapper');
-                if (heroBox) heroBox.style.display = 'none';
-                if (railsBox) railsBox.style.display = 'none';
-                if (homeAdBox) homeAdBox.style.display = 'none';
-                if (homeNativeBox) homeNativeBox.style.display = 'none';
-                if (gridLayout) gridLayout.style.display = 'flex';
-
-                // Busca global: não filtra por categoria, mostra todos os tipos
-                catalogFilters.type = 'todos';
-
-                switchTab('tab-catalogo', false);
-                const searchInput = document.getElementById('catalog-search');
-                if (searchInput) searchInput.value = q;
-                filterCatalog();
+            syncSearchFields(value);
+            if (!catalogIsVisible()) return;
+            headerSearchTimer = setTimeout(() => {
+                if (catalogIsVisible()) applyCatalogSearch(value.trim());
             }, 250);
+        }
+
+        function submitCatalogSearch(event, input) {
+            event.preventDefault();
+            clearTimeout(headerSearchTimer);
+            const query = input.value.trim();
+            if (!query) return;
+            const watching = document.getElementById('tab-playback-page')?.classList.contains('active');
+            const viewingDetail = document.getElementById('tab-media-detail')?.classList.contains('active');
+            if ((watching || viewingDetail) && !window.confirm(watching
+                ? 'Sair do player para ver os resultados da busca?'
+                : 'Sair da página deste título para ver os resultados da busca?')) return;
+            if (!catalogIsVisible()) switchNavCategory('inicio');
+            syncSearchFields(query);
+            applyCatalogSearch(query);
+            document.getElementById('sidebar-nav')?.classList.remove('mobile-open');
+            document.getElementById('sidebar-mobile-overlay')?.classList.remove('active');
+            document.body.style.overflow = '';
+            input.blur();
+            document.getElementById('app-main-area')?.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function applyCatalogSearch(query) {
+            const search = document.getElementById('catalog-search');
+            if (!search) return;
+            if (!query) {
+                if (!search.value) return;
+                switchNavCategory(currentNavMode, false);
+                return;
+            }
+
+            const normalized = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const category = _searchCategoryKeywords[normalized];
+            if (category) {
+                switchNavCategory(category);
+                return;
+            }
+            const genre = _searchGenreKeywords.find(entry => entry.terms.includes(normalized));
+            if (genre) {
+                search.value = '';
+                document.body.classList.remove('catalog-searching');
+                filterBySidebarGenre(genre.genre);
+                return;
+            }
+
+            for (const id of ['hero-billboard-container', 'netflix-rails-container']) {
+                const section = document.getElementById(id);
+                if (section) section.style.display = 'none';
+            }
+            const layout = document.getElementById('catalog-layout-grid');
+            if (layout) layout.style.display = 'flex';
+            catalogFilters.type = 'todos';
+            search.value = query;
+            renderCatalog();
+            if (typeof initBrasilFlixAds === 'function') initBrasilFlixAds();
         }
 
         function filterBySidebarGenre(genre) {
@@ -2936,26 +2958,10 @@
             }, 180);
         }
 
-        function onSidebarSearchInput(val) {
-            // ⛔ Não interrompe o player: se o player está ativo, não navega
-            const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
-            if (isPlayerActive && (val || '').trim()) return;
-            const desktopSearch = document.getElementById('header-search-input');
-            if (desktopSearch) desktopSearch.value = val;
-            onHeaderSearchInput(val);
-        }
-
-        function onSidebarSearchKeyDown(e) {
-            if (e.key === 'Enter') {
-                const nav = document.getElementById('sidebar-nav');
-                const overlay = document.getElementById('sidebar-mobile-overlay');
-                if (nav) nav.classList.remove('mobile-open');
-                if (overlay) overlay.classList.remove('active');
-                document.body.style.overflow = '';
-                e.target.blur();
-                const _mainAreaM = document.getElementById('app-main-area');
-                if (_mainAreaM) _mainAreaM.scrollTo({ top: 0, behavior: 'smooth' });
-            }
+        function onSidebarSearchKeyDown(event) {
+            if (event.isComposing) return;
+            if (event.key === 'Enter') submitCatalogSearch(event, event.target);
+            if (event.key === 'Escape') onHeaderSearchInput('');
         }
 
         function toggleSidebar() {
@@ -14595,21 +14601,7 @@
                 // Mantém a posição vertical dos cues em tempo real
                 if (!tt._posHandlerBound) {
                     tt._posHandlerBound = true;
-                    tt.addEventListener('cuechange', () => {
-                        const prefs = getSubtitlePrefs();
-                        const lineMap = { low: 92, default: 85, high: 76 };
-                        const lineVal = lineMap[prefs.pos] !== undefined ? lineMap[prefs.pos] : 85;
-                        if (tt.activeCues) {
-                            for (let j = 0; j < tt.activeCues.length; j++) {
-                                try {
-                                    if (tt.activeCues[j].line !== lineVal) {
-                                        tt.activeCues[j].snapToLines = false;
-                                        tt.activeCues[j].line = lineVal;
-                                    }
-                                } catch (_) {}
-                            }
-                        }
-                    });
+                    tt.addEventListener('cuechange', () => layoutActiveSubtitleCues(video, tt));
                 }
             }
             applySubtitlePosition();
@@ -14708,6 +14700,83 @@
             return updated;
         }
 
+        const originalSubtitleCues = new WeakMap();
+        let subtitleMeasure;
+
+        function wrapSubtitleLine(text, maxWidth, measure) {
+            const words = text.split(/\s+/).filter(Boolean);
+            const width = value => measure.measureText(value).width;
+            if (words.length < 2 || width(text) <= maxWidth) return text;
+            const connects = /^(?:a|o|as|os|um|uma|uns|umas|de|do|da|dos|das|em|no|na|nos|nas|por|para|com|sem|ao|aos|que|e|ou|nem|se|não)$/iu;
+            const punctuation = /[.!?…;:,]["”’)]*$/u;
+            const target = width(text) / Math.ceil(width(text) / maxWidth);
+            const best = [];
+            best[words.length] = { count: 0, cost: 0 };
+            for (let start = words.length - 1; start >= 0; start--) {
+                let line = '';
+                for (let end = start + 1; end <= words.length; end++) {
+                    line += (line ? ' ' : '') + words[end - 1];
+                    const lineWidth = width(line);
+                    if (lineWidth > maxWidth && end > start + 1) break;
+                    const next = words[end];
+                    let cost = Math.abs(target - lineWidth);
+                    if (next) {
+                        if (punctuation.test(words[end - 1])) cost -= maxWidth * .24;
+                        if (connects.test(words[end - 1])) cost += maxWidth * .55;
+                        if (/^(?:de|do|da|dos|das|of)$/iu.test(next)) cost += maxWidth * .40;
+                        if (/^[,.:;!?)]/u.test(next) || (end === start + 1 && /^[-–—]$/u.test(words[start]))) cost += maxWidth;
+                        if (words.length - end === 1) cost += maxWidth * .25;
+                    }
+                    const candidate = { count: 1 + best[end].count, cost: cost + best[end].cost, end, line };
+                    if (!best[start] || candidate.count < best[start].count ||
+                        (candidate.count === best[start].count && candidate.cost < best[start].cost)) best[start] = candidate;
+                }
+            }
+            const subtitleLines = [];
+            for (let start = 0; start < words.length; start = best[start].end) {
+                subtitleLines.push(best[start].line);
+            }
+            return subtitleLines.join('\n');
+        }
+
+        function layoutActiveSubtitleCues(video, track) {
+            if (track.mode !== 'showing' || !track.activeCues?.length) return;
+            const videoWidth = video.clientWidth || video.getBoundingClientRect().width;
+            if (!videoWidth) return;
+            subtitleMeasure ||= document.createElement('canvas').getContext('2d');
+            const prefs = getSubtitlePrefs();
+            const fullscreen = getActiveFullscreenElement();
+            const sizeWidth = fullscreen?.contains(video) ? Math.max(window.innerWidth, screen.width, 1920) : getPlayerContainerWidth();
+            const fontSize = computeSubtitleFontSize(prefs.size || 'md', sizeWidth);
+            const maxSize = videoWidth < 650 ? 88 : 78;
+            const line = ({ low: 92, default: 85, high: 76 })[prefs.pos] ?? 85;
+            if (subtitleMeasure) subtitleMeasure.font = `700 ${fontSize}px "Plus Jakarta Sans", system-ui, sans-serif`;
+
+            for (const cue of track.activeCues) {
+                if (typeof cue.text !== 'string' || typeof cue.size !== 'number') continue;
+                if (!originalSubtitleCues.has(cue)) {
+                    originalSubtitleCues.set(cue, { text: cue.text, size: cue.size });
+                }
+                const original = originalSubtitleCues.get(cue);
+                const width = Math.min(original.size, maxSize);
+                if (cue.size !== width) cue.size = width;
+                cue.snapToLines = false;
+                if (cue.line !== line) cue.line = line;
+
+                // Keep style tags and timed WebVTT spans intact. The browser
+                // wraps marked-up cues within the same box automatically.
+                if (!subtitleMeasure || /[<>&]/.test(original.text)) continue;
+                const speakerLines = original.text.replace(
+                    /(^|\n)([-–—]\s+[^\n]+?)\s+([-–—]\s+)/g, '$1$2\n$3'
+                );
+                const usableWidth = videoWidth * width / 100 - fontSize * 1.5;
+                if (usableWidth <= 0) continue;
+                const formatted = speakerLines.split('\n').map(text =>
+                    wrapSubtitleLine(text, usableWidth, subtitleMeasure)).join('\n');
+                if (cue.text !== formatted) cue.text = formatted;
+            }
+        }
+
         function applySubtitlePosition(posKey) {
             const prefs = getSubtitlePrefs();
             const pos = posKey || prefs.pos || 'default';
@@ -14727,6 +14796,7 @@
                         } catch (_) {}
                     }
                 }
+                layoutActiveSubtitleCues(video, tt);
             }
         }
 
@@ -14903,6 +14973,10 @@
                     font-size: ${fsFontSizePx}px !important;
                 }
             `;
+            const video = document.getElementById('html5-video-player');
+            if (video?.textTracks) {
+                for (const track of video.textTracks) layoutActiveSubtitleCues(video, track);
+            }
         }
 
         window.applySubtitleStyles = applySubtitleStyles;
