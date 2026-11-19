@@ -13,7 +13,27 @@ const inputFlags = input => /^https?:\/\//i.test(input) ? [
     '-reconnect_on_http_error', '429,5xx', '-reconnect_delay_max', '5', '-rw_timeout', '30000000'
 ] : [];
 const transcribeTimeout = 90 * 60 * 1000;
-let pendingTranscription = Promise.resolve();
+const maxConcurrentTranscribes = parseInt(process.env.MAX_SUBTITLE_SLOTS || '2', 10);
+let activeTranscribes = 0;
+const transcribeQueue = [];
+
+function acquireTranscribeSlot() {
+    if (activeTranscribes < maxConcurrentTranscribes) {
+        activeTranscribes++;
+        return Promise.resolve();
+    }
+    return new Promise(resolve => transcribeQueue.push(resolve));
+}
+
+function releaseTranscribeSlot() {
+    activeTranscribes--;
+    if (transcribeQueue.length > 0) {
+        activeTranscribes++;
+        const next = transcribeQueue.shift();
+        next();
+    }
+}
+
 let pendingCheckpoints = Promise.resolve();
 
 function subtitleError(message, code) {
@@ -100,7 +120,7 @@ async function transcribe(inputPath, audioIndex, workspace, title, audioCachePat
     // execFile requires an integer timeout; WAV headers make size/32000 fractional.
     const timeout = Math.ceil(Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000));
     const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [
-        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4', '--recover-gaps'
+        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '6', '--recover-gaps'
     ], { timeout, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
     console.log(`[Legenda: ${title}] ${stderr.trim().split('\n').at(-1)}.`);
     if (cachedSource) {
@@ -121,14 +141,14 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
     try {
         let source;
         try {
-            onProgress?.(0, 'Aguardando análise da faixa de áudio');
-            // Serializa a transcrição para evitar múltiplas cópias do modelo na memória.
-            const task = pendingTranscription.then(() => {
+            onProgress?.(0, 'Aguardando vaga para transcrição de áudio');
+            await acquireTranscribeSlot();
+            try {
                 onProgress?.(0, 'Transcrevendo e marcando falas da faixa de áudio');
-                return transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
-            });
-            pendingTranscription = task.catch(() => {});
-            source = await task;
+                source = await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+            } finally {
+                releaseTranscribeSlot();
+            }
         } catch (error) {
             const detail = error.stderr?.trim().split('\n').at(-1) || error.message || error.code || 'sem resultado';
             throw subtitleError(`Falha na transcrição da faixa de áudio (${detail}).`, 'SUBTITLE_SYNC_FAILED');
@@ -202,8 +222,14 @@ async function createCheckpoints(inputPath, audioIndex, { title, duration, check
 async function sourceTranscript(inputPath, audioIndex, { title, duration, audioCachePath, onProgress }) {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'subtitle-source-'));
     try {
-        onProgress?.(24, 'Transcrevendo o áudio original para comparar as legendas');
-        return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+        onProgress?.(24, 'Aguardando vaga para comparar legendas');
+        await acquireTranscribeSlot();
+        try {
+            onProgress?.(24, 'Transcrevendo o áudio original para comparar as legendas');
+            return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+        } finally {
+            releaseTranscribeSlot();
+        }
     } finally {
         await fs.remove(workspace).catch(() => {});
     }

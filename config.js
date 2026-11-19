@@ -69,9 +69,11 @@ module.exports = {
     PERFORMANCE_MAX_DOWNLOADS: 6,
     PERFORMANCE_MAX_TRANSCODES: 4,
     PERFORMANCE_MAX_UPLOADS: 4,
-    MAX_TEMP_DISK_GB: parseInt(process.env.MAX_TEMP_DISK_GB || '100', 10),
+    MAX_TEMP_DISK_GB: parseInt(process.env.MAX_TEMP_DISK_GB || '150', 10),
     MIN_DOWNLOAD_SPEED_MB: parseFloat(process.env.MIN_DOWNLOAD_SPEED_MB || '1.5'),
     FFMPEG_THREADS_PER_JOB: parseInt(process.env.FFMPEG_THREADS_PER_JOB || '5', 10),
+    SUBTITLE_WHISPER_THREADS: parseInt(process.env.SUBTITLE_WHISPER_THREADS || '6', 10),
+    MAX_SUBTITLE_SLOTS: parseInt(process.env.MAX_SUBTITLE_SLOTS || '2', 10),
 
     // Otimizações de Rede, QoS e Proteção de Roteador Residencial
     MAX_TORRENT_PEER_CONNECTIONS: parseInt(process.env.MAX_TORRENT_PEER_CONNECTIONS || '14', 10),

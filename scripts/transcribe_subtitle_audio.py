@@ -107,7 +107,7 @@ def main():
     parser.add_argument("audio")
     parser.add_argument("output")
     parser.add_argument("--model", default="turbo")
-    parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--threads", type=int, default=6)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--language")
     parser.add_argument("--recover-gaps", action="store_true")
