@@ -96,7 +96,7 @@ async function validateEmbedded(inputPath, streams, reference, isEuropeanPortugu
     return null;
 }
 
-async function transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration = 0) {
+async function transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration = 0, onProgress = null) {
     const wav = audioCachePath || path.join(workspace, 'audio.wav');
     const cachedSource = audioCachePath ? `${audioCachePath}.source.srt` : null;
     if (cachedSource && await fs.pathExists(cachedSource)) return fs.readFile(cachedSource, 'utf8');
@@ -107,7 +107,7 @@ async function transcribe(inputPath, audioIndex, workspace, title, audioCachePat
     if (!cachedAudio || cachedAudio.size < minimumBytes) {
         const temporary = `${wav}.${require('crypto').randomUUID()}.partial.wav`;
         try {
-            console.log(`[Legenda: ${title}] Extraindo áudio da versão atual.`);
+            console.log(`🎙️ [Legenda: "${title}"] Extraindo faixa de áudio para conferência...`);
             await run('ffmpeg', [
                 '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
                 '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', temporary
@@ -116,13 +116,37 @@ async function transcribe(inputPath, audioIndex, workspace, title, audioCachePat
             await fs.rename(temporary, wav);
         } finally { await fs.remove(temporary).catch(() => {}); }
     }
-    console.log(`[Legenda: ${title}] Transcrevendo áudio com Whisper ${model}.`);
-    // execFile requires an integer timeout; WAV headers make size/32000 fractional.
+    console.log(`🎙️ [Legenda: "${title}"] Iniciando transcrição com Whisper ${model} (6 threads)...`);
     const timeout = Math.ceil(Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000));
-    const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [
-        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '6', '--recover-gaps'
-    ], { timeout, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
-    console.log(`[Legenda: ${title}] ${stderr.trim().split('\n').at(-1)}.`);
+    const pyBin = process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+    const pyArgs = [script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '6', '--recover-gaps'];
+
+    let lastStderr = '';
+    const child = execFile(pyBin, pyArgs, { timeout, killSignal: 'SIGKILL', maxBuffer: 10 * 1024 * 1024 });
+    child.stderr.on('data', chunk => {
+        const text = chunk.toString();
+        lastStderr += text;
+        const lines = text.split('\n');
+        for (const line of lines) {
+            if (line.includes('[WHISPER_PROGRESS]')) {
+                const prog = line.replace(/.*\[WHISPER_PROGRESS\]\s*/, '').trim();
+                console.log(`🎙️ [Legenda: "${title}"] Whisper IA: ${prog}`);
+                onProgress?.(Math.min(75, 24 + Math.round(parseInt(prog) * 0.5)), `Transcrevendo áudio: ${prog}`);
+            }
+        }
+    });
+
+    await new Promise((resolve, reject) => {
+        child.on('close', code => {
+            if (code === 0) resolve();
+            else reject(Object.assign(new Error(`Whisper falhou com código ${code}`), { stderr: lastStderr }));
+        });
+        child.on('error', reject);
+    });
+
+    const summaryLine = lastStderr.trim().split('\n').filter(l => !l.includes('[WHISPER_PROGRESS]')).at(-1) || 'concluído';
+    console.log(`✅ [Legenda: "${title}"] Transcrição concluída: ${summaryLine}`);
+
     if (cachedSource) {
         const temporary = `${cachedSource}.${require('crypto').randomUUID()}.tmp`;
         await fs.copy(source, temporary);
@@ -145,7 +169,7 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
             await acquireTranscribeSlot();
             try {
                 onProgress?.(0, 'Transcrevendo e marcando falas da faixa de áudio');
-                source = await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+                source = await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration, onProgress);
             } finally {
                 releaseTranscribeSlot();
             }
@@ -226,7 +250,7 @@ async function sourceTranscript(inputPath, audioIndex, { title, duration, audioC
         await acquireTranscribeSlot();
         try {
             onProgress?.(24, 'Transcrevendo o áudio original para comparar as legendas');
-            return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration);
+            return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration, onProgress);
         } finally {
             releaseTranscribeSlot();
         }

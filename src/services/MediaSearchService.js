@@ -619,10 +619,7 @@ class MediaSearchService {
                         });
 
                         scored.sort((a, b) => b.score - a.score);
-                        const best = scored[0].sub;
-                        const relName = best.movieReleaseName || best.releaseName || '(sem nome)';
-                        console.log(`📝 Legenda selecionada para "${streamTitle.substring(0, 60)}": "${relName}" (score: ${scored[0].score}, lang: ${best.lang})`);
-                        return best;
+                        return scored[0].sub;
                     };
 
                     for (const st of fallbackStreams) {
@@ -645,6 +642,9 @@ class MediaSearchService {
                             st.subtitleUrl = bestSub ? bestSub.url : ptSubs[0].url;
                             ptBrResults.push(st);
                         }
+                    }
+                    if (ptSubs && ptSubs.length > 0 && fallbackStreams.length > 0) {
+                        console.log(`📝 [Legendas] ${ptSubs.length} legenda(s) PT-BR vinculada(s) às ${fallbackStreams.length} opções candidatas.`);
                     }
                 }
             } catch (e) {

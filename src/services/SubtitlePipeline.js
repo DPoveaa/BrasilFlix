@@ -1929,6 +1929,8 @@ print(f"RESULT:{res}")
             Object.assign(proof, { coverageDialogueChecked: checked, coverageMissing: 0 });
             retained = path.join(os.tmpdir(), `subtitle-${require('crypto').randomUUID()}.srt`);
             await fs.copy(file, retained);
+            const mediaTitle = metadata.title || metadata.nome || 'Mídia';
+            console.log(`🎯 [Legenda Sincronizada] "${mediaTitle}" — Legenda PT-BR validada e sincronizada via ${sourceMethod}!`);
             return { srtPath: retained, sourceMethod, verified: true, syncValidationVersion: subtitleSlot.revision,
                 checkpoints: proof, refEnPath: null };
         };

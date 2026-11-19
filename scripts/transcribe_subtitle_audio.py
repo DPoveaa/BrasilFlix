@@ -124,11 +124,31 @@ def main():
     except ImportError:
         engine, batch_options = model, {}
     audio = decode_audio(args.audio) if args.recover_gaps else args.audio
+    import time
     segments, info = engine.transcribe(
         audio, language=args.language, word_timestamps=True, vad_filter=True,
         condition_on_previous_text=False, beam_size=5, **batch_options
     )
-    segments = [segment for segment in segments if segment.words and segment.no_speech_prob < 0.7]
+    collected_segments = []
+    total_duration = getattr(info, 'duration', 0) or 1.0
+    last_log_pct = 0
+    last_log_time = time.time()
+
+    for segment in segments:
+        if segment.words and segment.no_speech_prob < 0.7:
+            collected_segments.append(segment)
+        seg_end = getattr(segment, 'end', None)
+        if seg_end is not None and total_duration > 0:
+            pct = min(99, int((seg_end / total_duration) * 100))
+            now = time.time()
+            if pct >= last_log_pct + 10 or (now - last_log_time >= 20 and pct > last_log_pct):
+                last_log_pct = pct
+                last_log_time = now
+                m_done, s_done = int(seg_end // 60), int(seg_end % 60)
+                m_tot, s_tot = int(total_duration // 60), int(total_duration % 60)
+                print(f"[WHISPER_PROGRESS] {pct}% ({m_done:02d}:{s_done:02d} / {m_tot:02d}:{s_tot:02d})", file=sys.stderr, flush=True)
+
+    segments = collected_segments
     total_words = sum(len(segment.words) for segment in segments)
     uncertain = sum(len(segment.words) for segment in segments if segment.avg_logprob < -0.9)
     cues = build_cues(segments)
