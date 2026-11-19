@@ -3664,24 +3664,21 @@
             color: #fff;
         }
 
-        /* DOUBLE TAP SEEK ZONES - Ajustadas para NUNCA bloquear mouse ou a barra de progresso nativa */
+        /* DOUBLE TAP SEEK ZONES - Duplo clique/toque de 10s sem bloquear mouse ou barra de progresso */
         .seek-tap-zone {
             position: absolute;
             top: 70px;
             bottom: 80px;
-            width: 32%;
+            width: 35%;
             z-index: 5;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            pointer-events: none;
-        }
-
-        @media (hover: none) and (pointer: coarse) {
-            .seek-tap-zone {
-                pointer-events: auto;
-            }
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .seek-tap-left {

@@ -7368,14 +7368,45 @@
                 video.addEventListener('keydown', (e) => {
                     if ([' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
                         e.preventDefault();
+                        if (e.key === 'ArrowLeft') seekVideoBySeconds(-10);
+                        else if (e.key === 'ArrowRight') seekVideoBySeconds(10);
+                        else if (e.key === 'ArrowUp') {
+                            video.volume = Math.min(1, Math.round((video.volume + 0.1) * 10) / 10);
+                            if (video.muted && video.volume > 0) video.muted = false;
+                            showToast(`🔊 Volume: ${Math.round(video.volume * 100)}%`, 'info');
+                        } else if (e.key === 'ArrowDown') {
+                            video.volume = Math.max(0, Math.round((video.volume - 0.1) * 10) / 10);
+                            if (video.volume === 0) video.muted = true;
+                            showToast(video.volume === 0 ? '🔇 Mudo' : `🔉 Volume: ${Math.round(video.volume * 100)}%`, 'info');
+                        }
                     }
                 });
             }
 
+            let _videoClickDebounce = null;
             video.onclick = () => {
                 closeAllPlayerDropdowns();
                 dismissResumePlayback();
-                toggleMobilePlayerControls();
+                if (_videoClickDebounce) clearTimeout(_videoClickDebounce);
+                _videoClickDebounce = setTimeout(() => {
+                    _videoClickDebounce = null;
+                    toggleMobilePlayerControls();
+                }, 250);
+            };
+
+            video.ondblclick = (e) => {
+                if (_videoClickDebounce) {
+                    clearTimeout(_videoClickDebounce);
+                    _videoClickDebounce = null;
+                }
+                if (e) {
+                    if (typeof e.preventDefault === 'function') e.preventDefault();
+                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                }
+                const rect = video.getBoundingClientRect();
+                const x = (e.clientX || 0) - rect.left;
+                const isLeft = x < rect.width / 2;
+                seekVideoBySeconds(isLeft ? -10 : 10);
             };
 
             if (card && !card._touchBound) {
@@ -7735,46 +7766,81 @@
             });
         }
 
+        function seekVideoBySeconds(seconds) {
+            const video = document.getElementById('html5-video-player');
+            if (!video) return;
+
+            if (currentPartyRoom) {
+                const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
+                const canSeek = partyIsHost || perms.canSeek;
+                if (!canSeek) {
+                    showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
+                    return;
+                }
+            }
+
+            const duration = (video.duration && !isNaN(video.duration)) ? video.duration : Infinity;
+            const current = video.currentTime || 0;
+            const target = Math.max(0, Math.min(duration, current + seconds));
+            video.currentTime = target;
+
+            // Ativa efeito de onda / ripple visual na tela
+            const rippleId = seconds < 0 ? 'ripple-left' : 'ripple-right';
+            const ripple = document.getElementById(rippleId);
+            if (ripple) {
+                ripple.classList.remove('active');
+                void ripple.offsetWidth;
+                ripple.classList.add('active');
+                setTimeout(() => ripple.classList.remove('active'), 500);
+            }
+
+            // Notificação visual toast limpa e clara com o tempo atualizado
+            const formatSec = (sec) => {
+                sec = Math.max(0, Math.floor(sec || 0));
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                const s = sec % 60;
+                const mStr = m < 10 ? '0' + m : m;
+                const sStr = s < 10 ? '0' + s : s;
+                return h > 0 ? `${h}:${mStr}:${sStr}` : `${mStr}:${sStr}`;
+            };
+            const icon = seconds > 0 ? '⏩' : '⏪';
+            const sign = seconds > 0 ? '+' : '';
+            showToast(`${icon} ${sign}${seconds}s (${formatSec(target)})`, 'info');
+        }
+        window.seekVideoBySeconds = seekVideoBySeconds;
+
+        let zoneTapTimeout = null;
         function handleZoneTap(e, seconds) {
+            if (e) {
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+                if (typeof e.stopPropagation === 'function') e.stopPropagation();
+            }
             closeAllPlayerDropdowns();
             dismissResumePlayback();
-            toggleMobilePlayerControls();
 
             const now = Date.now();
             const zoneKey = seconds < 0 ? 'left' : 'right';
             const lastTap = lastTapTimes[zoneKey] || 0;
+            const isDouble = (e && typeof e.detail === 'number' && e.detail >= 2) || (now - lastTap < 450);
 
-            if (now - lastTap < 350) {
-                // Duplo toque real: avança/retrocede 10s e consome o evento
-                if (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
+            if (isDouble) {
+                if (zoneTapTimeout) {
+                    clearTimeout(zoneTapTimeout);
+                    zoneTapTimeout = null;
                 }
-                if (currentPartyRoom) {
-                    const perms = partyRoomData?.permissions || { canPause: true, canResume: false, canSeek: false, canChangeMedia: false, canChangeSpeed: false };
-                    const canSeek = partyIsHost || perms.canSeek;
-                    if (!canSeek) {
-                        showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
-                        return;
-                    }
-                }
-                const video = document.getElementById('html5-video-player');
-                if (video) {
-                    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + seconds));
-                    const ripple = document.getElementById(seconds < 0 ? 'ripple-left' : 'ripple-right');
-                    if (ripple) {
-                        ripple.classList.remove('active');
-                        void ripple.offsetWidth;
-                        ripple.classList.add('active');
-                        setTimeout(() => ripple.classList.remove('active'), 450);
-                    }
-                }
-                lastTapTimes[zoneKey] = 0;
-            } else {
-                // Toque simples: NÃO chama preventDefault para permitir que o clique alcance o vídeo/controles
                 lastTapTimes[zoneKey] = now;
+                seekVideoBySeconds(seconds);
+            } else {
+                lastTapTimes[zoneKey] = now;
+                if (zoneTapTimeout) clearTimeout(zoneTapTimeout);
+                zoneTapTimeout = setTimeout(() => {
+                    zoneTapTimeout = null;
+                    toggleMobilePlayerControls();
+                }, 280);
             }
         }
+        window.handleZoneTap = handleZoneTap;
 
         function handlePlayerMouseMove() {
             const card = document.getElementById('player-card-container');
@@ -9618,7 +9684,7 @@
                 if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
                 if (document.querySelector('.modal-backdrop.active')) return;
 
-                const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia;
+                const isPlayerActive = document.getElementById('tab-playback-page')?.classList.contains('active') || !!currentPlayingMedia || !!document.fullscreenElement;
                 if (!isPlayerActive) return;
 
                 const video = document.getElementById('html5-video-player');
@@ -9674,6 +9740,26 @@
                         e.preventDefault();
                         e.stopPropagation();
                         if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                        seekVideoBySeconds(-10);
+                        break;
+
+                    case 'ArrowRight':
+                    case 'l':
+                    case 'L':
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                        seekVideoBySeconds(10);
+                        break;
+
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                        if (document.activeElement && document.activeElement !== document.body && tag !== 'BODY') {
+                            try { document.activeElement.blur(); } catch (_) { }
+                        }
+                        video.volume = Math.min(1, Math.round((video.volume + 0.1) * 10) / 10);
                         if (video.muted && video.volume > 0) video.muted = false;
                         showToast(`🔊 Volume: ${Math.round(video.volume * 100)}%`, 'info');
                         break;
@@ -9722,6 +9808,30 @@
                         e.stopPropagation();
                         video.muted = !video.muted;
                         showToast(video.muted ? '🔇 Mudo' : '🔊 Som Ativado', 'info');
+                        break;
+
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
+                        if (video.duration && !isNaN(video.duration) && video.duration > 0) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (currentPartyRoom && !partyIsHost && !perms.canSeek) {
+                                showToast('⚠️ Apenas o anfitrião pode avançar ou retroceder o vídeo.', 'info');
+                                return;
+                            }
+                            const pct = Number(e.key) / 10;
+                            const targetTime = pct * video.duration;
+                            video.currentTime = targetTime;
+                            showToast(`⏱️ Posição: ${Math.round(pct * 100)}% (${formatSecondsToTimestamp(targetTime)})`, 'info');
+                        }
                         break;
                 }
             }, true);
