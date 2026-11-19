@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs-extra');
 const translator = require('./SubtitleTranslationService');
+const dialogueReferenceVersion = 'dialogue-full-v3';
 
 const run = promisify(execFile);
 const script = path.resolve(__dirname, '../../scripts/transcribe_subtitle_audio.py');
@@ -99,7 +100,7 @@ async function transcribe(inputPath, audioIndex, workspace, title, audioCachePat
     // execFile requires an integer timeout; WAV headers make size/32000 fractional.
     const timeout = Math.ceil(Math.max(transcribeTimeout, ((await fs.stat(wav)).size / 32000) * 2000));
     const { stderr } = await run(process.env.SUBTITLE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [
-        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4'
+        script, wav, source, '--model', model, '--threads', process.env.SUBTITLE_WHISPER_THREADS || '4', '--recover-gaps'
     ], { timeout, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024 });
     console.log(`[Legenda: ${title}] ${stderr.trim().split('\n').at(-1)}.`);
     if (cachedSource) {
@@ -208,4 +209,4 @@ async function sourceTranscript(inputPath, audioIndex, { title, duration, audioC
     }
 }
 
-module.exports = { create, createCheckpoints, matchesSpokenDialogue, sourceTranscript };
+module.exports = { create, createCheckpoints, matchesSpokenDialogue, sourceTranscript, dialogueReferenceVersion };

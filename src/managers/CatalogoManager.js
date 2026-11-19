@@ -1037,7 +1037,9 @@ class CatalogoManager {
                 const seriesRes = await db.query(`SELECT * FROM series ORDER BY id DESC`);
                 const epsRes = await db.query(`SELECT * FROM episodios ORDER BY serie_id ASC, temporada_numero ASC, numero ASC`);
 
-                // Carrega itens com reprocessamento de legenda pendente para ocultá-los do catálogo público
+                // Mantém faixas já vinculadas disponíveis durante a revisão de cobertura.
+                const hasPortugueseTrack = row => Array.isArray(row.legendas) &&
+                    row.legendas.some(track => /^pt-br$/i.test(track.lang || '') && track.vttUrl?.startsWith('/subtitles/'));
                 let pendingFilmesRepairs = new Set();
                 let pendingEpisodiosRepairs = new Set();
                 try {
@@ -1111,8 +1113,7 @@ class CatalogoManager {
 
                     allEpsPorSerie[ep.serie_id][ep.temporada_numero].push(epData);
 
-                    // Oculta do catálogo público se o episódio estiver na fila para refazer legenda
-                    if (!pendingEpisodiosRepairs.has(String(ep.id))) {
+                    if (!pendingEpisodiosRepairs.has(String(ep.id)) || hasPortugueseTrack(ep)) {
                         if (!epsPorSerie[ep.serie_id]) epsPorSerie[ep.serie_id] = {};
                         if (!epsPorSerie[ep.serie_id][ep.temporada_numero]) epsPorSerie[ep.serie_id][ep.temporada_numero] = [];
                         epsPorSerie[ep.serie_id][ep.temporada_numero].push(epData);
@@ -1211,7 +1212,7 @@ class CatalogoManager {
                     allFilmes.push(filmeObj);
 
                     // Oculta filme se estiver na fila para refazer legenda
-                    if (!pendingFilmesRepairs.has(String(f.id))) {
+                    if (!pendingFilmesRepairs.has(String(f.id)) || hasPortugueseTrack(f)) {
                         visibleFilmes.push(filmeObj);
                     }
                 }

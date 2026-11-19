@@ -3651,7 +3651,7 @@ class StremioServer {
 
         // 1. Resolve o filme no catálogo
         let filme = this.catalogoManager.buscarFilmePorId(id, userToken === 'internal_admin');
-        if (!filme && userToken === 'internal_admin') {
+        if (userToken === 'internal_admin') {
             try {
                 const row = await this.subtitleMaintenance.load('filme', id);
                 if (row) {

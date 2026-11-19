@@ -9,6 +9,7 @@ const config = require('../../config');
 const SubtitleTranslationService = require('./SubtitleTranslationService');
 const SubdlService = require('./SubdlService');
 const SubtitleUtils = require('../utils/SubtitleUtils');
+const { inspectDialogueCoverage, fillDialogueGaps, sharesTranscriptionTiming } = require('../utils/SubtitleCoverage');
 const SubtitleAudioService = require('./SubtitleAudioService');
 const { classifyPortuguese, explicitlyEuropean } = require('../utils/PortugueseSubtitleLocale');
 const subtitleSlot = require('./SubtitleWorkSlot');
@@ -1783,7 +1784,7 @@ print(f"RESULT:{res}")
         const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
         await fs.ensureDir(cacheDir);
         const key = require('crypto').createHash('sha256').update(JSON.stringify([
-            checkpoints ? 'dialogue-checkpoints-v3' : 'dialogue-full-v2', videoPath, fingerprint, metadata.audioIndex || 0,
+            checkpoints ? 'dialogue-checkpoints-v3' : SubtitleAudioService.dialogueReferenceVersion, videoPath, fingerprint, metadata.audioIndex || 0,
             checkpoints ? (process.env.SUBTITLE_WHISPER_CHECKPOINT_MODEL || 'tiny') : (process.env.SUBTITLE_WHISPER_MODEL || 'turbo'),
             checkpoints ? metadata.checkpointTimes : null
         ])).digest('hex');
@@ -1876,7 +1877,7 @@ print(f"RESULT:{res}")
             const stat = /^https?:/.test(videoPath) ? null : await fs.stat(videoPath);
             const fingerprint = meta.mediaFingerprint || (stat && `${stat.size}:${stat.mtimeMs}`);
             const key = require('crypto').createHash('sha256').update(JSON.stringify([
-                'dialogue-full-v2', videoPath, fingerprint, meta.audioIndex || 0,
+                SubtitleAudioService.dialogueReferenceVersion, videoPath, fingerprint, meta.audioIndex || 0,
                 process.env.SUBTITLE_WHISPER_MODEL || 'turbo', null
             ])).digest('hex');
             const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
@@ -1891,8 +1892,41 @@ print(f"RESULT:{res}")
         })();
         const reference = () => referencePromise ||= this.audioDialogueReference(videoPath, meta, onProgress, true)
             .then(file => { referencePath = file; return file; });
+        let speechPromise;
+        const speechCues = () => speechPromise ||= source()
+            .then(async file => SubtitleUtils.parseSubtitles(await fs.readFile(file, 'utf8')));
+        let bestPartial;
         const finish = async (file, sourceMethod, proof) => {
             await this.validateAndFinalizeSubtitle(file, duration);
+            const cues = SubtitleUtils.parseSubtitles(await fs.readFile(file, 'utf8'));
+            onProgress?.(proof.method === 'asr_word_timestamps' ? 96 : 68, 'Verificando se há falas sem legenda ao longo do vídeo');
+            const speech = await speechCues();
+            let { checked, missing } = inspectDialogueCoverage(cues, speech);
+            if (missing.length && proof.method !== 'asr_word_timestamps') {
+                let current = { cues, missing, proof, sourceMethod };
+                if (bestPartial) {
+                    const [base, donor] = missing.length < bestPartial.missing.length ?
+                        [current, bestPartial] : [bestPartial, current];
+                    const merged = fillDialogueGaps(base.cues, donor.cues, base.missing);
+                    if (merged.length > base.cues.length) {
+                        await fs.writeFile(file, SubtitleUtils.cuesToSrt(merged));
+                        await this.validateAndFinalizeSubtitle(file, duration);
+                        const normalized = SubtitleUtils.parseSubtitles(await fs.readFile(file, 'utf8'));
+                        const coverage = inspectDialogueCoverage(normalized, speech);
+                        if (coverage.missing.length < base.missing.length) {
+                            current = { ...base, cues: normalized, missing: coverage.missing,
+                                proof: { ...base.proof, coverageMergedCues: (base.proof.coverageMergedCues || 0) + merged.length - base.cues.length } };
+                        }
+                    }
+                }
+                if (!bestPartial || current.missing.length < bestPartial.missing.length) bestPartial = current;
+                ({ sourceMethod, proof, missing } = current);
+            }
+            if (missing.length) {
+                const where = missing.slice(0, 4).map(cue => this.formatMsToTimecode(cue.startMs)).join(', ');
+                throw new Error(`Cobertura insuficiente: ${missing.length} fala(s) sem legenda (${where}).`);
+            }
+            Object.assign(proof, { coverageDialogueChecked: checked, coverageMissing: 0 });
             retained = path.join(os.tmpdir(), `subtitle-${require('crypto').randomUUID()}.srt`);
             await fs.copy(file, retained);
             return { srtPath: retained, sourceMethod, verified: true, syncValidationVersion: subtitleSlot.revision,
@@ -1911,6 +1945,9 @@ print(f"RESULT:{res}")
                         const text = SubtitleUtils.cuesToSrt(cues);
                         if (!await this.isBrazilianPortugueseSubtitle(text, candidate.sourceLang, candidate.releaseName,
                             cues.map(cue => cue.text))) return null;
+                        if (candidate.existing && sharesTranscriptionTiming(cues, await speechCues())) {
+                            throw new Error('A faixa existente repete os tempos da transcrição. Procurando uma fonte humana independente.');
+                        }
                         const hash = require('crypto').createHash('sha256').update(text).digest('hex');
                         if (checkedContent.has(hash)) return null;
                         checkedContent.add(hash);
@@ -1980,7 +2017,7 @@ print(f"RESULT:{res}")
                 const content = await fs.readFile(metadata.existingSubtitlePath, 'utf8');
                 const candidate = path.join(workDir, 'existing.srt');
                 await fs.writeFile(candidate, SubtitleUtils.cuesToSrt(SubtitleUtils.parseSubtitles(content)));
-                candidates.push({ srtPath: candidate, sourceMethod: 'Existing human PT-BR' });
+                candidates.push({ srtPath: candidate, sourceMethod: 'Faixa PT-BR existente', existing: true });
             }
             onProgress?.(10, 'Extraindo legendas humanas e verificando o áudio desta versão');
             const existing = await human(candidates);

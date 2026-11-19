@@ -64,4 +64,4 @@ async function active() {
     return rows[0] || null;
 }
 
-module.exports = { run, active, revision: 3 };
+module.exports = { run, active, revision: 4 };

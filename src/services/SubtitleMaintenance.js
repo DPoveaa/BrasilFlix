@@ -192,9 +192,10 @@ class SubtitleMaintenance {
 
     async enqueue(type, id, priority = 0, manual = false) {
         await this.init();
-        await db.query(`INSERT INTO subtitle_repairs (type, media_id, priority, manual, revision) VALUES ($1, $2, $3, $4, $5)
+        const result = await db.query(`INSERT INTO subtitle_repairs (type, media_id, priority, manual, revision) VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (type, media_id) DO UPDATE SET
-                priority=GREATEST(subtitle_repairs.priority, EXCLUDED.priority), revision=$5,
+                priority=CASE WHEN subtitle_repairs.revision<>$5 AND NOT subtitle_repairs.manual
+                    THEN EXCLUDED.priority ELSE GREATEST(subtitle_repairs.priority, EXCLUDED.priority) END, revision=$5,
                 manual=subtitle_repairs.manual OR $4, completed_at=NULL,
                 next_attempt=CASE WHEN $4 OR subtitle_repairs.completed_at IS NOT NULL OR subtitle_repairs.revision<>$5 THEN NOW() ELSE subtitle_repairs.next_attempt END,
                 progress=CASE WHEN $4 OR subtitle_repairs.completed_at IS NOT NULL THEN 0 ELSE subtitle_repairs.progress END,
@@ -202,7 +203,9 @@ class SubtitleMaintenance {
                 message=CASE WHEN $4 OR subtitle_repairs.completed_at IS NOT NULL THEN NULL ELSE subtitle_repairs.message END
             WHERE (subtitle_repairs.lease_until IS NULL OR subtitle_repairs.lease_until < NOW())
                 AND ($4 OR subtitle_repairs.completed_at IS NOT NULL OR subtitle_repairs.revision<>$5 OR subtitle_repairs.priority<$3)`, [type, id, priority, manual, slot.revision]);
-        this.server.catalogoManager?.loadCatalogo().catch(e => console.warn('[Subtitle catalog]', e.message));
+        if (result.rowCount && (priority > 0 || manual)) {
+            this.server.catalogoManager?.loadCatalogo().catch(e => console.warn('[Subtitle catalog]', e.message));
+        }
     }
 
     async repair(type, id) {
