@@ -19,18 +19,26 @@ class MediaSearchService {
         }
         const isAnime = options.isAnime || options.is_anime;
         if (isAnime) {
-            return 75; // 75 MB mínimo para anime (20 min)
+            return 40; // 40 MB mínimo para anime (20 min)
         }
         if (tipo === 'serie') {
             if (options.isPack) {
-                return 400; // 400 MB mínimo para temporada completa
+                return 300; // 300 MB mínimo para temporada completa
             }
-            return 180; // 180 MB mínimo para episódio padrão (40-60 min)
+            // Animações, sitcoms e episódios curtos (20-30 min como South Park, Simpsons) pesam 70-130 MB
+            const isShortOrAnimation = (options.runtime && options.runtime <= 35) ||
+                options.isAnimation ||
+                options.isAnime ||
+                (options.generos && (options.generos.includes('Animação') || options.generos.includes('Animation') || options.generos.includes('Comédia')));
+            if (isShortOrAnimation) {
+                return 40; // 40 MB para episódios curtos e animações
+            }
+            return 50; // 50 MB mínimo para episódios em geral (permite HDTV/WEB-DL compactados de 80-120 MB e bloqueia lixo < 50MB)
         }
         if (tipo === 'filme') {
-            return 350; // 350 MB mínimo para longa-metragem
+            return 200; // 200 MB mínimo para longa-metragem
         }
-        return 80;
+        return 50;
     }
 
     async search(query, tipo = 'filme', options = {}) {
@@ -89,9 +97,18 @@ class MediaSearchService {
                     tmdbDetails = await TMDBService.getTVDetails(options.tmdbId);
                     if (!imdbId) imdbId = tmdbDetails?.imdbId;
                 }
-                if (tmdbDetails && !isAnime) {
-                    const generos = tmdbDetails.generos || [];
-                    isAnime = generos.includes('Animação') || generos.includes('Anime') || tmdbDetails.original_language === 'ja';
+                if (tmdbDetails) {
+                    if (!options.generos && tmdbDetails.generos) options.generos = tmdbDetails.generos;
+                    if (!options.runtime && (tmdbDetails.episode_run_time?.[0] || tmdbDetails.runtime)) {
+                        options.runtime = tmdbDetails.episode_run_time?.[0] || tmdbDetails.runtime;
+                    }
+                    if (tmdbDetails.generos && (tmdbDetails.generos.includes('Animação') || tmdbDetails.generos.includes('Animation'))) {
+                        options.isAnimation = true;
+                    }
+                    if (!isAnime) {
+                        const generos = tmdbDetails.generos || [];
+                        isAnime = generos.includes('Animação') || generos.includes('Anime') || tmdbDetails.original_language === 'ja';
+                    }
                 }
             } catch (e) {
                 console.warn('⚠️ Diagnóstico TMDB (busca por ID):', e.message);
@@ -112,6 +129,13 @@ class MediaSearchService {
                         await TMDBService.getTVDetails(first.tmdbId);
                     if (tmdbDetails) {
                         imdbId = tmdbDetails.imdbId;
+                        if (!options.generos && tmdbDetails.generos) options.generos = tmdbDetails.generos;
+                        if (!options.runtime && (tmdbDetails.episode_run_time?.[0] || tmdbDetails.runtime)) {
+                            options.runtime = tmdbDetails.episode_run_time?.[0] || tmdbDetails.runtime;
+                        }
+                        if (tmdbDetails.generos && (tmdbDetails.generos.includes('Animação') || tmdbDetails.generos.includes('Animation'))) {
+                            options.isAnimation = true;
+                        }
                         if (!isAnime) {
                             const generos = tmdbDetails.generos || [];
                             isAnime = generos.includes('Animação') || generos.includes('Anime') || tmdbDetails.original_language === 'ja';
@@ -447,10 +471,15 @@ class MediaSearchService {
                 if (season) {
                     const sNum = parseInt(season, 10);
                     const titleLower = r.title.toLowerCase();
-                    const rangeMatch = titleLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/);
+                    const rawLower = (r.rawTitle || '').toLowerCase();
+                    const rangeMatch = titleLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/) ||
+                        rawLower.match(/(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/);
                     const singleSeasonMatch = titleLower.match(/\bs0*(\d{1,2})(?=[eEx._\s-]|$)/i) ||
-                        titleLower.match(/(?:season|temporada)[._\s-]*0*(\d{1,2})\b/i) ||
-                        titleLower.match(/\b0*(\d{1,2})x\d{1,4}\b/i);
+                        titleLower.match(/\b0*(\d{1,2})\s*(?:[°ºªa]|ª|º|\^)?\s*(?:temporada|temp|season)\b/i) ||
+                        titleLower.match(/(?:season|temporada|temp)[._\s-]*0*(\d{1,2})\b/i) ||
+                        titleLower.match(/\b0*(\d{1,2})x\d{1,4}\b/i) ||
+                        rawLower.match(/\b0*(\d{1,2})\s*(?:[°ºªa]|ª|º|\^)?\s*(?:temporada|temp|season)\b/i) ||
+                        rawLower.match(/(?:season|temporada|temp)[._\s-]*0*(\d{1,2})\b/i);
 
                     if (rangeMatch) {
                         const startS = parseInt(rangeMatch[1], 10);
@@ -467,7 +496,7 @@ class MediaSearchService {
                     const epNum = parseInt(episode, 10);
                     const titleLower = r.title.toLowerCase();
                     const epSingleMatch = titleLower.match(/(?:s0*\d{1,2}[._\s-]*)?(?:e|ep|episodio|episódio|x)[._\s-]*0*(\d{1,4})\b/i);
-                    const isPackTitle = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|pack|all[._ -]?episodes)\b/i.test(titleLower) ||
+                    const isPackTitle = /\b(complete|completa|season[._ -]?\d+|temporada[._ -]?\d+|\d+\s*(?:[°ºªa]|ª|º)?\s*(?:temporada|temp|season)|pack|all[._ -]?episodes)\b/i.test(titleLower) ||
                         /(?:seasons?|temporadas?)[._ -]*0*(\d{1,2})[._ -]*(?:to|-|a|e)[._ -]*0*(\d{1,2})/i.test(titleLower) ||
                         /\b(?:e|ep|episodio|episódio)?\s*0*(\d{1,4})\s*(?:-|~|a|e|to)\s*(?:e|ep)?0*(\d{1,4})\b/i.test(titleLower);
 
@@ -685,7 +714,6 @@ class MediaSearchService {
         const streamPath = tipo === 'serie' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
 
         const endpoints = [
-            `https://torrentio.strem.fun/brazuca/stream/${streamPath}`,
             `https://torrentio.strem.fun/language=portuguese/stream/${streamPath}`,
             `https://torrentio.strem.fun/stream/${streamPath}`
         ];
@@ -725,7 +753,7 @@ class MediaSearchService {
                 }
 
                 // Grupos de lançamento 100% brasileiros
-                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo|cinegaveta|wolverdon|guanabara/i.test(title);
+                const isBrazilianGroup = /comando|bludv|lapumia|wolverdon|starck|cinegaveta|vizer|lipeh|starckfilmes|filmesmega|guanabara|ondebaixo|acervo|mmfilmes|p2p[-_ ]?br|dtt|brazuca|dublamais|nerdtorrents|teladecinema|baixarfilmes|filmes.?beta|micoleao/i.test(rawTitle) || /comando|bludv|lapumia|starck|vizer|ondebaixo|cinegaveta|wolverdon|guanabara|filmes.?beta|micoleao/i.test(title);
 
                 // Marcação explícita de PT-BR / Dublado
                 const isPtBrExplicit = /(🇧🇷|\b(PT-BR|PT_BR|PTBR|BRAZILIAN|DUBLADO|NACIONAL)\b)/i.test(rawTitle) || /\b(pt-br|ptbr|nacional|dublado)\b/i.test(title);
@@ -809,11 +837,12 @@ class MediaSearchService {
                     continue;
                 }
 
-                // Descarta arquivos anormalmente pequenos (filmes < 300MB ou episódios < 50MB)
-                if (tipo === 'filme' && parseFloat(sizeMB) < 300) {
+                // Descarta arquivos anormalmente pequenos (filmes < 200MB ou episódios < 35MB)
+                if (tipo === 'filme' && parseFloat(sizeMB) < 200) {
                     continue;
                 }
-                if (tipo === 'serie' && parseFloat(sizeMB) < 50) {
+                const minEpMB = (opts.runtime && opts.runtime <= 35) || opts.isAnimation || opts.isAnime ? 35 : 45;
+                if (tipo === 'serie' && parseFloat(sizeMB) < minEpMB) {
                     continue;
                 }
 
@@ -821,7 +850,10 @@ class MediaSearchService {
                     // 1. Validação de Temporada Solicitada
                     if (opts.season) {
                         const reqSeason = parseInt(opts.season, 10);
-                        const sMatch = title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i);
+                        const sMatch = title.match(/\b(?:s|temporada|temp|season)\s*0*(\d{1,2})\b/i) ||
+                            title.match(/\b0*(\d{1,2})\s*(?:[°ºªa]|ª|º|\^)?\s*(?:temporada|temp|season)\b/i) ||
+                            rawTitle.match(/\b0*(\d{1,2})\s*(?:[°ºªa]|ª|º|\^)?\s*(?:temporada|temp|season)\b/i) ||
+                            rawTitle.match(/(?:season|temporada|temp)[._\s-]*0*(\d{1,2})\b/i);
                         if (sMatch && parseInt(sMatch[1], 10) !== reqSeason) {
                             continue; // Rejeita stream que aponta para outra temporada
                         }
