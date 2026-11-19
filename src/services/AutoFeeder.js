@@ -1034,6 +1034,7 @@ class AutoFeeder {
 
         this.queueManager.addJob(title, tipo, itemPrio, {
             tmdbId: item.tmdbId,
+            isUpgrade: false,
             isDorama: isDorama || item.isDorama || false,
             isAnime: isAnime || item.isAnime || false,
             isMicrodrama: item.isMicrodrama || false,
