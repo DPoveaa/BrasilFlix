@@ -671,22 +671,18 @@ class DownloaderManager extends EventEmitter {
 
                         if (!hasAnyMatch) {
                             const fileNames = allFiles.slice(0, 3).map(f => f.name).join(' | ');
-                            const errMsg = `🚫 [TORRENT FALSO — DETECÇÃO PRECOCE] Título esperado: "${options.title}" | Arquivos reais no torrent: "${fileNames}". Nenhuma correspondência de título. Download abortado ANTES de baixar qualquer byte.`;
-                            console.error(errMsg);
-                            finished = true;
-                            safeCleanup();
-                            return reject(Object.assign(new Error(errMsg), { code: 'TORRENT_WRONG_MEDIA' }));
-                        }
-
-                        // Log informativo quando há correspondência confirmada
-                        const bestMatch = allFiles.find(file => {
-                            const fullRel = `${file.path || ''} ${file.name || ''} ${torrent.name || ''}`;
-                            const fileNorm = normalizeFake(fullRel.replace(/\.\w{2,4}$/, ''));
-                            const fileWords = new Set(fileNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w)));
-                            return [...targetWords].filter(w => fileWords.has(w)).length > 0;
-                        });
-                        if (bestMatch) {
-                            console.log(`✅ [Validação Torrent] Título "${options.title}" → arquivo confirmado: "${bestMatch.name}"`);
+                            console.warn(`⚠️ [Validação Torrent] Aviso: Título esperado "${options.title}" não possui palavras óbvias nos nomes dos arquivos ("${fileNames}"). Prosseguindo com download baseado na busca qualificada.`);
+                        } else {
+                            // Log informativo quando há correspondência confirmada
+                            const bestMatch = allFiles.find(file => {
+                                const fullRel = `${file.path || ''} ${file.name || ''} ${torrent.name || ''}`;
+                                const fileNorm = normalizeFake(fullRel.replace(/\.\w{2,4}$/, ''));
+                                const fileWords = new Set(fileNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS_FAKE.has(w)));
+                                return [...targetWords].filter(w => fileWords.has(w)).length > 0;
+                            });
+                            if (bestMatch) {
+                                console.log(`✅ [Validação Torrent] Título "${options.title}" → arquivo confirmado: "${bestMatch.name}"`);
+                            }
                         }
                     }
                 }

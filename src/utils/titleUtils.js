@@ -351,8 +351,8 @@ function isReleaseCompatibleWithTarget(releaseTitle, targetTitle, originalName =
     if (isLiveActionExplicit && !targetIsLiveAction) return false;
     if (!isLiveActionExplicit && targetIsLiveAction && /\b(anime)\b/i.test(releaseTitle)) return false;
 
-    // 3. Validação de Ano distante se especificado (impede confusão de remakes/reboots muito distantes)
-    if (options.ano) {
+    // 3. Validação de Ano distante se especificado (impede confusão de remakes/reboots muito distantes em filmes)
+    if (options.ano && options.tipo !== 'serie' && !options.season && !options.temporada) {
         const expectedYear = parseInt(options.ano, 10);
         if (!isNaN(expectedYear) && expectedYear > 1900) {
             const titleYearMatch = releaseTitle.match(/\b(19\d{2}|20\d{2})\b/);

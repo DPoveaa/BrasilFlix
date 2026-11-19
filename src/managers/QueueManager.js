@@ -4035,7 +4035,7 @@ class QueueManager extends EventEmitter {
 
             // 1. Validação de compatibilidade de franquia/ano (isReleaseCompatibleWithTarget)
             const isCompat = isReleaseCompatibleWithTarget(uploadResult.fileName, targetTitle, targetOrig, {
-                ano: metadata.ano || job.ano,
+                ano: job.type === 'serie' ? null : (metadata.ano || job.ano),
                 isAnime: !!(metadata.isAnime || metadata.is_anime),
                 tipo: job.type
             });
@@ -4049,10 +4049,10 @@ class QueueManager extends EventEmitter {
                 throw new Error(errMsg);
             }
 
-            // 2. Validação de palavras-chave do título ou título original (apenas para fontes torrent/P2P)
+            // 2. Validação informativa de palavras-chave do título (não aborta episódios nem releases com títulos traduzidos)
             const jobTitleNorm = normalize(targetTitle);
             const origTitleNorm = normalize(targetOrig);
-            const fileNameNorm = normalize(uploadResult.fileName.replace(/\.\w{2,4}$/, '')); // remove extensão
+            const fileNameNorm = normalize(uploadResult.fileName.replace(/\.\w{2,4}$/, ''));
 
             const targetWords = new Set([
                 ...jobTitleNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d{3,4}$/.test(w)),
@@ -4061,16 +4061,10 @@ class QueueManager extends EventEmitter {
             const fileWords = new Set(fileNameNorm.split(' ').filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d{3,4}$/.test(w)));
 
             const matchCount = [...targetWords].filter(w => fileWords.has(w)).length;
-
-            if (!isDirectDownload && targetWords.size >= 1 && matchCount === 0) {
-                // Nenhuma palavra do título ou título original bateu com o arquivo — torrent falso!
-                const errMsg = `🚫 [TORRENT FALSO DETECTADO PÓS-UPLOAD] Job "${job.title}" recebeu arquivo com nome completamente diferente: "${uploadResult.fileName}". Upload deletado do Telegram, catalogação abortada.`;
-                console.error(errMsg);
-                // Apaga o arquivo falso do Telegram imediatamente
-                await this.uploader.deleteStorageMessages([uploadResult.messageId]).catch(() => { });
-                job.pendingUpload = null;
-                await this.saveJob(job);
-                throw new Error(errMsg);
+            if (matchCount > 0) {
+                console.log(`✅ [Validação Pós-Upload] Nome do arquivo validado com sucesso: "${uploadResult.fileName}" para "${job.title}".`);
+            } else {
+                console.log(`ℹ️ [Validação Pós-Upload] Arquivo "${uploadResult.fileName}" permitido para "${job.title}" (episódio avulso/título traduzido/release pack).`);
             }
         }
 
