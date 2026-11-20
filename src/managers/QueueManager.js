@@ -4154,7 +4154,7 @@ class QueueManager extends EventEmitter {
                 }
             }
 
-            await this.catalogoManager.adicionarEpisodioSerie(
+            const addEpResult = await this.catalogoManager.adicionarEpisodioSerie(
                 metadata.nome,
                 seasonNum,
                 epNum,
@@ -4166,6 +4166,9 @@ class QueueManager extends EventEmitter {
                     qualidade: metadata.qualidade || '1080p Full HD'
                 }
             );
+            if (addEpResult && addEpResult.success === false) {
+                throw new Error(`Falha ao persistir episódio de "${metadata.nome}" no PostgreSQL: ${addEpResult.error || 'Erro desconhecido'}`);
+            }
             // Atualiza job.season/job.episode com os valores efetivamente catalogados (podem ter sido
             // corrigidos pelo remapeamento TMDB ou pelo parseSeasonEpisodeFromPath do arquivo manual).
             job.season = seasonNum;

@@ -1025,9 +1025,9 @@ class CatalogoManager {
                     }
                 } catch (e) { }
 
-                // Limpa registros orfãos e sem mídia para manter integridade
+                // Limpa registros orfãos e sem mídia para manter integridade (respeita margem temporal de 2h para séries novas em catalogação)
                 try {
-                    await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL)`);
+                    await db.query(`DELETE FROM series WHERE id NOT IN (SELECT DISTINCT serie_id FROM episodios WHERE serie_id IS NOT NULL) AND created_at < NOW() - INTERVAL '2 hours'`);
                     await db.query(`DELETE FROM filmes WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb)`);
                     await db.query(`DELETE FROM episodios WHERE (message_id IS NULL OR message_id = '') AND (file_id IS NULL OR file_id = '') AND (versoes IS NULL OR versoes = '{}'::jsonb OR ((versoes->'dublado' IS NULL OR (versoes->'dublado'->>'messageId' IS NULL AND versoes->'dublado'->>'fileId' IS NULL)) AND (versoes->'legendado' IS NULL OR (versoes->'legendado'->>'messageId' IS NULL AND versoes->'legendado'->>'fileId' IS NULL))))`);
                 } catch (e) { }
@@ -1810,8 +1810,16 @@ class CatalogoManager {
             }
 
             if (!serie) {
+                if (!sId && metadados.tmdbId) {
+                    const fallbackRow = await db.query(`SELECT id FROM series WHERE tmdb_id = $1 LIMIT 1`, [Number(metadados.tmdbId)]).catch(() => null);
+                    if (fallbackRow?.rows?.[0]?.id) sId = fallbackRow.rows[0].id;
+                }
+                if (!sId) {
+                    const fallbackRowName = await db.query(`SELECT id FROM series WHERE LOWER(nome) = LOWER($1) LIMIT 1`, [cleanNome]).catch(() => null);
+                    if (fallbackRowName?.rows?.[0]?.id) sId = fallbackRowName.rows[0].id;
+                }
                 serie = {
-                    id: sId || Date.now(),
+                    id: sId,
                     tmdbId: metadados.tmdbId ? Number(metadados.tmdbId) : null,
                     imdbId: metadados.imdbId || null,
                     nome: cleanNome,
@@ -1928,6 +1936,56 @@ class CatalogoManager {
 
         // Persistência do Episódio no PostgreSQL
         try {
+            // Garante que a série existe no PostgreSQL antes de inserir o episódio (prevenindo FK violation por race condition)
+            let validSerieId = serie?.id;
+            const serieCheck = validSerieId ? await db.query('SELECT id FROM series WHERE id = $1', [validSerieId]).catch(() => ({ rows: [] })) : { rows: [] };
+            if (!serieCheck.rows || serieCheck.rows.length === 0) {
+                let recoveredId = null;
+                if (serie?.tmdbId || metadados.tmdbId) {
+                    const byTmdb = await db.query('SELECT id FROM series WHERE tmdb_id = $1 LIMIT 1', [Number(serie?.tmdbId || metadados.tmdbId)]).catch(() => null);
+                    if (byTmdb?.rows?.length > 0) recoveredId = byTmdb.rows[0].id;
+                }
+                if (!recoveredId) {
+                    const byName = await db.query('SELECT id FROM series WHERE LOWER(nome) = LOWER($1) LIMIT 1', [cleanNome]).catch(() => null);
+                    if (byName?.rows?.length > 0) recoveredId = byName.rows[0].id;
+                }
+                if (!recoveredId) {
+                    const slugSerie = CatalogoManager.generateSlug(cleanNome || metadados.nomeOriginal || '');
+                    const reInsert = await db.query(`
+                        INSERT INTO series (
+                            nome, nome_original, ano, generos, sinopse, poster_url, backdrop_url,
+                            nota, tmdb_id, imdb_id, total_temporadas, total_episodios, is_dorama,
+                            is_dublado, is_legendado, is_cam, is_microdrama, subtipo, formato, origem,
+                            plataforma_origem, trending_score, metadata_extra, slug, created_at, updated_at
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW()
+                        )
+                        ON CONFLICT (tmdb_id) WHERE tmdb_id IS NOT NULL
+                        DO UPDATE SET updated_at = NOW(), slug = EXCLUDED.slug
+                        RETURNING id
+                    `, [
+                        cleanNome, metadados.nomeOriginal || cleanNome, metadados.ano || '',
+                        JSON.stringify(metadados.generos || []), metadados.sinopse || '',
+                        metadados.posterUrl || null, metadados.backdropUrl || null,
+                        metadados.nota || 8.0, metadados.tmdbId ? Number(metadados.tmdbId) : null, metadados.imdbId || null,
+                        1, 1, isDorama, isDub, isLeg, metadados.isCam || false,
+                        isMicro, metadados.subtipo || (isMicro ? 'microdrama' : 'serie'),
+                        metadados.formato || (isMicro ? 'vertical' : 'horizontal'),
+                        metadados.origem || 'China', metadados.plataformaOrigem || metadados.plataforma_origem || null,
+                        parseFloat(metadados.trendingScore || metadados.trending_score || 0.0),
+                        JSON.stringify(metadados.metadataExtra || metadados.metadata_extra || {}),
+                        slugSerie
+                    ]);
+                    recoveredId = reInsert.rows[0]?.id;
+                }
+                if (recoveredId) {
+                    validSerieId = recoveredId;
+                    if (serie) serie.id = recoveredId;
+                } else {
+                    throw new Error(`Série "${cleanNome}" não pôde ser encontrada ou criada no PostgreSQL`);
+                }
+            }
+
             await db.query(`
                 INSERT INTO episodios (
                     serie_id, temporada_numero, numero, nome, sinopse,
@@ -1952,7 +2010,7 @@ class CatalogoManager {
                     versoes = EXCLUDED.versoes,
                     legendas = EXCLUDED.legendas
             `, [
-                serie.id, temporadaNum, episodioNum,
+                validSerieId, temporadaNum, episodioNum,
                 metadados.episodioNome || `Episódio ${episodioNum}`,
                 metadados.episodioSinopse || '',
                 primaryMessageId || null, primaryFileId || null,
@@ -1973,9 +2031,9 @@ class CatalogoManager {
                     is_legendado = COALESCE((SELECT bool_or(is_legendado) FROM episodios WHERE serie_id = $1), false),
                     updated_at = NOW()
                 WHERE id = $1
-            `, [serie.id]);
+            `, [validSerieId]);
         } catch (e) {
-            console.error('❌ Erro ao persistir episódio no PostgreSQL:', e.message);
+            console.error(`❌ Erro ao persistir episódio de "${cleanNome}" T${temporadaNum}E${episodioNum} (serie_id: ${serie?.id}) no PostgreSQL:`, e.message);
             return { success: false, error: e.message };
         }
 
