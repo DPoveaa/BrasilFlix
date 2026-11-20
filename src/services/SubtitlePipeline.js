@@ -2057,9 +2057,7 @@ print(f"RESULT:{res}")
                 if (found?.approved) return found.approved;
             }
             if (incomplete.size) {
-                const reason = `Busca humana PT-BR incompleta após ${checkedTracks} candidata(s): ${[...incomplete].join('; ')}. Tradução adiada.`;
-                onProgress?.(70, reason);
-                throw Object.assign(new Error(reason), { code: 'SUBTITLE_PROVIDER_UNAVAILABLE' });
+                console.log(`ℹ️ [Subtitle] Busca humana PT-BR direta inconclusiva após ${checkedTracks} candidata(s) (${[...incomplete].join('; ')}). Recorrendo à tradução neural (Gemini) como fallback para evitar reter disco.`);
             }
             console.log(`[Subtitle] ${meta.title || meta.nome}: ${checkedTracks} faixa(s) PT-BR comparada(s); resultados disponíveis esgotados.`);
             onProgress?.(72, 'Traduzindo legenda humana EN/ES e comparando com as falas');
