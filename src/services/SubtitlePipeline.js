@@ -373,8 +373,14 @@ class SubtitlePipeline {
                 return null;
             }
 
+            // Codecs textuais que o ffmpeg consegue converter diretamente para srt
+            const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text']);
+
             // Filtra streams em Português
             const ptStreams = subStreams.filter(s => {
+                const codec = (s.codec_name || '').toLowerCase();
+                if (!TEXT_SUBTITLE_CODECS.has(codec)) return false; // Ignora PGS/VobSub (bitmaps) que falhariam no ffmpeg -c:s srt
+
                 const lang = (s.tags?.language || s.tags?.lang || '').toLowerCase();
                 const title = (s.tags?.title || '').toLowerCase();
                 const isPt = ['por', 'pob', 'pt', 'pt-br', 'brazilian', 'ptbr'].includes(lang) ||
@@ -384,7 +390,15 @@ class SubtitlePipeline {
             });
 
             if (ptStreams.length === 0) {
-                console.log(`ℹ️ [Tier 1: Container Stream] Nenhuma trilha PT-BR válida encontrada entre as ${subStreams.length} trilhas do container.`);
+                const bitmapPt = subStreams.some(s => {
+                    const lang = (s.tags?.language || s.tags?.lang || '').toLowerCase();
+                    return ['por', 'pob', 'pt', 'pt-br'].includes(lang) && !TEXT_SUBTITLE_CODECS.has((s.codec_name || '').toLowerCase());
+                });
+                if (bitmapPt) {
+                    console.log(`ℹ️ [Tier 1: Container Stream] Legenda(s) PT no container são baseadas em imagem (PGS/VobSub). Ignorando extração direta e buscando fonte textual.`);
+                } else {
+                    console.log(`ℹ️ [Tier 1: Container Stream] Nenhuma trilha PT-BR válida encontrada entre as ${subStreams.length} trilhas do container.`);
+                }
                 return null;
             }
 

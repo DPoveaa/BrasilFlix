@@ -856,7 +856,7 @@ class QueueManager extends EventEmitter {
             }
 
             // ── 3. JOBS TRAVADOS (crash recovery contínuo) ───────────────────────────
-            const stuckThresholdMs = 40 * 60 * 1000; // 40 min (anteriormente 3h)
+            const stuckThresholdMs = 10 * 60 * 1000; // 10 min de tolerância sem atividade para jobs órfãos fora de activeJobs
             const stuckStatuses = ['processing', 'downloading', 'uploading', 'searching'];
             const toReset = [];
             for (const job of jobs) {
@@ -1951,11 +1951,16 @@ class QueueManager extends EventEmitter {
     getActiveActualUploadsCount(excludeJobId = null) {
         let count = 0;
         const now = Date.now();
-        for (const job of this.activeJobs.values()) {
+        for (const [jobId, job] of this.activeJobs.entries()) {
             if (job.id !== excludeJobId && job.status === 'uploading') {
                 const lastProgress = job.lastUploadProgressAt || (job.updatedAt ? new Date(job.updatedAt).getTime() : 0);
                 if (lastProgress && (now - lastProgress > 10 * 60 * 1000)) {
-                    console.warn(`⚠️ [QoS Upload] Job "${job.title}" (${job.id}) está em upload há mais de 10m sem atividade. Não contabilizando para evitar travar a fila.`);
+                    console.warn(`🚨 [QoS Upload] Job zumbi "${job.title}" (${job.id}) travado em upload há mais de 10m sem atividade. Abortando para liberar a esteira.`);
+                    this.activeJobs.delete(jobId);
+                    job.status = 'queued';
+                    job.progress = 0;
+                    job.progressDetails = 'Upload reiniciado após inatividade de 10 minutos';
+                    this.saveJob(job).catch(() => { });
                     continue;
                 }
                 count++;

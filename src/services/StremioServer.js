@@ -3789,8 +3789,21 @@ class StremioServer {
         const seasonNum = parseInt(season, 10);
         const epNum = parseInt(episode, 10);
 
-        // 1. Resolve a série no catálogo
+        // 1. Resolve a série no catálogo (com fallback ao PostgreSQL se não estiver em memória)
         let serie = this.catalogoManager.buscarSeriePorId(id, userToken === 'internal_admin');
+        if (!serie) {
+            try {
+                const sDb = await db.query('SELECT * FROM series WHERE id = $1', [id]);
+                if (sDb.rows[0]) {
+                    serie = {
+                        id: sDb.rows[0].id,
+                        nome: sDb.rows[0].nome,
+                        tmdbId: sDb.rows[0].tmdb_id,
+                        temporadas: []
+                    };
+                }
+            } catch (_) { }
+        }
         let ep = null;
         if (serie) {
             const temporada = (serie.temporadas || []).find(t => t.numero === seasonNum);
@@ -3821,6 +3834,9 @@ class StremioServer {
                         isLegendado: row.is_legendado,
                         versoes: versoes || {}
                     };
+                    if (!serie) {
+                        serie = { id: id, nome: `Série ${id}` };
+                    }
                 }
             } catch (_) { }
         }
@@ -3876,7 +3892,8 @@ class StremioServer {
         }
 
         // 5. APENAS após validação da mídia, verifica e consome cota gratuita
-        const mediaKey = `serie_${serie.id}_s${seasonNum}_e${epNum}`;
+        const resolvedSerieId = serie?.id || id;
+        const mediaKey = `serie_${resolvedSerieId}_s${seasonNum}_e${epNum}`;
         const auth = this.resolvePlaybackAccess(req, userToken);
         if (!auth.authorized) {
             const consumo = await this.assinaturaManager.verificarOuRegistrarConsumoGratis(userToken, 'serie', mediaKey);
@@ -3919,16 +3936,16 @@ class StremioServer {
             const isTgNumeric = /^\d+$/.test(strToken);
             const tgId = isTgNumeric ? Number(strToken) : null;
             const identityType = tgId ? 'telegram' : (strToken && strToken !== 'public' ? 'registered' : 'anonymous');
-            const sessionId = `stremio_${tgId || strToken || 'anon'}_serie_${serie.id}_s${seasonNum}e${epNum}_${Math.floor(Date.now() / 1800000)}`;
+            const sessionId = `stremio_${tgId || strToken || 'anon'}_serie_${resolvedSerieId}_s${seasonNum}e${epNum}_${Math.floor(Date.now() / 1800000)}`;
 
             auditService.recordPlaybackProgress({
                 sessionId,
                 identityType,
                 telegramId: tgId,
                 visitorId: strToken !== 'public' ? strToken : null,
-                mediaId: String(serie.id),
+                mediaId: String(resolvedSerieId),
                 mediaType: 'serie',
-                title: `${serie.nome} (T${seasonNum}E${epNum})`,
+                title: `${serie?.nome || `Série ${resolvedSerieId}`} (T${seasonNum}E${epNum})`,
                 seasonNum,
                 episodeNum: epNum,
                 currentPosition: 1,
