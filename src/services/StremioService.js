@@ -229,7 +229,8 @@ class StremioService {
                 streams.push({
                     name: 'BrasilFlix [1080p]',
                     title: `💬 ${filme.nome}\n💬 Legendado (PT-BR) • 1080p Full HD\n[${tagCota}]`,
-                    url: `${baseUrl}/stream/video/${userToken}/filme/${filme.id}/legendado`
+                    url: `${baseUrl}/stream/video/${userToken}/filme/${filme.id}/legendado`,
+                    subtitles: this.webSubtitles(filme, baseUrl)
                 });
             }
 
@@ -296,12 +297,23 @@ class StremioService {
                 streams.push({
                     name: 'BrasilFlix [1080p]',
                     title: `📺 ${serie.nome} T${seasonNum}E${epNum}\n💬 Legendado (PT-BR) • 1080p Full HD\n[${tagCota}]`,
-                    url: `${baseUrl}/stream/video/${userToken}/serie/${serie.id}/${seasonNum}/${epNum}/legendado`
+                    url: `${baseUrl}/stream/video/${userToken}/serie/${serie.id}/${seasonNum}/${epNum}/legendado`,
+                    subtitles: this.webSubtitles(ep, baseUrl)
                 });
             }
 
             return { streams };
         }
+    }
+
+    webSubtitles(media, baseUrl) {
+        if (media.isHardsub || !Array.isArray(media.legendas)) return [];
+        const version = media.versoes?.legendado;
+        const fingerprint = String(version?.fileId || version?.messageId || media.fileId || media.messageId || '');
+        return media.legendas.filter(track => track?.lang?.toLowerCase() === 'pt-br' &&
+            fingerprint && String(track.mediaFingerprint) === fingerprint &&
+            /^\/subtitles\/[^/?]+\.vtt(?:\?.*)?$/i.test(track.vttUrl || ''))
+            .map(track => ({ id: track.vttUrl, lang: 'por', url: new URL(track.vttUrl, baseUrl).href }));
     }
 }
 

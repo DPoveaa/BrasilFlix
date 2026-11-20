@@ -1174,7 +1174,7 @@ ${events.join('\n')}
 
         // Se o release for legendado e ainda não tiver legenda definida, obtém pelo SubtitlePipeline
         let cleanupGeneratedSrt = false;
-        if (!isConfirmedDublado) {
+        if (!isConfirmedDublado && !metadata.deferWebSubtitles) {
             let srtPath = null;
             try {
                 const pipelineResult = await SubtitlePipeline.processSubtitlePipeline(inputPath, {
@@ -1201,7 +1201,7 @@ ${events.join('\n')}
             cleanupGeneratedSrt = true;
         }
 
-        if (!isConfirmedDublado && !metadata.srtPath) {
+        if (!isConfirmedDublado && !metadata.srtPath && !metadata.deferWebSubtitles) {
             throw Object.assign(new Error('Legenda PT-BR obrigatória ausente.'), { code: 'SUBTITLE_SYNC_FAILED' });
         }
 

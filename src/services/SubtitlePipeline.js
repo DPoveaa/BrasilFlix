@@ -1793,17 +1793,19 @@ print(f"RESULT:{res}")
      * 4) Whisper ASR with PT-BR translation, only after human tracks fail.
      */
     async audioDialogueReference(videoPath, metadata, onProgress, checkpoints = false) {
+        const full = checkpoints ? null : await SubtitleAudioService.dialogueCache(
+            videoPath, metadata.audioIndex || 0, metadata.mediaFingerprint);
         const stat = /^https?:/.test(videoPath) ? null : await fs.stat(videoPath);
         const fingerprint = metadata.mediaFingerprint || (stat ? `${stat.size}:${stat.mtimeMs}` : null);
         const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
         await fs.ensureDir(cacheDir);
         const key = require('crypto').createHash('sha256').update(JSON.stringify([
-            checkpoints ? 'dialogue-checkpoints-v3' : SubtitleAudioService.dialogueReferenceVersion, videoPath, fingerprint, metadata.audioIndex || 0,
+            'dialogue-checkpoints-v3', videoPath, fingerprint, metadata.audioIndex || 0,
             checkpoints ? (process.env.SUBTITLE_WHISPER_CHECKPOINT_MODEL || 'tiny') : (process.env.SUBTITLE_WHISPER_MODEL || 'turbo'),
             checkpoints ? metadata.checkpointTimes : null
         ])).digest('hex');
-        const cache = path.join(cacheDir, `${key}.srt`);
-        const audioCachePath = fingerprint && !checkpoints ? `${cache}.wav` : null;
+        const cache = full?.translated || path.join(cacheDir, `${key}.srt`);
+        const audioCachePath = full?.wav;
         const validate = async file => {
             if (!checkpoints) return this.validateAndFinalizeSubtitle(file, metadata.duration || 0);
             const content = await fs.readFile(file, 'utf8');
@@ -1822,7 +1824,8 @@ print(f"RESULT:{res}")
             }
         }
         const reference = await (checkpoints ? SubtitleAudioService.createCheckpoints : SubtitleAudioService.create)(videoPath, metadata.audioIndex || 0, {
-            title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes, audioCachePath, onProgress
+            title: metadata.title || metadata.nome, duration: metadata.duration, checkpointTimes: metadata.checkpointTimes,
+            audioCachePath, onProgress, transferAudio: metadata.transferAudio
         });
         try {
             await validate(reference);
@@ -1830,10 +1833,6 @@ print(f"RESULT:{res}")
                 const temporary = `${cache}.${require('crypto').randomUUID()}.tmp`;
                 await fs.copy(reference, temporary);
                 await fs.rename(temporary, cache);
-                if (audioCachePath) {
-                    await fs.remove(audioCachePath).catch(() => {});
-                    await fs.remove(`${audioCachePath}.source.srt`).catch(() => {});
-                }
             }
             return reference;
         } catch (error) { await fs.remove(reference).catch(() => {}); throw error; }
@@ -1888,17 +1887,10 @@ print(f"RESULT:{res}")
         const model = process.env.SUBTITLE_SEMANTIC_MODEL_DIR ||
             path.resolve(__dirname, '../../data/subtitle_models/multilingual-minilm');
         const source = () => sourcePromise ||= (async () => {
-            const stat = /^https?:/.test(videoPath) ? null : await fs.stat(videoPath);
-            const fingerprint = meta.mediaFingerprint || (stat && `${stat.size}:${stat.mtimeMs}`);
-            const key = require('crypto').createHash('sha256').update(JSON.stringify([
-                SubtitleAudioService.dialogueReferenceVersion, videoPath, fingerprint, meta.audioIndex || 0,
-                process.env.SUBTITLE_WHISPER_MODEL || 'turbo', null
-            ])).digest('hex');
-            const cacheDir = path.resolve(__dirname, '../../data/subtitle_references');
-            await fs.ensureDir(cacheDir);
+            const cache = await SubtitleAudioService.dialogueCache(videoPath, meta.audioIndex || 0, meta.mediaFingerprint);
             const text = await SubtitleAudioService.sourceTranscript(videoPath, meta.audioIndex || 0, {
                 title: meta.title || meta.nome, duration, onProgress,
-                audioCachePath: fingerprint ? path.join(cacheDir, `${key}.srt.wav`) : null
+                audioCachePath: cache?.wav, transferAudio: metadata.transferAudio
             });
             const file = path.join(workDir, 'spoken.srt');
             await fs.writeFile(file, text);
@@ -2043,9 +2035,10 @@ print(f"RESULT:{res}")
             const existing = await human(candidates);
             if (existing) return existing;
             candidates.length = 0;
-            const embedded = await attempt('embedded', () => this.probeAndExtractContainerSubtitle(videoPath, meta));
+            const candidateInput = metadata.subtitleCandidateInput || videoPath;
+            const embedded = await attempt('embedded', () => this.probeAndExtractContainerSubtitle(candidateInput, meta));
             if (embedded?.srtPath) candidates.push(embedded);
-            const companion = await attempt('companion', () => this.findCompanionSubtitles(videoPath, meta));
+            const companion = await attempt('companion', () => this.findCompanionSubtitles(candidateInput, meta));
             if (companion?.ptSrtPath) candidates.push({ srtPath: companion.ptSrtPath, sourceMethod: 'Companion Human PT-BR' });
             let result = await human(candidates);
             if (result) return result;

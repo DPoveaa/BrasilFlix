@@ -8,6 +8,7 @@ const MediaSearchService = require('../services/MediaSearchService');
 const DownloaderManager = require('../services/DownloaderManager');
 const VideoProcessor = require('../services/VideoProcessor');
 const SubtitlePipeline = require('../services/SubtitlePipeline');
+const SubtitleAudioService = require('../services/SubtitleAudioService');
 const SubtitleUtils = require('../utils/SubtitleUtils');
 const TelegramUploader = require('../services/TelegramUploader');
 const DiskCleaner = require('../services/DiskCleaner');
@@ -952,20 +953,11 @@ class QueueManager extends EventEmitter {
                 }
             }
 
-            // Se houver mais de 1 download em paralelo, devolve os excedentes para a fila
-            const hasSubDownload = Array.from(this.downloadSlots).some(id => String(id).startsWith('sub_'));
-            if (hasSubDownload && activeDownloads.length > 0) {
-                for (const excessJob of activeDownloads) {
-                    console.log(`🍃 [Modo Econômico] Slot de download reservado para reprocessamento de legenda. Devolvendo "${excessJob.title}" à fila temporariamente.`);
-                    DownloaderManager.cancelDownload(excessJob.id);
-                    excessJob.status = 'queued';
-                    excessJob.progress = 0;
-                    excessJob.progressDetails = 'Aguardando vez na esteira (legenda em reprocessamento)...';
-                    this.saveJob(excessJob).catch(() => { });
-                    this.activeJobs.delete(excessJob.id);
-                }
-            } else if (activeDownloads.length > 1) {
-                const excessDownloads = activeDownloads.slice(1);
+            // Em andamento significa uma transferência com vaga adquirida.
+            const mediaTransfers = activeDownloads.filter(job => this.downloadSlots.has(job.id));
+            const subtitleTransfers = [...this.downloadSlots].filter(id => String(id).startsWith('sub_')).length;
+            if (mediaTransfers.length + subtitleTransfers > 1) {
+                const excessDownloads = mediaTransfers.slice(Math.max(0, 1 - subtitleTransfers));
                 for (const excessJob of excessDownloads) {
                     console.log(`🍃 [Modo Econômico] Limitando downloads simultâneos a 1. Interrompendo download excedente de "${excessJob.title}" e devolvendo à fila.`);
                     DownloaderManager.cancelDownload(excessJob.id);
@@ -1085,6 +1077,8 @@ class QueueManager extends EventEmitter {
                         bestSource: job.bestSource,
                         rejectedSubtitleSources: job.rejectedSubtitleSources,
                         pendingUpload: job.pendingUpload,
+                        subtitleArtifacts: job.subtitleArtifacts,
+                        preparedForWebSubtitles: job.preparedForWebSubtitles,
                         langInfo: job.langInfo,
                         customMagnet: job.customMagnet || null,
                         isManualAdd: job.isManualAdd || false,
@@ -1141,6 +1135,8 @@ class QueueManager extends EventEmitter {
             bestSource: extra.bestSource || null,
             rejectedSubtitleSources: extra.rejectedSubtitleSources || [],
             pendingUpload: extra.pendingUpload || null,
+            subtitleArtifacts: extra.subtitleArtifacts,
+            preparedForWebSubtitles: extra.preparedForWebSubtitles,
             langInfo: extra.langInfo || null,
             customMagnet: extra.customMagnet || null,
             isManualAdd: extra.isManualAdd || false,
@@ -1544,7 +1540,7 @@ class QueueManager extends EventEmitter {
         let reserved = false;
         for (const active of this.activeJobs.values()) {
             const audio = otherAudio(active.audioPreference);
-            if (!audio || (active.status === 'queued' && active.retryAfter) ||
+            if (!audio || active.waitingForSubtitles || (active.status === 'queued' && active.retryAfter) ||
                 ['completed', 'failed', 'cancelled'].includes(active.status)) continue;
             const pendingPair = queuedJobs.some(candidate => candidate.audioPreference === audio &&
                 this.canTryQueuedJob(candidate, now) && sameQueuedMedia(candidate, active));
@@ -1924,14 +1920,11 @@ class QueueManager extends EventEmitter {
     }
 
     getActiveOptimizationsCount() {
-        let count = 0;
-        for (const job of this.activeJobs.values()) {
-            if (job.status === 'processing') {
-                const isOptimizing = job.progressDetails && job.progressDetails.includes('Otimizando');
-                if (isOptimizing) count++;
-            }
-        }
-        return count;
+        return this.transcodeLocks.size;
+    }
+
+    getMaxOptimizations(mode = SchedulerService.getActiveMode()) {
+        return mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
     }
 
     getActiveUploadsCount() {
@@ -1944,7 +1937,7 @@ class QueueManager extends EventEmitter {
                     continue; // Ignora upload travado sem progresso há mais de 10m
                 }
                 count++;
-            } else if (job.optimizedPath && fs.existsSync(job.optimizedPath)) {
+            } else if (!job.waitingForSubtitles && job.optimizedPath && fs.existsSync(job.optimizedPath)) {
                 count++;
             }
         }
@@ -1990,7 +1983,7 @@ class QueueManager extends EventEmitter {
             // No Modo Desempenho (Madrugada): 6 downloads simultâneos, 4 transcodes simultâneos, 3 uploads simultâneos
             // No Modo Econômico: 1 download, 2 transcodes, 1 upload
             const maxDownloads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_DOWNLOADS || config.MAX_CONCURRENT_DOWNLOADS || 6);
-            const maxTranscodes = mode === 'eco' ? 2 : (config.PERFORMANCE_MAX_TRANSCODES || config.MAX_CONCURRENT_TRANSCODES || 4);
+            const maxTranscodes = this.getMaxOptimizations(mode);
             const maxUploads = mode === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || config.MAX_CONCURRENT_UPLOADS || 3);
             // O limite global de concorrência é a soma dos slots independentes de cada fase
             const maxSearches = mode === 'eco' ? 2 : Math.min(maxDownloads, 4);
@@ -2003,7 +1996,8 @@ class QueueManager extends EventEmitter {
             }
 
             // Dispara jobs em paralelo enquanto houver slots livres
-            while (this.activeJobs.size < maxConcurrent) {
+            while (this.activeJobs.size < maxConcurrent + Math.min(2,
+                [...this.activeJobs.values()].filter(job => job.waitingForSubtitles).length)) {
                 const activeTranscodes = this.getActiveOptimizationsCount();
                 const activeUploads = this.getActiveUploadsCount();
 
@@ -2483,7 +2477,7 @@ class QueueManager extends EventEmitter {
         // 🔄 JOBS DE REPROCESSAMENTO (isUpgrade=true): descarta arquivos otimizados/raw antigos
         // para garantir recodificação limpa com nova legenda/áudio (nunca reutiliza versão anterior com bug)
         const isForceReprocess = job.isUpgrade || job.extraData?.isUpgrade;
-        if (isForceReprocess && optimizedPath) {
+        if (isForceReprocess && optimizedPath && !job.preparedForWebSubtitles) {
             if (fs.existsSync(optimizedPath)) {
                 console.log(`🔄 [Reprocessamento] Job de upgrade/reprocessamento: descartando arquivo otimizado anterior para recodificação limpa: ${require('path').basename(optimizedPath)}`);
                 await DownloaderManager.cleanupFile(optimizedPath).catch(() => { });
@@ -2537,7 +2531,7 @@ class QueueManager extends EventEmitter {
                     } catch (_) { }
 
                     // Aceita se houver stream de legenda embutido (softsub mov_text), marcador de conclusão, ou arquivos web persistidos.
-                    if (needsSub && !hasSubStream && !hasSubMarker && !hasWebSub) {
+                    if (needsSub && !job.preparedForWebSubtitles && !hasSubStream && !hasSubMarker && !hasWebSub) {
                         console.warn(`🧹 [Cache Invalidation] Arquivo otimizado existente "${path.basename(optimizedPath)}" não possui faixa de legenda softsub, marcador (.subtitled) nem arquivos web persistidos para job legendado (${job.audioPreference}). Descartando cache para processamento limpo com SubtitlePipeline.`);
                         await DownloaderManager.cleanupFile(optimizedPath);
                         await fs.remove(subtitleMarkerPath).catch(() => { });
@@ -3635,17 +3629,25 @@ class QueueManager extends EventEmitter {
                 ? `serie_${normT}_s${job.season ?? 1}_e${job.episode ?? 1}`
                 : `filme_${normT}`;
 
+            while (this.getActiveOptimizationsCount() >= this.getMaxOptimizations()) {
+                job.progressDetails = 'Aguardando vaga de otimização de vídeo';
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
             if (this.transcodeLocks.has(transcodeKey)) {
                 console.log(`🛡️ [Transcode Lock] Abortando transcode duplicado: "${job.title}" ${job.type === 'serie' ? `T${job.season ?? 1}E${job.episode ?? 1}` : ''} — outro worker já está otimizando este mesmo conteúdo.`);
                 throw new Error(`Transcode duplicado bloqueado: ${transcodeKey}`);
             }
             this.transcodeLocks.add(transcodeKey);
+            job.progressDetails = 'Otimizando para 1080p...';
 
             // Dispara imediatamente o próximo download da fila enquanto este otimiza em paralelo
             setImmediate(() => this.processNext());
 
             try {
+                job.preparedForWebSubtitles = false;
+                job.subtitleArtifacts = null;
                 const processingMetadata = {
+                    deferWebSubtitles: true,
                     nome: job.title,
                     tipo: job.type,
                     season: job.season,
@@ -3673,6 +3675,7 @@ class QueueManager extends EventEmitter {
                 Object.assign(metadata, { isDublado, isLegendado, idiomaAudioLabel });
                 langInfo = { ...langInfo, isDublado, isLegendado, hasBoth: false };
                 job.langInfo = langInfo;
+                job.preparedForWebSubtitles = isLegendado;
                 await this.saveJob(job);
 
                 this.recordIngestionTiming('optimization', optimizeStartedAt);
@@ -3731,6 +3734,7 @@ class QueueManager extends EventEmitter {
             } finally {
                 // Libera o lock de transcode independente de sucesso ou falha
                 this.transcodeLocks.delete(transcodeKey);
+                setImmediate(() => this.processNext());
             }
         }
 
@@ -3746,37 +3750,6 @@ class QueueManager extends EventEmitter {
             return;
         }
 
-        // Concorrência de upload adaptativa ao modo ativo:
-        // - Modo Econômico: 1 upload por vez (protege upstream residencial)
-        // - Modo Desempenho: múltiplos uploads simultâneos (PERFORMANCE_MAX_UPLOADS)
-        const maxUploadsAllowed = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || this.maxConcurrentUploads || 3);
-        const waitSlotStart = Date.now();
-        let qosWaitCounter = 0;
-        while (this.getActiveActualUploadsCount(job.id) >= maxUploadsAllowed) {
-            job.status = 'queued';
-            job.progressDetails = 'Aguardando slot de upload livre...';
-            if (qosWaitCounter++ % 6 === 0) { // Log a cada 30 segundos para evitar poluir o console
-                console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} uploads simultâneos)...`);
-            }
-            // Auto-recovery: Se estiver aguardando há mais de 15 minutos, varre jobs travados para desbloquear a fila
-            if (Date.now() - waitSlotStart > 15 * 60 * 1000) {
-                console.warn(`⚠️ [QoS Upload] Job "${job.title}" aguardando slot há mais de 15 minutos. Verificando jobs travados em activeJobs...`);
-                for (const [aId, aJob] of this.activeJobs.entries()) {
-                    if (aJob.id !== job.id && aJob.status === 'uploading') {
-                        const lastProg = aJob.lastUploadProgressAt || 0;
-                        if (Date.now() - lastProg > 8 * 60 * 1000) {
-                            console.error(`🚨 [Auto-Recovery QoS] Abortando job zumbi "${aJob.title}" (${aId}) travado em upload sem progresso.`);
-                            this.activeJobs.delete(aId);
-                            aJob.status = 'failed';
-                            aJob.error = 'Upload estagnado/abortado por timeout de inatividade';
-                            this.saveJob(aJob).catch(() => { });
-                        }
-                    }
-                }
-            }
-            await new Promise(r => setTimeout(r, 5000));
-        }
-
         // Validação Estrita de Duração Pré-Upload (Evita qualquer envio de vídeo cortado/truncado por crash prévio)
         const finalOptInfo = await VideoProcessor.getVideoInfo(optimizedPath).catch(() => null);
         if (finalOptInfo && finalOptInfo.duration > 0 && finalOptInfo.duration < finalMinSec) {
@@ -3785,16 +3758,6 @@ class QueueManager extends EventEmitter {
             await DownloaderManager.cleanupFile(rawFilePath);
             throw new Error(`Vídeo com duração truncada (${finalOptInfo.durationFormatted} vs mínimo de ${Math.round(finalMinSec / 60)} min). Upload abortado.`);
         }
-
-        job.status = 'uploading';
-        job.progress = 0;
-        job.progressDetails = 'Iniciando envio ao Telegram...';
-        job.lastUploadProgressAt = Date.now();
-        this.activeTask = job;
-        await this.saveJob(job);
-
-        // Dispara o próximo item enquanto este faz upload para o Telegram
-        setImmediate(() => this.processNext());
 
         metadata = {
             ...metadata,
@@ -3888,24 +3851,38 @@ class QueueManager extends EventEmitter {
         // Resumed optimized/pending uploads can predate the current subtitle pipeline.
         // A .subtitled marker or embedded stream alone is never proof of a usable web track.
         if (metadata.isLegendado) {
+            const reference = await SubtitleAudioService.dialogueCache(optimizedPath);
+            if (job.subtitleArtifacts?.audioKey === reference.key) {
+                metadata.webSubtitles = job.subtitleArtifacts.tracks;
+            }
             const pt = (metadata.webSubtitles || []).find(track => /^pt/i.test(track.lang || '') &&
                 track.validationVersion === require('../services/SubtitleWorkSlot').revision);
             const vttPath = pt?.vttUrl ? path.resolve(__dirname, '../../public/subtitles', path.basename(pt.vttUrl.split('?')[0])) : null;
             const content = vttPath ? await fs.readFile(vttPath, 'utf8').catch(() => '') : '';
             const verified = !!(['semantic_dialogue', 'dialogue_content', 'asr_word_timestamps'].includes(pt?.syncProof?.method) && content && pt.contentHash === SubtitleUtils.contentHash(content));
             if (!verified) {
-                job.progressDetails = 'Validando a legenda do arquivo final antes da publicação';
+                job.status = 'processing';
+                job.waitingForSubtitles = true;
+                job.progressDetails = 'Aguardando a fila de legendas do arquivo final';
+                await this.saveJob(job);
+                setImmediate(() => this.processNext());
                 let result;
                 try {
                     result = await SubtitlePipeline.processSubtitlePipeline(optimizedPath, {
-                        ...metadata, tipo: job.type === 'filme' ? 'filme' : 'serie', audioIndex: 0,
-                        existingSubtitlePath: content ? vttPath : null
+                        ...metadata, tipo: job.type === 'filme' ? 'filme' : 'serie', audioIndex: 0, mediaFingerprint: null,
+                        existingSubtitlePath: content ? vttPath : null,
+                        subtitleCandidateInput: rawFilePath && fs.existsSync(rawFilePath) ? rawFilePath : null
                     }, (_percent, message) => { job.progressDetails = message; });
                     metadata.subtitleSyncValidationVersion = result.syncValidationVersion;
                     metadata.subtitleSyncProof = result.checkpoints;
                     metadata.subtitleSourceMethod = result.sourceMethod;
                     await VideoProcessor.persistWebSubtitles(metadata, result.srtPath);
-                } finally { if (result?.srtPath) await fs.remove(result.srtPath).catch(() => {}); }
+                    job.subtitleArtifacts = { audioKey: reference.key, tracks: metadata.webSubtitles };
+                    await this.saveJob(job);
+                } finally {
+                    job.waitingForSubtitles = false;
+                    if (result?.srtPath) await fs.remove(result.srtPath).catch(() => {});
+                }
             }
         }
 
@@ -3998,6 +3975,47 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        // Concorrência de upload adaptativa ao modo ativo:
+        // - Modo Econômico: 1 upload por vez (protege upstream residencial)
+        // - Modo Desempenho: múltiplos uploads simultâneos (PERFORMANCE_MAX_UPLOADS)
+        const maxUploadsAllowed = SchedulerService.getActiveMode() === 'eco' ? 1 : (config.PERFORMANCE_MAX_UPLOADS || this.maxConcurrentUploads || 3);
+        const waitSlotStart = Date.now();
+        let qosWaitCounter = 0;
+        while (this.getActiveActualUploadsCount(job.id) >= maxUploadsAllowed) {
+            job.status = 'queued';
+            job.progressDetails = 'Aguardando slot de upload livre...';
+            if (qosWaitCounter++ % 6 === 0) { // Log a cada 30 segundos para evitar poluir o console
+                console.log(`⏳ [QoS Upload] Job "${job.title}" aguardando upload anterior terminar (limite no modo ${SchedulerService.getActiveMode()}: ${maxUploadsAllowed} uploads simultâneos)...`);
+            }
+            // Auto-recovery: Se estiver aguardando há mais de 15 minutos, varre jobs travados para desbloquear a fila
+            if (Date.now() - waitSlotStart > 15 * 60 * 1000) {
+                console.warn(`⚠️ [QoS Upload] Job "${job.title}" aguardando slot há mais de 15 minutos. Verificando jobs travados em activeJobs...`);
+                for (const [aId, aJob] of this.activeJobs.entries()) {
+                    if (aJob.id !== job.id && aJob.status === 'uploading') {
+                        const lastProg = aJob.lastUploadProgressAt || 0;
+                        if (Date.now() - lastProg > 8 * 60 * 1000) {
+                            console.error(`🚨 [Auto-Recovery QoS] Abortando job zumbi "${aJob.title}" (${aId}) travado em upload sem progresso.`);
+                            this.activeJobs.delete(aId);
+                            aJob.status = 'failed';
+                            aJob.error = 'Upload estagnado/abortado por timeout de inatividade';
+                            this.saveJob(aJob).catch(() => { });
+                        }
+                    }
+                }
+            }
+            await new Promise(r => setTimeout(r, 5000));
+        }
+
+        job.status = 'uploading';
+        job.progress = 0;
+        job.progressDetails = 'Iniciando envio ao Telegram...';
+        job.lastUploadProgressAt = Date.now();
+        this.activeTask = job;
+        await this.saveJob(job);
+
+        // Dispara o próximo item enquanto este faz upload para o Telegram
+        setImmediate(() => this.processNext());
+
         const uploadMetadata = {
             ...metadata,
             tipo: job.type,
@@ -4076,6 +4094,10 @@ class QueueManager extends EventEmitter {
             }
         }
 
+        if (metadata.isLegendado) {
+            await SubtitleAudioService.rememberPublishedAudio(optimizedPath, uploadResult.fileId || uploadResult.messageId)
+                .catch(error => console.warn('[Subtitle cache]', error.message));
+        }
         metadata.webSubtitles = (metadata.webSubtitles || []).map(track => ({
             ...track, mediaFingerprint: String(uploadResult.fileId || uploadResult.messageId || '')
         }));

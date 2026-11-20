@@ -3,6 +3,7 @@ const { promisify } = require('util');
 const path = require('path');
 const os = require('os');
 const fs = require('fs-extra');
+const { createHash } = require('node:crypto');
 const translator = require('./SubtitleTranslationService');
 const dialogueReferenceVersion = 'dialogue-full-v3';
 
@@ -16,6 +17,43 @@ const transcribeTimeout = 90 * 60 * 1000;
 const maxConcurrentTranscribes = parseInt(process.env.MAX_SUBTITLE_SLOTS || '2', 10);
 let activeTranscribes = 0;
 const transcribeQueue = [];
+const pendingSources = new Map();
+const referenceDirectory = path.resolve(__dirname, '../../data/subtitle_references');
+
+const referenceKey = values => createHash('sha256').update(JSON.stringify(values)).digest('hex');
+const cacheModel = () => process.env.SUBTITLE_WHISPER_MODEL || 'turbo';
+const sourceFile = wav => `${wav}.source.srt`;
+
+async function linkCache(from, to) {
+    if (from === to) return;
+    try { await fs.link(from, to); }
+    catch (error) { if (!['ENOENT', 'EEXIST'].includes(error.code)) throw error; }
+}
+
+async function dialogueCache(input, audioIndex = 0, mediaFingerprint = null) {
+    const stat = /^https?:\/\//i.test(input) ? null : await fs.stat(input);
+    const identity = mediaFingerprint ? ['published', String(mediaFingerprint)] :
+        stat ? ['local', stat.dev, stat.ino, stat.size, stat.mtimeMs] : null;
+    if (!identity) return null;
+    await fs.ensureDir(referenceDirectory);
+    const key = referenceKey([dialogueReferenceVersion, identity, audioIndex, cacheModel()]);
+    const translated = path.join(referenceDirectory, `${key}.srt`);
+    const oldFingerprint = mediaFingerprint || `${stat.size}:${stat.mtimeMs}`;
+    const legacy = path.join(referenceDirectory, `${referenceKey([
+        dialogueReferenceVersion, input, oldFingerprint, audioIndex, cacheModel(), null
+    ])}.srt`);
+    await linkCache(sourceFile(`${legacy}.wav`), sourceFile(`${translated}.wav`));
+    await linkCache(legacy, translated);
+    return { translated, wav: `${translated}.wav`, key };
+}
+
+async function rememberPublishedAudio(input, mediaFingerprint) {
+    if (!mediaFingerprint) return;
+    const local = await dialogueCache(input);
+    const published = await dialogueCache(input, 0, mediaFingerprint);
+    await linkCache(sourceFile(local.wav), sourceFile(published.wav));
+    await linkCache(local.translated, published.translated);
+}
 
 function acquireTranscribeSlot() {
     if (activeTranscribes < maxConcurrentTranscribes) {
@@ -96,22 +134,24 @@ async function validateEmbedded(inputPath, streams, reference, isEuropeanPortugu
     return null;
 }
 
-async function transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration = 0, onProgress = null) {
+async function transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration = 0, onProgress = null, transferAudio) {
     const wav = audioCachePath || path.join(workspace, 'audio.wav');
-    const cachedSource = audioCachePath ? `${audioCachePath}.source.srt` : null;
+    const cachedSource = audioCachePath ? sourceFile(audioCachePath) : null;
     if (cachedSource && await fs.pathExists(cachedSource)) return fs.readFile(cachedSource, 'utf8');
     const source = path.join(workspace, 'source.srt');
-    const model = process.env.SUBTITLE_WHISPER_MODEL || 'turbo';
+    const model = cacheModel();
     const minimumBytes = duration > 0 ? duration * 32000 * 0.97 : 10000;
     const cachedAudio = await fs.stat(wav).catch(() => null);
     if (!cachedAudio || cachedAudio.size < minimumBytes) {
         const temporary = `${wav}.${require('crypto').randomUUID()}.partial.wav`;
         try {
             console.log(`🎙️ [Legenda: "${title}"] Extraindo faixa de áudio para conferência...`);
-            await run('ffmpeg', [
+            const extract = () => run('ffmpeg', [
                 '-nostdin', '-v', 'error', '-y', ...inputFlags(inputPath), '-i', inputPath, '-map', `0:a:${audioIndex}`,
                 '-af', 'aresample=async=1000:first_pts=0', '-ac', '1', '-ar', '16000', temporary
             ], { timeout: /^https?:/.test(inputPath) ? 90 * 60 * 1000 : 20 * 60 * 1000 });
+            if (transferAudio) await transferAudio(extract);
+            else await extract();
             if ((await fs.stat(temporary)).size < minimumBytes) throw new Error('Extração de áudio incompleta.');
             await fs.rename(temporary, wav);
         } finally { await fs.remove(temporary).catch(() => {}); }
@@ -156,7 +196,7 @@ async function transcribe(inputPath, audioIndex, workspace, title, audioCachePat
     return fs.readFile(source, 'utf8');
 }
 
-async function create(inputPath, audioIndex, { title, onProgress, subtitleStreams = [], isEuropeanPortuguese, audioCachePath = null, duration = 0 }) {
+async function create(inputPath, audioIndex, { title, onProgress, subtitleStreams = [], isEuropeanPortuguese, audioCachePath = null, duration = 0, transferAudio }) {
     if (!translator.isAvailable()) {
         throw subtitleError('Tradução PT-BR indisponível. GEMINI_API_KEY ausente.', 'SUBTITLE_PROVIDER_UNAVAILABLE');
     }
@@ -166,13 +206,7 @@ async function create(inputPath, audioIndex, { title, onProgress, subtitleStream
         let source;
         try {
             onProgress?.(0, 'Aguardando vaga para transcrição de áudio');
-            await acquireTranscribeSlot();
-            try {
-                onProgress?.(0, 'Transcrevendo e marcando falas da faixa de áudio');
-                source = await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration, onProgress);
-            } finally {
-                releaseTranscribeSlot();
-            }
+                source = await sourceTranscript(inputPath, audioIndex, { title, duration, audioCachePath, onProgress, transferAudio });
         } catch (error) {
             const detail = error.stderr?.trim().split('\n').at(-1) || error.message || error.code || 'sem resultado';
             throw subtitleError(`Falha na transcrição da faixa de áudio (${detail}).`, 'SUBTITLE_SYNC_FAILED');
@@ -243,14 +277,30 @@ async function createCheckpoints(inputPath, audioIndex, { title, duration, check
     } finally { await fs.remove(workspace).catch(() => {}); }
 }
 
-async function sourceTranscript(inputPath, audioIndex, { title, duration, audioCachePath, onProgress }) {
+async function sourceTranscript(inputPath, audioIndex, { title, duration, audioCachePath, onProgress, transferAudio }) {
+    if (audioCachePath) {
+        try {
+            const content = await fs.readFile(sourceFile(audioCachePath), 'utf8');
+            onProgress?.(35, 'Reaproveitando transcrição do áudio');
+            return content;
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (pendingSources.has(audioCachePath)) return pendingSources.get(audioCachePath);
+    }
+    const work = transcribeWithSlot(inputPath, audioIndex, { title, duration, audioCachePath, onProgress, transferAudio });
+    if (!audioCachePath) return work;
+    pendingSources.set(audioCachePath, work);
+    try { return await work; }
+    finally { pendingSources.delete(audioCachePath); }
+}
+
+async function transcribeWithSlot(inputPath, audioIndex, { title, duration, audioCachePath, onProgress, transferAudio }) {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'subtitle-source-'));
     try {
         onProgress?.(24, 'Aguardando vaga para comparar legendas');
         await acquireTranscribeSlot();
         try {
             onProgress?.(24, 'Transcrevendo o áudio original para comparar as legendas');
-            return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration, onProgress);
+            return await transcribe(inputPath, audioIndex, workspace, title, audioCachePath, duration, onProgress, transferAudio);
         } finally {
             releaseTranscribeSlot();
         }
@@ -259,4 +309,4 @@ async function sourceTranscript(inputPath, audioIndex, { title, duration, audioC
     }
 }
 
-module.exports = { create, createCheckpoints, matchesSpokenDialogue, sourceTranscript, dialogueReferenceVersion };
+module.exports = { create, createCheckpoints, matchesSpokenDialogue, sourceTranscript, dialogueCache, rememberPublishedAudio };

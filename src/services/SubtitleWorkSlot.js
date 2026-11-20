@@ -83,7 +83,7 @@ async function active() {
         COALESCE(w.kind,'ingest') AS kind, w.progress, w.stage, w.started_at, w.media_type, w.media_id
         FROM pg_locks l JOIN pg_stat_activity a USING (pid)
         LEFT JOIN subtitle_active_work w ON w.backend=l.pid
-        WHERE l.locktype='advisory' AND l.classid=0 AND l.objid >= $1 AND l.objid < $1 + $2 AND l.objsubid=1 AND l.granted
+        WHERE l.locktype='advisory' AND l.classid=0 AND l.objid >= $1::bigint AND l.objid < $1::bigint + $2::bigint AND l.objsubid=1 AND l.granted
         ORDER BY w.started_at ASC`, [BASE_KEY, NUM_SLOTS]);
     return rows[0] || null;
 }
