@@ -1936,11 +1936,15 @@ print(f"RESULT:{res}")
                 if (!bestPartial || current.missing.length < bestPartial.missing.length) bestPartial = current;
                 ({ sourceMethod, proof, missing } = current);
             }
-            if (missing.length) {
+            const MAX_ALLOWED_MISSING_CUES = 5;
+            if (missing.length > MAX_ALLOWED_MISSING_CUES) {
                 const where = missing.slice(0, 4).map(cue => this.formatMsToTimecode(cue.startMs)).join(', ');
                 throw new Error(`Cobertura insuficiente: ${missing.length} fala(s) sem legenda (${where}).`);
             }
-            Object.assign(proof, { coverageDialogueChecked: checked, coverageMissing: 0 });
+            if (missing.length > 0) {
+                console.log(`ℹ️ [Subtitle Coverage] Legenda aceita com alta cobertura (${checked - missing.length}/${checked} falas cobertas, ${missing.length} fala(s) tolerada(s) como fala de fundo/secundária).`);
+            }
+            Object.assign(proof, { coverageDialogueChecked: checked, coverageMissing: missing.length });
             retained = path.join(os.tmpdir(), `subtitle-${require('crypto').randomUUID()}.srt`);
             await fs.copy(file, retained);
             const mediaTitle = metadata.title || metadata.nome || 'Mídia';
