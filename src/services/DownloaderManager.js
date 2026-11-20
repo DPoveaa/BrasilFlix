@@ -95,28 +95,43 @@ class DownloaderManager extends EventEmitter {
     }
 
     async isDiskOvercrowded() {
-        const maxBytes = (config.MAX_TEMP_DISK_GB || 100) * 1024 * 1024 * 1024;
+        const maxDownloadGB = config.MAX_DOWNLOAD_DISK_GB || 150;
+        const processingReserveGB = config.PROCESSING_RESERVE_DISK_GB || 50;
+        const maxDownloadBytes = maxDownloadGB * 1024 * 1024 * 1024;
+        const reserveBytes = processingReserveGB * 1024 * 1024 * 1024;
+
         const currentSize = await this.getTempDirSizeBytes();
-        // Se ultrapassar 75% dos 100GB (~75GB), segura novos downloads para dar espaço à duplicação da transcodificação
         const disk = await DiskCleaner.getDiskSpaceInfo(this.downloadDir);
-        return currentSize >= maxBytes * 0.75 || Boolean(disk && disk.freeBytes < 8 * 1024 ** 3);
+
+        const tempOverLimit = currentSize >= maxDownloadBytes;
+        const diskLowOnSpace = Boolean(disk && disk.freeBytes < reserveBytes);
+
+        if (tempOverLimit || diskLowOnSpace) {
+            console.log(`⏳ [Guarda de Disco] Limite atingido! Temp: ${(currentSize / (1024 ** 3)).toFixed(1)}GB/${maxDownloadGB}GB | SSD Livre: ${disk?.freeGB || 'N/A'}GB (mínimo reserva: ${processingReserveGB}GB). Segurando novos downloads.`);
+            return true;
+        }
+
+        return false;
     }
 
     async ensureDiskSpace(estimatedSizeBytes = 0) {
-        const maxGB = config.MAX_TEMP_DISK_GB || 100;
-        const maxBytes = maxGB * 1024 * 1024 * 1024;
+        const maxDownloadGB = config.MAX_DOWNLOAD_DISK_GB || 150;
+        const processingReserveGB = config.PROCESSING_RESERVE_DISK_GB || 50;
+        const maxDownloadBytes = maxDownloadGB * 1024 * 1024 * 1024;
+        const reserveBytes = processingReserveGB * 1024 * 1024 * 1024;
+
         // Considera margem de segurança para duplicação do vídeo durante a transcodificação FFmpeg (raw + opt)
         const safetyMarginBytes = Math.max(estimatedSizeBytes * 2, 8 * 1024 * 1024 * 1024);
 
         let currentSize = await this.getTempDirSizeBytes();
-        if (currentSize + safetyMarginBytes >= maxBytes * 0.75) {
-            console.log(`⚠️ [Guarda de Disco] Pasta temporária em ${this.formatBytes(currentSize)} (margem de duplicação: ${this.formatBytes(safetyMarginBytes)}, limite: ${maxGB} GB). Executando limpeza automática...`);
-            await DiskCleaner.scanAndClean(undefined, 60 * 60 * 1000);
+        if (currentSize + safetyMarginBytes >= maxDownloadBytes * 0.85) {
+            console.log(`⚠️ [Guarda de Disco] Pasta temporária em ${this.formatBytes(currentSize)} (margem estimada: ${this.formatBytes(safetyMarginBytes)}, teto downloads: ${maxDownloadGB} GB). Executando limpeza automática preventiva...`);
+            await DiskCleaner.scanAndClean(undefined, 30 * 60 * 1000);
             currentSize = await this.getTempDirSizeBytes();
         }
 
-        while (currentSize + safetyMarginBytes >= maxBytes * 0.85) {
-            console.warn(`🚨 [Guarda de Disco] Espaço em disco temporário próximo ao limite (${this.formatBytes(currentSize)} / ${maxGB} GB). Aguardando liberação de espaço por uploads concluídos...`);
+        while (currentSize + safetyMarginBytes >= maxDownloadBytes) {
+            console.warn(`🚨 [Guarda de Disco] Espaço para downloads atingiu limite (${this.formatBytes(currentSize)} / ${maxDownloadGB} GB). Aguardando liberação por transcodes/uploads concluídos...`);
             await new Promise(r => setTimeout(r, 6000));
             currentSize = await this.getTempDirSizeBytes();
         }

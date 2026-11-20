@@ -237,6 +237,9 @@ class QueueManager extends EventEmitter {
             if (task.optimizedPath) files.push(task.optimizedPath);
         }
         for (const j of this.queue) {
+            // Apenas protege arquivos de jobs que ainda estão ativamente em execução ou aptos a rodar.
+            // Jobs 'completed', 'failed', 'cancelled' não devem travar a limpeza de arquivos residuais no disco.
+            if (!RUNNABLE_JOB_STATUSES.has(j.status)) continue;
             if (j.rawFilePath) files.push(j.rawFilePath);
             if (j.optimizedFilePath) files.push(j.optimizedFilePath);
             if (j.optimizedPath) files.push(j.optimizedPath);

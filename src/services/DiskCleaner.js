@@ -80,8 +80,9 @@ class DiskCleaner {
     /**
      * Executa varredura profunda e remoção de arquivos órfãos
      * @param {Array<string>} activeFilePaths - Caminhos de arquivos atualmente em uso/download/processamento
+     * @param {number} minAgeMs - Idade mínima de inatividade para remoção (padrão: 30 minutos)
      */
-    async scanAndClean(activeFilePaths = this.getActiveFiles?.() || [], minAgeMs = 2 * 60 * 60 * 1000) {
+    async scanAndClean(activeFilePaths = this.getActiveFiles?.() || [], minAgeMs = 30 * 60 * 1000) {
 
         if (this.isRunning) return { cleanedCount: 0, freedBytes: 0 };
         this.isRunning = true;
@@ -180,21 +181,21 @@ class DiskCleaner {
     /**
      * Inicia monitoramento periódico de limpeza em background
      * @param {Function} getActiveFilesCallback - Função que retorna array de arquivos ativos da fila
-     * @param {number} intervalMs - Intervalo entre checagens (padrão: 45 min)
+     * @param {number} intervalMs - Intervalo entre checagens (padrão: 20 min)
      */
-    startAutoCleanup(getActiveFilesCallback, intervalMs = 45 * 60 * 1000) {
+    startAutoCleanup(getActiveFilesCallback, intervalMs = 20 * 60 * 1000) {
         this.getActiveFiles = getActiveFilesCallback;
-        console.log(`🧹 [Auto-Cleaner] Monitor de limpeza inteligente de disco ativado (Intervalo: ${Math.round(intervalMs / 60000)} min)!`);
+        console.log(`🧹 [Auto-Cleaner] Monitor de limpeza inteligente de disco ativado (Intervalo: ${Math.round(intervalMs / 60000)} min, idade mínima: 30 min)!`);
         
         // Executa limpeza inicial após 15 segundos do boot
         setTimeout(() => {
             const active = getActiveFilesCallback ? getActiveFilesCallback() : [];
-            this.scanAndClean(active).catch(() => {});
+            this.scanAndClean(active, 30 * 60 * 1000).catch(() => {});
         }, 15000);
 
         setInterval(() => {
             const active = getActiveFilesCallback ? getActiveFilesCallback() : [];
-            this.scanAndClean(active).catch(() => {});
+            this.scanAndClean(active, 30 * 60 * 1000).catch(() => {});
         }, intervalMs);
     }
 }

@@ -35,8 +35,8 @@ class AutoFeeder {
         SwarmWatcher.init(this.queueManager, this.catalogoManager);
         SwarmWatcher.startWatchCycle(3 * 60 * 1000);
 
-        // Inicializa o Auto-Cleaner de Disco (remove arquivos órfãos > 30 min)
-        DiskCleaner.startAutoCleanup(() => this.queueManager.getActiveFiles(), 45 * 60 * 1000);
+        // Inicializa o Auto-Cleaner de Disco (remove arquivos órfãos > 30 min, a cada 20 min)
+        DiskCleaner.startAutoCleanup(() => this.queueManager.getActiveFiles(), 20 * 60 * 1000);
 
         // Executa uma verificação inicial após 8 segundos de inicialização se estiver no horário permitido
         setTimeout(() => {
